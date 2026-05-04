@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply font-sans bg-steel-50 text-steel-800;
+  }
+  .dark body {
+    @apply bg-steel-900 text-steel-100;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tight;
+  }
+  ::selection {
+    @apply bg-brand-500/30;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed select-none;
+  }
+  .btn-primary {
+    @apply btn bg-brand-500 text-white hover:bg-brand-600 shadow-brand;
+  }
+  .btn-secondary {
+    @apply btn bg-steel-800 text-white hover:bg-steel-700 dark:bg-steel-100 dark:text-steel-900 dark:hover:bg-white;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-steel-100 dark:hover:bg-steel-800;
+  }
+  .btn-danger {
+    @apply btn bg-alert-500 text-white hover:bg-alert-600;
+  }
+  .btn-lg {
+    @apply px-7 py-4 text-base rounded-2xl;
+  }
+
+  .card {
+    @apply rounded-2xl bg-white shadow-card p-5 dark:bg-steel-800 dark:shadow-card-dark;
+  }
+  .input {
+    @apply w-full rounded-xl border border-steel-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:bg-steel-800 dark:border-steel-700 dark:text-steel-100 dark:placeholder:text-steel-400;
+  }
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-wider text-steel-500 dark:text-steel-400 mb-1.5;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .badge-success { @apply badge bg-signal-500/15 text-signal-600; }
+  .badge-pending { @apply badge bg-pending-500/15 text-pending-600; }
+  .badge-alert   { @apply badge bg-alert-500/15 text-alert-600; }
+  .badge-brand   { @apply badge bg-brand-500/15 text-brand-600; }
+
+  .section { @apply max-w-7xl mx-auto px-5 lg:px-8; }
+}
