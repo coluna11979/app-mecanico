@@ -7,11 +7,11 @@ import type { Job, Mechanic } from '@/types/database';
 
 export default function MechanicDashboard() {
   const { user } = useAuth();
-  const [me, setMe]             = useState<Mechanic | null>(null);
-  const [openJobs, setOpenJobs] = useState<Job[]>([]);
+  const [me, setMe]                 = useState<Mechanic | null>(null);
+  const [openJobs, setOpenJobs]     = useState<Job[]>([]);
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [accepting, setAccepting] = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [accepting, setAccepting]   = useState<string | null>(null);
 
   useEffect(() => { if (user) load(); }, [user]);
 
@@ -45,7 +45,6 @@ export default function MechanicDashboard() {
     setAccepting(job.id);
     const { error } = await supabase.from('jobs').update({ mechanic_id: me.id, status: 'assigned' }).eq('id', job.id).eq('status', 'open');
     if (!error) {
-      // Move job from open list to active
       setOpenJobs(prev => prev.filter(j => j.id !== job.id));
       setActiveJobs(prev => [{ ...job, mechanic_id: me.id, status: 'assigned' }, ...prev]);
     }
@@ -81,11 +80,17 @@ export default function MechanicDashboard() {
               {activeJobs.map(j => (
                 <Link key={j.id} to={`/mecanico/job/${j.id}/tracking`} className="card !bg-brand-500 !text-white block">
                   <div className="flex justify-between items-start">
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div className="text-sm opacity-80">{j.status === 'assigned' ? 'A caminho' : 'Em serviço'}</div>
-                      <div className="font-bold text-lg">{j.title}</div>
+                      <div className="font-bold text-lg truncate">{j.title}</div>
+                      <div className="text-xs opacity-70 mt-0.5">
+                        R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h · máx {j.max_hours ?? '—'}h
+                      </div>
                     </div>
-                    <span className="text-2xl font-bold font-display">R$ {j.price.toFixed(0)}</span>
+                    <div className="text-right shrink-0 ml-3">
+                      <div className="text-xs opacity-70">até</div>
+                      <span className="text-2xl font-bold font-display">R$ {j.price.toFixed(0)}</span>
+                    </div>
                   </div>
                   <div className="mt-2 text-xs opacity-80">Toque para ver mapa →</div>
                 </Link>
@@ -101,36 +106,45 @@ export default function MechanicDashboard() {
             <div className="card !bg-steel-800 text-center text-steel-400 py-10">Nenhum job aberto agora.</div>
           ) : (
             <div className="space-y-2">
-              {openJobs.map(j => (
-                <div key={j.id} className="card !bg-steel-800 hover:!bg-steel-700 transition">
-                  <div className="flex justify-between items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold truncate">{j.title}</div>
-                      <div className="text-sm text-steel-400 line-clamp-2 mt-0.5">{j.description}</div>
-                      {j.scheduled_at && (
-                        <div className="text-xs text-steel-500 mt-1">
-                          📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+              {openJobs.map(j => {
+                const cap = (j.price_per_hour ?? 0) * (j.max_hours ?? 1);
+                return (
+                  <div key={j.id} className="card !bg-steel-800 hover:!bg-steel-700 transition">
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold truncate">{j.title}</div>
+                        <div className="text-sm text-steel-400 line-clamp-2 mt-0.5">{j.description}</div>
+                        {j.scheduled_at && (
+                          <div className="text-xs text-steel-500 mt-1">
+                            📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-brand-400 font-bold font-display text-lg">
+                          R$ {(j.price_per_hour ?? 0).toFixed(0)}<span className="text-sm font-normal">/h</span>
                         </div>
-                      )}
+                        <div className="text-xs text-steel-500">máx {j.max_hours ?? 1}h</div>
+                        <div className="text-xs text-signal-400 font-semibold mt-0.5">
+                          até R$ {cap.toFixed(0)}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-xl font-bold text-brand-500 font-display">R$ {j.price.toFixed(0)}</span>
+                    <div className="flex gap-2 mt-3">
+                      <Link to={`/mecanico/job/${j.id}`} className="btn-ghost flex-1 text-center text-sm py-2">
+                        Ver detalhes
+                      </Link>
+                      <button
+                        onClick={() => acceptJob(j)}
+                        disabled={accepting === j.id || !me?.is_available}
+                        className="btn-primary flex-1 text-sm py-2 disabled:opacity-50"
+                      >
+                        {accepting === j.id ? 'Aceitando…' : !me?.is_available ? 'Fique online' : 'Aceitar job'}
+                      </button>
                     </div>
                   </div>
-                  <div className="flex gap-2 mt-3">
-                    <Link to={`/mecanico/job/${j.id}`} className="btn-ghost flex-1 text-center text-sm py-2">
-                      Ver detalhes
-                    </Link>
-                    <button
-                      onClick={() => acceptJob(j)}
-                      disabled={accepting === j.id || !me?.is_available}
-                      className="btn-primary flex-1 text-sm py-2 disabled:opacity-50"
-                    >
-                      {accepting === j.id ? 'Aceitando…' : !me?.is_available ? 'Fique online' : 'Aceitar job'}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

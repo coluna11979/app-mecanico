@@ -5,17 +5,17 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Workshop } from '@/types/database';
 
-type NewJob = { title: string; description: string; price: string; scheduled_at: string };
-const EMPTY: NewJob = { title: '', description: '', price: '', scheduled_at: '' };
+type NewJob = { title: string; description: string; price_per_hour: string; max_hours: string; scheduled_at: string };
+const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '' };
 
 export default function WorkshopDashboard() {
   const { user } = useAuth();
-  const [shop, setShop]     = useState<Workshop | null>(null);
-  const [active, setActive] = useState<Job[]>([]);
+  const [shop, setShop]       = useState<Workshop | null>(null);
+  const [active, setActive]   = useState<Job[]>([]);
   const [history, setHistory] = useState<Job[]>([]);
-  const [modal, setModal]   = useState(false);
-  const [form, setForm]     = useState<NewJob>(EMPTY);
-  const [saving, setSaving] = useState(false);
+  const [modal, setModal]     = useState(false);
+  const [form, setForm]       = useState<NewJob>(EMPTY);
+  const [saving, setSaving]   = useState(false);
 
   useEffect(() => { if (user) load(); }, [user]);
 
@@ -40,12 +40,16 @@ export default function WorkshopDashboard() {
     e.preventDefault();
     if (!shop) return;
     setSaving(true);
+    const pph = Number(form.price_per_hour);
+    const mh  = Number(form.max_hours);
     const payload: Record<string, unknown> = {
-      workshop_id: shop.id,
-      title: form.title.trim(),
-      description: form.description.trim(),
-      price: Number(form.price),
-      status: 'open',
+      workshop_id:    shop.id,
+      title:          form.title.trim(),
+      description:    form.description.trim(),
+      price_per_hour: pph,
+      max_hours:      mh,
+      price:          pph * mh,   // cap = escrow amount
+      status:         'open',
     };
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
     await supabase.from('jobs').insert(payload);
@@ -59,6 +63,8 @@ export default function WorkshopDashboard() {
     return (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm(f => ({ ...f, [k]: e.target.value }));
   }
+
+  const estimated = Number(form.price_per_hour) * Number(form.max_hours);
 
   return (
     <WorkshopLayout>
@@ -97,20 +103,23 @@ export default function WorkshopDashboard() {
                 <div className="flex-1 min-w-0">
                   <div className="font-bold truncate">{j.title}</div>
                   <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j.status)}</div>
+                  <div className="text-xs text-steel-400 mt-1">
+                    R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h · máx {j.max_hours ?? '—'}h
+                  </div>
                   {j.scheduled_at && (
-                    <div className="text-xs text-steel-400 mt-1">
-                      {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+                    <div className="text-xs text-steel-400 mt-0.5">
+                      📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
                     </div>
                   )}
                 </div>
                 <div className="text-right shrink-0">
+                  <div className="text-xs text-steel-400">até</div>
                   <div className="text-lg font-bold font-display">R$ {j.price.toFixed(0)}</div>
-                  {j.mechanic_id && (
+                  {j.mechanic_id ? (
                     <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
                       Ver no mapa
                     </Link>
-                  )}
-                  {j.status === 'open' && (
+                  ) : (
                     <div className="mt-1 text-xs text-pending-600 font-semibold">Aguardando mecânico…</div>
                   )}
                 </div>
@@ -134,8 +143,16 @@ export default function WorkshopDashboard() {
                   <div className="text-xs text-steel-500">
                     {statusLabel(j.status)} · {j.completed_at ? new Date(j.completed_at).toLocaleDateString('pt-BR') : '—'}
                   </div>
+                  {j.actual_hours != null && (
+                    <div className="text-xs text-steel-400">{j.actual_hours}h × R$ {j.price_per_hour}/h</div>
+                  )}
                 </div>
-                <div className="font-bold font-display">R$ {j.price.toFixed(2)}</div>
+                <div className="text-right">
+                  <div className="font-bold font-display">R$ {j.price.toFixed(2)}</div>
+                  {j.actual_hours != null && (
+                    <div className="text-xs text-signal-600">real</div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -153,13 +170,13 @@ export default function WorkshopDashboard() {
             <div>
               <h2 className="text-2xl font-bold tracking-tight">Nova demanda</h2>
               <p className="text-sm text-steel-500 mt-1">
-                Descreva o serviço — mecânicos disponíveis vão ver e poderão aceitar.
+                Mecânicos disponíveis verão e poderão aceitar.
               </p>
             </div>
 
             <div>
               <label className="label">Título do serviço *</label>
-              <input className="input" required placeholder="Ex.: Troca de pastilha de freio"
+              <input className="input" required placeholder="Ex.: Troca de pastilha de freio — Civic"
                 value={form.title} onChange={set('title')} />
             </div>
 
@@ -170,17 +187,39 @@ export default function WorkshopDashboard() {
                 value={form.description} onChange={set('description')} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Valor estimado (R$) *</label>
-                <input className="input" type="number" min={1} required
-                  placeholder="0" value={form.price} onChange={set('price')} />
+            {/* Precificação por hora */}
+            <div>
+              <label className="label">Precificação por hora</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                    <input className="input !pl-9" type="number" min={1} required
+                      placeholder="60" value={form.price_per_hour} onChange={set('price_per_hour')} />
+                  </div>
+                  <div className="text-xs text-steel-400 mt-1">Valor por hora</div>
+                </div>
+                <div>
+                  <div className="relative">
+                    <input className="input !pr-9" type="number" min={0.5} max={24} step={0.5} required
+                      placeholder="2" value={form.max_hours} onChange={set('max_hours')} />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
+                  </div>
+                  <div className="text-xs text-steel-400 mt-1">Máximo de horas</div>
+                </div>
               </div>
-              <div>
-                <label className="label">Data / hora desejada</label>
-                <input className="input" type="datetime-local"
-                  value={form.scheduled_at} onChange={set('scheduled_at')} />
-              </div>
+              {estimated > 0 && (
+                <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2 flex justify-between items-center">
+                  <span className="text-sm text-brand-700">Teto do orçamento</span>
+                  <span className="font-bold text-brand-700 font-display">R$ {estimated.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="label">Data / hora desejada</label>
+              <input className="input" type="datetime-local"
+                value={form.scheduled_at} onChange={set('scheduled_at')} />
             </div>
 
             <div className="flex gap-3 pt-2">

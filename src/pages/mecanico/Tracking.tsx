@@ -11,11 +11,13 @@ export default function MechanicTracking() {
   const { id } = useParams();
   const nav = useNavigate();
   const { user } = useAuth();
-  const [job, setJob]           = useState<Job | null>(null);
-  const [shop, setShop]         = useState<Workshop | null>(null);
+  const [job, setJob]               = useState<Job | null>(null);
+  const [shop, setShop]             = useState<Workshop | null>(null);
   const [mechanicId, setMechanicId] = useState<string | null>(null);
-  const [busy, setBusy]         = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [busy, setBusy]             = useState(false);
+  const [chatOpen, setChatOpen]     = useState(false);
+  const [hoursModal, setHoursModal] = useState(false);
+  const [actualHours, setActualHours] = useState('');
 
   useEffect(() => { if (id && user) load(); }, [id, user]);
 
@@ -30,6 +32,16 @@ export default function MechanicTracking() {
     }
   }
 
+  // Realtime — detecta quando oficina confirma PIX (pix_paid_at) ou status muda
+  useEffect(() => {
+    if (!id) return;
+    const ch = supabase.channel(`job:${id}:mecanico`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jobs', filter: `id=eq.${id}` },
+        payload => setJob(payload.new as Job))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [id]);
+
   useGeoBroadcast({
     enabled: !!job && (job.status === 'assigned' || job.status === 'in_progress'),
     jobId: job?.id ?? null,
@@ -39,19 +51,36 @@ export default function MechanicTracking() {
   async function confirmArrival() {
     if (!job) return;
     setBusy(true);
+    await supabase.from('jobs').update({ arrived_at: new Date().toISOString() }).eq('id', job.id);
+    setBusy(false);
+  }
+
+  async function startJob() {
+    if (!job) return;
+    setBusy(true);
     await supabase.from('jobs').update({ status: 'in_progress', started_at: new Date().toISOString() }).eq('id', job.id);
-    setJob({ ...job, status: 'in_progress' });
     setBusy(false);
   }
 
   async function completeJob() {
     if (!job) return;
+    const hours = Number(actualHours);
+    if (!hours || hours <= 0) return;
     setBusy(true);
-    await supabase.from('jobs').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', job.id);
+    const finalPrice = hours * (job.price_per_hour ?? 0);
+    await supabase.from('jobs').update({
+      status:       'completed',
+      completed_at: new Date().toISOString(),
+      actual_hours: hours,
+      price:        finalPrice,
+    }).eq('id', job.id);
     setBusy(false);
     nav('/mecanico/dashboard');
   }
 
+  const arrived   = !!job?.arrived_at;
+  const pixPaid   = !!job?.pix_paid_at;
+  const cap       = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
   const center: [number, number] = shop?.lat && shop?.lng ? [shop.lat, shop.lng] : [-23.55, -46.63];
 
   return (
@@ -85,28 +114,90 @@ export default function MechanicTracking() {
         />
       </div>
 
-      {/* Painel inferior — info + ação */}
+      {/* Painel inferior */}
       <div className="bg-steel-800 border-t border-steel-700 p-5">
         {shop && (
           <>
             <div className="text-xs text-brand-500 uppercase tracking-wider font-bold">
-              {job?.status === 'in_progress' ? 'Em serviço' : 'Indo para'}
+              {job?.status === 'in_progress' ? 'Em serviço' : arrived && !pixPaid ? 'Aguardando PIX' : 'Indo para'}
             </div>
             <div className="font-bold text-xl mt-0.5">{shop.business_name}</div>
             <div className="text-sm text-steel-400">{shop.address}, {shop.city}</div>
+            <div className="text-xs text-steel-500 mt-1">
+              R$ {job?.price_per_hour?.toFixed(0) ?? '—'}/h · máx {job?.max_hours ?? '—'}h · até R$ {cap.toFixed(0)}
+            </div>
           </>
         )}
-        {job?.status === 'assigned' && (
-          <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full mt-5">
-            {busy ? '…' : 'Confirmar chegada'}
+
+        {/* Estados do botão */}
+        {job?.status === 'assigned' && !arrived && (
+          <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full mt-4">
+            {busy ? '…' : '📍 Confirmar chegada'}
           </button>
         )}
+
+        {job?.status === 'assigned' && arrived && !pixPaid && (
+          <div className="mt-4 bg-pending-500/10 border border-pending-500/30 rounded-2xl px-4 py-3 text-center">
+            <div className="text-pending-400 font-semibold text-sm">⏳ Aguardando pagamento PIX da oficina…</div>
+            <div className="text-xs text-steel-500 mt-1">A oficina foi notificada. Assim que confirmar o PIX você poderá iniciar.</div>
+          </div>
+        )}
+
+        {job?.status === 'assigned' && arrived && pixPaid && (
+          <button onClick={startJob} disabled={busy} className="btn-primary btn-lg w-full mt-4 !bg-signal-500">
+            {busy ? '…' : '✅ Iniciar serviço'}
+          </button>
+        )}
+
         {job?.status === 'in_progress' && (
-          <button onClick={completeJob} disabled={busy} className="btn-primary btn-lg w-full mt-5 !bg-signal-500 !shadow-none">
-            {busy ? '…' : 'Finalizar serviço'}
+          <button onClick={() => setHoursModal(true)} className="btn-primary btn-lg w-full mt-4 !bg-signal-500">
+            Finalizar serviço
           </button>
         )}
       </div>
+
+      {/* Modal: horas reais */}
+      {hoursModal && (
+        <div className="absolute inset-0 z-30 bg-steel-900/95 flex flex-col items-center justify-center p-6">
+          <div className="bg-steel-800 border border-steel-700 rounded-2xl p-6 w-full max-w-sm space-y-5">
+            <div>
+              <h3 className="text-xl font-bold">Finalizar serviço</h3>
+              <p className="text-sm text-steel-400 mt-1">Informe as horas reais trabalhadas para calcular o valor final.</p>
+            </div>
+
+            <div>
+              <label className="text-xs text-steel-400 uppercase tracking-wider">Horas trabalhadas</label>
+              <div className="relative mt-1">
+                <input
+                  type="number" min={0.5} max={job?.max_hours ?? 24} step={0.5}
+                  className="input !bg-steel-900 !text-white !border-steel-600 !pr-10 text-2xl font-bold"
+                  placeholder="1.5"
+                  value={actualHours}
+                  onChange={e => setActualHours(e.target.value)}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 font-semibold">h</span>
+              </div>
+              {actualHours && Number(actualHours) > 0 && (
+                <div className="mt-2 text-center">
+                  <span className="text-steel-400 text-sm">{actualHours}h × R$ {job?.price_per_hour?.toFixed(0)}/h = </span>
+                  <span className="text-signal-400 font-bold text-lg">R$ {(Number(actualHours) * (job?.price_per_hour ?? 0)).toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setHoursModal(false)} className="btn-ghost flex-1">Cancelar</button>
+              <button
+                onClick={completeJob}
+                disabled={busy || !actualHours || Number(actualHours) <= 0}
+                className="btn-primary flex-1 !bg-signal-500"
+              >
+                {busy ? '…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Chat drawer */}
       {chatOpen && id && (

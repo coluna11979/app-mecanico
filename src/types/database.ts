@@ -54,9 +54,14 @@ export interface Job {
   description: string;
   status: JobStatus;
   price: number;
+  price_per_hour: number;
+  max_hours: number;
+  actual_hours: number | null;
   scheduled_at: string | null;
   started_at: string | null;
   completed_at: string | null;
+  arrived_at: string | null;
+  pix_paid_at: string | null;
   workshop_confirmed_at: string | null;
   created_at: string;
 }
