@@ -12,6 +12,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           <Logo />
           <nav className="flex items-center gap-1">
             <Item to="/oficina/dashboard">Início</Item>
+            <Item to="/oficina/os">OS</Item>
+            <Item to="/oficina/clientes">Clientes</Item>
             <Item to="/oficina/buscar">Buscar mecânicos</Item>
             <Item to="/oficina/perfil">Oficina</Item>
             <button onClick={signOut} className="btn-ghost text-sm">Sair</button>

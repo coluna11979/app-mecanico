@@ -90,6 +90,45 @@ export interface AppSetting {
   updated_by: string | null;
 }
 
+export type OsStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface Customer {
+  id: string;
+  workshop_id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  cpf: string | null;
+  created_at: string;
+}
+
+export interface Vehicle {
+  id: string;
+  customer_id: string;
+  workshop_id: string;
+  plate: string;
+  make: string;
+  model: string;
+  year: number | null;
+  color: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ServiceOrder {
+  id: string;
+  workshop_id: string;
+  vehicle_id: string | null;
+  customer_id: string | null;
+  title: string;
+  description: string | null;
+  mechanic_name: string | null;
+  status: OsStatus;
+  price: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
 export interface Message {
   id: string;
   job_id: string;
