@@ -21,6 +21,9 @@ export default function WorkshopTracking() {
   const [confirming, setConfirming] = useState(false);
   const [payingPix, setPayingPix]   = useState(false);
   const [tab, setTab]               = useState<Tab>('progresso');
+  const [rating, setRating]         = useState(0);
+  const [ratingNote, setRatingNote] = useState('');
+  const [hovered, setHovered]       = useState(0);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -63,9 +66,13 @@ export default function WorkshopTracking() {
   }
 
   async function confirmJob() {
-    if (!job) return;
+    if (!job || rating === 0) return;
     setConfirming(true);
-    await supabase.from('jobs').update({ workshop_confirmed_at: new Date().toISOString() }).eq('id', job.id);
+    await supabase.from('jobs').update({
+      workshop_confirmed_at: new Date().toISOString(),
+      mechanic_rating:       rating,
+      mechanic_rating_note:  ratingNote.trim() || null,
+    }).eq('id', job.id);
     setConfirming(false);
   }
 
@@ -178,18 +185,58 @@ export default function WorkshopTracking() {
               </div>
 
               {job?.status === 'completed' && !job.workshop_confirmed_at && (
-                <div className="mt-auto pt-5 border-t border-steel-200">
+                <div className="mt-auto pt-4 border-t border-steel-200 space-y-3">
                   {job.actual_hours != null && (
-                    <div className="text-sm text-steel-500 mb-2">
-                      {job.actual_hours}h × R$ {job.price_per_hour}/h = <strong>R$ {(job.actual_hours * (job.price_per_hour ?? 0)).toFixed(2)}</strong>
+                    <div className="bg-signal-500/10 rounded-xl px-3 py-2 text-sm text-signal-700 font-semibold">
+                      {job.actual_hours}h × R$ {job.price_per_hour}/h = R$ {(job.actual_hours * (job.price_per_hour ?? 0)).toFixed(2)}
                     </div>
                   )}
-                  <p className="text-sm text-steel-500 mb-3">
-                    Mecânico finalizou o serviço. Confirme em até 24h ou abra disputa.
-                  </p>
-                  <button onClick={confirmJob} disabled={confirming} className="btn-primary w-full">
-                    {confirming ? '…' : 'Confirmar e liberar pagamento'}
+                  <div>
+                    <p className="text-sm font-semibold text-steel-700 mb-2">
+                      Avalie o mecânico para liberar o pagamento
+                    </p>
+                    <div className="flex gap-1 mb-3">
+                      {[1,2,3,4,5].map(n => (
+                        <button key={n} type="button"
+                          onMouseEnter={() => setHovered(n)}
+                          onMouseLeave={() => setHovered(0)}
+                          onClick={() => setRating(n)}
+                          className="text-2xl transition hover:scale-110">
+                          {n <= (hovered || rating) ? '★' : '☆'}
+                        </button>
+                      ))}
+                      {rating > 0 && (
+                        <span className="ml-2 text-sm text-steel-500 self-center">
+                          {['','Ruim','Regular','Bom','Ótimo','Excelente'][rating]}
+                        </span>
+                      )}
+                    </div>
+                    <textarea
+                      className="input text-sm resize-none"
+                      rows={2}
+                      placeholder="Comentário opcional…"
+                      value={ratingNote}
+                      onChange={e => setRatingNote(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    onClick={confirmJob}
+                    disabled={confirming || rating === 0}
+                    className="btn-primary w-full disabled:opacity-50"
+                  >
+                    {confirming ? '…' : rating === 0 ? 'Selecione uma avaliação' : 'Confirmar e liberar pagamento'}
                   </button>
+                </div>
+              )}
+
+              {job?.status === 'completed' && job.workshop_confirmed_at && job.mechanic_rating && (
+                <div className="mt-auto pt-4 border-t border-steel-100">
+                  <div className="text-xs text-steel-400 mb-1">Sua avaliação do mecânico</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-brand-500 text-lg">{'★'.repeat(job.mechanic_rating)}{'☆'.repeat(5 - job.mechanic_rating)}</div>
+                    <span className="text-sm font-semibold">{['','Ruim','Regular','Bom','Ótimo','Excelente'][job.mechanic_rating]}</span>
+                  </div>
+                  {job.mechanic_rating_note && <p className="text-xs text-steel-500 mt-1 italic">"{job.mechanic_rating_note}"</p>}
                 </div>
               )}
             </div>

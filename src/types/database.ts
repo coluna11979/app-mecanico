@@ -63,6 +63,10 @@ export interface Job {
   arrived_at: string | null;
   pix_paid_at: string | null;
   workshop_confirmed_at: string | null;
+  mechanic_rating: number | null;
+  mechanic_rating_note: string | null;
+  workshop_rating: number | null;
+  workshop_rating_note: string | null;
   created_at: string;
 }
 
