@@ -90,6 +90,14 @@ export interface AppSetting {
   updated_by: string | null;
 }
 
+export interface Message {
+  id: string;
+  job_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+}
+
 export interface AppNotification {
   id: string;
   user_id: string;

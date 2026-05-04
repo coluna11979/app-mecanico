@@ -13,6 +13,7 @@ export const supabase = createClient(url, anon, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
     // Bypasses Web Locks API que trava em ambientes sandbox/iframe
-    lock: async (_name: string, _timeout: number, fn: () => Promise<unknown>) => fn(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    lock: async (_name: string, _timeout: number, fn: () => Promise<any>) => fn(),
   },
 });
