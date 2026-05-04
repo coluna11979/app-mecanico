@@ -24,6 +24,8 @@
     -webkit-tap-highlight-color: transparent;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Prevent pull-to-refresh on the whole page */
+    overscroll-behavior-y: none;
   }
   body {
     @apply font-sans bg-steel-50 text-steel-800;
@@ -41,7 +43,8 @@
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed select-none;
+    /* touch-manipulation removes 300ms tap delay on mobile */
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed select-none touch-manipulation;
   }
   .btn-primary {
     @apply btn bg-brand-500 text-white hover:bg-brand-600 shadow-brand;
@@ -63,7 +66,8 @@
     @apply rounded-2xl bg-white shadow-card p-5 dark:bg-steel-800 dark:shadow-card-dark;
   }
   .input {
-    @apply w-full rounded-xl border border-steel-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:bg-steel-800 dark:border-steel-700 dark:text-steel-100 dark:placeholder:text-steel-400;
+    /* text-base (16px) prevents iOS auto-zoom on focus */
+    @apply w-full rounded-xl border border-steel-200 bg-white px-4 py-3 text-base sm:text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:bg-steel-800 dark:border-steel-700 dark:text-steel-100 dark:placeholder:text-steel-400;
   }
   .label {
     @apply block text-xs font-semibold uppercase tracking-wider text-steel-500 dark:text-steel-400 mb-1.5;
@@ -77,4 +81,9 @@
   .badge-brand   { @apply badge bg-brand-500/15 text-brand-600; }
 
   .section { @apply max-w-7xl mx-auto px-5 lg:px-8; }
+
+  /* Bottom nav safe area for iPhone home indicator */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }

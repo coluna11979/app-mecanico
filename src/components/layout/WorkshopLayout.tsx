@@ -6,8 +6,8 @@ import { Logo } from '@/components/Logo';
 interface NavItem { to: string; icon: string; label: string }
 
 const PLATAFORMA: NavItem[] = [
-  { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'        },
-  { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar mecânicos' },
+  { to: '/oficina/dashboard', icon: '⚡', label: 'Demandas'         },
+  { to: '/oficina/buscar',    icon: '🔍', label: 'Buscar mecânicos' },
 ];
 
 const GESTAO: NavItem[] = [
@@ -16,8 +16,12 @@ const GESTAO: NavItem[] = [
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
 ];
 
-const FERRAMENTAS: NavItem[] = [
-  // futuras ferramentas aqui
+// Bottom tabs for mobile (most used sections)
+const BOTTOM_TABS: NavItem[] = [
+  { to: '/oficina/dashboard', icon: '⚡', label: 'Demandas' },
+  { to: '/oficina/buscar',    icon: '🔍', label: 'Buscar'   },
+  { to: '/oficina/os',        icon: '📋', label: 'OS'       },
+  { to: '/oficina/perfil',    icon: '🏪', label: 'Perfil'   },
 ];
 
 export default function WorkshopLayout({ children }: { children: ReactNode }) {
@@ -40,12 +44,12 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         />
       )}
 
-      {/* ── Sidebar ── */}
+      {/* ── Sidebar (desktop only) ── */}
       <aside className={`
         fixed top-0 left-0 h-full w-64 bg-steel-900 text-white z-40 flex flex-col
         transition-transform duration-300
         ${open ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:static lg:z-auto
+        lg:translate-x-0 lg:static lg:z-auto lg:shrink-0
       `}>
 
         {/* Logo */}
@@ -55,8 +59,6 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
-
-          {/* Plataforma */}
           <div>
             <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
               Plataforma
@@ -66,7 +68,6 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {/* Gestão da oficina */}
           <div>
             <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
               Gestão da oficina
@@ -76,25 +77,18 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {/* Ferramentas */}
           <div>
             <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
               Ferramentas
             </div>
-            {FERRAMENTAS.length === 0 ? (
-              <div className="mx-3 rounded-xl border border-dashed border-steel-700 px-4 py-3 text-center">
-                <div className="text-steel-500 text-xs">Em breve</div>
-                <div className="text-steel-600 text-[11px] mt-0.5">Relatórios, estoque e mais</div>
-              </div>
-            ) : (
-              <div className="space-y-0.5">
-                {FERRAMENTAS.map(item => <SideItem key={item.to} {...item} onClick={() => setOpen(false)} />)}
-              </div>
-            )}
+            <div className="mx-3 rounded-xl border border-dashed border-steel-700 px-4 py-3 text-center">
+              <div className="text-steel-500 text-xs">Em breve</div>
+              <div className="text-steel-600 text-[11px] mt-0.5">Relatórios, estoque e mais</div>
+            </div>
           </div>
         </nav>
 
-        {/* Usuário */}
+        {/* User footer */}
         <div className="border-t border-steel-800 p-4">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm shrink-0">
@@ -115,29 +109,52 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* ── Conteúdo principal ── */}
-      <div className="flex-1 flex flex-col min-w-0 lg:ml-0">
+      {/* ── Main content ── */}
+      <div className="flex-1 flex flex-col min-w-0">
 
         {/* Topbar mobile */}
-        <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-steel-200 flex items-center justify-between px-4 h-14">
+        <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-steel-200 flex items-center justify-between px-4 h-14 shrink-0">
           <button
             onClick={() => setOpen(true)}
-            className="h-9 w-9 rounded-xl bg-steel-100 grid place-items-center"
+            className="h-10 w-10 rounded-xl bg-steel-100 grid place-items-center"
+            aria-label="Menu"
           >
-            <span className="block w-5 space-y-1">
-              <span className="block h-0.5 bg-steel-700 rounded" />
-              <span className="block h-0.5 bg-steel-700 rounded" />
-              <span className="block h-0.5 bg-steel-700 rounded" />
-            </span>
+            <svg className="w-5 h-5 text-steel-700" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
           </button>
           <Logo />
-          <div className="w-9" />
+          {/* Avatar */}
+          <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm">
+            {initials}
+          </div>
         </header>
 
-        <main className="flex-1 p-6 lg:p-8">
+        {/* Page content */}
+        <main className="flex-1 p-4 lg:p-8 pb-24 lg:pb-8">
           {children}
         </main>
       </div>
+
+      {/* ── Bottom tab bar (mobile only) ── */}
+      <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-steel-200 z-20 lg:hidden safe-area-inset-bottom">
+        <div className="grid grid-cols-4 h-16">
+          {BOTTOM_TABS.map(tab => (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              className={({ isActive }) =>
+                `flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors ${
+                  isActive ? 'text-brand-500' : 'text-steel-400'
+                }`
+              }
+            >
+              <span className="text-xl leading-none">{tab.icon}</span>
+              <span>{tab.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      </nav>
     </div>
   );
 }
@@ -148,7 +165,7 @@ function SideItem({ to, icon, label, onClick }: NavItem & { onClick: () => void 
       to={to}
       onClick={onClick}
       className={({ isActive }) => `
-        flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+        flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all
         ${isActive
           ? 'bg-brand-500 text-white shadow-brand'
           : 'text-steel-400 hover:text-white hover:bg-steel-800'

@@ -65,6 +65,10 @@ export default {
         'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
         'slide-up': 'slideUp 250ms cubic-bezier(0.16, 1, 0.3, 1)',
       },
+      // Safe-area padding for iPhone notch/home indicator
+      padding: {
+        'safe-bottom': 'env(safe-area-inset-bottom)',
+      },
       keyframes: {
         pulseSoft: {
           '0%, 100%': { opacity: '1' },
