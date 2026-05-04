@@ -6,14 +6,15 @@ import type { Workshop } from '@/types/database';
 
 export default function WorkshopProfile() {
   const { user } = useAuth();
-  const [shop, setShop] = useState<Workshop | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [shop, setShop]       = useState<Workshop | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy]       = useState(false);
+  const [msg, setMsg]         = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     supabase.from('workshops').select('*').eq('profile_id', user.id).maybeSingle()
-      .then(({ data }) => setShop(data as Workshop));
+      .then(({ data }) => { setShop(data as Workshop); setLoading(false); });
   }, [user]);
 
   async function save(e: FormEvent) {
@@ -28,7 +29,24 @@ export default function WorkshopProfile() {
     setMsg(error ? error.message : 'Salvo!');
   }
 
-  if (!shop) return <WorkshopLayout><div className="text-steel-500">Carregando…</div></WorkshopLayout>;
+  if (loading) return (
+    <WorkshopLayout>
+      <div className="flex items-center gap-3 text-steel-500 py-10">
+        <div className="h-5 w-5 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+        Carregando perfil…
+      </div>
+    </WorkshopLayout>
+  );
+
+  if (!shop) return (
+    <WorkshopLayout>
+      <div className="card max-w-md text-center py-12">
+        <div className="text-4xl mb-3">🏪</div>
+        <h2 className="text-xl font-bold">Perfil não encontrado</h2>
+        <p className="text-sm text-steel-500 mt-2">Seu cadastro de oficina ainda não foi criado. Contate o suporte.</p>
+      </div>
+    </WorkshopLayout>
+  );
 
   return (
     <WorkshopLayout>

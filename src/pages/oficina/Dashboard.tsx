@@ -5,24 +5,36 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Workshop } from '@/types/database';
 
-type NewJob = { title: string; description: string; price_per_hour: string; max_hours: string; scheduled_at: string };
+type NewJob = {
+  title: string; description: string;
+  price_per_hour: string; max_hours: string; scheduled_at: string;
+};
+type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
+type JobMode = 'open' | 'direct';
+
 const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '' };
 
 export default function WorkshopDashboard() {
   const { user } = useAuth();
-  const [shop, setShop]       = useState<Workshop | null>(null);
-  const [active, setActive]   = useState<Job[]>([]);
-  const [history, setHistory] = useState<Job[]>([]);
-  const [modal, setModal]     = useState(false);
-  const [form, setForm]       = useState<NewJob>(EMPTY);
-  const [saving, setSaving]   = useState(false);
+  const [shop, setShop]         = useState<Workshop | null>(null);
+  const [active, setActive]     = useState<Job[]>([]);
+  const [history, setHistory]   = useState<Job[]>([]);
+  const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
+  const [modal, setModal]       = useState(false);
+  const [form, setForm]         = useState<NewJob>(EMPTY);
+  const [mode, setMode]         = useState<JobMode>('open');
+  const [pickedMechanic, setPickedMechanic] = useState<string>('');
+  const [mechSearch, setMechSearch] = useState('');
+  const [saving, setSaving]     = useState(false);
 
   useEffect(() => { if (user) load(); }, [user]);
 
   async function load() {
     const { data: w } = await supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle();
     setShop(w as Workshop);
-    if (w?.id) await fetchJobs(w.id);
+    if (w?.id) {
+      await Promise.all([fetchJobs(w.id), fetchMechanics()]);
+    }
   }
 
   async function fetchJobs(workshopId: string) {
@@ -36,26 +48,50 @@ export default function WorkshopDashboard() {
     setHistory((h as Job[]) ?? []);
   }
 
+  async function fetchMechanics() {
+    const { data } = await supabase
+      .from('mechanics')
+      .select('id, rating, total_jobs, hourly_rate, is_available, profile:profiles!inner(full_name, status)')
+      .eq('profile.status', 'approved')
+      .eq('is_available', true)
+      .order('rating', { ascending: false });
+    const list = (data ?? []).map((m: any) => ({
+      id: m.id,
+      name: m.profile.full_name,
+      rating: m.rating,
+      total_jobs: m.total_jobs,
+      hourly_rate: m.hourly_rate,
+    }));
+    setMechanics(list);
+  }
+
+  function resetModal() {
+    setModal(false); setForm(EMPTY);
+    setMode('open'); setPickedMechanic(''); setMechSearch('');
+  }
+
   async function createJob(e: FormEvent) {
     e.preventDefault();
     if (!shop) return;
+    if (mode === 'direct' && !pickedMechanic) return;
     setSaving(true);
     const pph = Number(form.price_per_hour);
     const mh  = Number(form.max_hours);
+    const isDirect = mode === 'direct' && !!pickedMechanic;
     const payload: Record<string, unknown> = {
       workshop_id:    shop.id,
       title:          form.title.trim(),
       description:    form.description.trim(),
       price_per_hour: pph,
       max_hours:      mh,
-      price:          pph * mh,   // cap = escrow amount
-      status:         'open',
+      price:          pph * mh,
+      status:         isDirect ? 'assigned' : 'open',
+      mechanic_id:    isDirect ? pickedMechanic : null,
     };
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
     await supabase.from('jobs').insert(payload);
     setSaving(false);
-    setModal(false);
-    setForm(EMPTY);
+    resetModal();
     await fetchJobs(shop.id);
   }
 
@@ -65,6 +101,9 @@ export default function WorkshopDashboard() {
   }
 
   const estimated = Number(form.price_per_hour) * Number(form.max_hours);
+  const filteredMechanics = mechanics.filter(m =>
+    m.name.toLowerCase().includes(mechSearch.toLowerCase())
+  );
 
   return (
     <WorkshopLayout>
@@ -149,9 +188,7 @@ export default function WorkshopDashboard() {
                 </div>
                 <div className="text-right">
                   <div className="font-bold font-display">R$ {j.price.toFixed(2)}</div>
-                  {j.actual_hours != null && (
-                    <div className="text-xs text-signal-600">real</div>
-                  )}
+                  {j.actual_hours != null && <div className="text-xs text-signal-600">final</div>}
                 </div>
               </div>
             ))}
@@ -159,27 +196,27 @@ export default function WorkshopDashboard() {
         )}
       </section>
 
-      {/* Modal nova demanda */}
+      {/* ── Modal nova demanda ── */}
       {modal && (
-        <div className="fixed inset-0 bg-steel-900/70 grid place-items-center p-4 z-50" onClick={() => setModal(false)}>
+        <div className="fixed inset-0 bg-steel-900/70 grid place-items-center p-4 z-50" onClick={resetModal}>
           <form
             onClick={e => e.stopPropagation()}
             onSubmit={createJob}
-            className="card max-w-lg w-full space-y-4"
+            className="card max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto"
           >
             <div>
               <h2 className="text-2xl font-bold tracking-tight">Nova demanda</h2>
-              <p className="text-sm text-steel-500 mt-1">
-                Mecânicos disponíveis verão e poderão aceitar.
-              </p>
+              <p className="text-sm text-steel-500 mt-1">Descreva o serviço e escolha como publicar.</p>
             </div>
 
+            {/* Título */}
             <div>
               <label className="label">Título do serviço *</label>
               <input className="input" required placeholder="Ex.: Troca de pastilha de freio — Civic"
                 value={form.title} onChange={set('title')} />
             </div>
 
+            {/* Descrição */}
             <div>
               <label className="label">Descrição *</label>
               <textarea className="input" rows={3} required
@@ -187,7 +224,7 @@ export default function WorkshopDashboard() {
                 value={form.description} onChange={set('description')} />
             </div>
 
-            {/* Precificação por hora */}
+            {/* Precificação */}
             <div>
               <label className="label">Precificação por hora</label>
               <div className="grid grid-cols-2 gap-3">
@@ -216,6 +253,59 @@ export default function WorkshopDashboard() {
               )}
             </div>
 
+            {/* Modo de publicação */}
+            <div>
+              <label className="label">Como publicar</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
+                  className={`rounded-xl border-2 p-3 text-left transition ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200 hover:border-steel-300'}`}>
+                  <div className="text-lg mb-1">📢</div>
+                  <div className="font-semibold text-sm">Para todos</div>
+                  <div className="text-xs text-steel-500 mt-0.5">Mecânicos disponíveis verão e poderão aceitar</div>
+                </button>
+                <button type="button" onClick={() => setMode('direct')}
+                  className={`rounded-xl border-2 p-3 text-left transition ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200 hover:border-steel-300'}`}>
+                  <div className="text-lg mb-1">🎯</div>
+                  <div className="font-semibold text-sm">Mecânico específico</div>
+                  <div className="text-xs text-steel-500 mt-0.5">Convide diretamente e inicie o chat</div>
+                </button>
+              </div>
+            </div>
+
+            {/* Picker de mecânico */}
+            {mode === 'direct' && (
+              <div>
+                <label className="label">Escolher mecânico *</label>
+                <input className="input mb-2" placeholder="Buscar por nome…"
+                  value={mechSearch} onChange={e => setMechSearch(e.target.value)} />
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {filteredMechanics.length === 0 ? (
+                    <div className="text-sm text-steel-400 text-center py-4">
+                      Nenhum mecânico disponível no momento
+                    </div>
+                  ) : filteredMechanics.map(m => (
+                    <button key={m.id} type="button"
+                      onClick={() => setPickedMechanic(m.id)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition ${
+                        pickedMechanic === m.id ? 'border-brand-500 bg-brand-50' : 'border-steel-100 hover:border-steel-200'
+                      }`}>
+                      <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
+                        {m.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold truncate">{m.name}</div>
+                        <div className="text-xs text-steel-500">
+                          ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                        </div>
+                      </div>
+                      {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Data */}
             <div>
               <label className="label">Data / hora desejada</label>
               <input className="input" type="datetime-local"
@@ -223,11 +313,9 @@ export default function WorkshopDashboard() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <button type="button" onClick={() => setModal(false)} className="btn-ghost flex-1">
-                Cancelar
-              </button>
-              <button className="btn-primary flex-1 btn-lg" disabled={saving}>
-                {saving ? 'Publicando…' : 'Publicar demanda'}
+              <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>
+              <button className="btn-primary flex-1 btn-lg" disabled={saving || (mode === 'direct' && !pickedMechanic)}>
+                {saving ? 'Publicando…' : mode === 'direct' ? 'Convidar mecânico' : 'Publicar demanda'}
               </button>
             </div>
           </form>
