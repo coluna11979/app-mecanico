@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import { supabase } from '@/lib/supabase';
@@ -14,6 +13,27 @@ const PIX_NAME = 'José Pedrosa Machado Filho';
 type Step = { label: string; done: boolean; active: boolean };
 type Tab  = 'progresso' | 'chat';
 
+/* Haversine ETA (reutiliza a do painel do mecânico) */
+function distKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) *
+    Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function etaLabel(km: number) {
+  const mins = Math.round((km / 30) * 60);
+  if (mins < 1)  return 'Chegando!';
+  if (mins < 60) return `~${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `~${h}h${m > 0 ? ` ${m}min` : ''}`;
+}
+
 export default function WorkshopTracking() {
   const { id } = useParams();
   const [job, setJob]               = useState<Job | null>(null);
@@ -26,6 +46,7 @@ export default function WorkshopTracking() {
   const [ratingNote, setRatingNote] = useState('');
   const [hovered, setHovered]       = useState(0);
   const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
+  const [sheetOpen, setSheetOpen]   = useState(false); // mobile bottom-sheet
   const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => { if (id) load(); }, [id]);
@@ -45,7 +66,7 @@ export default function WorkshopTracking() {
     }
   }
 
-  // Realtime — status do job (detecta arrived_at, pix_paid_at, status)
+  /* Realtime — status do job */
   useEffect(() => {
     if (!id) return;
     const ch = supabase.channel(`job:${id}:oficina`)
@@ -57,19 +78,18 @@ export default function WorkshopTracking() {
 
   const live = useMechanicLive(mech?.id ?? null, id);
 
-  /* ── Remove rota quando mecânico já chegou ── */
+  /* Remove rota quando mecânico chegou */
   useEffect(() => {
     if (job?.arrived_at || job?.status === 'in_progress' || job?.status === 'completed') {
       setRouteCoords(null);
     }
   }, [job?.arrived_at, job?.status]);
 
-  /* ── Busca rota da posição do mecânico até a oficina ── */
+  /* Busca rota Mapbox Directions */
   useEffect(() => {
     if (!live || !shop?.lat || !shop?.lng) return;
     if (job?.arrived_at || job?.status !== 'assigned') return;
 
-    // Só refaz se mecânico se moveu > 30 metros
     const prev = lastRouteFetch.current;
     if (prev) {
       const dlat = Math.abs(prev.lat - live.lat);
@@ -121,95 +141,159 @@ export default function WorkshopTracking() {
     const arrived = !!job?.arrived_at;
     const pixPaid = !!job?.pix_paid_at;
     return [
-      { label: 'Contratado',             done: true,                                                   active: false },
-      { label: 'A caminho',              done: arrived || ['in_progress','completed'].includes(s),      active: s === 'assigned' && !arrived },
-      { label: 'Chegou — aguard. PIX',   done: pixPaid,                                                active: arrived && !pixPaid },
-      { label: 'Em serviço',             done: s === 'completed',                                       active: s === 'in_progress' },
-      { label: 'Finalizado',             done: !!job?.workshop_confirmed_at,                            active: s === 'completed' && !job?.workshop_confirmed_at },
+      { label: 'Contratado',           done: true,                                                   active: false },
+      { label: 'A caminho',            done: arrived || ['in_progress','completed'].includes(s),      active: s === 'assigned' && !arrived },
+      { label: 'Chegou — aguard. PIX', done: pixPaid,                                                active: arrived && !pixPaid },
+      { label: 'Em serviço',           done: s === 'completed',                                       active: s === 'in_progress' },
+      { label: 'Finalizado',           done: !!job?.workshop_confirmed_at,                            active: s === 'completed' && !job?.workshop_confirmed_at },
     ];
   })();
 
-  const cap         = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
-  const finalPrice  = job?.actual_hours != null ? (job.actual_hours * (job.price_per_hour ?? 0)) : null;
+  const cap        = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
+  const finalPrice = job?.actual_hours != null ? (job.actual_hours * (job.price_per_hour ?? 0)) : null;
   const showPixModal = !!job?.arrived_at && !job?.pix_paid_at && job?.status === 'assigned';
 
-  const center: [number, number] = live
-    ? [live.lat, live.lng]
-    : shop?.lat && shop?.lng ? [shop.lat, shop.lng] : [-23.55, -46.63];
+  /* ETA para o badge no mapa */
+  const km = live && shop?.lat && shop?.lng
+    ? distKm(live.lat, live.lng, shop.lat, shop.lng)
+    : null;
+  const eta = km !== null && !job?.arrived_at && job?.status === 'assigned' ? etaLabel(km) : null;
 
+  /* Centro dinâmico: mostra mecânico + oficina */
+  const mapCenter: [number, number] =
+    live && shop?.lat && shop?.lng
+      ? [(live.lat + shop.lat) / 2, (live.lng + shop.lng) / 2]
+      : shop?.lat && shop?.lng
+        ? [shop.lat, shop.lng]
+        : live
+          ? [live.lat, live.lng]
+          : [-23.55, -46.63];
+
+  const mapZoom = km !== null && km > 5 ? 11 : km !== null && km > 2 ? 12 : 13;
+
+  /* ── RENDER ── */
   return (
-    <WorkshopLayout>
-      <Link to="/oficina/dashboard" className="text-sm text-steel-500 hover:text-brand-500">← Voltar</Link>
-      <h1 className="text-3xl font-bold tracking-tight mt-1 mb-6">{job?.title ?? 'Carregando…'}</h1>
+    <div className="fixed inset-0 flex flex-col bg-steel-900">
 
-      <div className="grid lg:grid-cols-[3fr_2fr] gap-5" style={{ height: 640 }}>
+      {/* ── Top bar (flutuante sobre o mapa) ── */}
+      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between gap-2 p-3">
+        <Link
+          to="/oficina/dashboard"
+          className="bg-white/90 backdrop-blur rounded-full px-4 py-2 text-sm font-semibold text-steel-800 shadow"
+        >
+          ← Voltar
+        </Link>
 
-        {/* Mapa */}
-        <div className="rounded-2xl overflow-hidden shadow-card relative">
-          <MapView
-            center={center}
-            zoom={14}
-            followMechanic={false}
-            liveMechanic={live ? { lat: live.lat, lng: live.lng } : undefined}
-            routeCoords={routeCoords ?? undefined}
-            markers={shop?.lat && shop?.lng
-              ? [{ id: 'shop', lat: shop.lat, lng: shop.lng, label: '🏭', color: '#0B1117' }]
-              : []}
-            styleUrl="mapbox://styles/mapbox/streets-v12"
-          />
+        <div className="flex-1 min-w-0 mx-2">
+          <div className="bg-white/90 backdrop-blur rounded-2xl px-3 py-1.5 shadow text-center truncate">
+            <span className="text-sm font-bold text-steel-800 truncate">{job?.title ?? 'Carregando…'}</span>
+          </div>
         </div>
 
-        {/* Painel lateral */}
-        <aside className="card flex flex-col min-h-0">
-
-          {/* Info mecânico */}
-          {mech && (
-            <div className="flex items-center gap-3 pb-4 border-b border-steel-100">
-              <div className="h-12 w-12 rounded-full bg-brand-500 grid place-items-center text-white font-bold shrink-0">
-                {mech.profile.full_name.charAt(0)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold truncate">{mech.profile.full_name}</div>
-                <div className="text-xs text-steel-500">★ {mech.rating.toFixed(1)} · {mech.total_jobs} jobs</div>
-                {live && <div className="text-xs text-steel-400">Atualizado {new Date(live.at).toLocaleTimeString('pt-BR')}</div>}
-              </div>
-              {mech.profile.phone && (
-                <a href={`tel:${mech.profile.phone}`} className="btn-secondary !py-2 !px-3 shrink-0">📞</a>
-              )}
-            </div>
-          )}
-
-          {/* Preço */}
-          {job && (
-            <div className="flex items-center justify-between text-sm py-3 border-b border-steel-100">
-              <span className="text-steel-500">R$ {job.price_per_hour?.toFixed(0)}/h · máx {job.max_hours}h</span>
-              <span className="font-bold font-display">
-                {finalPrice != null
-                  ? <>R$ {finalPrice.toFixed(2)} <span className="text-xs text-signal-600 font-semibold">final</span></>
-                  : <>até R$ {cap.toFixed(0)}</>
-                }
-              </span>
-            </div>
-          )}
-
-          {/* Tabs */}
-          <div className="flex gap-1 mt-4 mb-3 bg-steel-100 rounded-xl p-1">
-            {(['progresso', 'chat'] as Tab[]).map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`flex-1 rounded-lg py-1.5 text-sm font-semibold capitalize transition ${
-                  tab === t ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'
-                }`}
-              >
-                {t === 'chat' ? '💬 Chat' : '📋 Progresso'}
-              </button>
-            ))}
+        {/* ETA badge */}
+        {eta && (
+          <div className="bg-steel-900/90 backdrop-blur border border-steel-700 rounded-2xl px-3 py-1.5 text-center shadow-xl shrink-0">
+            <div className="text-[9px] text-brand-400 font-bold uppercase tracking-wider">ETA</div>
+            <div className="text-lg font-bold text-white leading-none">{eta}</div>
+            {km !== null && <div className="text-[10px] text-steel-400">{km.toFixed(1)} km</div>}
           </div>
+        )}
+      </div>
 
-          {/* Conteúdo da tab */}
-          {tab === 'progresso' ? (
-            <div className="flex flex-col flex-1">
+      {/* ── Mapa (ocupa tudo) ── */}
+      <div className="flex-1">
+        <MapView
+          center={mapCenter}
+          zoom={mapZoom}
+          followMechanic={false}
+          liveMechanic={live ? { lat: live.lat, lng: live.lng } : undefined}
+          routeCoords={routeCoords ?? undefined}
+          markers={shop?.lat && shop?.lng
+            ? [{ id: 'shop', lat: shop.lat, lng: shop.lng, label: '🏭', color: '#0B1117' }]
+            : []}
+          styleUrl="mapbox://styles/mapbox/streets-v12"
+        />
+      </div>
+
+      {/* ── Painel inferior (bottom sheet) ── */}
+      <div className="bg-white border-t border-steel-200 shadow-2xl z-10">
+
+        {/* Handle + header */}
+        <button
+          onClick={() => setSheetOpen(o => !o)}
+          className="w-full flex flex-col items-center pt-2 pb-1 touch-manipulation"
+          aria-label="Expandir painel"
+        >
+          <div className="w-10 h-1 rounded-full bg-steel-300 mb-2" />
+          <div className="flex items-center justify-between w-full px-4 pb-2">
+            {/* Mechanic info compact */}
+            {mech ? (
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm shrink-0">
+                  {mech.profile.full_name.charAt(0)}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-bold text-sm truncate">{mech.profile.full_name}</div>
+                  <div className="text-xs text-steel-500">★ {mech.rating.toFixed(1)} · {mech.total_jobs} jobs</div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm font-semibold text-steel-600">{job?.title ?? 'Carregando…'}</div>
+            )}
+
+            <div className="flex items-center gap-2 shrink-0 ml-2">
+              {mech?.profile.phone && (
+                <a href={`tel:${mech.profile.phone}`}
+                  className="h-9 w-9 rounded-full bg-steel-100 grid place-items-center text-lg"
+                  onClick={e => e.stopPropagation()}>
+                  📞
+                </a>
+              )}
+              <span className="text-steel-400 text-lg">{sheetOpen ? '▼' : '▲'}</span>
+            </div>
+          </div>
+        </button>
+
+        {/* Expandable content */}
+        {sheetOpen && (
+          <div className="px-4 pb-4 space-y-4 max-h-[60vh] overflow-y-auto">
+
+            {/* Preço */}
+            {job && (
+              <div className="flex items-center justify-between text-sm py-2 border-b border-steel-100">
+                <span className="text-steel-500">R$ {job.price_per_hour?.toFixed(0)}/h · máx {job.max_hours}h</span>
+                <span className="font-bold">
+                  {finalPrice != null
+                    ? <>R$ {finalPrice.toFixed(2)} <span className="text-xs text-signal-600 font-semibold">final</span></>
+                    : <>até R$ {cap.toFixed(0)}</>}
+                </span>
+              </div>
+            )}
+
+            {/* Live update */}
+            {live && (
+              <div className="text-xs text-steel-400 text-right -mt-2">
+                Pos. atualizada {new Date(live.at).toLocaleTimeString('pt-BR')}
+              </div>
+            )}
+
+            {/* Tabs */}
+            <div className="flex gap-1 bg-steel-100 rounded-xl p-1">
+              {(['progresso', 'chat'] as Tab[]).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`flex-1 rounded-lg py-1.5 text-sm font-semibold capitalize transition touch-manipulation ${
+                    tab === t ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'
+                  }`}
+                >
+                  {t === 'chat' ? '💬 Chat' : '📋 Progresso'}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
+            {tab === 'progresso' ? (
               <div className="space-y-3">
                 {steps.map((s, i) => (
                   <div key={i} className="flex items-center gap-3">
@@ -227,26 +311,23 @@ export default function WorkshopTracking() {
                     </div>
                   </div>
                 ))}
-              </div>
 
-              {job?.status === 'completed' && !job.workshop_confirmed_at && (
-                <div className="mt-auto pt-4 border-t border-steel-200 space-y-3">
-                  {job.actual_hours != null && (
-                    <div className="bg-signal-500/10 rounded-xl px-3 py-2 text-sm text-signal-700 font-semibold">
-                      {job.actual_hours}h × R$ {job.price_per_hour}/h = R$ {(job.actual_hours * (job.price_per_hour ?? 0)).toFixed(2)}
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm font-semibold text-steel-700 mb-2">
-                      Avalie o mecânico para liberar o pagamento
-                    </p>
-                    <div className="flex gap-1 mb-3">
+                {/* Confirmação + avaliação */}
+                {job?.status === 'completed' && !job.workshop_confirmed_at && (
+                  <div className="pt-3 border-t border-steel-200 space-y-3">
+                    {job.actual_hours != null && (
+                      <div className="bg-signal-500/10 rounded-xl px-3 py-2 text-sm text-signal-700 font-semibold">
+                        {job.actual_hours}h × R$ {job.price_per_hour}/h = R$ {(job.actual_hours * (job.price_per_hour ?? 0)).toFixed(2)}
+                      </div>
+                    )}
+                    <p className="text-sm font-semibold text-steel-700">Avalie o mecânico para liberar o pagamento</p>
+                    <div className="flex gap-1">
                       {[1,2,3,4,5].map(n => (
                         <button key={n} type="button"
                           onMouseEnter={() => setHovered(n)}
                           onMouseLeave={() => setHovered(0)}
                           onClick={() => setRating(n)}
-                          className="text-2xl transition hover:scale-110">
+                          className="text-2xl transition hover:scale-110 touch-manipulation">
                           {n <= (hovered || rating) ? '★' : '☆'}
                         </button>
                       ))}
@@ -263,42 +344,41 @@ export default function WorkshopTracking() {
                       value={ratingNote}
                       onChange={e => setRatingNote(e.target.value)}
                     />
+                    <button
+                      onClick={confirmJob}
+                      disabled={confirming || rating === 0}
+                      className="btn-primary w-full disabled:opacity-50 touch-manipulation"
+                    >
+                      {confirming ? '…' : rating === 0 ? 'Selecione uma avaliação' : 'Confirmar e liberar pagamento'}
+                    </button>
                   </div>
-                  <button
-                    onClick={confirmJob}
-                    disabled={confirming || rating === 0}
-                    className="btn-primary w-full disabled:opacity-50"
-                  >
-                    {confirming ? '…' : rating === 0 ? 'Selecione uma avaliação' : 'Confirmar e liberar pagamento'}
-                  </button>
-                </div>
-              )}
+                )}
 
-              {job?.status === 'completed' && job.workshop_confirmed_at && job.mechanic_rating && (
-                <div className="mt-auto pt-4 border-t border-steel-100">
-                  <div className="text-xs text-steel-400 mb-1">Sua avaliação do mecânico</div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-brand-500 text-lg">{'★'.repeat(job.mechanic_rating)}{'☆'.repeat(5 - job.mechanic_rating)}</div>
-                    <span className="text-sm font-semibold">{['','Ruim','Regular','Bom','Ótimo','Excelente'][job.mechanic_rating]}</span>
+                {job?.status === 'completed' && job.workshop_confirmed_at && job.mechanic_rating && (
+                  <div className="pt-3 border-t border-steel-100">
+                    <div className="text-xs text-steel-400 mb-1">Sua avaliação do mecânico</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-brand-500 text-lg">{'★'.repeat(job.mechanic_rating)}{'☆'.repeat(5 - job.mechanic_rating)}</div>
+                      <span className="text-sm font-semibold">{['','Ruim','Regular','Bom','Ótimo','Excelente'][job.mechanic_rating]}</span>
+                    </div>
+                    {job.mechanic_rating_note && <p className="text-xs text-steel-500 mt-1 italic">"{job.mechanic_rating_note}"</p>}
                   </div>
-                  {job.mechanic_rating_note && <p className="text-xs text-steel-500 mt-1 italic">"{job.mechanic_rating_note}"</p>}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex-1 min-h-0 -mx-5 -mb-5">
-              {id && <ChatBox jobId={id} otherName={mech?.profile.full_name ?? 'Mecânico'} />}
-            </div>
-          )}
-
-        </aside>
+                )}
+              </div>
+            ) : (
+              <div className="h-64">
+                {id && <ChatBox jobId={id} otherName={mech?.profile.full_name ?? 'Mecânico'} />}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Modal PIX — aparece quando mecânico chega */}
+      {/* ── Modal PIX — aparece quando mecânico chega ── */}
       {showPixModal && (
-        <div className="fixed inset-0 bg-steel-900/80 grid place-items-center p-4 z-50">
-          <div className="card max-w-sm w-full space-y-5 border-2 border-brand-500">
-            <div className="text-center">
+        <div className="fixed inset-0 bg-steel-900/80 grid place-items-end sm:place-items-center p-0 sm:p-4 z-50">
+          <div className="card w-full sm:max-w-sm space-y-5 border-2 border-brand-500 rounded-t-3xl sm:rounded-2xl rounded-b-none sm:rounded-b-2xl max-h-[90vh] overflow-y-auto">
+            <div className="text-center pt-2">
               <div className="text-4xl mb-3">🔔</div>
               <h2 className="text-xl font-bold">Mecânico chegou!</h2>
               <p className="text-sm text-steel-500 mt-1">
@@ -306,7 +386,6 @@ export default function WorkshopTracking() {
               </p>
             </div>
 
-            {/* Valor */}
             <div className="bg-brand-50 border border-brand-200 rounded-2xl p-4 text-center">
               <div className="text-xs text-brand-600 uppercase tracking-wider font-semibold mb-1">Valor a pagar (teto)</div>
               <div className="text-4xl font-bold font-display text-brand-700">R$ {cap.toFixed(2)}</div>
@@ -315,14 +394,13 @@ export default function WorkshopTracking() {
               </div>
             </div>
 
-            {/* Chave PIX */}
             <div className="bg-steel-50 rounded-2xl p-4 space-y-2">
               <div className="text-xs text-steel-500 uppercase tracking-wider font-semibold">Chave PIX (Telefone)</div>
               <div className="flex items-center justify-between gap-3">
                 <span className="font-bold font-display text-lg tracking-widest">{PIX_KEY}</span>
                 <button
                   onClick={() => navigator.clipboard.writeText(PIX_KEY)}
-                  className="btn-secondary !py-1.5 !px-3 text-xs shrink-0"
+                  className="btn-secondary !py-1.5 !px-3 text-xs shrink-0 touch-manipulation"
                 >
                   Copiar
                 </button>
@@ -337,13 +415,13 @@ export default function WorkshopTracking() {
             <button
               onClick={confirmPixPayment}
               disabled={payingPix}
-              className="btn-primary w-full btn-lg"
+              className="btn-primary w-full btn-lg touch-manipulation"
             >
               {payingPix ? 'Confirmando…' : '✅ Confirmei o pagamento PIX'}
             </button>
           </div>
         </div>
       )}
-    </WorkshopLayout>
+    </div>
   );
 }

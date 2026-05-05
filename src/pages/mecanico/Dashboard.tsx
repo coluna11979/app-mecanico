@@ -28,6 +28,9 @@ export default function MechanicDashboard() {
   const [submitting, setSubmitting]       = useState(false);
   const [toasts, setToasts]               = useState<Toast[]>([]);
   const toastTimer = useRef<Record<string, number>>({});
+  const [showEarnings, setShowEarnings]   = useState(() =>
+    localStorage.getItem('mec_earnings_dismissed') !== '1'
+  );
 
   useEffect(() => { if (user) load(); }, [user]);
 
@@ -154,6 +157,42 @@ export default function MechanicDashboard() {
             </button>
           </div>
         </div>
+
+        {/* ── Card: Como funciona seu ganho (aparece 1 vez, dismissível) ── */}
+        {showEarnings && (
+          <div className="card !bg-gradient-to-br from-brand-600 to-brand-700 border border-brand-500/40 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-10 translate-x-10 pointer-events-none" />
+            <button
+              onClick={() => { setShowEarnings(false); localStorage.setItem('mec_earnings_dismissed', '1'); }}
+              className="absolute top-3 right-3 text-white/50 hover:text-white text-lg leading-none"
+              aria-label="Fechar"
+            >✕</button>
+            <div className="relative">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-200 mb-2">💰 Como funciona seu ganho</div>
+              <p className="text-white text-sm leading-relaxed mb-4">
+                Você define seu valor por hora. A plataforma cobra{' '}
+                <span className="font-bold text-white bg-white/20 px-1.5 py-0.5 rounded">18%</span>{' '}
+                apenas quando o serviço é concluído e aprovado. Sem mensalidade, sem taxa de cadastro, sem custo fixo.
+              </p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                {[
+                  ['R$ 100/h', '2h de serviço', 'R$ 200 bruto'],
+                  ['18%', 'Taxa plataforma', '– R$ 36'],
+                  ['R$ 164', 'Você recebe', 'via PIX'],
+                ].map(([n, l, s]) => (
+                  <div key={l} className="bg-white/10 rounded-xl py-2 px-1">
+                    <div className="text-white font-bold text-base leading-none">{n}</div>
+                    <div className="text-brand-200 text-[10px] mt-1 leading-tight">{l}</div>
+                    <div className="text-white/60 text-[10px]">{s}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-brand-200 text-xs mt-3">
+                ✓ Sem surpresa · ✓ Só paga se trabalhar · ✓ PIX liberado rápido
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Jobs em andamento */}
         {activeJobs.length > 0 && (

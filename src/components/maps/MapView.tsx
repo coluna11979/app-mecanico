@@ -27,50 +27,53 @@ export default function MapView({
 }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const mapRef        = useRef<mapboxgl.Map | null>(null);
+  const mapLoaded     = useRef(false);          // true after map 'load' fires exactly once
   const markerRefs    = useRef<Record<string, mapboxgl.Marker>>({});
   const liveMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const initialCenter = useRef(center);
-  // Guarda última routeCoords para aplicar após o style carregar
   const pendingRoute  = useRef<[number, number][] | null>(null);
 
-  /* ── helper: aplica rota no mapa (requer style carregado) ── */
+  /* ── helper: draw / update / remove the route lines ── */
   function applyRoute(m: mapboxgl.Map, coords: [number, number][]) {
     const geojson: GeoJSON.Feature<GeoJSON.LineString> = {
       type: 'Feature',
       properties: {},
       geometry: { type: 'LineString', coordinates: coords },
     };
-    try {
-      // Sombra
-      if (m.getSource('route-bg')) {
-        (m.getSource('route-bg') as mapboxgl.GeoJSONSource).setData(geojson);
-      } else {
-        m.addSource('route-bg', { type: 'geojson', data: geojson });
-        m.addLayer({
-          id: 'route-bg', type: 'line', source: 'route-bg',
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': '#000', 'line-width': 10, 'line-opacity': 0.18 },
-        });
-      }
-      // Linha laranja
-      if (m.getSource('route')) {
-        (m.getSource('route') as mapboxgl.GeoJSONSource).setData(geojson);
-      } else {
-        m.addSource('route', { type: 'geojson', data: geojson });
-        m.addLayer({
-          id: 'route', type: 'line', source: 'route',
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': '#FF5C0A', 'line-width': 5, 'line-opacity': 0.95 },
-        });
-      }
-      pendingRoute.current = null;
-    } catch {
-      // style ainda não carregou — salva como pendente
-      pendingRoute.current = coords;
+
+    // Shadow line
+    if (m.getSource('route-bg')) {
+      (m.getSource('route-bg') as mapboxgl.GeoJSONSource).setData(geojson);
+    } else {
+      m.addSource('route-bg', { type: 'geojson', data: geojson });
+      m.addLayer({
+        id: 'route-bg', type: 'line', source: 'route-bg',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#000', 'line-width': 10, 'line-opacity': 0.18 },
+      });
+    }
+
+    // Orange line
+    if (m.getSource('route')) {
+      (m.getSource('route') as mapboxgl.GeoJSONSource).setData(geojson);
+    } else {
+      m.addSource('route', { type: 'geojson', data: geojson });
+      m.addLayer({
+        id: 'route', type: 'line', source: 'route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#FF5C0A', 'line-width': 5, 'line-opacity': 0.95 },
+      });
     }
   }
 
-  /* ── Inicializa mapa ── */
+  function clearRoute(m: mapboxgl.Map) {
+    try { if (m.getLayer('route'))    m.removeLayer('route');    } catch { /* ok */ }
+    try { if (m.getLayer('route-bg')) m.removeLayer('route-bg'); } catch { /* ok */ }
+    try { if (m.getSource('route'))   m.removeSource('route');   } catch { /* ok */ }
+    try { if (m.getSource('route-bg'))m.removeSource('route-bg');} catch { /* ok */ }
+  }
+
+  /* ── Initialise map (once) ── */
   useEffect(() => {
     let alive = true;
 
@@ -90,10 +93,14 @@ export default function MapView({
 
       m.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
 
-      // Quando o style carregar, aplica rota pendente
-      m.on('styledata', () => {
+      // Use once('load') — fires exactly once when style + tiles are fully ready
+      m.once('load', () => {
+        if (!alive) return;
+        mapLoaded.current = true;
+        // Apply any route that arrived before the map was ready
         if (pendingRoute.current?.length) {
           applyRoute(m, pendingRoute.current);
+          pendingRoute.current = null;
         }
       });
 
@@ -102,6 +109,7 @@ export default function MapView({
 
     return () => {
       alive = false;
+      mapLoaded.current = false;
       pendingRoute.current = null;
       liveMarkerRef.current = null;
       mapRef.current?.remove();
@@ -110,7 +118,7 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ── Marcadores estáticos (oficina, etc.) ── */
+  /* ── Static markers (workshop, etc.) ── */
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
@@ -127,38 +135,28 @@ export default function MapView({
     });
   }, [markers]);
 
-  /* ── Rota: aplica quando chega ou atualiza ── */
+  /* ── Route: apply or clear when routeCoords changes ── */
   useEffect(() => {
     const m = mapRef.current;
 
-    // Rota removida (chegou na oficina)
     if (!routeCoords?.length) {
-      if (m) {
-        try { if (m.getLayer('route'))    m.removeLayer('route');    } catch { /* ok */ }
-        try { if (m.getLayer('route-bg')) m.removeLayer('route-bg'); } catch { /* ok */ }
-        try { if (m.getSource('route'))    m.removeSource('route');    } catch { /* ok */ }
-        try { if (m.getSource('route-bg')) m.removeSource('route-bg'); } catch { /* ok */ }
-      }
+      // Clear route
       pendingRoute.current = null;
+      if (m && mapLoaded.current) clearRoute(m);
       return;
     }
 
-    if (!m) {
-      // Mapa ainda não criado — salva para aplicar depois
+    if (!m || !mapLoaded.current) {
+      // Map not ready yet — queue it
       pendingRoute.current = routeCoords;
       return;
     }
 
-    if (m.isStyleLoaded()) {
-      applyRoute(m, routeCoords);
-    } else {
-      // Style ainda carregando (comum no mobile) — salva como pendente
-      pendingRoute.current = routeCoords;
-    }
+    applyRoute(m, routeCoords);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeCoords]);
 
-  /* ── Marcador do mecânico + câmera ── */
+  /* ── Live mechanic marker + camera follow ── */
   useEffect(() => {
     const m = mapRef.current;
     if (!m || !liveMechanic) return;
@@ -166,6 +164,7 @@ export default function MapView({
     const lngLat: [number, number] = [liveMechanic.lng, liveMechanic.lat];
 
     if (!liveMarkerRef.current) {
+      // Inject ping keyframe once
       if (!document.getElementById('map-ping-style')) {
         const s = document.createElement('style');
         s.id = 'map-ping-style';
@@ -190,7 +189,7 @@ export default function MapView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveMechanic]);
 
-  /* ── Atualiza centro quando não há liveMechanic ── */
+  /* ── Re-centre when no live mechanic ── */
   useEffect(() => {
     const m = mapRef.current;
     if (!m || liveMechanic) return;
