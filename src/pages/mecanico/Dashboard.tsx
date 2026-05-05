@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { unlockAudio } from '@/lib/alertSound';
+import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import type { Job, Mechanic } from '@/types/database';
+
+type Toast = { id: string; job: Job };
+
 
 type PendingRating = Job & { workshop_name?: string };
 
@@ -21,8 +26,25 @@ export default function MechanicDashboard() {
   const [hovered, setHovered]             = useState(0);
   const [ratingNote, setRatingNote]       = useState('');
   const [submitting, setSubmitting]       = useState(false);
+  const [toasts, setToasts]               = useState<Toast[]>([]);
+  const toastTimer = useRef<Record<string, number>>({});
 
   useEffect(() => { if (user) load(); }, [user]);
+
+  /* ── Alerta sonoro de novo job ── */
+  useNewJobAlert({
+    enabled: !!me?.is_available,
+    onNewJob: (job) => {
+      // Adiciona à lista visível
+      setOpenJobs(prev => [job, ...prev.filter(j => j.id !== job.id)]);
+      // Mostra toast
+      const tid = job.id;
+      setToasts(prev => [{ id: tid, job }, ...prev.slice(0, 2)]);
+      toastTimer.current[tid] = window.setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== tid));
+      }, 7000);
+    },
+  });
 
   async function load() {
     setLoading(true);
@@ -70,6 +92,7 @@ export default function MechanicDashboard() {
 
   async function toggleAvailable() {
     if (!me) return;
+    unlockAudio(); // destrava AudioContext no clique do usuário
     const { data } = await supabase.from('mechanics').update({ is_available: !me.is_available }).eq('id', me.id).select().single();
     setMe(data as Mechanic);
   }
@@ -87,6 +110,32 @@ export default function MechanicDashboard() {
 
   return (
     <MechanicLayout>
+      {/* ── Toasts de novo job ── */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-sm px-4 pointer-events-none">
+        {toasts.map(t => {
+          const cap = (t.job.price_per_hour ?? 0) * (t.job.max_hours ?? 1);
+          return (
+            <div
+              key={t.id}
+              className="pointer-events-auto bg-brand-500 text-white rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-3 animate-slide-down"
+            >
+              <span className="text-2xl shrink-0">🔧</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">Nova demanda!</div>
+                <div className="font-bold truncate">{t.job.title}</div>
+                <div className="text-xs opacity-80">
+                  R$ {(t.job.price_per_hour ?? 0).toFixed(0)}/h · até R$ {cap.toFixed(0)}
+                </div>
+              </div>
+              <button
+                onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
+                className="opacity-60 hover:opacity-100 text-lg leading-none shrink-0"
+              >✕</button>
+            </div>
+          );
+        })}
+      </div>
+
       <div className="p-4 space-y-4">
 
         {/* Toggle disponibilidade */}

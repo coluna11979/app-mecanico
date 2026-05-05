@@ -4,6 +4,7 @@ import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSetting } from '@/lib/settings';
+import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import mapboxgl from 'mapbox-gl';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
@@ -24,6 +25,18 @@ export default function MechanicMapa() {
   const [accepting, setAccepting] = useState(false);
   const [mapReady, setMapReady]   = useState(false);
   const [userPos, setUserPos]     = useState<[number, number] | null>(null);
+
+  /* ── Alerta sonoro de novo job (também no mapa) ── */
+  useNewJobAlert({
+    enabled: !!me?.is_available,
+    onNewJob: async (job) => {
+      // Busca com join de workshop para ter lat/lng e mostrar no mapa
+      const { data: j } = await supabase
+        .from('jobs').select('*, workshop:workshops(*)')
+        .eq('id', job.id).maybeSingle();
+      if (j) setJobs(prev => [j as JobWithShop, ...prev.filter(x => x.id !== j.id)]);
+    },
+  });
 
   /* ── Load mechanic + open jobs ── */
   useEffect(() => {
