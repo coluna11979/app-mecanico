@@ -86,8 +86,6 @@ export default function WorkshopDashboard() {
     if (!shop) return setFormError('Oficina não carregada. Recarregue a página.');
 
     setSaving(true);
-    const pph = Number(form.price_per_hour);
-    const mh  = Number(form.max_hours);
     const isDirect = mode === 'direct' && !!pickedMechanic;
     const payload: Record<string, unknown> = {
       workshop_id:    shop.id,
