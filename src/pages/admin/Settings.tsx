@@ -6,13 +6,17 @@ import type { AppSetting } from '@/types/database';
 interface FieldDef { key: string; label: string; description: string; type?: 'text' | 'password' | 'number' | 'toggle' | 'textarea'; section: string }
 
 const FIELDS: FieldDef[] = [
-  { key: 'platform_fee_percent', label: 'Taxa da plataforma (%)', description: 'Comissão cobrada do mecânico quando job é concluído.', type: 'number', section: 'Financeiro' },
-  { key: 'pix_key',              label: 'Chave PIX da plataforma', description: 'Chave PIX que recebe os pagamentos no escrow.', section: 'Financeiro' },
-  { key: 'pix_client_id',        label: 'PIX · client_id', description: 'Credencial do provedor PIX.', section: 'Financeiro' },
-  { key: 'pix_client_secret',    label: 'PIX · client_secret', description: 'Credencial secreta do provedor PIX.', type: 'textarea', section: 'Financeiro' },
-  { key: 'mapbox_token',         label: 'Mapbox public token', description: 'Token usado nos mapas. Cole o token completo.', type: 'textarea', section: 'Integrações' },
-  { key: 'support_email',        label: 'Email de suporte', description: 'Email exibido para usuários.', section: 'Geral' },
-  { key: 'maintenance_mode',     label: 'Modo manutenção', description: 'Bloqueia o acesso ao app inteiro.', type: 'toggle', section: 'Geral' },
+  // Geral
+  { key: 'support_email',           label: 'Email de suporte',              description: 'Email exibido para usuários em caso de dúvida.',                                      section: 'Geral' },
+  { key: 'maintenance_mode',        label: 'Modo manutenção',               description: 'Bloqueia o acesso ao app inteiro para manutenção.',             type: 'toggle',    section: 'Geral' },
+  // Financeiro
+  { key: 'platform_fee_percent',    label: 'Taxa da plataforma (%)',         description: 'Comissão cobrada do mecânico quando o job é concluído.',         type: 'number',    section: 'Financeiro' },
+  // Stripe
+  { key: 'stripe_publishable_key',  label: 'Stripe · Chave pública (pk_…)', description: 'Chave publicável do Stripe. Usada no frontend para Stripe Elements (cartão).',       type: 'textarea',  section: 'Stripe' },
+  { key: 'stripe_secret_key',       label: 'Stripe · Chave secreta (sk_…)', description: 'Chave secreta do Stripe. Lida pelas Edge Functions para criar pagamentos PIX.',      type: 'password',  section: 'Stripe' },
+  { key: 'stripe_webhook_secret',   label: 'Stripe · Webhook secret (whsec_…)', description: 'Secret gerado ao criar o endpoint de webhook no Stripe. Valida eventos recebidos.', type: 'password', section: 'Stripe' },
+  // Mapbox
+  { key: 'mapbox_token',            label: 'Mapbox · Token público',         description: 'Token usado nos mapas de rastreamento. Cole o token completo.',  type: 'textarea',  section: 'Mapas' },
 ];
 
 export default function AdminSettings() {
@@ -54,6 +58,25 @@ export default function AdminSettings() {
         {sections.map(sec => (
           <section key={sec}>
             <h2 className="text-xs font-bold uppercase tracking-wider text-steel-500 mb-3">{sec}</h2>
+
+            {/* Dica Stripe */}
+            {sec === 'Stripe' && (
+              <div className="bg-brand-50 border border-brand-200 rounded-2xl px-4 py-3 mb-3 flex gap-3 items-start">
+                <span className="text-xl shrink-0">💳</span>
+                <div>
+                  <p className="text-sm font-semibold text-brand-800">Chaves salvas aqui ficam seguras no banco</p>
+                  <p className="text-xs text-brand-600 mt-0.5">
+                    As Edge Functions leem daqui automaticamente. Em produção, você também pode mover para{' '}
+                    <a href="https://supabase.com/dashboard/project/qpwdwjzbgasjsnzpgcyo/settings/edge-functions"
+                      target="_blank" rel="noreferrer" className="underline font-medium">
+                      Supabase → Edge Functions → Secrets
+                    </a>
+                    {' '}para maior segurança.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="card divide-y divide-steel-100">
               {FIELDS.filter(f => f.section === sec).map(f => (
                 <div key={f.key} className="py-4 first:pt-0 last:pb-0">

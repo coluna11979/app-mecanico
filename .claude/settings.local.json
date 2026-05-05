@@ -6,7 +6,13 @@
       "mcp__supabase__apply_migration",
       "mcp__supabase__execute_sql",
       "mcp__supabase__list_tables",
-      "mcp__supabase__list_migrations"
+      "mcp__supabase__list_migrations",
+      "Bash(git push *)",
+      "Bash(npx tsc *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(npx supabase *)",
+      "Bash(dir \"%APPDATA%\\\\supabase\\\\\" 2>nul)"
     ]
   }
 }
