@@ -20,6 +20,7 @@ import WorkshopTracking from './pages/oficina/Tracking';
 import WorkshopProfile from './pages/oficina/Profile';
 import WorkshopServiceOrders from './pages/oficina/ServiceOrders';
 import WorkshopCustomers from './pages/oficina/Customers';
+import WorkshopMensagens from './pages/oficina/Mensagens';
 
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminApprovals from './pages/admin/Approvals';
@@ -52,6 +53,7 @@ export default function App() {
       <Route path="/oficina/clientes" element={<ProtectedRoute allow={['workshop']}><WorkshopCustomers /></ProtectedRoute>} />
       <Route path="/oficina/buscar" element={<ProtectedRoute allow={['workshop']}><WorkshopSearch /></ProtectedRoute>} />
       <Route path="/oficina/job/:id/tracking" element={<ProtectedRoute allow={['workshop']}><WorkshopTracking /></ProtectedRoute>} />
+      <Route path="/oficina/mensagens" element={<ProtectedRoute allow={['workshop']}><WorkshopMensagens /></ProtectedRoute>} />
       <Route path="/oficina/perfil" element={<ProtectedRoute allow={['workshop']}><WorkshopProfile /></ProtectedRoute>} />
 
       {/* Admin */}

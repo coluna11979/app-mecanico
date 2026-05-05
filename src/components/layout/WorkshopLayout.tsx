@@ -6,8 +6,9 @@ import { Logo } from '@/components/Logo';
 interface NavItem { to: string; icon: string; label: string }
 
 const PLATAFORMA: NavItem[] = [
-  { to: '/oficina/dashboard', icon: '⚡', label: 'Demandas'         },
-  { to: '/oficina/buscar',    icon: '🔍', label: 'Buscar mecânicos' },
+  { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'         },
+  { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar mecânicos' },
+  { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens'        },
 ];
 
 const GESTAO: NavItem[] = [
@@ -18,10 +19,10 @@ const GESTAO: NavItem[] = [
 
 // Bottom tabs for mobile (most used sections)
 const BOTTOM_TABS: NavItem[] = [
-  { to: '/oficina/dashboard', icon: '⚡', label: 'Demandas' },
-  { to: '/oficina/buscar',    icon: '🔍', label: 'Buscar'   },
-  { to: '/oficina/os',        icon: '📋', label: 'OS'       },
-  { to: '/oficina/perfil',    icon: '🏪', label: 'Perfil'   },
+  { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'  },
+  { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens' },
+  { to: '/oficina/os',         icon: '📋', label: 'OS'        },
+  { to: '/oficina/perfil',     icon: '🏪', label: 'Perfil'    },
 ];
 
 export default function WorkshopLayout({ children }: { children: ReactNode }) {
