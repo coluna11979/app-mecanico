@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import { supabase } from '@/lib/supabase';
+import { getSetting } from '@/lib/settings';
 import { useMechanicLive } from '@/hooks/useMechanicLive';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 
@@ -24,6 +25,8 @@ export default function WorkshopTracking() {
   const [rating, setRating]         = useState(0);
   const [ratingNote, setRatingNote] = useState('');
   const [hovered, setHovered]       = useState(0);
+  const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
+  const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -53,6 +56,43 @@ export default function WorkshopTracking() {
   }, [id]);
 
   const live = useMechanicLive(mech?.id ?? null, id);
+
+  /* ── Remove rota quando mecânico já chegou ── */
+  useEffect(() => {
+    if (job?.arrived_at || job?.status === 'in_progress' || job?.status === 'completed') {
+      setRouteCoords(null);
+    }
+  }, [job?.arrived_at, job?.status]);
+
+  /* ── Busca rota da posição do mecânico até a oficina ── */
+  useEffect(() => {
+    if (!live || !shop?.lat || !shop?.lng) return;
+    if (job?.arrived_at || job?.status !== 'assigned') return;
+
+    // Só refaz se mecânico se moveu > 30 metros
+    const prev = lastRouteFetch.current;
+    if (prev) {
+      const dlat = Math.abs(prev.lat - live.lat);
+      const dlng = Math.abs(prev.lng - live.lng);
+      if (dlat < 0.0003 && dlng < 0.0003) return;
+    }
+    lastRouteFetch.current = { lat: live.lat, lng: live.lng };
+
+    (async () => {
+      try {
+        const token = await getSetting('mapbox_token', '');
+        if (!token) return;
+        const url =
+          `https://api.mapbox.com/directions/v5/mapbox/driving/` +
+          `${live.lng},${live.lat};${shop.lng},${shop.lat}` +
+          `?geometries=geojson&overview=full&steps=false&access_token=${token}`;
+        const res  = await fetch(url);
+        const data = await res.json();
+        const coords = data?.routes?.[0]?.geometry?.coordinates as [number, number][] | undefined;
+        if (coords?.length) setRouteCoords(coords);
+      } catch { /* silencioso */ }
+    })();
+  }, [live, shop, job?.arrived_at, job?.status]);
 
   async function confirmPixPayment() {
     if (!job) return;
@@ -107,9 +147,14 @@ export default function WorkshopTracking() {
         {/* Mapa */}
         <div className="rounded-2xl overflow-hidden shadow-card relative">
           <MapView
-            center={center} zoom={14}
+            center={center}
+            zoom={14}
+            followMechanic={false}
             liveMechanic={live ? { lat: live.lat, lng: live.lng } : undefined}
-            markers={shop?.lat && shop?.lng ? [{ id: 'shop', lat: shop.lat, lng: shop.lng, label: '🏭', color: '#0B1117' }] : []}
+            routeCoords={routeCoords ?? undefined}
+            markers={shop?.lat && shop?.lng
+              ? [{ id: 'shop', lat: shop.lat, lng: shop.lng, label: '🏭', color: '#0B1117' }]
+              : []}
             styleUrl="mapbox://styles/mapbox/streets-v12"
           />
         </div>
