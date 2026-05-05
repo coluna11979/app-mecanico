@@ -52,7 +52,7 @@ export default function WorkshopTracking() {
     return () => { supabase.removeChannel(ch); };
   }, [id]);
 
-  const live = useMechanicLive(mech?.id ?? null);
+  const live = useMechanicLive(mech?.id ?? null, id);
 
   async function confirmPixPayment() {
     if (!job) return;

@@ -3,66 +3,143 @@ import mapboxgl from 'mapbox-gl';
 import { getSetting } from '@/lib/settings';
 
 export interface Marker { id: string; lat: number; lng: number; color?: string; label?: string }
+
 interface Props {
-  center: [number, number];
+  center: [number, number];   // [lat, lng]
   zoom?: number;
   markers?: Marker[];
   liveMechanic?: { lat: number; lng: number };
   styleUrl?: string;
   className?: string;
+  followMechanic?: boolean;   // se true, câmera segue o mecânico automaticamente
 }
 
-export default function MapView({ center, zoom = 13, markers = [], liveMechanic, styleUrl, className }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const markerRefs = useRef<Record<string, mapboxgl.Marker>>({});
-  const liveMarker = useRef<mapboxgl.Marker | null>(null);
+export default function MapView({
+  center,
+  zoom = 13,
+  markers = [],
+  liveMechanic,
+  styleUrl,
+  className,
+  followMechanic = true,
+}: Props) {
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const mapRef        = useRef<mapboxgl.Map | null>(null);
+  const markerRefs    = useRef<Record<string, mapboxgl.Marker>>({});
+  const liveMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const initialCenter = useRef(center);
+  const ready         = useRef(false);
 
+  /* ── Inicializa o mapa uma única vez ── */
   useEffect(() => {
     let alive = true;
+
     (async () => {
       const token = await getSetting('mapbox_token', '');
-      if (!alive || !ref.current || !token) return;
+      if (!alive || !containerRef.current || !token) return;
+
       mapboxgl.accessToken = token;
-      map.current = new mapboxgl.Map({
-        container: ref.current,
+
+      const m = new mapboxgl.Map({
+        container: containerRef.current,
         style: styleUrl ?? 'mapbox://styles/mapbox/dark-v11',
-        center: [center[1], center[0]],
+        center: [initialCenter.current[1], initialCenter.current[0]],
         zoom,
+        pitchWithRotate: false,
       });
-      map.current.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+
+      m.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+
+      m.on('load', () => {
+        ready.current = true;
+      });
+
+      mapRef.current = m;
     })();
-    return () => { alive = false; map.current?.remove(); map.current = null; };
+
+    return () => {
+      alive = false;
+      ready.current = false;
+      liveMarkerRef.current = null;
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ── Atualiza marcadores estáticos (oficina, etc.) ── */
   useEffect(() => {
-    const m = map.current; if (!m) return;
+    const m = mapRef.current;
+    if (!m) return;
+
     Object.values(markerRefs.current).forEach(mk => mk.remove());
     markerRefs.current = {};
+
     markers.forEach(mk => {
       const el = document.createElement('div');
-      el.className = 'rounded-full w-8 h-8 border-2 border-white shadow-lg grid place-items-center text-xs font-bold text-white';
+      el.className = 'rounded-full w-9 h-9 border-2 border-white shadow-xl grid place-items-center text-sm font-bold text-white';
       el.style.background = mk.color ?? '#FF5C0A';
       el.textContent = mk.label ?? '';
-      const marker = new mapboxgl.Marker(el).setLngLat([mk.lng, mk.lat]).addTo(m);
-      markerRefs.current[mk.id] = marker;
+      markerRefs.current[mk.id] = new mapboxgl.Marker(el)
+        .setLngLat([mk.lng, mk.lat])
+        .addTo(m);
     });
   }, [markers]);
 
+  /* ── Marcador do mecânico + câmera que segue ── */
   useEffect(() => {
-    const m = map.current; if (!m || !liveMechanic) return;
-    if (!liveMarker.current) {
+    const m = mapRef.current;
+    if (!m || !liveMechanic) return;
+
+    const lngLat: [number, number] = [liveMechanic.lng, liveMechanic.lat];
+
+    // Cria o marcador pulsante na primeira vez
+    if (!liveMarkerRef.current) {
       const el = document.createElement('div');
-      el.className = 'relative';
       el.innerHTML = `
-        <div class="absolute inset-0 -m-4 rounded-full bg-brand-500/30 animate-ping"></div>
-        <div class="relative w-10 h-10 rounded-full bg-brand-500 border-2 border-white shadow-lg grid place-items-center text-white text-base">🔧</div>`;
-      liveMarker.current = new mapboxgl.Marker(el).setLngLat([liveMechanic.lng, liveMechanic.lat]).addTo(m);
+        <div style="position:relative;width:44px;height:44px;">
+          <div style="
+            position:absolute;inset:-8px;border-radius:50%;
+            background:rgba(255,92,10,0.25);
+            animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;
+          "></div>
+          <div style="
+            position:relative;width:44px;height:44px;border-radius:50%;
+            background:#FF5C0A;border:3px solid #fff;
+            box-shadow:0 4px 16px rgba(255,92,10,0.5);
+            display:flex;align-items:center;justify-content:center;
+            font-size:20px;
+          ">🔧</div>
+        </div>`;
+      // Injeta keyframe de ping se ainda não existe
+      if (!document.getElementById('map-ping-style')) {
+        const style = document.createElement('style');
+        style.id = 'map-ping-style';
+        style.textContent = `@keyframes ping{75%,100%{transform:scale(2);opacity:0}}`;
+        document.head.appendChild(style);
+      }
+      liveMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(lngLat)
+        .addTo(m);
     } else {
-      liveMarker.current.setLngLat([liveMechanic.lng, liveMechanic.lat]);
+      // Move o marcador suavemente
+      liveMarkerRef.current.setLngLat(lngLat);
     }
+
+    // Câmera segue o mecânico suavemente
+    if (followMechanic) {
+      m.easeTo({ center: lngLat, duration: 800, easing: t => t });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveMechanic]);
 
-  return <div ref={ref} className={className ?? 'w-full h-full'} />;
+  /* ── Atualiza centro quando não há liveMechanic ── */
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m || liveMechanic) return;
+    m.easeTo({ center: [center[1], center[0]], duration: 600 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [center]);
+
+  return <div ref={containerRef} className={className ?? 'w-full h-full'} />;
 }
