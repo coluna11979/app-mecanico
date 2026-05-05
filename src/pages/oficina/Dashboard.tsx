@@ -27,12 +27,16 @@ export default function WorkshopDashboard() {
   const [mechSearch, setMechSearch] = useState('');
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [shopLoading, setShopLoading] = useState(true);
 
   useEffect(() => { if (user) load(); }, [user]);
 
   async function load() {
-    const { data: w } = await supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle();
+    setShopLoading(true);
+    const { data: w, error } = await supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle();
+    if (error) console.error('Erro ao carregar oficina:', error);
     setShop(w as Workshop);
+    setShopLoading(false);
     if (w?.id) {
       await Promise.all([fetchJobs(w.id), fetchMechanics()]);
     }
@@ -83,12 +87,19 @@ export default function WorkshopDashboard() {
     if (!pph || pph < 1) return setFormError('Informe o valor por hora (mínimo R$ 1).');
     if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
     if (mode === 'direct' && !pickedMechanic) return setFormError('Selecione o mecânico para contratação direta.');
-    if (!shop) return setFormError('Oficina não carregada. Recarregue a página.');
+
+    // Se shop ainda não carregou, tenta buscar novamente antes de desistir
+    let currentShop = shop;
+    if (!currentShop) {
+      const { data: w } = await supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle();
+      if (w) { setShop(w as Workshop); currentShop = w as Workshop; }
+    }
+    if (!currentShop) return setFormError('Oficina não encontrada. Verifique seu cadastro ou recarregue a página.');
 
     setSaving(true);
     const isDirect = mode === 'direct' && !!pickedMechanic;
     const payload: Record<string, unknown> = {
-      workshop_id:    shop.id,
+      workshop_id:    currentShop.id,
       title:          form.title.trim(),
       description:    form.description.trim(),
       price_per_hour: pph,
@@ -101,7 +112,7 @@ export default function WorkshopDashboard() {
     await supabase.from('jobs').insert(payload);
     setSaving(false);
     resetModal();
-    await fetchJobs(shop.id);
+    await fetchJobs(currentShop.id);
   }
 
   function set(k: keyof NewJob) {
@@ -122,9 +133,13 @@ export default function WorkshopDashboard() {
           <div className="text-sm text-steel-500">Olá,</div>
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight truncate">{shop?.business_name ?? '...'}</h1>
         </div>
-        <button onClick={() => setModal(true)} className="btn-primary shrink-0">
-          <span className="hidden sm:inline">+ Nova demanda</span>
-          <span className="sm:hidden">+ Nova</span>
+        <button onClick={() => setModal(true)} disabled={shopLoading} className="btn-primary shrink-0 disabled:opacity-50">
+          {shopLoading ? '…' : (
+            <>
+              <span className="hidden sm:inline">+ Nova demanda</span>
+              <span className="sm:hidden">+ Nova</span>
+            </>
+          )}
         </button>
       </div>
 
