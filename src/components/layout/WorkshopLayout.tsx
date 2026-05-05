@@ -1,7 +1,8 @@
-import { ReactNode, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { ReactNode, useEffect, useState } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
+import { supabase } from '@/lib/supabase';
 
 interface NavItem { to: string; icon: string; label: string }
 
@@ -17,7 +18,6 @@ const GESTAO: NavItem[] = [
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
 ];
 
-// Bottom tabs for mobile (most used sections)
 const BOTTOM_TABS: NavItem[] = [
   { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'  },
   { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens' },
@@ -25,27 +25,90 @@ const BOTTOM_TABS: NavItem[] = [
   { to: '/oficina/perfil',     icon: '🏪', label: 'Perfil'    },
 ];
 
+const LS_KEY = 'oficina_msgs_last_seen';
+
 export default function WorkshopLayout({ children }: { children: ReactNode }) {
-  const { signOut, profile } = useAuth();
-  const nav = useNavigate();
-  const [open, setOpen] = useState(false);
+  const { signOut, profile, user } = useAuth();
+  const nav      = useNavigate();
+  const location = useLocation();
+  const [open, setOpen]         = useState(false);
+  const [unread, setUnread]     = useState(0);
+  const [shopId, setShopId]     = useState<string | null>(null);
 
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Oficina';
   const initials  = (profile?.full_name ?? 'O')
     .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
+  /* ── Busca workshop ID uma vez ── */
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('workshops').select('id').eq('profile_id', user.id).maybeSingle()
+      .then(({ data }) => { if (data) setShopId(data.id); });
+  }, [user]);
+
+  /* ── Conta mensagens não lidas ── */
+  useEffect(() => {
+    if (!shopId || !user) return;
+
+    const lastSeen = localStorage.getItem(LS_KEY) ?? new Date(0).toISOString();
+
+    async function countUnread() {
+      // Busca jobs ativos desta oficina
+      const { data: jobs } = await supabase
+        .from('jobs')
+        .select('id')
+        .eq('workshop_id', shopId!)
+        .in('status', ['open', 'assigned', 'in_progress']);
+
+      if (!jobs?.length) { setUnread(0); return; }
+      const jobIds = jobs.map(j => j.id);
+
+      // Mensagens novas de outros (mecânicos), após lastSeen
+      const { count } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .in('job_id', jobIds)
+        .neq('sender_id', user!.id)
+        .gt('created_at', lastSeen);
+
+      setUnread(count ?? 0);
+    }
+
+    countUnread();
+
+    // Realtime: quando nova mensagem chega, incrementa badge
+    const ch = supabase.channel('layout:new_msgs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+        payload => {
+          const msg = payload.new as { sender_id: string; job_id: string };
+          if (msg.sender_id === user!.id) return; // minha própria mensagem
+          // Não estamos na página de mensagens → incrementa
+          if (!window.location.pathname.startsWith('/oficina/mensagens')) {
+            setUnread(n => n + 1);
+          }
+        })
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+  }, [shopId, user]);
+
+  /* ── Zera badge ao entrar em /oficina/mensagens ── */
+  useEffect(() => {
+    if (location.pathname.startsWith('/oficina/mensagens')) {
+      setUnread(0);
+      localStorage.setItem(LS_KEY, new Date().toISOString());
+    }
+  }, [location.pathname]);
 
   return (
     <div className="min-h-screen flex bg-steel-50">
 
       {/* Overlay mobile */}
       {open && (
-        <div
-          className="fixed inset-0 bg-steel-900/60 z-30 lg:hidden"
-          onClick={() => setOpen(false)}
-        />
+        <div className="fixed inset-0 bg-steel-900/60 z-30 lg:hidden" onClick={() => setOpen(false)} />
       )}
 
-      {/* ── Sidebar (desktop only) ── */}
+      {/* ── Sidebar ── */}
       <aside className={`
         fixed top-0 left-0 h-full w-64 bg-steel-900 text-white z-40 flex flex-col
         transition-transform duration-300
@@ -65,7 +128,14 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
               Plataforma
             </div>
             <div className="space-y-0.5">
-              {PLATAFORMA.map(item => <SideItem key={item.to} {...item} onClick={() => setOpen(false)} />)}
+              {PLATAFORMA.map(item => (
+                <SideItem
+                  key={item.to}
+                  {...item}
+                  badge={item.to === '/oficina/mensagens' ? unread : 0}
+                  onClick={() => setOpen(false)}
+                />
+              ))}
             </div>
           </div>
 
@@ -74,7 +144,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
               Gestão da oficina
             </div>
             <div className="space-y-0.5">
-              {GESTAO.map(item => <SideItem key={item.to} {...item} onClick={() => setOpen(false)} />)}
+              {GESTAO.map(item => (
+                <SideItem key={item.to} {...item} badge={0} onClick={() => setOpen(false)} />
+              ))}
             </div>
           </div>
 
@@ -125,9 +197,16 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </svg>
           </button>
           <Logo />
-          {/* Avatar */}
-          <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm">
-            {initials}
+          {/* Avatar + badge mobile no topo */}
+          <div className="relative">
+            <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm">
+              {initials}
+            </div>
+            {unread > 0 && (
+              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
           </div>
         </header>
 
@@ -145,12 +224,19 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
               key={tab.to}
               to={tab.to}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors ${
+                `flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors relative ${
                   isActive ? 'text-brand-500' : 'text-steel-400'
                 }`
               }
             >
-              <span className="text-xl leading-none">{tab.icon}</span>
+              <span className="relative text-xl leading-none">
+                {tab.icon}
+                {tab.to === '/oficina/mensagens' && unread > 0 && (
+                  <span className="absolute -top-1 -right-2 h-4 w-4 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+              </span>
               <span>{tab.label}</span>
             </NavLink>
           ))}
@@ -160,7 +246,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   );
 }
 
-function SideItem({ to, icon, label, onClick }: NavItem & { onClick: () => void }) {
+function SideItem({ to, icon, label, badge, onClick }: NavItem & { badge: number; onClick: () => void }) {
   return (
     <NavLink
       to={to}
@@ -174,7 +260,12 @@ function SideItem({ to, icon, label, onClick }: NavItem & { onClick: () => void 
       `}
     >
       <span className="text-base w-5 text-center">{icon}</span>
-      <span>{label}</span>
+      <span className="flex-1">{label}</span>
+      {badge > 0 && (
+        <span className="h-5 min-w-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
     </NavLink>
   );
 }
