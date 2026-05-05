@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
@@ -10,10 +10,11 @@ import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-type Step = { label: string; done: boolean; active: boolean };
-type Tab  = 'progresso' | 'chat';
+type Step     = { label: string; done: boolean; active: boolean };
+type Tab      = 'progresso' | 'chat';
+type PayMethod = 'card' | 'pix';
 
-/* Haversine ETA (reutiliza a do painel do mecânico) */
+/* Haversine ETA */
 function distKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -41,18 +42,42 @@ export default function WorkshopTracking() {
   const [mech, setMech]             = useState<(Mechanic & { profile: Profile }) | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [tab, setTab]               = useState<Tab>('progresso');
-  // Stripe PIX
+
+  /* Método de pagamento: cartão (padrão) ou PIX */
+  const [payMethod, setPayMethod]   = useState<PayMethod>('card');
+
+  /* Stripe PIX */
   const [pixLoading, setPixLoading] = useState(false);
   const [pixCode, setPixCode]       = useState<string | null>(null);
   const [pixQrUrl, setPixQrUrl]     = useState<string | null>(null);
   const [pixExpires, setPixExpires] = useState<string | null>(null);
   const [copied, setCopied]         = useState(false);
+
+  /* Stripe Cartão */
+  const [stripe, setStripe]             = useState<any>(null);
+  const [cardSecret, setCardSecret]     = useState<string | null>(null);
+  const [cardEl, setCardEl]             = useState<any>(null);
+  const [cardLoading, setCardLoading]   = useState(false);
+  const [cardProcessing, setCardProcessing] = useState(false);
+  const [cardError, setCardError]       = useState<string | null>(null);
+  const [cardSuccess, setCardSuccess]   = useState(false);
+
+  /* Misc */
   const [rating, setRating]         = useState(0);
   const [ratingNote, setRatingNote] = useState('');
   const [hovered, setHovered]       = useState(0);
   const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
-  const [sheetOpen, setSheetOpen]   = useState(false); // mobile bottom-sheet
+  const [sheetOpen, setSheetOpen]   = useState(false);
   const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
+
+  /* Carrega Stripe.js uma vez */
+  useEffect(() => {
+    const pubKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string;
+    if (!pubKey) return;
+    import('@stripe/stripe-js').then(({ loadStripe }) => {
+      loadStripe(pubKey).then(s => setStripe(s));
+    });
+  }, []);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -119,41 +144,112 @@ export default function WorkshopTracking() {
     })();
   }, [live, shop, job?.arrived_at, job?.status]);
 
-  /* Gera QR Code PIX via Stripe (Edge Function) */
+  /* ── PIX ── */
   async function loadPixPayment(jobId: string) {
-    if (pixCode || pixLoading) return; // já carregado
+    if (pixCode || pixLoading) return;
     setPixLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/create-pix-payment`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
-            'apikey':        SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ job_id: jobId }),
-        }
-      );
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-pix-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
+          'apikey':        SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ job_id: jobId }),
+      });
       const data = await res.json();
       if (data.pix_code) {
         setPixCode(data.pix_code);
         setPixQrUrl(data.qr_url);
         setPixExpires(data.expires_at);
       }
-    } catch { /* silencioso — fallback manual */ }
+    } catch { /* silencioso */ }
     setPixLoading(false);
   }
 
-  /* Copia cód. PIX */
   function copyPix() {
     if (!pixCode) return;
     navigator.clipboard.writeText(pixCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   }
+
+  /* ── Cartão ── */
+  async function loadCardSecret(jobId: string) {
+    if (cardSecret || cardLoading) return;
+    setCardLoading(true);
+    setCardError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-card-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
+          'apikey':        SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ job_id: jobId }),
+      });
+      const data = await res.json();
+      if (data.client_secret) setCardSecret(data.client_secret);
+      else setCardError(data.error ?? 'Erro ao preparar pagamento');
+    } catch {
+      setCardError('Erro de conexão. Tente novamente.');
+    }
+    setCardLoading(false);
+  }
+
+  /* Callback ref — monta o Stripe Card Element quando o div aparece no DOM */
+  const cardDivCallback = useCallback((node: HTMLDivElement | null) => {
+    if (!node || !stripe || !cardSecret || cardEl) return;
+    const elements = stripe.elements();
+    const el = elements.create('card', {
+      hidePostalCode: true,
+      style: {
+        base: {
+          fontSize: '16px',
+          fontFamily: 'inherit',
+          color: '#111827',
+          '::placeholder': { color: '#9ca3af' },
+          iconColor: '#6b7280',
+        },
+        invalid: { color: '#ef4444', iconColor: '#ef4444' },
+      },
+    });
+    el.mount(node);
+    setCardEl(el);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stripe, cardSecret, cardEl]);
+
+  async function payWithCard() {
+    if (!stripe || !cardEl || !cardSecret) return;
+    setCardProcessing(true);
+    setCardError(null);
+    const { error, paymentIntent } = await stripe.confirmCardPayment(cardSecret, {
+      payment_method: { card: cardEl },
+    });
+    if (error) {
+      setCardError(error.message ?? 'Erro no pagamento. Verifique os dados do cartão.');
+      setCardProcessing(false);
+    } else if (paymentIntent?.status === 'succeeded') {
+      setCardSuccess(true);
+      setCardProcessing(false);
+    }
+  }
+
+  const cap        = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
+  const finalPrice = job?.actual_hours != null ? (job.actual_hours * (job.price_per_hour ?? 0)) : null;
+  const showPixModal = !!job?.arrived_at && !job?.pix_paid_at && job?.status === 'assigned';
+
+  /* Dispara carregamento conforme método selecionado */
+  useEffect(() => {
+    if (!showPixModal || !job?.id) return;
+    if (payMethod === 'card') loadCardSecret(job.id);
+    if (payMethod === 'pix')  loadPixPayment(job.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPixModal, job?.id, payMethod]);
 
   async function confirmJob() {
     if (!job || rating === 0) return;
@@ -171,31 +267,21 @@ export default function WorkshopTracking() {
     const arrived = !!job?.arrived_at;
     const pixPaid = !!job?.pix_paid_at;
     return [
-      { label: 'Contratado',           done: true,                                                   active: false },
-      { label: 'A caminho',            done: arrived || ['in_progress','completed'].includes(s),      active: s === 'assigned' && !arrived },
-      { label: 'Chegou — aguard. PIX', done: pixPaid,                                                active: arrived && !pixPaid },
-      { label: 'Em serviço',           done: s === 'completed',                                       active: s === 'in_progress' },
-      { label: 'Finalizado',           done: !!job?.workshop_confirmed_at,                            active: s === 'completed' && !job?.workshop_confirmed_at },
+      { label: 'Contratado',          done: true,                                                    active: false },
+      { label: 'A caminho',           done: arrived || ['in_progress','completed'].includes(s),       active: s === 'assigned' && !arrived },
+      { label: 'Chegou — pagamento',  done: pixPaid,                                                 active: arrived && !pixPaid },
+      { label: 'Em serviço',          done: s === 'completed',                                        active: s === 'in_progress' },
+      { label: 'Finalizado',          done: !!job?.workshop_confirmed_at,                             active: s === 'completed' && !job?.workshop_confirmed_at },
     ];
   })();
 
-  const cap        = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
-  const finalPrice = job?.actual_hours != null ? (job.actual_hours * (job.price_per_hour ?? 0)) : null;
-  const showPixModal = !!job?.arrived_at && !job?.pix_paid_at && job?.status === 'assigned';
-
-  /* Dispara geração do QR assim que mecânico chega */
-  useEffect(() => {
-    if (showPixModal && job?.id) loadPixPayment(job.id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPixModal, job?.id]);
-
-  /* ETA para o badge no mapa */
+  /* ETA */
   const km = live && shop?.lat && shop?.lng
     ? distKm(live.lat, live.lng, shop.lat, shop.lng)
     : null;
   const eta = km !== null && !job?.arrived_at && job?.status === 'assigned' ? etaLabel(km) : null;
 
-  /* Centro dinâmico: mostra mecânico + oficina */
+  /* Centro dinâmico */
   const mapCenter: [number, number] =
     live && shop?.lat && shop?.lng
       ? [(live.lat + shop.lat) / 2, (live.lng + shop.lng) / 2]
@@ -211,7 +297,7 @@ export default function WorkshopTracking() {
   return (
     <div className="fixed inset-0 flex flex-col bg-steel-900">
 
-      {/* ── Top bar (flutuante sobre o mapa) ── */}
+      {/* ── Top bar ── */}
       <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between gap-2 p-3">
         <Link
           to="/oficina/dashboard"
@@ -226,7 +312,6 @@ export default function WorkshopTracking() {
           </div>
         </div>
 
-        {/* ETA badge */}
         {eta && (
           <div className="bg-steel-900/90 backdrop-blur border border-steel-700 rounded-2xl px-3 py-1.5 text-center shadow-xl shrink-0">
             <div className="text-[9px] text-brand-400 font-bold uppercase tracking-wider">ETA</div>
@@ -236,7 +321,7 @@ export default function WorkshopTracking() {
         )}
       </div>
 
-      {/* ── Mapa (ocupa tudo) ── */}
+      {/* ── Mapa ── */}
       <div className="flex-1">
         <MapView
           center={mapCenter}
@@ -254,7 +339,6 @@ export default function WorkshopTracking() {
       {/* ── Painel inferior (bottom sheet) ── */}
       <div className="bg-white border-t border-steel-200 shadow-2xl z-10">
 
-        {/* Handle + header */}
         <button
           onClick={() => setSheetOpen(o => !o)}
           className="w-full flex flex-col items-center pt-2 pb-1 touch-manipulation"
@@ -262,7 +346,6 @@ export default function WorkshopTracking() {
         >
           <div className="w-10 h-1 rounded-full bg-steel-300 mb-2" />
           <div className="flex items-center justify-between w-full px-4 pb-2">
-            {/* Mechanic info compact */}
             {mech ? (
               <div className="flex items-center gap-2 min-w-0">
                 <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm shrink-0">
@@ -290,11 +373,9 @@ export default function WorkshopTracking() {
           </div>
         </button>
 
-        {/* Expandable content */}
         {sheetOpen && (
           <div className="px-4 pb-4 space-y-4 max-h-[60vh] overflow-y-auto">
 
-            {/* Preço */}
             {job && (
               <div className="flex items-center justify-between text-sm py-2 border-b border-steel-100">
                 <span className="text-steel-500">R$ {job.price_per_hour?.toFixed(0)}/h · máx {job.max_hours}h</span>
@@ -306,14 +387,12 @@ export default function WorkshopTracking() {
               </div>
             )}
 
-            {/* Live update */}
             {live && (
               <div className="text-xs text-steel-400 text-right -mt-2">
                 Pos. atualizada {new Date(live.at).toLocaleTimeString('pt-BR')}
               </div>
             )}
 
-            {/* Tabs */}
             <div className="flex gap-1 bg-steel-100 rounded-xl p-1">
               {(['progresso', 'chat'] as Tab[]).map(t => (
                 <button
@@ -328,7 +407,6 @@ export default function WorkshopTracking() {
               ))}
             </div>
 
-            {/* Tab content */}
             {tab === 'progresso' ? (
               <div className="space-y-3">
                 {steps.map((s, i) => (
@@ -348,7 +426,6 @@ export default function WorkshopTracking() {
                   </div>
                 ))}
 
-                {/* Confirmação + avaliação */}
                 {job?.status === 'completed' && !job.workshop_confirmed_at && (
                   <div className="pt-3 border-t border-steel-200 space-y-3">
                     {job.actual_hours != null && (
@@ -410,7 +487,9 @@ export default function WorkshopTracking() {
         )}
       </div>
 
-      {/* ── Modal PIX via Stripe ── */}
+      {/* ══════════════════════════════════════════
+          Modal de Pagamento (aparece quando mecânico chega)
+      ══════════════════════════════════════════ */}
       {showPixModal && (
         <div className="fixed inset-0 bg-steel-900/85 grid place-items-end sm:place-items-center p-0 sm:p-4 z-50">
           <div className="card w-full sm:max-w-md border-2 border-brand-500 rounded-t-3xl sm:rounded-2xl rounded-b-none sm:rounded-b-2xl max-h-[95vh] overflow-y-auto">
@@ -433,59 +512,148 @@ export default function WorkshopTracking() {
               </div>
             </div>
 
-            {/* QR Code + Copia e cola */}
-            {pixLoading ? (
-              <div className="flex flex-col items-center gap-3 py-6">
-                <div className="h-10 w-10 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
-                <p className="text-sm text-steel-500">Gerando PIX seguro…</p>
-              </div>
-            ) : pixCode ? (
-              <div className="space-y-3">
-                {/* QR Code */}
-                {pixQrUrl && (
-                  <div className="flex justify-center">
-                    <div className="bg-white p-3 rounded-2xl shadow-sm border border-steel-100">
-                      <img src={pixQrUrl} alt="QR Code PIX" className="w-48 h-48" />
+            {/* Abas de método de pagamento */}
+            <div className="flex gap-1 bg-steel-100 rounded-2xl p-1">
+              <button
+                onClick={() => setPayMethod('card')}
+                className={`flex-1 rounded-xl py-2 text-sm font-bold transition ${
+                  payMethod === 'card'
+                    ? 'bg-white shadow text-steel-900'
+                    : 'text-steel-500 hover:text-steel-700'
+                }`}
+              >
+                💳 Cartão
+              </button>
+              <button
+                onClick={() => setPayMethod('pix')}
+                className={`flex-1 rounded-xl py-2 text-sm font-bold transition ${
+                  payMethod === 'pix'
+                    ? 'bg-white shadow text-steel-900'
+                    : 'text-steel-500 hover:text-steel-700'
+                }`}
+              >
+                PIX
+              </button>
+            </div>
+
+            {/* ── CARTÃO ── */}
+            {payMethod === 'card' && (
+              <div className="space-y-4">
+                {cardSuccess ? (
+                  /* Sucesso */
+                  <div className="bg-signal-500/10 rounded-2xl p-6 text-center space-y-2">
+                    <div className="text-5xl">✅</div>
+                    <p className="text-lg font-bold text-signal-700">Pagamento confirmado!</p>
+                    <p className="text-sm text-signal-600">O serviço já pode ser iniciado.</p>
+                  </div>
+                ) : cardLoading ? (
+                  /* Carregando */
+                  <div className="flex flex-col items-center gap-3 py-6">
+                    <div className="h-10 w-10 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
+                    <p className="text-sm text-steel-500">Preparando pagamento seguro…</p>
+                  </div>
+                ) : cardSecret ? (
+                  /* Formulário do cartão */
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-bold text-steel-500 uppercase tracking-widest mb-2 block">
+                        Dados do cartão
+                      </label>
+                      {/* Stripe Card Element montado aqui via callback ref */}
+                      <div
+                        ref={cardDivCallback}
+                        className="border border-steel-300 rounded-xl px-4 py-3.5 bg-white focus-within:border-brand-500 transition"
+                      />
+                    </div>
+
+                    {cardError && (
+                      <p className="text-sm text-alert-600 bg-alert-50 rounded-xl px-3 py-2">
+                        ⚠️ {cardError}
+                      </p>
+                    )}
+
+                    <button
+                      onClick={payWithCard}
+                      disabled={cardProcessing || !cardEl}
+                      className="btn-primary w-full disabled:opacity-60 touch-manipulation"
+                    >
+                      {cardProcessing
+                        ? <span className="flex items-center justify-center gap-2">
+                            <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                            Processando…
+                          </span>
+                        : `Pagar R$ ${cap.toFixed(2)}`
+                      }
+                    </button>
+
+                    {/* Cartões de teste */}
+                    <div className="bg-steel-50 rounded-xl px-3 py-2 text-center">
+                      <p className="text-[11px] text-steel-400 font-mono">
+                        Teste: <strong>4242 4242 4242 4242</strong> · qualquer validade/CVV
+                      </p>
                     </div>
                   </div>
-                )}
-
-                {/* Copia e cola */}
-                <div className="bg-steel-50 rounded-2xl p-4 space-y-2">
-                  <div className="text-xs text-steel-500 uppercase tracking-widest font-bold">PIX Copia e Cola</div>
-                  <div className="bg-white border border-steel-200 rounded-xl px-3 py-2">
-                    <p className="text-[11px] text-steel-600 font-mono break-all leading-relaxed line-clamp-3">
-                      {pixCode}
-                    </p>
+                ) : (
+                  /* Erro ao carregar */
+                  <div className="space-y-3">
+                    {cardError && (
+                      <p className="text-sm text-alert-600 text-center">{cardError}</p>
+                    )}
+                    <button
+                      onClick={() => { setCardError(null); if (job?.id) loadCardSecret(job.id); }}
+                      className="btn-primary w-full touch-manipulation"
+                    >
+                      Tentar novamente
+                    </button>
                   </div>
-                  <button
-                    onClick={copyPix}
-                    className="btn-primary w-full !py-2.5 touch-manipulation"
-                  >
-                    {copied ? '✅ Copiado!' : '📋 Copiar código PIX'}
-                  </button>
-                </div>
-
-                {pixExpires && (
-                  <p className="text-xs text-steel-400 text-center">
-                    ⏱ Expira em {new Date(pixExpires).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
                 )}
-
-                <div className="bg-signal-500/10 rounded-2xl px-4 py-3 text-center">
-                  <p className="text-sm font-semibold text-signal-700">
-                    ✅ Pagamento confirmado automaticamente
-                  </p>
-                  <p className="text-xs text-signal-600 mt-0.5">
-                    Assim que o PIX cair, o serviço inicia sozinho — sem precisar clicar em nada.
-                  </p>
-                </div>
               </div>
-            ) : (
-              /* Fallback se Stripe não responder */
-              <div className="bg-steel-50 rounded-2xl p-4 text-center space-y-2">
-                <p className="text-sm text-steel-600">Não foi possível gerar o QR Code.</p>
-                <p className="text-xs text-steel-400">Aguarde o mecânico apresentar o PIX pessoalmente.</p>
+            )}
+
+            {/* ── PIX ── */}
+            {payMethod === 'pix' && (
+              <div className="space-y-3">
+                {pixLoading ? (
+                  <div className="flex flex-col items-center gap-3 py-6">
+                    <div className="h-10 w-10 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
+                    <p className="text-sm text-steel-500">Gerando PIX seguro…</p>
+                  </div>
+                ) : pixCode ? (
+                  <>
+                    {pixQrUrl && (
+                      <div className="flex justify-center">
+                        <div className="bg-white p-3 rounded-2xl shadow-sm border border-steel-100">
+                          <img src={pixQrUrl} alt="QR Code PIX" className="w-48 h-48" />
+                        </div>
+                      </div>
+                    )}
+                    <div className="bg-steel-50 rounded-2xl p-4 space-y-2">
+                      <div className="text-xs text-steel-500 uppercase tracking-widest font-bold">PIX Copia e Cola</div>
+                      <div className="bg-white border border-steel-200 rounded-xl px-3 py-2">
+                        <p className="text-[11px] text-steel-600 font-mono break-all leading-relaxed line-clamp-3">
+                          {pixCode}
+                        </p>
+                      </div>
+                      <button onClick={copyPix} className="btn-primary w-full !py-2.5 touch-manipulation">
+                        {copied ? '✅ Copiado!' : '📋 Copiar código PIX'}
+                      </button>
+                    </div>
+                    {pixExpires && (
+                      <p className="text-xs text-steel-400 text-center">
+                        ⏱ Expira em {new Date(pixExpires).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    )}
+                    <div className="bg-signal-500/10 rounded-2xl px-4 py-3 text-center">
+                      <p className="text-sm font-semibold text-signal-700">✅ Pagamento confirmado automaticamente</p>
+                      <p className="text-xs text-signal-600 mt-0.5">Assim que o PIX cair, o serviço inicia sozinho.</p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-steel-50 rounded-2xl p-4 text-center space-y-2">
+                    <p className="text-sm text-steel-600">Não foi possível gerar o QR Code PIX.</p>
+                    <p className="text-xs text-steel-400">Ative o PIX no Stripe Dashboard ou use cartão.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
