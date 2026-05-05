@@ -47,6 +47,29 @@ export default function WorkshopProfile() {
     setCepLoading(false);
   }
 
+  /* ── Geocodifica o endereço cadastrado (Nominatim / OpenStreetMap) ── */
+  async function geocodeAddress() {
+    if (!shop) return;
+    const query = [shop.address, shop.city, shop.state, 'Brasil'].filter(Boolean).join(', ');
+    if (!query.trim()) { alert('Preencha o endereço antes de localizar.'); return; }
+
+    setGeoLoading(true);
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`;
+      const res  = await fetch(url, { headers: { 'Accept-Language': 'pt-BR' } });
+      const data = await res.json();
+      if (!data?.length) {
+        alert('Endereço não encontrado no mapa. Verifique o endereço cadastrado e tente novamente.');
+        setGeoLoading(false);
+        return;
+      }
+      setShop({ ...shop, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+    } catch {
+      alert('Erro ao buscar localização. Verifique sua conexão.');
+    }
+    setGeoLoading(false);
+  }
+
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!shop) return;
@@ -65,22 +88,6 @@ export default function WorkshopProfile() {
       ? { text: error.message, ok: false }
       : { text: 'Alterações salvas com sucesso!', ok: true });
     setTimeout(() => setMsg(null), 4000);
-  }
-
-  function useGps() {
-    if (!shop || !navigator.geolocation) return;
-    setGeoLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setShop({ ...shop, lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setGeoLoading(false);
-      },
-      () => {
-        setGeoLoading(false);
-        alert('Não foi possível obter a localização. Verifique as permissões do navegador.');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
   }
 
   function set(field: keyof Workshop) {
@@ -202,11 +209,11 @@ export default function WorkshopProfile() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <label className="label !mb-0">Localização no mapa</label>
-              <button type="button" onClick={useGps} disabled={geoLoading}
+              <button type="button" onClick={geocodeAddress} disabled={geoLoading}
                 className="btn-primary !py-1.5 !px-3 text-xs disabled:opacity-60 flex items-center gap-1.5">
                 {geoLoading
-                  ? <><div className="h-3 w-3 rounded-full border border-white border-t-transparent animate-spin" /> Obtendo…</>
-                  : <>📍 Usar minha localização</>
+                  ? <><div className="h-3 w-3 rounded-full border border-white border-t-transparent animate-spin" /> Localizando…</>
+                  : <>📍 Localizar endereço no mapa</>
                 }
               </button>
             </div>
@@ -214,7 +221,7 @@ export default function WorkshopProfile() {
             <div className="bg-steel-50 border border-steel-200 rounded-xl p-4 space-y-3">
               <p className="text-xs text-steel-500">
                 A localização é usada para que os mecânicos vejam sua oficina no mapa e recebam estimativa de chegada.
-                Use o botão acima para detectar automaticamente, ou preencha os campos abaixo.
+                Clique em <strong>"Localizar endereço no mapa"</strong> para converter automaticamente o endereço cadastrado acima em coordenadas. Ou preencha manualmente abaixo.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
