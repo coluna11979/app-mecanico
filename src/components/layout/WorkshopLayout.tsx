@@ -5,6 +5,7 @@ import { Logo } from '@/components/Logo';
 import { supabase } from '@/lib/supabase';
 
 interface NavItem { to: string; icon: string; label: string }
+interface SoonItem { icon: string; label: string; desc: string }
 
 const PLATAFORMA: NavItem[] = [
   { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'         },
@@ -16,6 +17,26 @@ const GESTAO: NavItem[] = [
   { to: '/oficina/os',       icon: '📋', label: 'Ordens de Serviço' },
   { to: '/oficina/clientes', icon: '👥', label: 'Clientes'           },
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
+];
+
+// Módulos futuros agrupados por departamento
+const SOON_RH: SoonItem[] = [
+  { icon: '🪪', label: 'Funcionários',  desc: 'Cadastro e documentos'  },
+  { icon: '💵', label: 'Salários',      desc: 'Folha e pagamentos'      },
+  { icon: '%',  label: 'Comissões',     desc: 'Metas e bonificações'    },
+];
+const SOON_FIN: SoonItem[] = [
+  { icon: '📊', label: 'Financeiro',    desc: 'DRE, fluxo de caixa'    },
+  { icon: '🧾', label: 'Faturamento',   desc: 'NF-e e recebimentos'    },
+];
+const SOON_OPS: SoonItem[] = [
+  { icon: '📅', label: 'Agendamentos',  desc: 'Agenda de serviços'      },
+  { icon: '📋', label: 'OS digital',    desc: 'Ordem de serviço completa'},
+  { icon: '📌', label: 'POPs',          desc: 'Proc. Operacionais Padrão'},
+];
+const SOON_EXTRA: SoonItem[] = [
+  { icon: '📦', label: 'Estoque',       desc: 'Peças e insumos'         },
+  { icon: '⭐', label: 'Avaliações',    desc: 'NPS e reputação'         },
 ];
 
 const BOTTOM_TABS: NavItem[] = [
@@ -150,15 +171,17 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <div>
-            <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
-              Ferramentas
-            </div>
-            <div className="mx-3 rounded-xl border border-dashed border-steel-700 px-4 py-3 text-center">
-              <div className="text-steel-500 text-xs">Em breve</div>
-              <div className="text-steel-600 text-[11px] mt-0.5">Relatórios, estoque e mais</div>
-            </div>
-          </div>
+          {/* ── Em breve: Dep. Pessoal / RH ── */}
+          <SoonGroup label="Dep. Pessoal · RH" items={SOON_RH} />
+
+          {/* ── Em breve: Financeiro ── */}
+          <SoonGroup label="Financeiro" items={SOON_FIN} />
+
+          {/* ── Em breve: Operações ── */}
+          <SoonGroup label="Operações" items={SOON_OPS} />
+
+          {/* ── Em breve: Extras ── */}
+          <SoonGroup label="Estoque & Qualidade" items={SOON_EXTRA} />
         </nav>
 
         {/* User footer */}
@@ -267,5 +290,37 @@ function SideItem({ to, icon, label, badge, onClick }: NavItem & { badge: number
         </span>
       )}
     </NavLink>
+  );
+}
+
+/* ── Coming-soon group ── */
+function SoonGroup({ label, items }: { label: string; items: SoonItem[] }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 px-3 mb-2">
+        <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">{label}</div>
+        <span className="text-[9px] font-bold bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+          Em breve
+        </span>
+      </div>
+      <div className="space-y-0.5">
+        {items.map(item => (
+          <ComingSoonItem key={item.label} {...item} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ComingSoonItem({ icon, label, desc }: SoonItem) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-not-allowed group select-none opacity-50 hover:opacity-70 transition-opacity">
+      <span className="text-base w-5 text-center text-steel-500">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-steel-400 leading-none">{label}</div>
+        <div className="text-[10px] text-steel-600 mt-0.5 truncate">{desc}</div>
+      </div>
+      <span className="text-steel-700 text-xs shrink-0">🔒</span>
+    </div>
   );
 }
