@@ -7,8 +7,8 @@ import { getSetting } from '@/lib/settings';
 import { useMechanicLive } from '@/hooks/useMechanicLive';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 
-const PIX_KEY  = '11982907309';
-const PIX_NAME = 'José Pedrosa Machado Filho';
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 type Step = { label: string; done: boolean; active: boolean };
 type Tab  = 'progresso' | 'chat';
@@ -40,8 +40,13 @@ export default function WorkshopTracking() {
   const [shop, setShop]             = useState<Workshop | null>(null);
   const [mech, setMech]             = useState<(Mechanic & { profile: Profile }) | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [payingPix, setPayingPix]   = useState(false);
   const [tab, setTab]               = useState<Tab>('progresso');
+  // Stripe PIX
+  const [pixLoading, setPixLoading] = useState(false);
+  const [pixCode, setPixCode]       = useState<string | null>(null);
+  const [pixQrUrl, setPixQrUrl]     = useState<string | null>(null);
+  const [pixExpires, setPixExpires] = useState<string | null>(null);
+  const [copied, setCopied]         = useState(false);
   const [rating, setRating]         = useState(0);
   const [ratingNote, setRatingNote] = useState('');
   const [hovered, setHovered]       = useState(0);
@@ -114,15 +119,40 @@ export default function WorkshopTracking() {
     })();
   }, [live, shop, job?.arrived_at, job?.status]);
 
-  async function confirmPixPayment() {
-    if (!job) return;
-    setPayingPix(true);
-    await supabase.from('jobs').update({
-      pix_paid_at: new Date().toISOString(),
-      status: 'in_progress',
-      started_at: new Date().toISOString(),
-    }).eq('id', job.id);
-    setPayingPix(false);
+  /* Gera QR Code PIX via Stripe (Edge Function) */
+  async function loadPixPayment(jobId: string) {
+    if (pixCode || pixLoading) return; // já carregado
+    setPixLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/create-pix-payment`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
+            'apikey':        SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ job_id: jobId }),
+        }
+      );
+      const data = await res.json();
+      if (data.pix_code) {
+        setPixCode(data.pix_code);
+        setPixQrUrl(data.qr_url);
+        setPixExpires(data.expires_at);
+      }
+    } catch { /* silencioso — fallback manual */ }
+    setPixLoading(false);
+  }
+
+  /* Copia cód. PIX */
+  function copyPix() {
+    if (!pixCode) return;
+    navigator.clipboard.writeText(pixCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
   }
 
   async function confirmJob() {
@@ -152,6 +182,12 @@ export default function WorkshopTracking() {
   const cap        = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
   const finalPrice = job?.actual_hours != null ? (job.actual_hours * (job.price_per_hour ?? 0)) : null;
   const showPixModal = !!job?.arrived_at && !job?.pix_paid_at && job?.status === 'assigned';
+
+  /* Dispara geração do QR assim que mecânico chega */
+  useEffect(() => {
+    if (showPixModal && job?.id) loadPixPayment(job.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPixModal, job?.id]);
 
   /* ETA para o badge no mapa */
   const km = live && shop?.lat && shop?.lng
@@ -374,51 +410,84 @@ export default function WorkshopTracking() {
         )}
       </div>
 
-      {/* ── Modal PIX — aparece quando mecânico chega ── */}
+      {/* ── Modal PIX via Stripe ── */}
       {showPixModal && (
-        <div className="fixed inset-0 bg-steel-900/80 grid place-items-end sm:place-items-center p-0 sm:p-4 z-50">
-          <div className="card w-full sm:max-w-sm space-y-5 border-2 border-brand-500 rounded-t-3xl sm:rounded-2xl rounded-b-none sm:rounded-b-2xl max-h-[90vh] overflow-y-auto">
-            <div className="text-center pt-2">
-              <div className="text-4xl mb-3">🔔</div>
+        <div className="fixed inset-0 bg-steel-900/85 grid place-items-end sm:place-items-center p-0 sm:p-4 z-50">
+          <div className="card w-full sm:max-w-md border-2 border-brand-500 rounded-t-3xl sm:rounded-2xl rounded-b-none sm:rounded-b-2xl max-h-[95vh] overflow-y-auto">
+
+            {/* Header */}
+            <div className="text-center pt-2 pb-1">
+              <div className="text-4xl mb-2">🔔</div>
               <h2 className="text-xl font-bold">Mecânico chegou!</h2>
               <p className="text-sm text-steel-500 mt-1">
-                {mech?.profile.full_name ?? 'O mecânico'} está na oficina e aguardando o pagamento para iniciar.
+                {mech?.profile.full_name ?? 'O mecânico'} está aguardando o pagamento para iniciar.
               </p>
             </div>
 
+            {/* Valor */}
             <div className="bg-brand-50 border border-brand-200 rounded-2xl p-4 text-center">
-              <div className="text-xs text-brand-600 uppercase tracking-wider font-semibold mb-1">Valor a pagar (teto)</div>
+              <div className="text-xs text-brand-600 uppercase tracking-widest font-bold mb-1">Valor a pagar</div>
               <div className="text-4xl font-bold font-display text-brand-700">R$ {cap.toFixed(2)}</div>
               <div className="text-xs text-brand-500 mt-1">
-                {job?.price_per_hour?.toFixed(0)}/h × máx {job?.max_hours}h · cobrado pelo real ao final
+                R$ {job?.price_per_hour?.toFixed(0)}/h × máx {job?.max_hours}h · cobrado pelo tempo real ao final
               </div>
             </div>
 
-            <div className="bg-steel-50 rounded-2xl p-4 space-y-2">
-              <div className="text-xs text-steel-500 uppercase tracking-wider font-semibold">Chave PIX (Telefone)</div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-bold font-display text-lg tracking-widest">{PIX_KEY}</span>
-                <button
-                  onClick={() => navigator.clipboard.writeText(PIX_KEY)}
-                  className="btn-secondary !py-1.5 !px-3 text-xs shrink-0 touch-manipulation"
-                >
-                  Copiar
-                </button>
+            {/* QR Code + Copia e cola */}
+            {pixLoading ? (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <div className="h-10 w-10 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
+                <p className="text-sm text-steel-500">Gerando PIX seguro…</p>
               </div>
-              <div className="text-xs text-steel-400">{PIX_NAME}</div>
-            </div>
+            ) : pixCode ? (
+              <div className="space-y-3">
+                {/* QR Code */}
+                {pixQrUrl && (
+                  <div className="flex justify-center">
+                    <div className="bg-white p-3 rounded-2xl shadow-sm border border-steel-100">
+                      <img src={pixQrUrl} alt="QR Code PIX" className="w-48 h-48" />
+                    </div>
+                  </div>
+                )}
 
-            <p className="text-xs text-steel-400 text-center">
-              Após realizar o PIX, clique em confirmar para liberar o mecânico iniciar o serviço.
-            </p>
+                {/* Copia e cola */}
+                <div className="bg-steel-50 rounded-2xl p-4 space-y-2">
+                  <div className="text-xs text-steel-500 uppercase tracking-widest font-bold">PIX Copia e Cola</div>
+                  <div className="bg-white border border-steel-200 rounded-xl px-3 py-2">
+                    <p className="text-[11px] text-steel-600 font-mono break-all leading-relaxed line-clamp-3">
+                      {pixCode}
+                    </p>
+                  </div>
+                  <button
+                    onClick={copyPix}
+                    className="btn-primary w-full !py-2.5 touch-manipulation"
+                  >
+                    {copied ? '✅ Copiado!' : '📋 Copiar código PIX'}
+                  </button>
+                </div>
 
-            <button
-              onClick={confirmPixPayment}
-              disabled={payingPix}
-              className="btn-primary w-full btn-lg touch-manipulation"
-            >
-              {payingPix ? 'Confirmando…' : '✅ Confirmei o pagamento PIX'}
-            </button>
+                {pixExpires && (
+                  <p className="text-xs text-steel-400 text-center">
+                    ⏱ Expira em {new Date(pixExpires).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+
+                <div className="bg-signal-500/10 rounded-2xl px-4 py-3 text-center">
+                  <p className="text-sm font-semibold text-signal-700">
+                    ✅ Pagamento confirmado automaticamente
+                  </p>
+                  <p className="text-xs text-signal-600 mt-0.5">
+                    Assim que o PIX cair, o serviço inicia sozinho — sem precisar clicar em nada.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* Fallback se Stripe não responder */
+              <div className="bg-steel-50 rounded-2xl p-4 text-center space-y-2">
+                <p className="text-sm text-steel-600">Não foi possível gerar o QR Code.</p>
+                <p className="text-xs text-steel-400">Aguarde o mecânico apresentar o PIX pessoalmente.</p>
+              </div>
+            )}
           </div>
         </div>
       )}
