@@ -6,17 +6,46 @@ import type { Workshop } from '@/types/database';
 
 export default function WorkshopProfile() {
   const { user } = useAuth();
-  const [shop, setShop]           = useState<Workshop | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [busy, setBusy]           = useState(false);
+  const [shop, setShop]             = useState<Workshop | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [busy, setBusy]             = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
-  const [msg, setMsg]             = useState<{ text: string; ok: boolean } | null>(null);
+  const [msg, setMsg]               = useState<{ text: string; ok: boolean } | null>(null);
+  const [cep, setCep]               = useState('');
+  const [cepLoading, setCepLoading] = useState(false);
+  const [cepError, setCepError]     = useState('');
 
   useEffect(() => {
     if (!user) return;
     supabase.from('workshops').select('*').eq('profile_id', user.id).maybeSingle()
       .then(({ data }) => { setShop(data as Workshop); setLoading(false); });
   }, [user]);
+
+  /* ── Busca CEP na ViaCEP ── */
+  async function fetchCep(raw: string) {
+    const digits = raw.replace(/\D/g, '');
+    setCep(digits.replace(/(\d{5})(\d)/, '$1-$2'));
+    setCepError('');
+    if (digits.length < 8) return;
+
+    setCepLoading(true);
+    try {
+      const res  = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await res.json();
+      if (data.erro) { setCepError('CEP não encontrado.'); setCepLoading(false); return; }
+
+      const address = [data.logradouro, data.bairro].filter(Boolean).join(', ');
+      setShop(s => s ? {
+        ...s,
+        address: address || s.address,
+        city:    data.localidade || s.city,
+        state:   (data.uf ?? '').toUpperCase() || s.state,
+      } : s);
+    } catch {
+      setCepError('Erro ao buscar CEP. Verifique sua conexão.');
+    }
+    setCepLoading(false);
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -121,6 +150,29 @@ export default function WorkshopProfile() {
               title="O CNPJ não pode ser alterado" />
           </div>
 
+          {/* CEP com busca automática */}
+          <div>
+            <label className="label">CEP</label>
+            <div className="relative">
+              <input
+                className="input !pr-10"
+                placeholder="00000-000"
+                value={cep}
+                maxLength={9}
+                onChange={e => fetchCep(e.target.value)}
+              />
+              {cepLoading && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <div className="h-4 w-4 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+                </div>
+              )}
+            </div>
+            {cepError && <p className="text-xs text-red-500 mt-1">{cepError}</p>}
+            {!cepError && cep.replace(/\D/g, '').length === 8 && !cepLoading && (
+              <p className="text-xs text-signal-600 mt-1">✓ Endereço preenchido automaticamente</p>
+            )}
+          </div>
+
           <div>
             <label className="label">Endereço</label>
             <input className="input" value={shop.address} onChange={set('address')}
@@ -146,34 +198,42 @@ export default function WorkshopProfile() {
               value={shop.description ?? ''} onChange={set('description')} />
           </div>
 
-          {/* Location */}
+          {/* Localização */}
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-3">
               <label className="label !mb-0">Localização no mapa</label>
               <button type="button" onClick={useGps} disabled={geoLoading}
-                className="btn-secondary !py-1.5 !px-3 text-xs disabled:opacity-60 flex items-center gap-1.5">
+                className="btn-primary !py-1.5 !px-3 text-xs disabled:opacity-60 flex items-center gap-1.5">
                 {geoLoading
-                  ? <><div className="h-3 w-3 rounded-full border border-brand-500 border-t-transparent animate-spin" /> Obtendo…</>
+                  ? <><div className="h-3 w-3 rounded-full border border-white border-t-transparent animate-spin" /> Obtendo…</>
                   : <>📍 Usar minha localização</>
                 }
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-xs text-steel-400 mb-1">Latitude</div>
-                <input className="input font-mono text-sm" type="number" step="any"
-                  placeholder="-23.5505"
-                  value={shop.lat ?? ''}
-                  onChange={e => setShop({ ...shop, lat: e.target.value ? Number(e.target.value) : null })} />
-              </div>
-              <div>
-                <div className="text-xs text-steel-400 mb-1">Longitude</div>
-                <input className="input font-mono text-sm" type="number" step="any"
-                  placeholder="-46.6333"
-                  value={shop.lng ?? ''}
-                  onChange={e => setShop({ ...shop, lng: e.target.value ? Number(e.target.value) : null })} />
+
+            <div className="bg-steel-50 border border-steel-200 rounded-xl p-4 space-y-3">
+              <p className="text-xs text-steel-500">
+                A localização é usada para que os mecânicos vejam sua oficina no mapa e recebam estimativa de chegada.
+                Use o botão acima para detectar automaticamente, ou preencha os campos abaixo.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-xs text-steel-400 mb-1 font-medium">Latitude</div>
+                  <input className="input font-mono text-sm" type="number" step="any"
+                    placeholder="-23.5505"
+                    value={shop.lat ?? ''}
+                    onChange={e => setShop({ ...shop, lat: e.target.value ? Number(e.target.value) : null })} />
+                </div>
+                <div>
+                  <div className="text-xs text-steel-400 mb-1 font-medium">Longitude</div>
+                  <input className="input font-mono text-sm" type="number" step="any"
+                    placeholder="-46.6333"
+                    value={shop.lng ?? ''}
+                    onChange={e => setShop({ ...shop, lng: e.target.value ? Number(e.target.value) : null })} />
+                </div>
               </div>
             </div>
+
             {shop.lat && shop.lng ? (
               <div className="mt-2 flex items-center gap-1.5 text-xs text-signal-600 font-semibold">
                 <span>✓</span>
