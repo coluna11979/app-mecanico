@@ -26,6 +26,7 @@ export default function WorkshopDashboard() {
   const [pickedMechanic, setPickedMechanic] = useState<string>('');
   const [mechSearch, setMechSearch] = useState('');
   const [saving, setSaving]     = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => { if (user) load(); }, [user]);
 
@@ -67,13 +68,23 @@ export default function WorkshopDashboard() {
 
   function resetModal() {
     setModal(false); setForm(EMPTY);
-    setMode('open'); setPickedMechanic(''); setMechSearch('');
+    setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
   }
 
   async function createJob(e: FormEvent) {
     e.preventDefault();
-    if (!shop) return;
-    if (mode === 'direct' && !pickedMechanic) return;
+    setFormError(null);
+
+    // Validação explícita (mobile não mostra o tooltip do browser)
+    if (!form.title.trim()) return setFormError('Informe o título do serviço.');
+    if (!form.description.trim()) return setFormError('Informe a descrição do serviço.');
+    const pph = Number(form.price_per_hour);
+    const mh  = Number(form.max_hours);
+    if (!pph || pph < 1) return setFormError('Informe o valor por hora (mínimo R$ 1).');
+    if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
+    if (mode === 'direct' && !pickedMechanic) return setFormError('Selecione o mecânico para contratação direta.');
+    if (!shop) return setFormError('Oficina não carregada. Recarregue a página.');
+
     setSaving(true);
     const pph = Number(form.price_per_hour);
     const mh  = Number(form.max_hours);
@@ -322,11 +333,18 @@ export default function WorkshopDashboard() {
             </div>
 
             {/* Sticky footer */}
-            <div className="px-5 py-4 border-t border-steel-100 flex gap-3 bg-white rounded-b-3xl sm:rounded-b-2xl">
-              <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={saving || (mode === 'direct' && !pickedMechanic)}>
-                {saving ? 'Publicando…' : mode === 'direct' ? 'Convidar mecânico' : 'Publicar demanda'}
-              </button>
+            <div className="px-5 py-4 border-t border-steel-100 bg-white rounded-b-3xl sm:rounded-b-2xl space-y-3">
+              {formError && (
+                <div className="bg-alert-500/10 border border-alert-300 text-alert-700 text-sm font-semibold rounded-xl px-4 py-2.5 flex items-center gap-2">
+                  <span>⚠️</span><span>{formError}</span>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>
+                <button type="submit" className="btn-primary flex-1" disabled={saving}>
+                  {saving ? 'Publicando…' : mode === 'direct' ? 'Convidar mecânico' : 'Publicar demanda'}
+                </button>
+              </div>
             </div>
           </form>
         </div>

@@ -129,13 +129,26 @@ export interface ServiceOrder {
   workshop_id: string;
   vehicle_id: string | null;
   customer_id: string | null;
+  workshop_mechanic_id: string | null;
   title: string;
   description: string | null;
   mechanic_name: string | null;
+  category: string | null;
   status: OsStatus;
   price: number;
   created_at: string;
+  started_at: string | null;
   completed_at: string | null;
+}
+
+export interface WorkshopMechanic {
+  id: string;
+  workshop_id: string;
+  name: string;
+  phone: string | null;
+  specialty: string | null;
+  active: boolean;
+  created_at: string;
 }
 
 export interface Message {
