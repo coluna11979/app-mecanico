@@ -145,8 +145,8 @@ export interface WorkshopMechanic {
   id: string;
   workshop_id: string;
   name: string;
-  phone: string | null;
   specialty: string | null;
+  skills: string[];
   active: boolean;
   created_at: string;
 }
