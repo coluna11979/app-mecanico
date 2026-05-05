@@ -5,13 +5,14 @@ import { getSetting } from '@/lib/settings';
 export interface Marker { id: string; lat: number; lng: number; color?: string; label?: string }
 
 interface Props {
-  center: [number, number];   // [lat, lng]
+  center: [number, number];        // [lat, lng]
   zoom?: number;
   markers?: Marker[];
   liveMechanic?: { lat: number; lng: number };
+  routeCoords?: [number, number][]; // [lng, lat][] vindo do Mapbox Directions
   styleUrl?: string;
   className?: string;
-  followMechanic?: boolean;   // se true, câmera segue o mecânico automaticamente
+  followMechanic?: boolean;
 }
 
 export default function MapView({
@@ -19,6 +20,7 @@ export default function MapView({
   zoom = 13,
   markers = [],
   liveMechanic,
+  routeCoords,
   styleUrl,
   className,
   followMechanic = true,
@@ -28,9 +30,9 @@ export default function MapView({
   const markerRefs    = useRef<Record<string, mapboxgl.Marker>>({});
   const liveMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const initialCenter = useRef(center);
-  const ready         = useRef(false);
+  const mapLoaded     = useRef(false);
 
-  /* ── Inicializa o mapa uma única vez ── */
+  /* ── Inicia o mapa uma única vez ── */
   useEffect(() => {
     let alive = true;
 
@@ -51,7 +53,7 @@ export default function MapView({
       m.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
 
       m.on('load', () => {
-        ready.current = true;
+        mapLoaded.current = true;
       });
 
       mapRef.current = m;
@@ -59,7 +61,7 @@ export default function MapView({
 
     return () => {
       alive = false;
-      ready.current = false;
+      mapLoaded.current = false;
       liveMarkerRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
@@ -67,14 +69,12 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ── Atualiza marcadores estáticos (oficina, etc.) ── */
+  /* ── Marcadores estáticos (oficina, etc.) ── */
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
-
     Object.values(markerRefs.current).forEach(mk => mk.remove());
     markerRefs.current = {};
-
     markers.forEach(mk => {
       const el = document.createElement('div');
       el.className = 'rounded-full w-9 h-9 border-2 border-white shadow-xl grid place-items-center text-sm font-bold text-white';
@@ -86,6 +86,47 @@ export default function MapView({
     });
   }, [markers]);
 
+  /* ── Linha da rota ── */
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m || !routeCoords?.length) return;
+
+    const geojson: GeoJSON.Feature<GeoJSON.LineString> = {
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: routeCoords },
+    };
+
+    const apply = () => {
+      // Linha de fundo (sombra)
+      if (!m.getSource('route-bg')) {
+        m.addSource('route-bg', { type: 'geojson', data: geojson });
+        m.addLayer({
+          id: 'route-bg', type: 'line', source: 'route-bg',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': '#000', 'line-width': 9, 'line-opacity': 0.25 },
+        });
+      } else {
+        (m.getSource('route-bg') as mapboxgl.GeoJSONSource).setData(geojson);
+      }
+
+      // Linha principal laranja
+      if (!m.getSource('route')) {
+        m.addSource('route', { type: 'geojson', data: geojson });
+        m.addLayer({
+          id: 'route', type: 'line', source: 'route',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': '#FF5C0A', 'line-width': 5, 'line-opacity': 0.95 },
+        });
+      } else {
+        (m.getSource('route') as mapboxgl.GeoJSONSource).setData(geojson);
+      }
+    };
+
+    if (m.loaded()) apply();
+    else m.on('load', apply);
+  }, [routeCoords]);
+
   /* ── Marcador do mecânico + câmera que segue ── */
   useEffect(() => {
     const m = mapRef.current;
@@ -93,40 +134,27 @@ export default function MapView({
 
     const lngLat: [number, number] = [liveMechanic.lng, liveMechanic.lat];
 
-    // Cria o marcador pulsante na primeira vez
     if (!liveMarkerRef.current) {
-      const el = document.createElement('div');
-      el.innerHTML = `
-        <div style="position:relative;width:44px;height:44px;">
-          <div style="
-            position:absolute;inset:-8px;border-radius:50%;
-            background:rgba(255,92,10,0.25);
-            animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;
-          "></div>
-          <div style="
-            position:relative;width:44px;height:44px;border-radius:50%;
-            background:#FF5C0A;border:3px solid #fff;
-            box-shadow:0 4px 16px rgba(255,92,10,0.5);
-            display:flex;align-items:center;justify-content:center;
-            font-size:20px;
-          ">🔧</div>
-        </div>`;
-      // Injeta keyframe de ping se ainda não existe
+      // Injeta keyframe de ping
       if (!document.getElementById('map-ping-style')) {
         const style = document.createElement('style');
         style.id = 'map-ping-style';
         style.textContent = `@keyframes ping{75%,100%{transform:scale(2);opacity:0}}`;
         document.head.appendChild(style);
       }
+      const el = document.createElement('div');
+      el.innerHTML = `
+        <div style="position:relative;width:44px;height:44px;">
+          <div style="position:absolute;inset:-8px;border-radius:50%;background:rgba(255,92,10,0.25);animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>
+          <div style="position:relative;width:44px;height:44px;border-radius:50%;background:#FF5C0A;border:3px solid #fff;box-shadow:0 4px 16px rgba(255,92,10,0.5);display:flex;align-items:center;justify-content:center;font-size:20px;">🔧</div>
+        </div>`;
       liveMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
         .setLngLat(lngLat)
         .addTo(m);
     } else {
-      // Move o marcador suavemente
       liveMarkerRef.current.setLngLat(lngLat);
     }
 
-    // Câmera segue o mecânico suavemente
     if (followMechanic) {
       m.easeTo({ center: lngLat, duration: 800, easing: t => t });
     }

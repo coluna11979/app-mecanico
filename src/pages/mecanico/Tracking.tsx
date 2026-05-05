@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGeoBroadcast } from '@/hooks/useGeoBroadcast';
+import { getSetting } from '@/lib/settings';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import type { Job, Workshop } from '@/types/database';
@@ -46,6 +47,10 @@ export default function MechanicTracking() {
   const [mechPos, setMechPos] = useState<{ lat: number; lng: number } | null>(null);
   const watchRef = useRef<number | null>(null);
 
+  /* ── Rota Mapbox Directions ── */
+  const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
+  const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
+
   useEffect(() => {
     if (!navigator.geolocation) return;
     watchRef.current = navigator.geolocation.watchPosition(
@@ -85,6 +90,48 @@ export default function MechanicTracking() {
     jobId: job?.id ?? null,
     mechanicId,
   });
+
+  /* ── Remove a rota quando mecânico chega ── */
+  useEffect(() => {
+    if (job?.arrived_at || job?.status === 'in_progress' || job?.status === 'completed') {
+      setRouteCoords(null);
+    }
+  }, [job?.arrived_at, job?.status]);
+
+  /* ── Busca rota Mapbox Directions (só quando a caminho) ── */
+  useEffect(() => {
+    if (job?.status !== 'assigned' || job?.arrived_at) return;
+    if (!mechPos || !shop?.lat || !shop?.lng) return;
+
+    // Só refaz a rota se o mecânico se moveu > 30 metros
+    const prev = lastRouteFetch.current;
+    if (prev) {
+      const dlat = Math.abs(prev.lat - mechPos.lat);
+      const dlng = Math.abs(prev.lng - mechPos.lng);
+      if (dlat < 0.0003 && dlng < 0.0003) return; // ~30 m
+    }
+
+    lastRouteFetch.current = { lat: mechPos.lat, lng: mechPos.lng };
+
+    (async () => {
+      try {
+        const token = await getSetting('mapbox_token', '');
+        if (!token) return;
+
+        const url =
+          `https://api.mapbox.com/directions/v5/mapbox/driving/` +
+          `${mechPos.lng},${mechPos.lat};${shop.lng},${shop.lat}` +
+          `?geometries=geojson&overview=full&steps=false&access_token=${token}`;
+
+        const res  = await fetch(url);
+        const data = await res.json();
+        const coords = data?.routes?.[0]?.geometry?.coordinates as [number, number][] | undefined;
+        if (coords?.length) setRouteCoords(coords);
+      } catch {
+        // silencioso — rota é um extra, não bloqueia o tracking
+      }
+    })();
+  }, [mechPos, shop, job?.status, job?.arrived_at]);
 
   async function confirmArrival() {
     if (!job) return;
@@ -177,9 +224,11 @@ export default function MechanicTracking() {
           center={mapCenter}
           zoom={mapZoom}
           liveMechanic={mechPos ?? undefined}
+          routeCoords={routeCoords ?? undefined}
           markers={shop?.lat && shop?.lng
             ? [{ id: 'shop', lat: shop.lat, lng: shop.lng, label: '🏭', color: '#0B1117' }]
             : []}
+          styleUrl="mapbox://styles/mapbox/streets-v12"
         />
       </div>
 
