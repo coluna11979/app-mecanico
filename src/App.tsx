@@ -12,6 +12,7 @@ import MechanicJob from './pages/mecanico/JobDetail';
 import MechanicTracking from './pages/mecanico/Tracking';
 import MechanicProfile from './pages/mecanico/Profile';
 import MechanicGanhos from './pages/mecanico/Ganhos';
+import MechanicMapa from './pages/mecanico/Mapa';
 
 import WorkshopDashboard from './pages/oficina/Dashboard';
 import WorkshopSearch from './pages/oficina/Search';
@@ -43,7 +44,7 @@ export default function App() {
       <Route path="/mecanico/job/:id/tracking" element={<ProtectedRoute allow={['mechanic']}><MechanicTracking /></ProtectedRoute>} />
       <Route path="/mecanico/perfil" element={<ProtectedRoute allow={['mechanic']}><MechanicProfile /></ProtectedRoute>} />
       <Route path="/mecanico/ganhos" element={<ProtectedRoute allow={['mechanic']}><MechanicGanhos /></ProtectedRoute>} />
-      <Route path="/mecanico/mapa" element={<ProtectedRoute allow={['mechanic']}><MechanicDashboard /></ProtectedRoute>} />
+      <Route path="/mecanico/mapa" element={<ProtectedRoute allow={['mechanic']}><MechanicMapa /></ProtectedRoute>} />
 
       {/* Oficina */}
       <Route path="/oficina/dashboard" element={<ProtectedRoute allow={['workshop']}><WorkshopDashboard /></ProtectedRoute>} />

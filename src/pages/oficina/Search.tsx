@@ -17,7 +17,7 @@ export default function WorkshopSearch() {
 
   // hire modal
   const [target, setTarget] = useState<MechRow | null>(null);
-  const [job, setJob] = useState({ title: '', description: '', price: 0 });
+  const [job, setJob] = useState({ title: '', description: '', price_per_hour: 0, max_hours: 1 });
   const [hiring, setHiring] = useState(false);
 
   useEffect(() => {
@@ -41,10 +41,17 @@ export default function WorkshopSearch() {
     e.preventDefault();
     if (!shop || !target) return;
     setHiring(true);
+    const pph = Number(job.price_per_hour) || target.hourly_rate;
+    const mh  = Number(job.max_hours) || 1;
     await supabase.from('jobs').insert({
-      workshop_id: shop.id, mechanic_id: target.id,
-      title: job.title, description: job.description, price: job.price,
-      status: 'assigned',
+      workshop_id:    shop.id,
+      mechanic_id:    target.id,
+      title:          job.title,
+      description:    job.description,
+      price_per_hour: pph,
+      max_hours:      mh,
+      price:          pph * mh,
+      status:         'assigned',
     });
     setHiring(false); setTarget(null);
     alert('Mecânico contratado! Acompanhe pelo dashboard.');
@@ -94,32 +101,75 @@ export default function WorkshopSearch() {
               </div>
               <div className="mt-3 flex justify-between items-center">
                 <div><span className="text-2xl font-bold font-display">R$ {m.hourly_rate.toFixed(0)}</span><span className="text-xs text-steel-500">/h</span></div>
-                <button onClick={() => setTarget(m)} className="btn-primary">Contratar</button>
+                <button onClick={() => { setTarget(m); setJob({ title: '', description: '', price_per_hour: m.hourly_rate, max_hours: 1 }); }} className="btn-primary">Contratar</button>
               </div>
             </div>
           ))}
         </div>}
 
-      {target && (
-        <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setTarget(null)}>
-          <form onClick={e => e.stopPropagation()} onSubmit={hire} className="card max-w-md w-full">
-            <h3 className="text-xl font-bold">Contratar {target.profile.full_name}</h3>
-            <p className="text-sm text-steel-500 mt-1">Valor referência: R$ {target.hourly_rate.toFixed(0)}/h</p>
-            <div className="mt-4 space-y-3">
-              <div><label className="label">Título do serviço</label>
-                <input className="input" required value={job.title} onChange={e => setJob(j => ({ ...j, title: e.target.value }))} placeholder="Ex.: Troca de pastilha de freio" /></div>
-              <div><label className="label">Descrição</label>
-                <textarea className="input" rows={3} required value={job.description} onChange={e => setJob(j => ({ ...j, description: e.target.value }))} /></div>
-              <div><label className="label">Valor total (R$)</label>
-                <input type="number" min={1} className="input" required value={job.price} onChange={e => setJob(j => ({ ...j, price: Number(e.target.value) }))} /></div>
-            </div>
-            <div className="flex gap-2 mt-5">
-              <button type="button" onClick={() => setTarget(null)} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={hiring}>{hiring ? '…' : 'Contratar'}</button>
-            </div>
-          </form>
-        </div>
-      )}
+      {target && (() => {
+        const pph = Number(job.price_per_hour) || target.hourly_rate;
+        const mh  = Number(job.max_hours) || 1;
+        const est = pph * mh;
+        return (
+          <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setTarget(null)}>
+            <form onClick={e => e.stopPropagation()} onSubmit={hire} className="card max-w-md w-full space-y-4">
+              <div>
+                <h3 className="text-xl font-bold">Contratar {target.profile.full_name}</h3>
+                <p className="text-sm text-steel-500 mt-1">Taxa de referência: R$ {target.hourly_rate.toFixed(0)}/h · ★ {target.rating.toFixed(1)}</p>
+              </div>
+
+              <div>
+                <label className="label">Título do serviço *</label>
+                <input className="input" required value={job.title}
+                  onChange={e => setJob(j => ({ ...j, title: e.target.value }))}
+                  placeholder="Ex.: Troca de pastilha de freio — Civic" />
+              </div>
+
+              <div>
+                <label className="label">Descrição *</label>
+                <textarea className="input" rows={3} required value={job.description}
+                  onChange={e => setJob(j => ({ ...j, description: e.target.value }))}
+                  placeholder="Descreva o serviço, veículo, detalhes…" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">R$/hora</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                    <input type="number" min={1} className="input !pl-9" required
+                      value={job.price_per_hour || ''}
+                      placeholder={target.hourly_rate.toFixed(0)}
+                      onChange={e => setJob(j => ({ ...j, price_per_hour: Number(e.target.value) }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Máx. horas</label>
+                  <div className="relative">
+                    <input type="number" min={0.5} max={24} step={0.5} className="input !pr-9" required
+                      value={job.max_hours}
+                      onChange={e => setJob(j => ({ ...j, max_hours: Number(e.target.value) }))} />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
+                  </div>
+                </div>
+              </div>
+
+              {est > 0 && (
+                <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
+                  <span className="text-sm text-brand-700">Teto do orçamento</span>
+                  <span className="font-bold text-brand-700 font-display">R$ {est.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setTarget(null)} className="btn-ghost flex-1">Cancelar</button>
+                <button className="btn-primary flex-1" disabled={hiring}>{hiring ? '…' : 'Contratar'}</button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
     </WorkshopLayout>
   );
 }
