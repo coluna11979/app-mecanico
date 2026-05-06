@@ -180,3 +180,13 @@ export interface AppNotification {
   read: boolean;
   created_at: string;
 }
+
+export type WorkshopRole = 'owner' | 'manager' | 'staff';
+
+export interface WorkshopMember {
+  id: string;
+  workshop_id: string;
+  profile_id: string;
+  role: WorkshopRole;
+  created_at: string;
+}

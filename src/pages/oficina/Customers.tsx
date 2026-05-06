@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Customer, Vehicle, Workshop, ServiceOrder } from '@/types/database';
+import type { Customer, Vehicle, ServiceOrder } from '@/types/database';
 
 type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
 
@@ -10,8 +10,8 @@ const EMPTY_C = { full_name: '', phone: '', email: '', cpf: '', address: '', cit
 const EMPTY_V = { plate: '', make: '', model: '', year: '', color: '', notes: '' };
 
 export default function Customers() {
-  const { user } = useAuth();
-  const [shop, setShop]         = useState<Workshop | null>(null);
+  const { user, currentWorkshop } = useAuth();
+  const shop = currentWorkshop;
   const [list, setList]         = useState<CustomerFull[]>([]);
   const [search, setSearch]     = useState('');
   const [selected, setSelected] = useState<CustomerFull | null>(null);
@@ -21,13 +21,10 @@ export default function Customers() {
   const [formV, setFormV]       = useState(EMPTY_V);
   const [saving, setSaving]     = useState(false);
 
-  useEffect(() => { if (user) load(); }, [user]);
-
-  async function load() {
-    const { data: w } = await supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle();
-    setShop(w as Workshop);
-    if (w?.id) await fetchCustomers(w.id);
-  }
+  useEffect(() => {
+    if (!user || !currentWorkshop) return;
+    fetchCustomers(currentWorkshop.id);
+  }, [user, currentWorkshop?.id]);
 
   async function fetchCustomers(wid: string) {
     const { data } = await supabase

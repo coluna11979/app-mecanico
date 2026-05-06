@@ -12,10 +12,10 @@ type JobWithMechanic = Job & {
 };
 
 export default function WorkshopMensagens() {
-  const { user } = useAuth();
+  const { user, currentWorkshop } = useAuth();
   const nav = useNavigate();
 
-  const [shopId, setShopId]       = useState<string | null>(null);
+  const shopId = currentWorkshop?.id ?? null;
   const [jobs, setJobs]           = useState<JobWithMechanic[]>([]);
   const [selected, setSelected]   = useState<JobWithMechanic | null>(null);
   const [messages, setMessages]   = useState<Message[]>([]);
@@ -24,17 +24,11 @@ export default function WorkshopMensagens() {
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  /* ── Carrega oficina + jobs ativos ── */
+  /* ── Recarrega jobs ao trocar de oficina ── */
   useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const { data: w } = await supabase
-        .from('workshops').select('id').eq('profile_id', user.id).maybeSingle();
-      if (!w) return;
-      setShopId(w.id);
-      loadJobs(w.id);
-    })();
-  }, [user]);
+    if (!user || !shopId) { setJobs([]); setSelected(null); return; }
+    loadJobs(shopId);
+  }, [user, shopId]);
 
   async function loadJobs(wid: string) {
     const { data: rawJobs } = await supabase

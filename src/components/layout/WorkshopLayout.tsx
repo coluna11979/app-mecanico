@@ -1,8 +1,9 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
 import { supabase } from '@/lib/supabase';
+import type { Workshop } from '@/types/database';
 
 interface NavItem  { to: string; icon: string; label: string }
 interface SoonItem { icon: string; label: string; desc: string }
@@ -77,23 +78,17 @@ const BOTTOM_TABS: NavItem[] = [
 const LS_KEY = 'oficina_msgs_last_seen';
 
 export default function WorkshopLayout({ children }: { children: ReactNode }) {
-  const { signOut, profile, user } = useAuth();
+  const { signOut, profile, user, workshops, currentWorkshop, setCurrentWorkshop } = useAuth();
   const nav      = useNavigate();
   const location = useLocation();
   const [open, setOpen]         = useState(false);
   const [unread, setUnread]     = useState(0);
-  const [shopId, setShopId]     = useState<string | null>(null);
+
+  const shopId = currentWorkshop?.id ?? null;
 
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Oficina';
   const initials  = (profile?.full_name ?? 'O')
     .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-
-  /* ── Busca workshop ID uma vez ── */
-  useEffect(() => {
-    if (!user) return;
-    supabase.from('workshops').select('id').eq('profile_id', user.id).maybeSingle()
-      .then(({ data }) => { if (data) setShopId(data.id); });
-  }, [user]);
 
   /* ── Conta mensagens não lidas ── */
   useEffect(() => {
@@ -170,6 +165,18 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           <Logo light />
         </div>
 
+        {/* Seletor de oficina */}
+        {currentWorkshop && (
+          <div className="px-3 pt-3">
+            <WorkshopSwitcher
+              workshops={workshops}
+              current={currentWorkshop}
+              onSelect={(w) => { setCurrentWorkshop(w); setOpen(false); }}
+              onAddNew={() => { nav('/oficina/nova'); setOpen(false); }}
+            />
+          </div>
+        )}
+
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
           <div>
@@ -228,19 +235,34 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Topbar mobile */}
-        <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-steel-200 flex items-center justify-between px-4 h-14 shrink-0">
+        <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-steel-200 flex items-center gap-2 px-3 h-14 shrink-0">
           <button
             onClick={() => setOpen(true)}
-            className="h-10 w-10 rounded-xl bg-steel-100 grid place-items-center"
+            className="h-10 w-10 rounded-xl bg-steel-100 grid place-items-center shrink-0"
             aria-label="Menu"
           >
             <svg className="w-5 h-5 text-steel-700" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <Logo />
+
+          {/* Switcher mobile (ocupa o espaço central) */}
+          {currentWorkshop ? (
+            <div className="flex-1 min-w-0">
+              <WorkshopSwitcher
+                workshops={workshops}
+                current={currentWorkshop}
+                onSelect={(w) => setCurrentWorkshop(w)}
+                onAddNew={() => nav('/oficina/nova')}
+                compact
+              />
+            </div>
+          ) : (
+            <div className="flex-1"><Logo /></div>
+          )}
+
           {/* Avatar + badge mobile no topo */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm">
               {initials}
             </div>
@@ -284,6 +306,84 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           ))}
         </div>
       </nav>
+    </div>
+  );
+}
+
+/* ── Seletor de oficina (dropdown) ── */
+function WorkshopSwitcher({
+  workshops, current, onSelect, onAddNew, compact = false,
+}: {
+  workshops: Workshop[];
+  current: Workshop;
+  onSelect: (w: Workshop) => void;
+  onAddNew: () => void;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // fecha ao clicar fora
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const triggerCls = compact
+    ? 'w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 transition'
+    : 'w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-steel-800/60 hover:bg-steel-800 border border-steel-700 transition';
+  const labelCls = compact ? 'text-xs font-bold text-steel-800' : 'text-sm font-bold text-white';
+  const subCls   = compact ? 'text-[9px] text-steel-500' : 'text-[10px] text-steel-400';
+
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" onClick={() => setOpen(o => !o)} className={triggerCls}>
+        <span className="text-base shrink-0">🏪</span>
+        <div className="flex-1 min-w-0 text-left">
+          <div className={`${labelCls} truncate leading-tight`}>{current.business_name}</div>
+          {workshops.length > 1 && (
+            <div className={`${subCls} truncate leading-tight`}>{current.city}/{current.state}</div>
+          )}
+        </div>
+        <span className={`text-xs shrink-0 ${compact ? 'text-steel-500' : 'text-steel-400'} transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white rounded-xl shadow-2xl border border-steel-200 overflow-hidden max-h-80 overflow-y-auto">
+          <div className="px-3 py-2 text-[10px] font-bold text-steel-500 uppercase tracking-widest border-b border-steel-100">
+            Suas oficinas ({workshops.length})
+          </div>
+          {workshops.map(w => {
+            const isActive = w.id === current.id;
+            return (
+              <button
+                key={w.id}
+                onClick={() => { onSelect(w); setOpen(false); }}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-steel-50 transition text-left ${isActive ? 'bg-brand-50' : ''}`}
+              >
+                <span className="text-base shrink-0">{isActive ? '✅' : '🏪'}</span>
+                <div className="flex-1 min-w-0">
+                  <div className={`text-sm font-semibold truncate ${isActive ? 'text-brand-600' : 'text-steel-800'}`}>
+                    {w.business_name}
+                  </div>
+                  <div className="text-[10px] text-steel-500 truncate">{w.city}/{w.state}</div>
+                </div>
+              </button>
+            );
+          })}
+          <button
+            onClick={() => { onAddNew(); setOpen(false); }}
+            className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-brand-50 transition text-left border-t border-steel-100"
+          >
+            <span className="text-base shrink-0 text-brand-500">＋</span>
+            <span className="text-sm font-semibold text-brand-600">Adicionar nova oficina</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

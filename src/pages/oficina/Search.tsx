@@ -2,15 +2,15 @@ import { FormEvent, useEffect, useState } from 'react';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Mechanic, Profile, Workshop } from '@/types/database';
+import type { Mechanic, Profile } from '@/types/database';
 
 const ALL_SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
 
 type MechRow = Mechanic & { profile: Profile };
 
 export default function WorkshopSearch() {
-  const { user } = useAuth();
-  const [shop, setShop] = useState<Workshop | null>(null);
+  const { currentWorkshop } = useAuth();
+  const shop = currentWorkshop;
   const [filter, setFilter] = useState({ skill: '', minRating: 0, maxRate: 500 });
   const [list, setList] = useState<MechRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,11 +19,6 @@ export default function WorkshopSearch() {
   const [target, setTarget] = useState<MechRow | null>(null);
   const [job, setJob] = useState({ title: '', description: '', price_per_hour: 0, max_hours: 1 });
   const [hiring, setHiring] = useState(false);
-
-  useEffect(() => {
-    supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle()
-      .then(({ data }) => setShop(data as Workshop));
-  }, [user]);
 
   useEffect(() => { search(); }, [filter]);
 

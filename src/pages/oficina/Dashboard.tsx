@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Job, Workshop } from '@/types/database';
+import type { Job } from '@/types/database';
 
 type NewJob = {
   title: string; description: string;
@@ -15,8 +15,8 @@ type JobMode = 'open' | 'direct';
 const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '' };
 
 export default function WorkshopDashboard() {
-  const { user } = useAuth();
-  const [shop, setShop]         = useState<Workshop | null>(null);
+  const { user, currentWorkshop } = useAuth();
+  const shop = currentWorkshop;
   const [active, setActive]     = useState<Job[]>([]);
   const [history, setHistory]   = useState<Job[]>([]);
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
@@ -27,20 +27,14 @@ export default function WorkshopDashboard() {
   const [mechSearch, setMechSearch] = useState('');
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [shopLoading, setShopLoading] = useState(true);
+  const shopLoading = !currentWorkshop;
 
-  useEffect(() => { if (user) load(); }, [user]);
-
-  async function load() {
-    setShopLoading(true);
-    const { data: w, error } = await supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle();
-    if (error) console.error('Erro ao carregar oficina:', error);
-    setShop(w as Workshop);
-    setShopLoading(false);
-    if (w?.id) {
-      await Promise.all([fetchJobs(w.id), fetchMechanics()]);
-    }
-  }
+  // Recarrega jobs quando a oficina ativa mudar (troca pelo seletor)
+  useEffect(() => {
+    if (!user || !currentWorkshop) return;
+    fetchJobs(currentWorkshop.id);
+    fetchMechanics();
+  }, [user, currentWorkshop?.id]);
 
   async function fetchJobs(workshopId: string) {
     const [{ data: a }, { data: h }] = await Promise.all([
@@ -88,13 +82,8 @@ export default function WorkshopDashboard() {
     if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
     if (mode === 'direct' && !pickedMechanic) return setFormError('Selecione o mecânico para contratação direta.');
 
-    // Se shop ainda não carregou, tenta buscar novamente antes de desistir
-    let currentShop = shop;
-    if (!currentShop) {
-      const { data: w } = await supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle();
-      if (w) { setShop(w as Workshop); currentShop = w as Workshop; }
-    }
-    if (!currentShop) return setFormError('Oficina não encontrada. Verifique seu cadastro ou recarregue a página.');
+    if (!shop) return setFormError('Oficina não encontrada. Verifique seu cadastro ou recarregue a página.');
+    const currentShop = shop;
 
     setSaving(true);
     const isDirect = mode === 'direct' && !!pickedMechanic;

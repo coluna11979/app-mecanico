@@ -6,7 +6,7 @@ import { AvatarUpload } from '@/components/AvatarUpload';
 import type { Workshop } from '@/types/database';
 
 export default function WorkshopProfile() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, currentWorkshop, refreshWorkshops } = useAuth();
   const [shop, setShop]             = useState<Workshop | null>(null);
   const [loading, setLoading]       = useState(true);
   const [busy, setBusy]             = useState(false);
@@ -16,11 +16,12 @@ export default function WorkshopProfile() {
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError]     = useState('');
 
+  // Edita a oficina ATUAL (a selecionada no seletor)
   useEffect(() => {
-    if (!user) return;
-    supabase.from('workshops').select('*').eq('profile_id', user.id).maybeSingle()
-      .then(({ data }) => { setShop(data as Workshop); setLoading(false); });
-  }, [user]);
+    if (!currentWorkshop) { setShop(null); setLoading(false); return; }
+    setShop(currentWorkshop);
+    setLoading(false);
+  }, [currentWorkshop?.id]);
 
   /* ── Busca CEP na ViaCEP ── */
   async function fetchCep(raw: string) {
@@ -85,6 +86,7 @@ export default function WorkshopProfile() {
       lng:           shop.lng,
     }).eq('id', shop.id);
     setBusy(false);
+    if (!error) await refreshWorkshops(); // sincroniza dados atualizados no AuthContext
     setMsg(error
       ? { text: error.message, ok: false }
       : { text: 'Alterações salvas com sucesso!', ok: true });

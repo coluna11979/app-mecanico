@@ -3,7 +3,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import type {
-  ServiceOrder, Customer, Vehicle, Workshop,
+  ServiceOrder, Customer, Vehicle,
   OsStatus, WorkshopMechanic,
 } from '@/types/database';
 
@@ -95,9 +95,9 @@ function toDatetimeLocal(iso: string | null) {
    Componente principal
 ══════════════════════════════════════════════════════════════ */
 export default function ServiceOrders() {
-  const { user } = useAuth();
+  const { user, currentWorkshop } = useAuth();
 
-  const [shop, setShop]                   = useState<Workshop | null>(null);
+  const shop = currentWorkshop;
   const [list, setList]                   = useState<OsRow[]>([]);
   const [customers, setCustomers]         = useState<Customer[]>([]);
   const [vehicles, setVehicles]           = useState<Vehicle[]>([]);
@@ -142,13 +142,14 @@ export default function ServiceOrders() {
   const [newSkill, setNewSkill]   = useState('');
   const [saving, setSaving]       = useState(false);
 
-  useEffect(() => { if (user) load(); }, [user]);
-
-  async function load() {
-    const { data: w } = await supabase.from('workshops').select('*').eq('profile_id', user!.id).maybeSingle();
-    setShop(w as Workshop);
-    if (w?.id) await Promise.all([fetchOS(w.id), fetchCustomers(w.id), fetchMechs(w.id)]);
-  }
+  useEffect(() => {
+    if (!user || !currentWorkshop) return;
+    Promise.all([
+      fetchOS(currentWorkshop.id),
+      fetchCustomers(currentWorkshop.id),
+      fetchMechs(currentWorkshop.id),
+    ]);
+  }, [user, currentWorkshop?.id]);
 
   async function fetchOS(wid: string) {
     const { data } = await supabase
