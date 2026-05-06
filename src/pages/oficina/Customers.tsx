@@ -6,7 +6,7 @@ import type { Customer, Vehicle, Workshop, ServiceOrder } from '@/types/database
 
 type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
 
-const EMPTY_C = { full_name: '', phone: '', email: '', cpf: '' };
+const EMPTY_C = { full_name: '', phone: '', email: '', cpf: '', address: '', city: '', birth_date: '' };
 const EMPTY_V = { plate: '', make: '', model: '', year: '', color: '', notes: '' };
 
 export default function Customers() {
@@ -42,7 +42,17 @@ export default function Customers() {
     e.preventDefault();
     if (!shop) return;
     setSaving(true);
-    const { data } = await supabase.from('customers').insert({ ...formC, workshop_id: shop.id }).select('*, vehicles(*, service_orders(*))').single();
+    const payload = {
+      workshop_id: shop.id,
+      full_name:   formC.full_name.trim(),
+      phone:       formC.phone.trim()  || null,
+      email:       formC.email.trim()  || null,
+      cpf:         formC.cpf.trim()    || null,
+      address:     formC.address.trim() || null,
+      city:        formC.city.trim()   || null,
+      birth_date:  formC.birth_date    || null,
+    };
+    const { data } = await supabase.from('customers').insert(payload).select('*, vehicles(*, service_orders(*))').single();
     setList(prev => [data as CustomerFull, ...prev]);
     setModalC(false); setFormC(EMPTY_C);
     setSaving(false);
@@ -132,9 +142,13 @@ export default function Customers() {
                 </div>
                 <h2 className="text-2xl font-bold">{selected.full_name}</h2>
                 <div className="text-sm text-steel-500 mt-1 space-y-0.5">
-                  {selected.phone && <div>📞 {selected.phone}</div>}
-                  {selected.email && <div>✉️ {selected.email}</div>}
-                  {selected.cpf   && <div>🪪 {selected.cpf}</div>}
+                  {selected.phone      && <div>📞 {selected.phone}</div>}
+                  {selected.email      && <div>✉️ {selected.email}</div>}
+                  {selected.cpf        && <div>🪪 {selected.cpf}</div>}
+                  {selected.birth_date && <div>🎂 {new Date(selected.birth_date + 'T00:00:00').toLocaleDateString('pt-BR')}</div>}
+                  {(selected.address || selected.city) && (
+                    <div>📍 {[selected.address, selected.city].filter(Boolean).join(' · ')}</div>
+                  )}
                 </div>
               </div>
               <button onClick={() => setSelected(null)} className="text-steel-400 hover:text-steel-700 text-2xl leading-none">✕</button>
@@ -194,21 +208,72 @@ export default function Customers() {
       {/* Modal novo cliente */}
       {modalC && (
         <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setModalC(false)}>
-          <form onSubmit={saveCustomer} onClick={e => e.stopPropagation()} className="card max-w-md w-full space-y-4">
+          <form onSubmit={saveCustomer} onClick={e => e.stopPropagation()} className="card max-w-md w-full space-y-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold">Novo cliente</h2>
-            <div><label className="label">Nome completo *</label>
-              <input className="input" required value={formC.full_name} onChange={e => setFormC(f => ({ ...f, full_name: e.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Telefone</label>
-                <input className="input" value={formC.phone} onChange={e => setFormC(f => ({ ...f, phone: e.target.value }))} placeholder="(11) 9..." /></div>
-              <div><label className="label">CPF</label>
-                <input className="input" value={formC.cpf} onChange={e => setFormC(f => ({ ...f, cpf: e.target.value }))} placeholder="000.000.000-00" /></div>
+
+            {/* Identificação */}
+            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Identificação</div>
+              <div>
+                <label className="label">Nome completo *</label>
+                <input className="input" required value={formC.full_name}
+                  onChange={e => setFormC(f => ({ ...f, full_name: e.target.value }))}
+                  placeholder="Maria da Silva" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">CPF</label>
+                  <input className="input" value={formC.cpf}
+                    onChange={e => setFormC(f => ({ ...f, cpf: e.target.value }))}
+                    placeholder="000.000.000-00" />
+                </div>
+                <div>
+                  <label className="label">Data de nascimento</label>
+                  <input className="input" type="date" value={formC.birth_date}
+                    onChange={e => setFormC(f => ({ ...f, birth_date: e.target.value }))} />
+                </div>
+              </div>
             </div>
-            <div><label className="label">E-mail</label>
-              <input className="input" type="email" value={formC.email} onChange={e => setFormC(f => ({ ...f, email: e.target.value }))} /></div>
+
+            {/* Contato */}
+            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Contato</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Telefone / WhatsApp</label>
+                  <input className="input" value={formC.phone}
+                    onChange={e => setFormC(f => ({ ...f, phone: e.target.value }))}
+                    placeholder="(11) 9 9999-9999" />
+                </div>
+                <div>
+                  <label className="label">E-mail</label>
+                  <input className="input" type="email" value={formC.email}
+                    onChange={e => setFormC(f => ({ ...f, email: e.target.value }))}
+                    placeholder="maria@email.com" />
+                </div>
+              </div>
+            </div>
+
+            {/* Endereço */}
+            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Endereço (opcional)</div>
+              <div>
+                <label className="label">Rua, número, bairro</label>
+                <input className="input" value={formC.address}
+                  onChange={e => setFormC(f => ({ ...f, address: e.target.value }))}
+                  placeholder="Rua das Flores, 123 — Centro" />
+              </div>
+              <div>
+                <label className="label">Cidade</label>
+                <input className="input" value={formC.city}
+                  onChange={e => setFormC(f => ({ ...f, city: e.target.value }))}
+                  placeholder="São Paulo" />
+              </div>
+            </div>
+
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setModalC(false)} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={saving}>{saving ? '…' : 'Salvar'}</button>
+              <button className="btn-primary flex-1" disabled={saving}>{saving ? '…' : 'Salvar cliente'}</button>
             </div>
           </form>
         </div>

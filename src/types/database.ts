@@ -111,6 +111,9 @@ export interface Customer {
   phone: string | null;
   email: string | null;
   cpf: string | null;
+  address: string | null;
+  city: string | null;
+  birth_date: string | null;
   created_at: string;
 }
 
@@ -142,6 +145,12 @@ export interface ServiceOrder {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  scheduled_at: string | null;
+  estimated_hours: number | null;
+  notes: string | null;
+  km_reading: number | null;
+  parts_cost: number | null;
+  labor_cost: number | null;
 }
 
 export interface WorkshopMechanic {

@@ -14,6 +14,8 @@ type OsRow = ServiceOrder & {
   mechanic: WorkshopMechanic | null;
 };
 
+type MainTab = 'os' | 'agendados' | 'mecanicos';
+
 /* ─── constantes ────────────────────────────────────────────── */
 const STATUSES: OsStatus[] = ['open', 'in_progress', 'completed', 'cancelled'];
 
@@ -34,20 +36,23 @@ const SPECIALTIES = [
   'Funilaria','Ar-condicionado','Geral',
 ];
 
-const EMPTY_OS = { title:'', description:'', category:'', customer_id:'', vehicle_id:'', workshop_mechanic_id:'' };
-const EMPTY_MECH = { name:'', specialty:'', skills:[] as string[] };
+const EMPTY_OS = {
+  title: '', description: '', category: '',
+  customer_id: '', vehicle_id: '', workshop_mechanic_id: '',
+  notes: '', estimated_hours: '', km_reading: '',
+  parts_cost: '', labor_cost: '',
+};
+const EMPTY_MECH = { name: '', specialty: '', skills: [] as string[] };
 
-/* ─── currency helpers ──────────────────────────────────────── */
+/* ─── helpers ───────────────────────────────────────────────── */
 function toBRL(cents: number) {
   return (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function parseCents(formatted: string) {
   return parseInt(formatted.replace(/\D/g, '') || '0', 10);
 }
-
-/* ─── outros helpers ────────────────────────────────────────── */
 function osLabel(s: string) {
-  return ({open:'Aberta',in_progress:'Em andamento',completed:'Concluída',cancelled:'Cancelada'} as Record<string,string>)[s] ?? s;
+  return ({ open:'Aberta', in_progress:'Em andamento', completed:'Concluída', cancelled:'Cancelada' } as Record<string,string>)[s] ?? s;
 }
 function osColor(s: string) {
   return ({
@@ -72,6 +77,12 @@ function fmtDate(iso: string) {
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
 }
+function toDatetimeLocal(iso: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 /* ══════════════════════════════════════════════════════════════
    Componente principal
@@ -85,20 +96,22 @@ export default function ServiceOrders() {
   const [vehicles, setVehicles]       = useState<Vehicle[]>([]);
   const [internalMechs, setInternalMechs] = useState<WorkshopMechanic[]>([]);
 
-  const [tab, setTab]               = useState<'os'|'mecanicos'>('os');
+  const [tab, setTab]                   = useState<MainTab>('os');
   const [filterStatus, setFilterStatus] = useState<OsStatus|'all'>('all');
-  const [filterMech, setFilterMech] = useState('all');
-  const [search, setSearch]         = useState('');
-  const [detail, setDetail]         = useState<OsRow | null>(null);
-  const [modalOS, setModalOS]       = useState(false);
-  const [modalMech, setModalMech]   = useState(false);
-  const [editMech, setEditMech]     = useState<WorkshopMechanic | null>(null);
+  const [filterMech, setFilterMech]     = useState('all');
+  const [search, setSearch]             = useState('');
+  const [detail, setDetail]             = useState<OsRow | null>(null);
+  const [modalOS, setModalOS]           = useState(false);
+  const [modalMech, setModalMech]       = useState(false);
+  const [editMech, setEditMech]         = useState<WorkshopMechanic | null>(null);
 
-  const [formOS, setFormOS]         = useState(EMPTY_OS);
-  const [priceCents, setPriceCents] = useState(0);
-  const [formMech, setFormMech]     = useState(EMPTY_MECH);
-  const [newSkill, setNewSkill]     = useState('');
-  const [saving, setSaving]         = useState(false);
+  const [formOS, setFormOS]           = useState(EMPTY_OS);
+  const [priceCents, setPriceCents]   = useState(0);
+  const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now');
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [formMech, setFormMech]       = useState(EMPTY_MECH);
+  const [newSkill, setNewSkill]       = useState('');
+  const [saving, setSaving]           = useState(false);
 
   useEffect(() => { if (user) load(); }, [user]);
 
@@ -131,29 +144,23 @@ export default function ServiceOrders() {
     setVehicles((data as Vehicle[]) ?? []);
   }
 
-  /* ── criar / editar mecânico interno ── */
+  /* ── mecânico interno ── */
   function openNewMech() {
-    setEditMech(null);
-    setFormMech(EMPTY_MECH);
-    setNewSkill('');
-    setModalMech(true);
+    setEditMech(null); setFormMech(EMPTY_MECH); setNewSkill(''); setModalMech(true);
   }
   function openEditMech(m: WorkshopMechanic) {
     setEditMech(m);
     setFormMech({ name: m.name, specialty: m.specialty ?? '', skills: [...m.skills] });
-    setNewSkill('');
-    setModalMech(true);
+    setNewSkill(''); setModalMech(true);
   }
   function addSkill(s: string) {
     const t = s.trim();
-    if (t && !formMech.skills.includes(t))
-      setFormMech(f => ({ ...f, skills: [...f.skills, t] }));
+    if (t && !formMech.skills.includes(t)) setFormMech(f => ({ ...f, skills: [...f.skills, t] }));
     setNewSkill('');
   }
   function removeSkill(s: string) {
     setFormMech(f => ({ ...f, skills: f.skills.filter(x => x !== s) }));
   }
-
   async function saveMech(e: FormEvent) {
     e.preventDefault();
     if (!shop) return;
@@ -170,10 +177,8 @@ export default function ServiceOrders() {
       await supabase.from('workshop_mechanics').insert(payload);
     }
     await fetchMechs(shop.id);
-    setModalMech(false);
-    setSaving(false);
+    setModalMech(false); setSaving(false);
   }
-
   async function deactivateMech(id: string) {
     if (!confirm('Remover mecânico da lista?')) return;
     await supabase.from('workshop_mechanics').update({ active: false }).eq('id', id);
@@ -181,27 +186,52 @@ export default function ServiceOrders() {
   }
 
   /* ── criar OS ── */
+  function openModalOS() {
+    setFormOS(EMPTY_OS);
+    setPriceCents(0);
+    setScheduleMode('now');
+    setScheduledAt('');
+    setVehicles([]);
+    setModalOS(true);
+  }
+
   async function saveOS(e: FormEvent) {
     e.preventDefault();
     if (!shop) return;
     setSaving(true);
+
+    // Compute total price from parts + labor if given, else use manual
+    const partsVal  = formOS.parts_cost ? parseFloat(formOS.parts_cost) : null;
+    const laborVal  = formOS.labor_cost ? parseFloat(formOS.labor_cost) : null;
+    const manualPrice = priceCents / 100;
+    const computedPrice = (partsVal ?? 0) + (laborVal ?? 0);
+    const finalPrice = computedPrice > 0 ? computedPrice : manualPrice;
+
     await supabase.from('service_orders').insert({
       workshop_id:          shop.id,
       title:                formOS.title.trim(),
       description:          formOS.description.trim() || null,
       category:             formOS.category || null,
-      price:                priceCents / 100,
+      price:                finalPrice,
       customer_id:          formOS.customer_id || null,
       vehicle_id:           formOS.vehicle_id  || null,
       workshop_mechanic_id: formOS.workshop_mechanic_id || null,
       status:               'open',
+      scheduled_at:         scheduleMode === 'later' && scheduledAt
+                              ? new Date(scheduledAt).toISOString()
+                              : null,
+      estimated_hours:      formOS.estimated_hours ? parseFloat(formOS.estimated_hours) : null,
+      notes:                formOS.notes.trim() || null,
+      km_reading:           formOS.km_reading ? parseInt(formOS.km_reading) : null,
+      parts_cost:           partsVal,
+      labor_cost:           laborVal,
     });
     await fetchOS(shop.id);
-    setModalOS(false); setFormOS(EMPTY_OS); setPriceCents(0); setVehicles([]);
+    setModalOS(false);
     setSaving(false);
   }
 
-  /* ── atualizar status ── */
+  /* ── status ── */
   async function updateStatus(os: OsRow, status: OsStatus) {
     const extra: Record<string, unknown> = {};
     if (status === 'in_progress' && !os.started_at)  extra.started_at  = new Date().toISOString();
@@ -213,10 +243,10 @@ export default function ServiceOrders() {
   }
 
   /* ─── analytics ──────────────────────────────────────────── */
-  const completed    = list.filter(o => o.status === 'completed');
-  const revenue      = completed.reduce((a, o) => a + o.price, 0);
-  const now          = new Date();
-  const thisMonth    = completed.filter(o =>
+  const now       = new Date();
+  const completed = list.filter(o => o.status === 'completed');
+  const revenue   = completed.reduce((a, o) => a + o.price, 0);
+  const thisMonth = completed.filter(o =>
     new Date(o.completed_at!).getMonth() === now.getMonth() &&
     new Date(o.completed_at!).getFullYear() === now.getFullYear()
   );
@@ -249,7 +279,7 @@ export default function ServiceOrders() {
   const allDurs = completed.map(durationMin).filter((d): d is number => d !== null);
   const avgDur  = allDurs.length ? Math.round(allDurs.reduce((a, b) => a + b, 0) / allDurs.length) : null;
 
-  /* ─── lista filtrada ─────────────────────────────────────── */
+  /* ─── listas filtradas ───────────────────────────────────── */
   const filtered = list.filter(o => {
     if (filterStatus !== 'all' && o.status !== filterStatus) return false;
     if (filterMech !== 'all' && (o.workshop_mechanic_id ?? 'none') !== filterMech) return false;
@@ -257,18 +287,25 @@ export default function ServiceOrders() {
       const q = search.toLowerCase();
       return (
         o.title.toLowerCase().includes(q) ||
-        o.customer?.full_name.toLowerCase().includes(q) ||
-        o.vehicle?.plate.toLowerCase().includes(q) ||
-        o.mechanic?.name.toLowerCase().includes(q)
+        (o.customer?.full_name ?? '').toLowerCase().includes(q) ||
+        (o.vehicle?.plate ?? '').toLowerCase().includes(q) ||
+        (o.mechanic?.name ?? '').toLowerCase().includes(q)
       );
     }
     return true;
   });
 
+  // Agendados: status open + scheduled_at no futuro
+  const agendados = list
+    .filter(o => o.scheduled_at && o.status === 'open')
+    .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
+
   const counts = STATUSES.reduce(
     (acc, s) => ({ ...acc, [s]: list.filter(o => o.status === s).length }),
     {} as Record<string, number>
   );
+
+  const osCount = list.filter(o => !o.scheduled_at || o.status !== 'open').length;
 
   /* ══════════════════════════════════════════════ RENDER ══ */
   return (
@@ -280,27 +317,34 @@ export default function ServiceOrders() {
           <h1 className="text-3xl font-bold tracking-tight">Ordens de Serviço</h1>
           <p className="text-sm text-steel-500 mt-1">{list.length} OS cadastradas</p>
         </div>
-        <button onClick={tab === 'mecanicos' ? openNewMech : () => setModalOS(true)} className="btn-primary">
+        <button
+          onClick={tab === 'mecanicos' ? openNewMech : openModalOS}
+          className="btn-primary"
+        >
           {tab === 'mecanicos' ? '+ Mecânico' : '+ Nova OS'}
         </button>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <KPI label="Faturamento total" value={`R$ ${revenue.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} sub={`${completed.length} concluídas`} color="text-signal-600" />
-        <KPI label="Este mês"          value={`R$ ${revenueMonth.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} sub={`${thisMonth.length} OS`} color="text-brand-600" />
-        <KPI label="Tempo médio"       value={avgDur !== null ? fmtDur(avgDur) : '—'} sub="por OS concluída" />
-        <KPI label="Equipe ativa"      value={internalMechs.length} sub="mecânicos" />
+        <KPI label="Faturamento total" value={`R$ ${revenue.toLocaleString('pt-BR',{minimumFractionDigits:2})}`}    sub={`${completed.length} concluídas`}         color="text-signal-600" />
+        <KPI label="Este mês"          value={`R$ ${revenueMonth.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} sub={`${thisMonth.length} OS`}               color="text-brand-600" />
+        <KPI label="Tempo médio"       value={avgDur !== null ? fmtDur(avgDur) : '—'}                                 sub="por OS concluída" />
+        <KPI label="Equipe ativa"      value={internalMechs.length}                                                   sub="mecânicos" />
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-steel-100 rounded-xl p-1 max-w-xs">
-        {(['os','mecanicos'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
+      <div className="flex gap-1 mb-6 bg-steel-100 rounded-xl p-1">
+        {([
+          { key: 'os',         label: `📋 OS (${osCount})` },
+          { key: 'agendados',  label: `📅 Agendados (${agendados.length})` },
+          { key: 'mecanicos',  label: `🔧 Equipe (${internalMechs.length})` },
+        ] as { key: MainTab; label: string }[]).map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
-              tab === t ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'
+              tab === t.key ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'
             }`}>
-            {t === 'os' ? `📋 OS (${list.length})` : `🔧 Equipe (${internalMechs.length})`}
+            {t.label}
           </button>
         ))}
       </div>
@@ -316,16 +360,13 @@ export default function ServiceOrders() {
               <div className="space-y-3">
                 {topCats.map(([cat, info]) => {
                   const avgD = info.durations.length
-                    ? Math.round(info.durations.reduce((a, b) => a + b, 0) / info.durations.length)
-                    : null;
+                    ? Math.round(info.durations.reduce((a, b) => a + b, 0) / info.durations.length) : null;
                   return (
                     <div key={cat}>
                       <div className="flex items-center justify-between text-sm mb-1">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="font-semibold truncate">{cat}</span>
-                          {avgD !== null && (
-                            <span className="text-xs text-steel-400 whitespace-nowrap">⏱ {fmtDur(avgD)}</span>
-                          )}
+                          {avgD !== null && <span className="text-xs text-steel-400 whitespace-nowrap">⏱ {fmtDur(avgD)}</span>}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           {info.revenue > 0 && (
@@ -376,36 +417,81 @@ export default function ServiceOrders() {
           ) : (
             <div className="space-y-2">
               {filtered.map(os => (
-                <button key={os.id} onClick={() => setDetail(os)}
-                  className="card w-full text-left hover:shadow-md transition hover:-translate-y-0.5 active:scale-[0.99]">
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`badge text-xs ${osColor(os.status)}`}>{osLabel(os.status)}</span>
-                        {os.category && <span className="badge bg-steel-100 text-steel-600 text-xs">{os.category}</span>}
-                        <span className="font-bold truncate">{os.title}</span>
-                      </div>
-                      <div className="text-xs text-steel-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                        {os.customer && <span>👤 {os.customer.full_name}</span>}
-                        {os.vehicle  && <span>🚗 {os.vehicle.plate} · {os.vehicle.make} {os.vehicle.model}</span>}
-                        {os.mechanic && <span>🔧 {os.mechanic.name}</span>}
-                      </div>
-                      <div className="text-xs text-steel-400 mt-1 flex flex-wrap gap-x-3">
-                        <span>{fmtDate(os.created_at)}</span>
-                        {os.completed_at && durationMin(os) !== null && (
-                          <span>⏱ {fmtDur(durationMin(os)!)}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-lg font-bold font-display">
-                        R$ {os.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}
-                      </div>
-                    </div>
-                  </div>
-                </button>
+                <OsCard key={os.id} os={os} onClick={() => setDetail(os)} />
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ TAB: AGENDADOS ══ */}
+      {tab === 'agendados' && (
+        <div className="space-y-4">
+
+          {agendados.length === 0 ? (
+            <div className="card text-center text-steel-500 py-16">
+              <div className="text-4xl mb-3">📅</div>
+              <p className="text-lg font-semibold">Nenhum serviço agendado</p>
+              <p className="text-sm mt-1">Ao criar uma OS escolha "Agendar para uma data" para que apareça aqui.</p>
+              <button onClick={openModalOS} className="btn-primary mt-5">+ Agendar OS</button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-steel-500">{agendados.length} serviço{agendados.length !== 1 ? 's' : ''} agendado{agendados.length !== 1 ? 's' : ''}</p>
+              <div className="space-y-3">
+                {agendados.map(os => {
+                  const schedDate = new Date(os.scheduled_at!);
+                  const isToday   = schedDate.toDateString() === now.toDateString();
+                  const isPast    = schedDate < now;
+                  return (
+                    <button key={os.id} onClick={() => setDetail(os)}
+                      className="card w-full text-left hover:shadow-md transition hover:-translate-y-0.5">
+                      <div className="flex items-start gap-4">
+                        {/* Data box */}
+                        <div className={`shrink-0 rounded-xl px-3 py-2 text-center min-w-[56px] ${
+                          isPast ? 'bg-alert-50 border border-alert-200' :
+                          isToday ? 'bg-brand-50 border border-brand-200' :
+                          'bg-steel-50 border border-steel-200'
+                        }`}>
+                          <div className={`text-xs font-bold uppercase ${isPast ? 'text-alert-600' : isToday ? 'text-brand-600' : 'text-steel-500'}`}>
+                            {schedDate.toLocaleDateString('pt-BR', { month: 'short' })}
+                          </div>
+                          <div className={`text-2xl font-bold leading-tight font-display ${isPast ? 'text-alert-700' : isToday ? 'text-brand-700' : 'text-steel-800'}`}>
+                            {schedDate.getDate()}
+                          </div>
+                          <div className={`text-[10px] font-semibold ${isPast ? 'text-alert-500' : isToday ? 'text-brand-500' : 'text-steel-400'}`}>
+                            {schedDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {isPast && <span className="badge bg-alert-100 text-alert-700 text-xs">Atrasado</span>}
+                            {isToday && !isPast && <span className="badge bg-brand-100 text-brand-700 text-xs">Hoje</span>}
+                            <span className="font-bold truncate">{os.title}</span>
+                          </div>
+                          <div className="text-xs text-steel-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                            {os.customer  && <span>👤 {os.customer.full_name}</span>}
+                            {os.vehicle   && <span>🚗 {os.vehicle.plate} · {os.vehicle.make} {os.vehicle.model}</span>}
+                            {os.mechanic  && <span>🔧 {os.mechanic.name}</span>}
+                            {os.estimated_hours && <span>⏱ {os.estimated_hours}h estimadas</span>}
+                          </div>
+                          {os.category && (
+                            <span className="badge bg-steel-100 text-steel-600 text-xs mt-2">{os.category}</span>
+                          )}
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className="text-lg font-bold font-display">
+                            R$ {os.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -414,15 +500,13 @@ export default function ServiceOrders() {
       {tab === 'mecanicos' && (
         <div className="space-y-4">
 
-          {/* Performance */}
           {topMechs.length > 0 && (
             <div className="card">
               <h2 className="font-bold text-steel-800 mb-3">Performance da equipe</h2>
               <div className="divide-y divide-steel-100">
                 {topMechs.map(m => {
                   const avgD = m.durations.length
-                    ? Math.round(m.durations.reduce((a, b) => a + b, 0) / m.durations.length)
-                    : null;
+                    ? Math.round(m.durations.reduce((a, b) => a + b, 0) / m.durations.length) : null;
                   return (
                     <div key={m.name} className="py-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
@@ -449,7 +533,6 @@ export default function ServiceOrders() {
             </div>
           )}
 
-          {/* Cards de mecânicos */}
           {internalMechs.length === 0 ? (
             <div className="card text-center py-14 text-steel-500">
               <p className="text-lg font-semibold">Nenhum mecânico cadastrado</p>
@@ -466,30 +549,20 @@ export default function ServiceOrders() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-bold truncate">{m.name}</div>
-                      {m.specialty && (
-                        <div className="text-xs text-steel-500 mt-0.5">{m.specialty}</div>
-                      )}
-                      <div className="text-xs text-steel-400 mt-0.5">
-                        {(mechMap[m.id]?.count ?? 0)} OS realizadas
-                      </div>
+                      {m.specialty && <div className="text-xs text-steel-500 mt-0.5">{m.specialty}</div>}
+                      <div className="text-xs text-steel-400 mt-0.5">{(mechMap[m.id]?.count ?? 0)} OS realizadas</div>
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <button onClick={() => openEditMech(m)}
-                        className="h-7 w-7 rounded-lg bg-steel-100 hover:bg-steel-200 grid place-items-center text-steel-500 hover:text-steel-700 transition text-xs">
-                        ✏️
-                      </button>
+                        className="h-7 w-7 rounded-lg bg-steel-100 hover:bg-steel-200 grid place-items-center text-steel-500 hover:text-steel-700 transition text-xs">✏️</button>
                       <button onClick={() => deactivateMech(m.id)}
-                        className="h-7 w-7 rounded-lg bg-steel-100 hover:bg-alert-100 grid place-items-center text-steel-400 hover:text-alert-600 transition text-xs">
-                        ✕
-                      </button>
+                        className="h-7 w-7 rounded-lg bg-steel-100 hover:bg-alert-100 grid place-items-center text-steel-400 hover:text-alert-600 transition text-xs">✕</button>
                     </div>
                   </div>
                   {m.skills.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-3">
                       {m.skills.map(s => (
-                        <span key={s} className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-brand-50 text-brand-600 border border-brand-100">
-                          {s}
-                        </span>
+                        <span key={s} className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-brand-50 text-brand-600 border border-brand-100">{s}</span>
                       ))}
                     </div>
                   )}
@@ -509,6 +582,9 @@ export default function ServiceOrders() {
                 <div className="flex gap-2 flex-wrap mb-2">
                   <span className={`badge ${osColor(detail.status)}`}>{osLabel(detail.status)}</span>
                   {detail.category && <span className="badge bg-steel-100 text-steel-600">{detail.category}</span>}
+                  {detail.scheduled_at && detail.status === 'open' && (
+                    <span className="badge bg-brand-50 text-brand-700 border border-brand-200">📅 Agendado</span>
+                  )}
                 </div>
                 <h2 className="text-xl font-bold">{detail.title}</h2>
               </div>
@@ -519,10 +595,20 @@ export default function ServiceOrders() {
               <p className="text-sm text-steel-600 bg-steel-50 rounded-xl p-3">{detail.description}</p>
             )}
 
+            {detail.notes && (
+              <div className="bg-pending-50 border border-pending-200 rounded-xl p-3">
+                <div className="text-[10px] text-pending-600 font-bold uppercase tracking-wider mb-1">Notas internas</div>
+                <p className="text-sm text-pending-800">{detail.notes}</p>
+              </div>
+            )}
+
             {/* Timeline */}
             <div className="bg-steel-50 rounded-xl p-4 space-y-2">
               <div className="text-xs font-bold text-steel-500 uppercase tracking-wider mb-2">Timeline</div>
-              <TimelineRow label="Criada"    value={fmtDateTime(detail.created_at)}                            done />
+              {detail.scheduled_at && (
+                <TimelineRow label="Agendada para" value={fmtDateTime(detail.scheduled_at)} done />
+              )}
+              <TimelineRow label="Criada"    value={fmtDateTime(detail.created_at)}                             done />
               <TimelineRow label="Iniciada"  value={detail.started_at   ? fmtDateTime(detail.started_at)   : '—'} done={!!detail.started_at}   />
               <TimelineRow label="Concluída" value={detail.completed_at ? fmtDateTime(detail.completed_at) : '—'} done={!!detail.completed_at} />
               {durationMin(detail) !== null && (
@@ -535,13 +621,25 @@ export default function ServiceOrders() {
 
             {/* Info grid */}
             <div className="grid grid-cols-2 gap-3 text-sm">
-              {detail.customer && <InfoCard label="Cliente" value={detail.customer.full_name} />}
-              {detail.vehicle  && <InfoCard label="Veículo" value={`${detail.vehicle.plate} · ${detail.vehicle.make} ${detail.vehicle.model}`} />}
-              {detail.mechanic && <InfoCard label="Mecânico" value={detail.mechanic.name} sub={detail.mechanic.specialty ?? undefined} />}
-              <InfoCard label="Valor" value={`R$ ${detail.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} bold />
+              {detail.customer  && <InfoCard label="Cliente" value={detail.customer.full_name} />}
+              {detail.vehicle   && <InfoCard label="Veículo" value={`${detail.vehicle.plate} · ${detail.vehicle.make} ${detail.vehicle.model}`} />}
+              {detail.mechanic  && <InfoCard label="Mecânico" value={detail.mechanic.name} sub={detail.mechanic.specialty ?? undefined} />}
+              <InfoCard label="Valor total" value={`R$ ${detail.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} bold />
+              {detail.estimated_hours != null && (
+                <InfoCard label="Tempo estimado" value={`${detail.estimated_hours}h`} />
+              )}
+              {detail.km_reading != null && (
+                <InfoCard label="KM atual" value={`${detail.km_reading.toLocaleString('pt-BR')} km`} />
+              )}
+              {detail.parts_cost != null && (
+                <InfoCard label="Peças" value={`R$ ${detail.parts_cost.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} />
+              )}
+              {detail.labor_cost != null && (
+                <InfoCard label="Mão de obra" value={`R$ ${detail.labor_cost.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} />
+              )}
             </div>
 
-            {/* Ações de status */}
+            {/* Ações */}
             {detail.status !== 'completed' && detail.status !== 'cancelled' && (
               <div>
                 <div className="label mb-2">Alterar status</div>
@@ -581,6 +679,45 @@ export default function ServiceOrders() {
 
             <h2 className="text-xl font-bold sticky top-0 bg-white py-1">Nova Ordem de Serviço</h2>
 
+            {/* ── Agendamento ── */}
+            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+              <div className="text-xs font-bold text-steel-500 uppercase tracking-wider">Quando executar?</div>
+              <div className="flex gap-2">
+                <button type="button"
+                  onClick={() => setScheduleMode('now')}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition ${
+                    scheduleMode === 'now'
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
+                  }`}>
+                  ⚡ Executar agora
+                </button>
+                <button type="button"
+                  onClick={() => setScheduleMode('later')}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition ${
+                    scheduleMode === 'later'
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
+                  }`}>
+                  📅 Agendar para...
+                </button>
+              </div>
+              {scheduleMode === 'later' && (
+                <div>
+                  <label className="label">Data e hora</label>
+                  <input
+                    type="datetime-local"
+                    className="input"
+                    required={scheduleMode === 'later'}
+                    value={scheduledAt}
+                    min={toDatetimeLocal(new Date().toISOString())}
+                    onChange={e => setScheduledAt(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* ── Serviço ── */}
             <div>
               <label className="label">Título do serviço *</label>
               <input className="input" required value={formOS.title}
@@ -588,77 +725,136 @@ export default function ServiceOrders() {
                 placeholder="Ex.: Troca de correia dentada" />
             </div>
 
-            <div>
-              <label className="label">Categoria</label>
-              <select className="input" value={formOS.category}
-                onChange={e => setFormOS(f => ({ ...f, category: e.target.value }))}>
-                <option value="">— Selecionar —</option>
-                {OS_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Categoria</label>
+                <select className="input" value={formOS.category}
+                  onChange={e => setFormOS(f => ({ ...f, category: e.target.value }))}>
+                  <option value="">— Selecionar —</option>
+                  {OS_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Tempo estimado (h)</label>
+                <input className="input" type="number" min="0" step="0.5"
+                  value={formOS.estimated_hours}
+                  onChange={e => setFormOS(f => ({ ...f, estimated_hours: e.target.value }))}
+                  placeholder="Ex.: 2" />
+              </div>
             </div>
 
             <div>
               <label className="label">Descrição / diagnóstico</label>
-              <textarea className="input" rows={3} value={formOS.description}
+              <textarea className="input" rows={2} value={formOS.description}
                 onChange={e => setFormOS(f => ({ ...f, description: e.target.value }))}
-                placeholder="Descreva o problema, peças necessárias…" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Mecânico responsável</label>
-                <select className="input" value={formOS.workshop_mechanic_id}
-                  onChange={e => setFormOS(f => ({ ...f, workshop_mechanic_id: e.target.value }))}>
-                  <option value="">— Selecionar —</option>
-                  {internalMechs.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                </select>
-                {internalMechs.length === 0 && (
-                  <div className="text-xs text-steel-400 mt-1">
-                    <button type="button" className="text-brand-500 underline"
-                      onClick={() => { setModalOS(false); setTab('mecanicos'); openNewMech(); }}>
-                      Cadastrar mecânico primeiro
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="label">Valor (R$)</label>
-                <input
-                  className="input font-display"
-                  inputMode="numeric"
-                  placeholder="0,00"
-                  value={priceCents === 0 ? '' : toBRL(priceCents)}
-                  onChange={e => setPriceCents(parseCents(e.target.value))}
-                />
-              </div>
+                placeholder="Descreva o problema, diagnóstico inicial…" />
             </div>
 
             <div>
-              <label className="label">Cliente</label>
-              <select className="input" value={formOS.customer_id}
-                onChange={e => {
-                  setFormOS(f => ({ ...f, customer_id: e.target.value, vehicle_id: '' }));
-                  if (e.target.value) loadVehicles(e.target.value); else setVehicles([]);
-                }}>
-                <option value="">— Selecionar cliente —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-              </select>
+              <label className="label">Notas internas</label>
+              <textarea className="input" rows={2} value={formOS.notes}
+                onChange={e => setFormOS(f => ({ ...f, notes: e.target.value }))}
+                placeholder="Observações internas (não visíveis ao cliente)…" />
             </div>
 
-            {formOS.customer_id && (
+            {/* ── Cliente / Veículo ── */}
+            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+              <div className="text-xs font-bold text-steel-500 uppercase tracking-wider">Cliente & Veículo</div>
               <div>
-                <label className="label">Veículo</label>
-                <select className="input" value={formOS.vehicle_id}
-                  onChange={e => setFormOS(f => ({ ...f, vehicle_id: e.target.value }))}>
-                  <option value="">— Selecionar veículo —</option>
-                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} · {v.make} {v.model}</option>)}
+                <label className="label">Cliente</label>
+                <select className="input" value={formOS.customer_id}
+                  onChange={e => {
+                    setFormOS(f => ({ ...f, customer_id: e.target.value, vehicle_id: '' }));
+                    if (e.target.value) loadVehicles(e.target.value); else setVehicles([]);
+                  }}>
+                  <option value="">— Selecionar cliente —</option>
+                  {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
                 </select>
               </div>
-            )}
+              {formOS.customer_id && (
+                <div>
+                  <label className="label">Veículo</label>
+                  <select className="input" value={formOS.vehicle_id}
+                    onChange={e => setFormOS(f => ({ ...f, vehicle_id: e.target.value }))}>
+                    <option value="">— Selecionar veículo —</option>
+                    {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} · {v.make} {v.model}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="label">KM atual do veículo</label>
+                <input className="input" type="number" min="0"
+                  value={formOS.km_reading}
+                  onChange={e => setFormOS(f => ({ ...f, km_reading: e.target.value }))}
+                  placeholder="Ex.: 85000" />
+              </div>
+            </div>
+
+            {/* ── Mecânico / Valor ── */}
+            <div>
+              <label className="label">Mecânico responsável</label>
+              <select className="input" value={formOS.workshop_mechanic_id}
+                onChange={e => setFormOS(f => ({ ...f, workshop_mechanic_id: e.target.value }))}>
+                <option value="">— Selecionar —</option>
+                {internalMechs.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              {internalMechs.length === 0 && (
+                <p className="text-xs text-steel-400 mt-1">
+                  <button type="button" className="text-brand-500 underline"
+                    onClick={() => { setModalOS(false); setTab('mecanicos'); openNewMech(); }}>
+                    Cadastrar mecânico primeiro
+                  </button>
+                </p>
+              )}
+            </div>
+
+            {/* Breakdown de valor */}
+            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+              <div className="text-xs font-bold text-steel-500 uppercase tracking-wider">Valor do serviço</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Peças (R$)</label>
+                  <input className="input font-display" inputMode="decimal"
+                    value={formOS.parts_cost}
+                    onChange={e => setFormOS(f => ({ ...f, parts_cost: e.target.value }))}
+                    placeholder="0,00" />
+                </div>
+                <div>
+                  <label className="label">Mão de obra (R$)</label>
+                  <input className="input font-display" inputMode="decimal"
+                    value={formOS.labor_cost}
+                    onChange={e => setFormOS(f => ({ ...f, labor_cost: e.target.value }))}
+                    placeholder="0,00" />
+                </div>
+              </div>
+              {/* Fallback: valor manual */}
+              {(!formOS.parts_cost && !formOS.labor_cost) && (
+                <div>
+                  <label className="label">Ou valor total (R$)</label>
+                  <input
+                    className="input font-display"
+                    inputMode="numeric"
+                    placeholder="0,00"
+                    value={priceCents === 0 ? '' : toBRL(priceCents)}
+                    onChange={e => setPriceCents(parseCents(e.target.value))}
+                  />
+                </div>
+              )}
+              {(formOS.parts_cost || formOS.labor_cost) && (
+                <div className="flex justify-between items-center pt-1 border-t border-steel-200">
+                  <span className="text-sm text-steel-500">Total calculado</span>
+                  <span className="font-bold font-display text-lg">
+                    R$ {((parseFloat(formOS.parts_cost || '0')) + (parseFloat(formOS.labor_cost || '0'))).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                  </span>
+                </div>
+              )}
+            </div>
 
             <div className="flex gap-3 pt-2">
-              <button type="button" onClick={() => { setModalOS(false); setVehicles([]); }} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1 btn-lg" disabled={saving}>{saving ? '…' : 'Criar OS'}</button>
+              <button type="button" onClick={() => setModalOS(false)} className="btn-ghost flex-1">Cancelar</button>
+              <button className="btn-primary flex-1 btn-lg" disabled={saving}>
+                {saving ? '…' : scheduleMode === 'later' ? '📅 Agendar OS' : 'Criar OS'}
+              </button>
             </div>
           </form>
         </div>
@@ -675,7 +871,6 @@ export default function ServiceOrders() {
               <p className="text-sm text-steel-500 mt-0.5">Funcionário interno da oficina.</p>
             </div>
 
-            {/* Nome */}
             <div>
               <label className="label">Nome completo *</label>
               <input className="input" required value={formMech.name}
@@ -683,7 +878,6 @@ export default function ServiceOrders() {
                 placeholder="João da Silva" />
             </div>
 
-            {/* Especialidade principal */}
             <div>
               <label className="label">Especialidade principal</label>
               <select className="input" value={formMech.specialty}
@@ -693,47 +887,31 @@ export default function ServiceOrders() {
               </select>
             </div>
 
-            {/* Habilidades (chips) */}
             <div>
               <label className="label">Habilidades</label>
-
-              {/* Tags selecionadas */}
               <div className="flex flex-wrap gap-2 mb-3 min-h-[28px]">
                 {formMech.skills.map(s => (
-                  <span key={s}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-brand-500/15 text-brand-700 border border-brand-300/40">
+                  <span key={s} className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-brand-500/15 text-brand-700 border border-brand-300/40">
                     {s}
-                    <button type="button" onClick={() => removeSkill(s)}
-                      className="hover:text-alert-600 leading-none text-sm">×</button>
+                    <button type="button" onClick={() => removeSkill(s)} className="hover:text-alert-600 leading-none text-sm">×</button>
                   </span>
                 ))}
-                {formMech.skills.length === 0 && (
-                  <span className="text-sm text-steel-400">Nenhuma selecionada ainda.</span>
-                )}
+                {formMech.skills.length === 0 && <span className="text-sm text-steel-400">Nenhuma selecionada ainda.</span>}
               </div>
-
-              {/* Sugestões rápidas */}
-              <div className="text-[10px] text-steel-500 uppercase tracking-wider font-semibold mb-2">
-                Sugestões rápidas
-              </div>
+              <div className="text-[10px] text-steel-500 uppercase tracking-wider font-semibold mb-2">Sugestões rápidas</div>
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {SKILL_OPTIONS.filter(s => !formMech.skills.includes(s)).map(s => (
                   <button key={s} type="button" onClick={() => addSkill(s)}
-                    className="text-xs px-2.5 py-1 rounded-full bg-steel-100 text-steel-600
-                               hover:bg-brand-50 hover:text-brand-700 border border-steel-200
-                               hover:border-brand-300 transition">
+                    className="text-xs px-2.5 py-1 rounded-full bg-steel-100 text-steel-600 hover:bg-brand-50 hover:text-brand-700 border border-steel-200 hover:border-brand-300 transition">
                     + {s}
                   </button>
                 ))}
               </div>
-
-              {/* Input livre */}
               <div className="flex gap-2">
                 <input className="input flex-1 text-sm" placeholder="Outra habilidade…"
                   value={newSkill} onChange={e => setNewSkill(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSkill(newSkill); } }} />
-                <button type="button" onClick={() => addSkill(newSkill)}
-                  className="btn-primary !py-2 !px-4 shrink-0 text-sm">+</button>
+                <button type="button" onClick={() => addSkill(newSkill)} className="btn-primary !py-2 !px-4 shrink-0 text-sm">+</button>
               </div>
             </div>
 
@@ -750,6 +928,41 @@ export default function ServiceOrders() {
 }
 
 /* ─── sub-componentes ─────────────────────────────────────── */
+function OsCard({ os, onClick }: { os: OsRow; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="card w-full text-left hover:shadow-md transition hover:-translate-y-0.5 active:scale-[0.99]">
+      <div className="flex items-start gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`badge text-xs ${osColor(os.status)}`}>{osLabel(os.status)}</span>
+            {os.category && <span className="badge bg-steel-100 text-steel-600 text-xs">{os.category}</span>}
+            {os.scheduled_at && os.status === 'open' && (
+              <span className="badge bg-brand-50 text-brand-700 text-xs border border-brand-200">📅 {new Date(os.scheduled_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}</span>
+            )}
+            <span className="font-bold truncate">{os.title}</span>
+          </div>
+          <div className="text-xs text-steel-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+            {os.customer && <span>👤 {os.customer.full_name}</span>}
+            {os.vehicle  && <span>🚗 {os.vehicle.plate} · {os.vehicle.make} {os.vehicle.model}</span>}
+            {os.mechanic && <span>🔧 {os.mechanic.name}</span>}
+          </div>
+          <div className="text-xs text-steel-400 mt-1">
+            <span>{fmtDate(os.created_at)}</span>
+            {os.completed_at && durationMin(os) !== null && (
+              <span className="ml-3">⏱ {fmtDur(durationMin(os)!)}</span>
+            )}
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-lg font-bold font-display">
+            R$ {os.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function KPI({ label, value, sub, color }: { label: string; value: string|number; sub?: string; color?: string }) {
   return (
     <div className="card">
