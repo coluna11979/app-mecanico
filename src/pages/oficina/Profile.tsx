@@ -2,10 +2,11 @@ import { FormEvent, useEffect, useState } from 'react';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { AvatarUpload } from '@/components/AvatarUpload';
 import type { Workshop } from '@/types/database';
 
 export default function WorkshopProfile() {
-  const { user } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [shop, setShop]             = useState<Workshop | null>(null);
   const [loading, setLoading]       = useState(true);
   const [busy, setBusy]             = useState(false);
@@ -125,9 +126,13 @@ export default function WorkshopProfile() {
 
         {/* Hero card */}
         <div className="card flex items-center gap-5">
-          <div className="h-16 w-16 rounded-2xl bg-brand-500 grid place-items-center text-white text-2xl font-bold shrink-0 shadow-brand">
-            {initials}
-          </div>
+          <AvatarUpload
+            userId={user!.id}
+            currentUrl={profile?.avatar_url ?? null}
+            initials={initials}
+            size="lg"
+            onUploaded={() => refreshProfile()}
+          />
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold truncate">{shop.business_name}</h2>
             <div className="text-sm text-steel-500 mt-0.5">{shop.cnpj}</div>

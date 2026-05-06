@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { AvatarUpload } from '@/components/AvatarUpload';
 import type { Mechanic, Job } from '@/types/database';
 
 const SKILL_SUGGESTIONS = [
@@ -11,7 +12,7 @@ const SKILL_SUGGESTIONS = [
 ];
 
 type EditForm = {
-  full_name: string; phone: string;
+  full_name: string; phone: string; pix_key: string;
   cpf: string; cnh: string; experience_years: string; skills: string[];
 };
 
@@ -21,7 +22,7 @@ export default function MechanicProfile() {
   const [history, setHistory]   = useState<Job[]>([]);
   const [loading, setLoading]   = useState(true);
   const [editing, setEditing]   = useState(false);
-  const [form, setForm]         = useState<EditForm>({ full_name: '', phone: '', cpf: '', cnh: '', experience_years: '', skills: [] });
+  const [form, setForm]         = useState<EditForm>({ full_name: '', phone: '', pix_key: '', cpf: '', cnh: '', experience_years: '', skills: [] });
   const [newSkill, setNewSkill] = useState('');
   const [saving, setSaving]     = useState(false);
   const [msg, setMsg]           = useState<string | null>(null);
@@ -44,6 +45,7 @@ export default function MechanicProfile() {
     setForm({
       full_name:        profile?.full_name ?? '',
       phone:            profile?.phone ?? '',
+      pix_key:          (me as any)?.pix_key ?? '',
       cpf:              me?.cpf ?? '',
       cnh:              me?.cnh ?? '',
       experience_years: String(me?.experience_years ?? 0),
@@ -68,6 +70,7 @@ export default function MechanicProfile() {
         cnh:              form.cnh.trim() || null,
         experience_years: Number(form.experience_years),
         skills:           form.skills,
+        pix_key:          form.pix_key.trim() || null,
       }).eq('id', me.id),
     ]);
     await Promise.all([load(), refreshProfile()]);
@@ -104,12 +107,14 @@ export default function MechanicProfile() {
         <div className="relative rounded-2xl bg-gradient-to-br from-steel-800 to-steel-900 border border-steel-700 p-5 overflow-hidden">
           <div className="absolute top-0 right-0 w-40 h-40 bg-brand-500/10 rounded-full blur-3xl pointer-events-none" />
           <div className="flex items-start gap-4">
-            <div className="relative shrink-0">
-              <div className="h-16 w-16 rounded-2xl bg-brand-500 grid place-items-center text-white text-2xl font-bold shadow-brand">
-                {initials}
-              </div>
-              <div className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-steel-800 ${me?.is_available ? 'bg-signal-500' : 'bg-steel-600'}`} />
-            </div>
+            <AvatarUpload
+              userId={user!.id}
+              currentUrl={profile?.avatar_url ?? null}
+              initials={initials}
+              size="lg"
+              dark
+              onUploaded={() => refreshProfile()}
+            />
             <div className="flex-1 min-w-0">
               <h1 className="text-xl font-bold truncate">{profile?.full_name}</h1>
               <div className="flex items-center gap-2 mt-1 text-xs text-steel-400 flex-wrap">
@@ -150,6 +155,7 @@ export default function MechanicProfile() {
         {/* ── Dados pessoais (view) ── */}
         <div className="rounded-2xl bg-steel-800 border border-steel-700 divide-y divide-steel-700/60">
           <Row label="Telefone"    value={profile?.phone ?? '—'} />
+          <Row label="Chave PIX"   value={(me as any)?.pix_key || '—'} />
           <Row label="CPF"         value={me?.cpf ?? '—'} />
           <Row label="CNH"         value={me?.cnh || '—'} />
           <Row label="Experiência" value={`${me?.experience_years ?? 0} anos`} />
@@ -216,6 +222,11 @@ export default function MechanicProfile() {
                 <input className="input !bg-steel-900 !text-white !border-steel-700"
                   value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                   placeholder="(11) 99999-9999" />
+              </Field>
+              <Field label="Chave PIX (para receber pagamentos)">
+                <input className="input !bg-steel-900 !text-white !border-steel-700"
+                  value={form.pix_key} onChange={e => setForm(f => ({ ...f, pix_key: e.target.value }))}
+                  placeholder="CPF, e-mail, telefone ou chave aleatória" />
               </Field>
             </Section>
 
