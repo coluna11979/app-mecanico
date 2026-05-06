@@ -72,13 +72,16 @@ export default function WorkshopTracking() {
   const [sheetOpen, setSheetOpen]   = useState(false);
   const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
 
-  /* Carrega Stripe.js uma vez */
+  /* Carrega Stripe.js — tenta env var primeiro, depois app_settings */
   useEffect(() => {
-    const pubKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string;
-    if (!pubKey) return;
-    import('@stripe/stripe-js').then(({ loadStripe }) => {
-      loadStripe(pubKey).then(s => setStripe(s));
-    });
+    (async () => {
+      const envKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string;
+      const key = envKey || await getSetting('stripe_publishable_key', '');
+      if (!key) return;
+      const { loadStripe } = await import('@stripe/stripe-js');
+      const s = await loadStripe(key);
+      setStripe(s);
+    })();
   }, []);
 
   useEffect(() => { if (id) load(); }, [id]);
