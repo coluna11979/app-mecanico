@@ -21,10 +21,14 @@ type MechType  = 'internal' | 'marketplace';
 const STATUSES: OsStatus[] = ['open', 'in_progress', 'completed', 'cancelled'];
 
 const OS_CATEGORIES = [
-  'Avaliação','Alinhamento','Balanceamento',
-  'Troca de óleo','Freios','Suspensão','Elétrica','Motor',
-  'Câmbio','Revisão geral','Diagnóstico','Ar-condicionado',
-  'Funilaria','Pneus','Transmissão','Embreagem','Injeção eletrônica','Outro',
+  // Captação / gratuitos
+  'Avaliação','Check-up',
+  // Mais comuns
+  'Troca de óleo','Revisão geral','Freios','Pneus','Alinhamento','Balanceamento',
+  // Mecânica
+  'Motor','Câmbio','Suspensão','Transmissão','Embreagem','Injeção eletrônica',
+  // Elétrica / outros
+  'Elétrica','Ar-condicionado','Diagnóstico','Funilaria','Outro',
 ];
 
 const SKILL_OPTIONS = [
@@ -813,11 +817,19 @@ export default function ServiceOrders() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">Categoria</label>
-                <select className="input" value={formOS.category}
-                  onChange={e => setFormOS(f => ({ ...f, category: e.target.value }))}>
-                  <option value="">— Selecionar —</option>
-                  {OS_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <input
+                  className="input"
+                  list="os-categories-list"
+                  value={formOS.category}
+                  onChange={e => setFormOS(f => ({ ...f, category: e.target.value }))}
+                  placeholder="Selecionar ou digitar nova…"
+                />
+                <datalist id="os-categories-list">
+                  {OS_CATEGORIES.map(c => <option key={c} value={c} />)}
+                </datalist>
+                {formOS.category && !OS_CATEGORIES.includes(formOS.category) && (
+                  <p className="text-[10px] text-brand-600 font-semibold mt-1">✨ Nova categoria: "{formOS.category}"</p>
+                )}
               </div>
               <div>
                 <label className="label">Tempo estimado (h)</label>
