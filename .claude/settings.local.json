@@ -14,7 +14,8 @@
       "Bash(npx supabase *)",
       "Bash(dir \"%APPDATA%\\\\supabase\\\\\" 2>nul)",
       "Bash(npx vite *)",
-      "mcp__supabase__get_logs"
+      "mcp__supabase__get_logs",
+      "WebFetch(domain:sejaefi.com.br)"
     ]
   }
 }

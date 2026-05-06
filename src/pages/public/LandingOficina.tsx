@@ -2,23 +2,23 @@ import { Link } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 
 /**
- * Landing page de captura — APENAS para oficina.
- * Gatilhos pesados, dores reais do dono de oficina, benefícios claros, CTA único.
+ * Landing de captura — APENAS para oficina.
+ * Estilo claro, alto contraste, gatilhos pesados.
  */
 export default function LandingOficina() {
   return (
-    <div className="min-h-screen bg-steel-950 text-white overflow-x-hidden">
+    <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden">
 
       {/* ── NAV ── */}
-      <header className="fixed top-0 inset-x-0 z-50 bg-steel-950/80 backdrop-blur-xl border-b border-steel-800">
+      <header className="fixed top-0 inset-x-0 z-50 bg-white/90 backdrop-blur-xl border-b border-steel-100">
         <div className="max-w-6xl mx-auto px-5 lg:px-8 h-16 flex items-center justify-between">
-          <Link to="/"><Logo light /></Link>
+          <Link to="/"><Logo /></Link>
           <div className="flex items-center gap-2">
-            <Link to="/login" className="text-sm font-semibold text-steel-300 hover:text-white px-3 py-2 transition">
+            <Link to="/login" className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-3 py-2 transition">
               Entrar
             </Link>
             <Link to="/cadastro/oficina"
-              className="bg-brand-500 text-white text-sm font-bold rounded-xl px-4 py-2 hover:bg-brand-600 transition">
+              className="bg-brand-500 text-white text-sm font-bold rounded-xl px-4 py-2 hover:bg-brand-600 transition shadow-sm">
               Cadastrar
             </Link>
           </div>
@@ -26,10 +26,10 @@ export default function LandingOficina() {
       </header>
 
       {/* ── HERO ── */}
-      <section className="relative pt-28 pb-16 lg:pt-40 lg:pb-24 px-5 lg:px-8">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/3 left-0 w-[600px] h-[600px] rounded-full bg-brand-500/20 blur-3xl" />
-          <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-brand-600/10 blur-3xl" />
+      <section className="relative pt-28 pb-16 lg:pt-40 lg:pb-24 px-5 lg:px-8 overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/3 left-0 w-[600px] h-[600px] rounded-full bg-brand-500/10 blur-3xl" />
+          <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-brand-600/5 blur-3xl" />
         </div>
 
         <div className="relative max-w-5xl mx-auto">
@@ -37,22 +37,21 @@ export default function LandingOficina() {
 
             {/* Coluna esquerda — texto */}
             <div>
-              <div className="inline-flex items-center gap-2 bg-brand-500/15 border border-brand-500/30 rounded-full px-3 py-1 text-xs font-bold text-brand-300 tracking-wider uppercase">
+              <div className="inline-flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-3 py-1 text-xs font-bold text-brand-700 tracking-wider uppercase">
                 🏪 Para donos de oficina
               </div>
 
-              <h1 className="mt-6 text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
-                Mecânico <span className="text-brand-400">em 1 hora.</span><br />
+              <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] text-steel-900">
+                Mecânico <span className="text-brand-500">em 1 hora.</span><br />
                 Sem CLT. Sem encargos.
               </h1>
 
-              <p className="mt-6 text-lg text-steel-300 leading-relaxed">
+              <p className="mt-6 text-lg text-steel-600 leading-relaxed">
                 Sua oficina nunca mais para por falta de mão de obra.<br />
-                <strong className="text-white">Pague só quando precisar</strong> — e ainda receba de bandeja
-                um sistema de OS, controle de clientes e gestão multi-loja. <span className="text-brand-300">Tudo grátis.</span>
+                <strong className="text-steel-900">Pague só quando precisar</strong> — e ainda receba de bandeja
+                um sistema de OS, controle de clientes e gestão multi-loja. <span className="text-brand-600 font-semibold">Tudo grátis.</span>
               </p>
 
-              {/* CTAs */}
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
                 <Link to="/cadastro/oficina"
                   className="bg-brand-500 text-white font-bold rounded-2xl px-6 py-4 hover:bg-brand-600 transition flex items-center justify-center gap-2 shadow-xl shadow-brand-500/30">
@@ -60,27 +59,27 @@ export default function LandingOficina() {
                   <span>→</span>
                 </Link>
                 <Link to="/login"
-                  className="text-sm font-semibold text-steel-300 hover:text-white px-4 py-4 transition flex items-center justify-center">
+                  className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-4 py-4 transition flex items-center justify-center">
                   Já sou cadastrado
                 </Link>
               </div>
 
               <div className="mt-6 flex items-center gap-4 text-xs text-steel-500 flex-wrap">
-                <div className="flex items-center gap-1.5"><span className="text-signal-400">✓</span> 100% gratuito</div>
-                <div className="flex items-center gap-1.5"><span className="text-signal-400">✓</span> Sem mensalidade</div>
-                <div className="flex items-center gap-1.5"><span className="text-signal-400">✓</span> Multi-loja inclusa</div>
+                <span className="flex items-center gap-1.5"><span className="text-signal-500">✓</span> 100% gratuito</span>
+                <span className="flex items-center gap-1.5"><span className="text-signal-500">✓</span> Sem mensalidade</span>
+                <span className="flex items-center gap-1.5"><span className="text-signal-500">✓</span> Multi-loja inclusa</span>
               </div>
             </div>
 
             {/* Coluna direita — mock visual painel */}
             <div className="relative">
-              <div className="bg-white rounded-3xl p-5 shadow-2xl">
+              <div className="bg-white rounded-3xl p-5 shadow-2xl border border-steel-100">
                 {/* mini topbar */}
                 <div className="flex items-center justify-between pb-3 border-b border-steel-100">
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-brand-500 grid place-items-center text-white font-bold text-sm">A</div>
                     <div>
-                      <div className="text-xs font-bold text-steel-800 leading-tight">Auto Centro Veloz</div>
+                      <div className="text-xs font-bold text-steel-900 leading-tight">Auto Centro Veloz</div>
                       <div className="text-[9px] text-steel-500">São Paulo/SP</div>
                     </div>
                   </div>
@@ -90,10 +89,10 @@ export default function LandingOficina() {
                 {/* OS card */}
                 <div className="mt-3 p-3 bg-steel-50 rounded-xl">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-brand-500 uppercase tracking-widest">⚡ Em andamento</span>
+                    <span className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">⚡ Em andamento</span>
                     <span className="text-[10px] text-steel-400">há 12 min</span>
                   </div>
-                  <div className="mt-1 font-bold text-steel-800 text-sm">Troca de embreagem</div>
+                  <div className="mt-1 font-bold text-steel-900 text-sm">Troca de embreagem</div>
                   <div className="text-[11px] text-steel-500 mt-0.5">🔧 Carlos Souza · ★ 4.9</div>
                 </div>
 
@@ -105,7 +104,7 @@ export default function LandingOficina() {
                       <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-signal-500 border-2 border-white animate-pulse" />
                     </div>
                     <div className="flex-1">
-                      <div className="text-xs font-bold text-steel-800">Roberto J. a caminho</div>
+                      <div className="text-xs font-bold text-steel-900">Roberto J. a caminho</div>
                       <div className="text-[10px] text-steel-500">📍 Chega em ~14 min</div>
                     </div>
                     <div className="text-[10px] font-bold text-brand-600">2.3 km</div>
@@ -116,13 +115,13 @@ export default function LandingOficina() {
                 <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                   <div className="bg-steel-50 rounded-lg py-2">
                     <div className="text-[9px] text-steel-500 uppercase tracking-wider">Hoje</div>
-                    <div className="text-sm font-bold text-steel-800 mt-0.5">8 OS</div>
+                    <div className="text-sm font-bold text-steel-900 mt-0.5">8 OS</div>
                   </div>
                   <div className="bg-steel-50 rounded-lg py-2">
                     <div className="text-[9px] text-steel-500 uppercase tracking-wider">Ativos</div>
                     <div className="text-sm font-bold text-brand-500 mt-0.5">3</div>
                   </div>
-                  <div className="bg-signal-500/15 rounded-lg py-2">
+                  <div className="bg-signal-50 border border-signal-200 rounded-lg py-2">
                     <div className="text-[9px] text-signal-700 uppercase tracking-wider">Faturado</div>
                     <div className="text-sm font-bold text-signal-700 mt-0.5">R$ 2.4k</div>
                   </div>
@@ -131,7 +130,7 @@ export default function LandingOficina() {
 
               {/* Floating tag */}
               <div className="absolute -top-3 -right-3 bg-signal-500 text-white rounded-2xl px-4 py-2 shadow-xl rotate-[3deg]">
-                <div className="text-[10px] font-bold uppercase tracking-widest opacity-80">Ao vivo</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest opacity-90">Ao vivo</div>
                 <div className="text-sm font-bold">Mecânico chegou</div>
               </div>
             </div>
@@ -140,11 +139,11 @@ export default function LandingOficina() {
       </section>
 
       {/* ── DORES ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8 border-t border-steel-800">
+      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
-            <div className="text-xs font-bold text-brand-400 uppercase tracking-widest">A realidade da maioria das oficinas</div>
-            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight">
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">A realidade da maioria das oficinas</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight text-steel-900">
               Reconhece esses problemas?
             </h2>
           </div>
@@ -155,7 +154,7 @@ export default function LandingOficina() {
             <Pain emoji="💸" title="CLT pesa toda hora"
               desc="Salário, INSS, FGTS, férias, 13º. Mesmo no mês mais fraco, a folha vence. E não tem como cortar." />
             <Pain emoji="📅" title="Falta gente, perde cliente"
-              desc='"Posso deixar amanhã?" — "Vou ter que ver, mestre".  Cliente vai embora pra concorrência mais ágil.' />
+              desc='"Posso deixar amanhã?" — "Vou ter que ver, mestre". Cliente vai embora pra concorrência mais ágil.' />
             <Pain emoji="📓" title="OS no caderninho"
               desc="Anotação no papel, perde história, perde garantia, perde cliente que não volta. Receita escapa." />
             <Pain emoji="🤷" title="Sem controle real"
@@ -167,12 +166,12 @@ export default function LandingOficina() {
       </section>
 
       {/* ── SOLUÇÃO ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-gradient-to-b from-steel-950 via-steel-900 to-steel-950">
+      <section className="py-20 lg:py-28 px-5 lg:px-8">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
-            <div className="text-xs font-bold text-brand-400 uppercase tracking-widest">O que muda com o app</div>
-            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight">
-              Tudo que falta. <span className="text-brand-400">Em um único painel.</span>
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">O que muda com o app</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
+              Tudo que falta. <span className="text-brand-500">Em um único painel.</span>
             </h2>
           </div>
 
@@ -198,11 +197,11 @@ export default function LandingOficina() {
       </section>
 
       {/* ── COMO FUNCIONA ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8">
+      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-14">
-            <div className="text-xs font-bold text-brand-400 uppercase tracking-widest">Como funciona</div>
-            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight">
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Como funciona</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
               4 passos. Sua oficina rodando.
             </h2>
           </div>
@@ -221,20 +220,20 @@ export default function LandingOficina() {
       </section>
 
       {/* ── COMPARATIVO ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8 border-t border-steel-800">
+      <section className="py-20 lg:py-28 px-5 lg:px-8">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl lg:text-5xl font-bold tracking-tight leading-tight">
+            <h2 className="text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
               Compare por conta própria.
             </h2>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             {/* Modelo antigo */}
-            <div className="bg-steel-900/40 border border-steel-800 rounded-2xl p-6">
+            <div className="bg-white border border-steel-200 rounded-2xl p-6 shadow-sm">
               <div className="text-xs font-bold text-steel-500 uppercase tracking-widest">Modelo tradicional</div>
-              <h3 className="mt-2 text-xl font-bold text-steel-300">Mecânico CLT</h3>
-              <ul className="mt-4 space-y-2.5 text-sm text-steel-400">
+              <h3 className="mt-2 text-xl font-bold text-steel-700">Mecânico CLT</h3>
+              <ul className="mt-4 space-y-2.5 text-sm text-steel-600">
                 <ItemX>Folha fixa todo mês, mesmo sem serviço</ItemX>
                 <ItemX>Encargos: ~75% sobre o salário</ItemX>
                 <ItemX>Férias, 13º, FGTS, INSS</ItemX>
@@ -245,10 +244,10 @@ export default function LandingOficina() {
             </div>
 
             {/* Com o app */}
-            <div className="bg-gradient-to-br from-brand-500/15 to-brand-600/5 border border-brand-500/40 rounded-2xl p-6">
-              <div className="text-xs font-bold text-brand-400 uppercase tracking-widest">Com o app</div>
-              <h3 className="mt-2 text-xl font-bold text-white">Mecânico sob demanda</h3>
-              <ul className="mt-4 space-y-2.5 text-sm text-steel-200">
+            <div className="bg-gradient-to-br from-brand-50 to-white border-2 border-brand-200 rounded-2xl p-6 shadow-lg shadow-brand-500/10">
+              <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Com o app</div>
+              <h3 className="mt-2 text-xl font-bold text-steel-900">Mecânico sob demanda</h3>
+              <ul className="mt-4 space-y-2.5 text-sm text-steel-700">
                 <ItemCheck>Paga só pela hora efetivamente trabalhada</ItemCheck>
                 <ItemCheck>Zero encargos. Zero CLT.</ItemCheck>
                 <ItemCheck>Acessa profissionais qualificados em minutos</ItemCheck>
@@ -261,8 +260,8 @@ export default function LandingOficina() {
         </div>
       </section>
 
-      {/* ── PROVA / NÚMEROS ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8">
+      {/* ── NÚMEROS ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
         <div className="max-w-5xl mx-auto">
           <div className="grid md:grid-cols-3 gap-4">
             <StatCard n="0" label="encargos trabalhistas" />
@@ -273,16 +272,16 @@ export default function LandingOficina() {
       </section>
 
       {/* ── CTA FINAL ── */}
-      <section className="py-24 lg:py-32 px-5 lg:px-8 border-t border-steel-800">
+      <section className="py-24 lg:py-32 px-5 lg:px-8 bg-gradient-to-b from-white to-brand-50/30">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="text-xs font-bold text-brand-400 uppercase tracking-widest">Comece sem custo. Sem risco.</div>
-          <h2 className="mt-3 text-4xl lg:text-6xl font-bold tracking-tight leading-tight">
+          <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Comece sem custo. Sem risco.</div>
+          <h2 className="mt-3 text-4xl lg:text-6xl font-bold tracking-tight leading-tight text-steel-900">
             Cadastre sua oficina.<br />
-            <span className="text-brand-400">Hoje. Em 2 minutos.</span>
+            <span className="text-brand-500">Hoje. Em 2 minutos.</span>
           </h2>
-          <p className="mt-6 text-lg text-steel-400">
+          <p className="mt-6 text-lg text-steel-600">
             Você ganha um sistema de gestão completo, marketplace de mecânicos
-            e pagamento intermediado. <strong className="text-white">Sem pagar nada.</strong>
+            e pagamento intermediado. <strong className="text-steel-900">Sem pagar nada.</strong>
           </p>
 
           <Link to="/cadastro/oficina"
@@ -292,19 +291,19 @@ export default function LandingOficina() {
           </Link>
 
           <p className="mt-4 text-xs text-steel-500">
-            Validamos seu CNPJ. Aprovação em até 24h.
+            Validamos seu CNPJ · Aprovação em até 24h
           </p>
         </div>
       </section>
 
       {/* ── FOOTER ── */}
-      <footer className="border-t border-steel-800 py-10 px-5 lg:px-8">
+      <footer className="border-t border-steel-100 py-10 px-5 lg:px-8 bg-white">
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-steel-500">
-          <Link to="/"><Logo light /></Link>
+          <Link to="/"><Logo /></Link>
           <div className="flex items-center gap-6">
-            <Link to="/" className="hover:text-white transition">Início</Link>
-            <Link to="/mecanico" className="hover:text-white transition">Sou mecânico</Link>
-            <Link to="/login" className="hover:text-white transition">Entrar</Link>
+            <Link to="/" className="hover:text-steel-900 transition">Início</Link>
+            <Link to="/mecanico" className="hover:text-steel-900 transition">Sou mecânico</Link>
+            <Link to="/login" className="hover:text-steel-900 transition">Entrar</Link>
           </div>
           <div className="text-xs">© MecânicoApp {new Date().getFullYear()}</div>
         </div>
@@ -317,11 +316,11 @@ export default function LandingOficina() {
 
 function Pain({ emoji, title, desc }: { emoji: string; title: string; desc: string }) {
   return (
-    <div className="bg-steel-900/40 border border-steel-800 rounded-2xl p-5 flex gap-4">
+    <div className="bg-white border border-steel-200 rounded-2xl p-5 flex gap-4 shadow-sm hover:shadow-md transition">
       <div className="text-3xl shrink-0">{emoji}</div>
       <div>
-        <h3 className="font-bold text-base leading-tight">{title}</h3>
-        <p className="mt-1.5 text-sm text-steel-400 leading-relaxed">{desc}</p>
+        <h3 className="font-bold text-base leading-tight text-steel-900">{title}</h3>
+        <p className="mt-1.5 text-sm text-steel-600 leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -329,11 +328,11 @@ function Pain({ emoji, title, desc }: { emoji: string; title: string; desc: stri
 
 function Win({ emoji, title, desc }: { emoji: string; title: string; desc: string }) {
   return (
-    <div className="bg-gradient-to-br from-steel-900/80 to-steel-900/40 border border-brand-500/20 rounded-2xl p-5 flex gap-4 hover:border-brand-500/40 transition">
+    <div className="bg-white border-2 border-brand-100 rounded-2xl p-5 flex gap-4 shadow-sm hover:shadow-lg hover:border-brand-300 transition">
       <div className="text-3xl shrink-0">{emoji}</div>
       <div>
-        <h3 className="font-bold text-base leading-tight text-brand-300">{title}</h3>
-        <p className="mt-1.5 text-sm text-steel-300 leading-relaxed">{desc}</p>
+        <h3 className="font-bold text-base leading-tight text-brand-700">{title}</h3>
+        <p className="mt-1.5 text-sm text-steel-700 leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -341,13 +340,13 @@ function Win({ emoji, title, desc }: { emoji: string; title: string; desc: strin
 
 function FlowStep({ n, title, desc }: { n: number; title: string; desc: string }) {
   return (
-    <div className="flex items-start gap-4 bg-steel-900/40 border border-steel-800 rounded-2xl p-5 hover:border-brand-500/30 transition">
-      <div className="h-12 w-12 rounded-full bg-brand-500 grid place-items-center font-bold text-xl shrink-0 shadow-lg shadow-brand-500/30">
+    <div className="flex items-start gap-4 bg-white border border-steel-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-brand-200 transition">
+      <div className="h-12 w-12 rounded-full bg-brand-500 grid place-items-center font-bold text-xl shrink-0 shadow-lg shadow-brand-500/30 text-white">
         {n}
       </div>
       <div>
-        <h3 className="font-bold text-lg leading-tight">{title}</h3>
-        <p className="mt-1 text-sm text-steel-400 leading-relaxed">{desc}</p>
+        <h3 className="font-bold text-lg leading-tight text-steel-900">{title}</h3>
+        <p className="mt-1 text-sm text-steel-600 leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -355,9 +354,9 @@ function FlowStep({ n, title, desc }: { n: number; title: string; desc: string }
 
 function StatCard({ n, label }: { n: string; label: string }) {
   return (
-    <div className="bg-gradient-to-br from-brand-500/10 to-transparent border border-brand-500/20 rounded-2xl p-6 text-center">
-      <div className="text-5xl font-bold text-brand-400 leading-none">{n}</div>
-      <div className="mt-2 text-sm text-steel-400">{label}</div>
+    <div className="bg-gradient-to-br from-brand-50 to-white border-2 border-brand-100 rounded-2xl p-6 text-center shadow-sm">
+      <div className="text-5xl font-bold text-brand-500 leading-none">{n}</div>
+      <div className="mt-2 text-sm text-steel-600 font-medium">{label}</div>
     </div>
   );
 }
@@ -365,7 +364,7 @@ function StatCard({ n, label }: { n: string; label: string }) {
 function ItemCheck({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex items-start gap-2">
-      <span className="text-signal-400 shrink-0 mt-0.5">✓</span>
+      <span className="text-signal-500 shrink-0 mt-0.5 font-bold">✓</span>
       <span>{children}</span>
     </li>
   );
@@ -374,7 +373,7 @@ function ItemCheck({ children }: { children: React.ReactNode }) {
 function ItemX({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex items-start gap-2">
-      <span className="text-steel-600 shrink-0 mt-0.5">✗</span>
+      <span className="text-steel-400 shrink-0 mt-0.5">✗</span>
       <span>{children}</span>
     </li>
   );
