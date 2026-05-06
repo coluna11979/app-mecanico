@@ -14,7 +14,8 @@ type OsRow = ServiceOrder & {
   mechanic: WorkshopMechanic | null;
 };
 
-type MainTab = 'os' | 'agendados' | 'mecanicos';
+type MainTab   = 'os' | 'agendados' | 'mecanicos';
+type MechType  = 'internal' | 'marketplace';
 
 /* ─── constantes ────────────────────────────────────────────── */
 const STATUSES: OsStatus[] = ['open', 'in_progress', 'completed', 'cancelled'];
@@ -42,15 +43,16 @@ const EMPTY_OS = {
   notes: '', estimated_hours: '', km_reading: '',
   parts_cost: '', labor_cost: '',
 };
-const EMPTY_MECH = { name: '', specialty: '', skills: [] as string[] };
+const EMPTY_MECH        = { name: '', specialty: '', skills: [] as string[] };
+const EMPTY_INLINE_CUST = { full_name: '', phone: '', cpf: '', email: '' };
+const EMPTY_INLINE_VEH  = { plate: '', make: '', model: '', year: '', color: '' };
 
 /* ─── helpers ───────────────────────────────────────────────── */
 function toBRL(cents: number) {
   return (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function parseCents(formatted: string) {
-  return parseInt(formatted.replace(/\D/g, '') || '0', 10);
-}
+function parseCents(v: string) { return parseInt(v.replace(/\D/g, '') || '0', 10); }
+
 function osLabel(s: string) {
   return ({ open:'Aberta', in_progress:'Em andamento', completed:'Concluída', cancelled:'Cancelada' } as Record<string,string>)[s] ?? s;
 }
@@ -80,8 +82,8 @@ function fmtDateTime(iso: string) {
 function toDatetimeLocal(iso: string | null) {
   if (!iso) return '';
   const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -90,28 +92,47 @@ function toDatetimeLocal(iso: string | null) {
 export default function ServiceOrders() {
   const { user } = useAuth();
 
-  const [shop, setShop]               = useState<Workshop | null>(null);
-  const [list, setList]               = useState<OsRow[]>([]);
-  const [customers, setCustomers]     = useState<Customer[]>([]);
-  const [vehicles, setVehicles]       = useState<Vehicle[]>([]);
+  const [shop, setShop]                   = useState<Workshop | null>(null);
+  const [list, setList]                   = useState<OsRow[]>([]);
+  const [customers, setCustomers]         = useState<Customer[]>([]);
+  const [vehicles, setVehicles]           = useState<Vehicle[]>([]);
   const [internalMechs, setInternalMechs] = useState<WorkshopMechanic[]>([]);
 
-  const [tab, setTab]                   = useState<MainTab>('os');
-  const [filterStatus, setFilterStatus] = useState<OsStatus|'all'>('all');
-  const [filterMech, setFilterMech]     = useState('all');
-  const [search, setSearch]             = useState('');
-  const [detail, setDetail]             = useState<OsRow | null>(null);
-  const [modalOS, setModalOS]           = useState(false);
-  const [modalMech, setModalMech]       = useState(false);
-  const [editMech, setEditMech]         = useState<WorkshopMechanic | null>(null);
+  const [tab, setTab]                     = useState<MainTab>('os');
+  const [filterStatus, setFilterStatus]   = useState<OsStatus|'all'>('all');
+  const [filterMech, setFilterMech]       = useState('all');
+  const [search, setSearch]               = useState('');
+  const [detail, setDetail]               = useState<OsRow | null>(null);
+  const [modalOS, setModalOS]             = useState(false);
+  const [modalMech, setModalMech]         = useState(false);
+  const [editMech, setEditMech]           = useState<WorkshopMechanic | null>(null);
 
-  const [formOS, setFormOS]           = useState(EMPTY_OS);
-  const [priceCents, setPriceCents]   = useState(0);
-  const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [formMech, setFormMech]       = useState(EMPTY_MECH);
-  const [newSkill, setNewSkill]       = useState('');
-  const [saving, setSaving]           = useState(false);
+  /* ── form OS ── */
+  const [formOS, setFormOS]             = useState(EMPTY_OS);
+  const [priceCents, setPriceCents]     = useState(0);
+  const [scheduleMode, setScheduleMode] = useState<'now'|'later'>('now');
+  const [scheduledAt, setScheduledAt]   = useState('');
+  const [mechType, setMechType]         = useState<MechType>('internal');
+
+  /* Marketplace fields */
+  const [mktPricePerHour, setMktPricePerHour] = useState(0);   // cents
+  const [mktMaxHours, setMktMaxHours]         = useState('');
+  const [mktSkills, setMktSkills]             = useState<string[]>([]);
+
+  /* Inline – novo cliente */
+  const [showNewCust, setShowNewCust]       = useState(false);
+  const [inlineCust, setInlineCust]         = useState(EMPTY_INLINE_CUST);
+  const [savingCust, setSavingCust]         = useState(false);
+
+  /* Inline – novo veículo */
+  const [showNewVeh, setShowNewVeh]         = useState(false);
+  const [inlineVeh, setInlineVeh]           = useState(EMPTY_INLINE_VEH);
+  const [savingVeh, setSavingVeh]           = useState(false);
+
+  /* Mechanic modal */
+  const [formMech, setFormMech]   = useState(EMPTY_MECH);
+  const [newSkill, setNewSkill]   = useState('');
+  const [saving, setSaving]       = useState(false);
 
   useEffect(() => { if (user) load(); }, [user]);
 
@@ -144,13 +165,55 @@ export default function ServiceOrders() {
     setVehicles((data as Vehicle[]) ?? []);
   }
 
-  /* ── mecânico interno ── */
-  function openNewMech() {
-    setEditMech(null); setFormMech(EMPTY_MECH); setNewSkill(''); setModalMech(true);
+  /* ── inline: criar cliente ── */
+  async function createCustomerInline() {
+    if (!shop || !inlineCust.full_name.trim()) return;
+    setSavingCust(true);
+    const { data } = await supabase.from('customers').insert({
+      workshop_id: shop.id,
+      full_name:   inlineCust.full_name.trim(),
+      phone:       inlineCust.phone.trim()  || null,
+      cpf:         inlineCust.cpf.trim()    || null,
+      email:       inlineCust.email.trim()  || null,
+    }).select('*').single();
+    if (data) {
+      const c = data as Customer;
+      setCustomers(prev => [...prev, c].sort((a,b) => a.full_name.localeCompare(b.full_name)));
+      setFormOS(f => ({ ...f, customer_id: c.id, vehicle_id: '' }));
+      setVehicles([]);
+    }
+    setShowNewCust(false);
+    setInlineCust(EMPTY_INLINE_CUST);
+    setSavingCust(false);
   }
+
+  /* ── inline: criar veículo ── */
+  async function createVehicleInline() {
+    if (!shop || !formOS.customer_id || !inlineVeh.plate.trim() || !inlineVeh.make.trim() || !inlineVeh.model.trim()) return;
+    setSavingVeh(true);
+    const { data } = await supabase.from('vehicles').insert({
+      customer_id: formOS.customer_id,
+      workshop_id: shop.id,
+      plate:  inlineVeh.plate.toUpperCase().trim(),
+      make:   inlineVeh.make.trim(),
+      model:  inlineVeh.model.trim(),
+      year:   inlineVeh.year ? parseInt(inlineVeh.year) : null,
+      color:  inlineVeh.color.trim() || null,
+    }).select('*').single();
+    if (data) {
+      const v = data as Vehicle;
+      setVehicles(prev => [...prev, v]);
+      setFormOS(f => ({ ...f, vehicle_id: v.id }));
+    }
+    setShowNewVeh(false);
+    setInlineVeh(EMPTY_INLINE_VEH);
+    setSavingVeh(false);
+  }
+
+  /* ── mecânico interno ── */
+  function openNewMech() { setEditMech(null); setFormMech(EMPTY_MECH); setNewSkill(''); setModalMech(true); }
   function openEditMech(m: WorkshopMechanic) {
-    setEditMech(m);
-    setFormMech({ name: m.name, specialty: m.specialty ?? '', skills: [...m.skills] });
+    setEditMech(m); setFormMech({ name: m.name, specialty: m.specialty ?? '', skills: [...m.skills] });
     setNewSkill(''); setModalMech(true);
   }
   function addSkill(s: string) {
@@ -158,26 +221,19 @@ export default function ServiceOrders() {
     if (t && !formMech.skills.includes(t)) setFormMech(f => ({ ...f, skills: [...f.skills, t] }));
     setNewSkill('');
   }
-  function removeSkill(s: string) {
-    setFormMech(f => ({ ...f, skills: f.skills.filter(x => x !== s) }));
+  function removeSkill(s: string) { setFormMech(f => ({ ...f, skills: f.skills.filter(x => x !== s) })); }
+  function toggleMktSkill(s: string) {
+    setMktSkills(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   }
+
   async function saveMech(e: FormEvent) {
     e.preventDefault();
     if (!shop) return;
     setSaving(true);
-    const payload = {
-      workshop_id: shop.id,
-      name:        formMech.name.trim(),
-      specialty:   formMech.specialty || null,
-      skills:      formMech.skills,
-    };
-    if (editMech) {
-      await supabase.from('workshop_mechanics').update(payload).eq('id', editMech.id);
-    } else {
-      await supabase.from('workshop_mechanics').insert(payload);
-    }
-    await fetchMechs(shop.id);
-    setModalMech(false); setSaving(false);
+    const payload = { workshop_id: shop.id, name: formMech.name.trim(), specialty: formMech.specialty || null, skills: formMech.skills };
+    if (editMech) await supabase.from('workshop_mechanics').update(payload).eq('id', editMech.id);
+    else          await supabase.from('workshop_mechanics').insert(payload);
+    await fetchMechs(shop.id); setModalMech(false); setSaving(false);
   }
   async function deactivateMech(id: string) {
     if (!confirm('Remover mecânico da lista?')) return;
@@ -185,50 +241,67 @@ export default function ServiceOrders() {
     setInternalMechs(prev => prev.filter(m => m.id !== id));
   }
 
-  /* ── criar OS ── */
+  /* ── abrir modal OS ── */
   function openModalOS() {
-    setFormOS(EMPTY_OS);
-    setPriceCents(0);
-    setScheduleMode('now');
-    setScheduledAt('');
+    setFormOS(EMPTY_OS); setPriceCents(0);
+    setScheduleMode('now'); setScheduledAt('');
+    setMechType('internal');
+    setMktPricePerHour(0); setMktMaxHours(''); setMktSkills([]);
     setVehicles([]);
+    setShowNewCust(false); setInlineCust(EMPTY_INLINE_CUST);
+    setShowNewVeh(false);  setInlineVeh(EMPTY_INLINE_VEH);
     setModalOS(true);
   }
 
+  /* ── salvar OS ── */
   async function saveOS(e: FormEvent) {
     e.preventDefault();
     if (!shop) return;
     setSaving(true);
 
-    // Compute total price from parts + labor if given, else use manual
-    const partsVal  = formOS.parts_cost ? parseFloat(formOS.parts_cost) : null;
-    const laborVal  = formOS.labor_cost ? parseFloat(formOS.labor_cost) : null;
-    const manualPrice = priceCents / 100;
-    const computedPrice = (partsVal ?? 0) + (laborVal ?? 0);
-    const finalPrice = computedPrice > 0 ? computedPrice : manualPrice;
+    const schedIso = scheduleMode === 'later' && scheduledAt
+      ? new Date(scheduledAt).toISOString() : null;
 
-    await supabase.from('service_orders').insert({
-      workshop_id:          shop.id,
-      title:                formOS.title.trim(),
-      description:          formOS.description.trim() || null,
-      category:             formOS.category || null,
-      price:                finalPrice,
-      customer_id:          formOS.customer_id || null,
-      vehicle_id:           formOS.vehicle_id  || null,
-      workshop_mechanic_id: formOS.workshop_mechanic_id || null,
-      status:               'open',
-      scheduled_at:         scheduleMode === 'later' && scheduledAt
-                              ? new Date(scheduledAt).toISOString()
-                              : null,
-      estimated_hours:      formOS.estimated_hours ? parseFloat(formOS.estimated_hours) : null,
-      notes:                formOS.notes.trim() || null,
-      km_reading:           formOS.km_reading ? parseInt(formOS.km_reading) : null,
-      parts_cost:           partsVal,
-      labor_cost:           laborVal,
-    });
-    await fetchOS(shop.id);
-    setModalOS(false);
-    setSaving(false);
+    if (mechType === 'marketplace') {
+      /* publica como job no marketplace */
+      await supabase.from('jobs').insert({
+        workshop_id:    shop.id,
+        title:          formOS.title.trim(),
+        description:    formOS.description.trim() || null,
+        price:          priceCents / 100,
+        price_per_hour: mktPricePerHour / 100,
+        max_hours:      mktMaxHours ? parseFloat(mktMaxHours) : 0,
+        status:         'open',
+        scheduled_at:   schedIso,
+      });
+    } else {
+      /* OS interna */
+      const partsVal  = formOS.parts_cost ? parseFloat(formOS.parts_cost) : null;
+      const laborVal  = formOS.labor_cost ? parseFloat(formOS.labor_cost) : null;
+      const computed  = (partsVal ?? 0) + (laborVal ?? 0);
+      const finalPrice = computed > 0 ? computed : priceCents / 100;
+
+      await supabase.from('service_orders').insert({
+        workshop_id:          shop.id,
+        title:                formOS.title.trim(),
+        description:          formOS.description.trim() || null,
+        category:             formOS.category || null,
+        price:                finalPrice,
+        customer_id:          formOS.customer_id || null,
+        vehicle_id:           formOS.vehicle_id  || null,
+        workshop_mechanic_id: formOS.workshop_mechanic_id || null,
+        status:               'open',
+        scheduled_at:         schedIso,
+        estimated_hours:      formOS.estimated_hours ? parseFloat(formOS.estimated_hours) : null,
+        notes:                formOS.notes.trim() || null,
+        km_reading:           formOS.km_reading ? parseInt(formOS.km_reading) : null,
+        parts_cost:           partsVal,
+        labor_cost:           laborVal,
+      });
+      await fetchOS(shop.id);
+    }
+
+    setModalOS(false); setSaving(false);
   }
 
   /* ── status ── */
@@ -243,10 +316,10 @@ export default function ServiceOrders() {
   }
 
   /* ─── analytics ──────────────────────────────────────────── */
-  const now       = new Date();
-  const completed = list.filter(o => o.status === 'completed');
-  const revenue   = completed.reduce((a, o) => a + o.price, 0);
-  const thisMonth = completed.filter(o =>
+  const now          = new Date();
+  const completed    = list.filter(o => o.status === 'completed');
+  const revenue      = completed.reduce((a, o) => a + o.price, 0);
+  const thisMonth    = completed.filter(o =>
     new Date(o.completed_at!).getMonth() === now.getMonth() &&
     new Date(o.completed_at!).getFullYear() === now.getFullYear()
   );
@@ -258,8 +331,7 @@ export default function ServiceOrders() {
     if (!catMap[cat]) catMap[cat] = { count: 0, revenue: 0, durations: [] };
     catMap[cat].count++;
     if (o.status === 'completed') catMap[cat].revenue += o.price;
-    const d = durationMin(o);
-    if (d !== null) catMap[cat].durations.push(d);
+    const d = durationMin(o); if (d !== null) catMap[cat].durations.push(d);
   });
   const topCats  = Object.entries(catMap).sort((a, b) => b[1].count - a[1].count).slice(0, 6);
   const maxCount = topCats[0]?.[1].count ?? 1;
@@ -271,13 +343,12 @@ export default function ServiceOrders() {
     if (!mechMap[id]) mechMap[id] = { name: o.mechanic.name, count: 0, revenue: 0, durations: [] };
     mechMap[id].count++;
     if (o.status === 'completed') mechMap[id].revenue += o.price;
-    const d = durationMin(o);
-    if (d !== null) mechMap[id].durations.push(d);
+    const d = durationMin(o); if (d !== null) mechMap[id].durations.push(d);
   });
   const topMechs = Object.values(mechMap).sort((a, b) => b.count - a.count);
 
   const allDurs = completed.map(durationMin).filter((d): d is number => d !== null);
-  const avgDur  = allDurs.length ? Math.round(allDurs.reduce((a, b) => a + b, 0) / allDurs.length) : null;
+  const avgDur  = allDurs.length ? Math.round(allDurs.reduce((a,b) => a+b,0) / allDurs.length) : null;
 
   /* ─── listas filtradas ───────────────────────────────────── */
   const filtered = list.filter(o => {
@@ -295,16 +366,11 @@ export default function ServiceOrders() {
     return true;
   });
 
-  // Agendados: status open + scheduled_at no futuro
   const agendados = list
     .filter(o => o.scheduled_at && o.status === 'open')
     .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
 
-  const counts = STATUSES.reduce(
-    (acc, s) => ({ ...acc, [s]: list.filter(o => o.status === s).length }),
-    {} as Record<string, number>
-  );
-
+  const counts  = STATUSES.reduce((acc, s) => ({ ...acc, [s]: list.filter(o => o.status === s).length }), {} as Record<string, number>);
   const osCount = list.filter(o => !o.scheduled_at || o.status !== 'open').length;
 
   /* ══════════════════════════════════════════════ RENDER ══ */
@@ -317,28 +383,25 @@ export default function ServiceOrders() {
           <h1 className="text-3xl font-bold tracking-tight">Ordens de Serviço</h1>
           <p className="text-sm text-steel-500 mt-1">{list.length} OS cadastradas</p>
         </div>
-        <button
-          onClick={tab === 'mecanicos' ? openNewMech : openModalOS}
-          className="btn-primary"
-        >
+        <button onClick={tab === 'mecanicos' ? openNewMech : openModalOS} className="btn-primary">
           {tab === 'mecanicos' ? '+ Mecânico' : '+ Nova OS'}
         </button>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <KPI label="Faturamento total" value={`R$ ${revenue.toLocaleString('pt-BR',{minimumFractionDigits:2})}`}    sub={`${completed.length} concluídas`}         color="text-signal-600" />
-        <KPI label="Este mês"          value={`R$ ${revenueMonth.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} sub={`${thisMonth.length} OS`}               color="text-brand-600" />
-        <KPI label="Tempo médio"       value={avgDur !== null ? fmtDur(avgDur) : '—'}                                 sub="por OS concluída" />
-        <KPI label="Equipe ativa"      value={internalMechs.length}                                                   sub="mecânicos" />
+        <KPI label="Faturamento total" value={`R$ ${revenue.toLocaleString('pt-BR',{minimumFractionDigits:2})}`}      sub={`${completed.length} concluídas`} color="text-signal-600" />
+        <KPI label="Este mês"          value={`R$ ${revenueMonth.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} sub={`${thisMonth.length} OS`}         color="text-brand-600" />
+        <KPI label="Tempo médio"       value={avgDur !== null ? fmtDur(avgDur) : '—'}                                  sub="por OS concluída" />
+        <KPI label="Equipe ativa"      value={internalMechs.length}                                                    sub="mecânicos" />
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-steel-100 rounded-xl p-1">
         {([
-          { key: 'os',         label: `📋 OS (${osCount})` },
-          { key: 'agendados',  label: `📅 Agendados (${agendados.length})` },
-          { key: 'mecanicos',  label: `🔧 Equipe (${internalMechs.length})` },
+          { key: 'os',        label: `📋 OS (${osCount})` },
+          { key: 'agendados', label: `📅 Agendados (${agendados.length})` },
+          { key: 'mecanicos', label: `🔧 Equipe (${internalMechs.length})` },
         ] as { key: MainTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
@@ -352,15 +415,12 @@ export default function ServiceOrders() {
       {/* ══ TAB: OS ══ */}
       {tab === 'os' && (
         <div className="space-y-5">
-
-          {/* Analytics */}
           {topCats.length > 0 && (
             <div className="card">
               <h2 className="font-bold text-steel-800 mb-4">Serviços mais realizados</h2>
               <div className="space-y-3">
                 {topCats.map(([cat, info]) => {
-                  const avgD = info.durations.length
-                    ? Math.round(info.durations.reduce((a, b) => a + b, 0) / info.durations.length) : null;
+                  const avgD = info.durations.length ? Math.round(info.durations.reduce((a,b)=>a+b,0)/info.durations.length) : null;
                   return (
                     <div key={cat}>
                       <div className="flex items-center justify-between text-sm mb-1">
@@ -369,11 +429,7 @@ export default function ServiceOrders() {
                           {avgD !== null && <span className="text-xs text-steel-400 whitespace-nowrap">⏱ {fmtDur(avgD)}</span>}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          {info.revenue > 0 && (
-                            <span className="text-xs text-signal-600 font-semibold">
-                              R$ {info.revenue.toLocaleString('pt-BR',{minimumFractionDigits:2})}
-                            </span>
-                          )}
+                          {info.revenue > 0 && <span className="text-xs text-signal-600 font-semibold">R$ {info.revenue.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>}
                           <span className="text-xs font-bold text-steel-700 w-8 text-right">{info.count}×</span>
                         </div>
                       </div>
@@ -388,12 +444,11 @@ export default function ServiceOrders() {
             </div>
           )}
 
-          {/* Filtros */}
           <div className="flex flex-wrap gap-2 items-center">
             <input className="input max-w-xs text-sm" placeholder="Buscar OS, cliente, placa, mecânico…"
               value={search} onChange={e => setSearch(e.target.value)} />
             <select className="input max-w-[160px] text-sm" value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value as OsStatus | 'all')}>
+              onChange={e => setFilterStatus(e.target.value as OsStatus|'all')}>
               <option value="all">Todos status</option>
               {STATUSES.map(s => <option key={s} value={s}>{osLabel(s)} ({counts[s] ?? 0})</option>)}
             </select>
@@ -407,7 +462,6 @@ export default function ServiceOrders() {
             )}
           </div>
 
-          {/* Lista */}
           {filtered.length === 0 ? (
             <div className="card text-center text-steel-500 py-14">
               {list.length === 0
@@ -416,9 +470,7 @@ export default function ServiceOrders() {
             </div>
           ) : (
             <div className="space-y-2">
-              {filtered.map(os => (
-                <OsCard key={os.id} os={os} onClick={() => setDetail(os)} />
-              ))}
+              {filtered.map(os => <OsCard key={os.id} os={os} onClick={() => setDetail(os)} />)}
             </div>
           )}
         </div>
@@ -427,12 +479,11 @@ export default function ServiceOrders() {
       {/* ══ TAB: AGENDADOS ══ */}
       {tab === 'agendados' && (
         <div className="space-y-4">
-
           {agendados.length === 0 ? (
             <div className="card text-center text-steel-500 py-16">
               <div className="text-4xl mb-3">📅</div>
               <p className="text-lg font-semibold">Nenhum serviço agendado</p>
-              <p className="text-sm mt-1">Ao criar uma OS escolha "Agendar para uma data" para que apareça aqui.</p>
+              <p className="text-sm mt-1">Ao criar uma OS, escolha "Agendar para uma data".</p>
               <button onClick={openModalOS} className="btn-primary mt-5">+ Agendar OS</button>
             </div>
           ) : (
@@ -440,33 +491,31 @@ export default function ServiceOrders() {
               <p className="text-sm text-steel-500">{agendados.length} serviço{agendados.length !== 1 ? 's' : ''} agendado{agendados.length !== 1 ? 's' : ''}</p>
               <div className="space-y-3">
                 {agendados.map(os => {
-                  const schedDate = new Date(os.scheduled_at!);
-                  const isToday   = schedDate.toDateString() === now.toDateString();
-                  const isPast    = schedDate < now;
+                  const d      = new Date(os.scheduled_at!);
+                  const isToday = d.toDateString() === now.toDateString();
+                  const isPast  = d < now;
                   return (
                     <button key={os.id} onClick={() => setDetail(os)}
                       className="card w-full text-left hover:shadow-md transition hover:-translate-y-0.5">
                       <div className="flex items-start gap-4">
-                        {/* Data box */}
                         <div className={`shrink-0 rounded-xl px-3 py-2 text-center min-w-[56px] ${
                           isPast ? 'bg-alert-50 border border-alert-200' :
                           isToday ? 'bg-brand-50 border border-brand-200' :
                           'bg-steel-50 border border-steel-200'
                         }`}>
                           <div className={`text-xs font-bold uppercase ${isPast ? 'text-alert-600' : isToday ? 'text-brand-600' : 'text-steel-500'}`}>
-                            {schedDate.toLocaleDateString('pt-BR', { month: 'short' })}
+                            {d.toLocaleDateString('pt-BR', { month: 'short' })}
                           </div>
                           <div className={`text-2xl font-bold leading-tight font-display ${isPast ? 'text-alert-700' : isToday ? 'text-brand-700' : 'text-steel-800'}`}>
-                            {schedDate.getDate()}
+                            {d.getDate()}
                           </div>
                           <div className={`text-[10px] font-semibold ${isPast ? 'text-alert-500' : isToday ? 'text-brand-500' : 'text-steel-400'}`}>
-                            {schedDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>
-
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {isPast && <span className="badge bg-alert-100 text-alert-700 text-xs">Atrasado</span>}
+                            {isPast  && <span className="badge bg-alert-100 text-alert-700 text-xs">Atrasado</span>}
                             {isToday && !isPast && <span className="badge bg-brand-100 text-brand-700 text-xs">Hoje</span>}
                             <span className="font-bold truncate">{os.title}</span>
                           </div>
@@ -476,15 +525,10 @@ export default function ServiceOrders() {
                             {os.mechanic  && <span>🔧 {os.mechanic.name}</span>}
                             {os.estimated_hours && <span>⏱ {os.estimated_hours}h estimadas</span>}
                           </div>
-                          {os.category && (
-                            <span className="badge bg-steel-100 text-steel-600 text-xs mt-2">{os.category}</span>
-                          )}
+                          {os.category && <span className="badge bg-steel-100 text-steel-600 text-xs mt-2">{os.category}</span>}
                         </div>
-
                         <div className="text-right shrink-0">
-                          <div className="text-lg font-bold font-display">
-                            R$ {os.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}
-                          </div>
+                          <div className="text-lg font-bold font-display">R$ {os.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
                         </div>
                       </div>
                     </button>
@@ -499,14 +543,12 @@ export default function ServiceOrders() {
       {/* ══ TAB: EQUIPE ══ */}
       {tab === 'mecanicos' && (
         <div className="space-y-4">
-
           {topMechs.length > 0 && (
             <div className="card">
               <h2 className="font-bold text-steel-800 mb-3">Performance da equipe</h2>
               <div className="divide-y divide-steel-100">
                 {topMechs.map(m => {
-                  const avgD = m.durations.length
-                    ? Math.round(m.durations.reduce((a, b) => a + b, 0) / m.durations.length) : null;
+                  const avgD = m.durations.length ? Math.round(m.durations.reduce((a,b)=>a+b,0)/m.durations.length) : null;
                   return (
                     <div key={m.name} className="py-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
@@ -515,15 +557,11 @@ export default function ServiceOrders() {
                         </div>
                         <div>
                           <div className="font-semibold text-sm">{m.name}</div>
-                          <div className="text-xs text-steel-500">
-                            {m.count} OS {avgD !== null && `· ⏱ ${fmtDur(avgD)} em média`}
-                          </div>
+                          <div className="text-xs text-steel-500">{m.count} OS {avgD !== null && `· ⏱ ${fmtDur(avgD)} em média`}</div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-bold font-display text-sm">
-                          R$ {m.revenue.toLocaleString('pt-BR',{minimumFractionDigits:2})}
-                        </div>
+                        <div className="font-bold font-display text-sm">R$ {m.revenue.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
                         <div className="text-xs text-steel-400">faturado</div>
                       </div>
                     </div>
@@ -532,7 +570,6 @@ export default function ServiceOrders() {
               </div>
             </div>
           )}
-
           {internalMechs.length === 0 ? (
             <div className="card text-center py-14 text-steel-500">
               <p className="text-lg font-semibold">Nenhum mecânico cadastrado</p>
@@ -553,10 +590,8 @@ export default function ServiceOrders() {
                       <div className="text-xs text-steel-400 mt-0.5">{(mechMap[m.id]?.count ?? 0)} OS realizadas</div>
                     </div>
                     <div className="flex gap-1 shrink-0">
-                      <button onClick={() => openEditMech(m)}
-                        className="h-7 w-7 rounded-lg bg-steel-100 hover:bg-steel-200 grid place-items-center text-steel-500 hover:text-steel-700 transition text-xs">✏️</button>
-                      <button onClick={() => deactivateMech(m.id)}
-                        className="h-7 w-7 rounded-lg bg-steel-100 hover:bg-alert-100 grid place-items-center text-steel-400 hover:text-alert-600 transition text-xs">✕</button>
+                      <button onClick={() => openEditMech(m)} className="h-7 w-7 rounded-lg bg-steel-100 hover:bg-steel-200 grid place-items-center text-steel-500 hover:text-steel-700 transition text-xs">✏️</button>
+                      <button onClick={() => deactivateMech(m.id)} className="h-7 w-7 rounded-lg bg-steel-100 hover:bg-alert-100 grid place-items-center text-steel-400 hover:text-alert-600 transition text-xs">✕</button>
                     </div>
                   </div>
                   {m.skills.length > 0 && (
@@ -582,33 +617,23 @@ export default function ServiceOrders() {
                 <div className="flex gap-2 flex-wrap mb-2">
                   <span className={`badge ${osColor(detail.status)}`}>{osLabel(detail.status)}</span>
                   {detail.category && <span className="badge bg-steel-100 text-steel-600">{detail.category}</span>}
-                  {detail.scheduled_at && detail.status === 'open' && (
-                    <span className="badge bg-brand-50 text-brand-700 border border-brand-200">📅 Agendado</span>
-                  )}
+                  {detail.scheduled_at && detail.status === 'open' && <span className="badge bg-brand-50 text-brand-700 border border-brand-200">📅 Agendado</span>}
                 </div>
                 <h2 className="text-xl font-bold">{detail.title}</h2>
               </div>
               <button onClick={() => setDetail(null)} className="text-steel-400 hover:text-steel-700 text-xl leading-none">✕</button>
             </div>
-
-            {detail.description && (
-              <p className="text-sm text-steel-600 bg-steel-50 rounded-xl p-3">{detail.description}</p>
-            )}
-
+            {detail.description && <p className="text-sm text-steel-600 bg-steel-50 rounded-xl p-3">{detail.description}</p>}
             {detail.notes && (
               <div className="bg-pending-50 border border-pending-200 rounded-xl p-3">
                 <div className="text-[10px] text-pending-600 font-bold uppercase tracking-wider mb-1">Notas internas</div>
                 <p className="text-sm text-pending-800">{detail.notes}</p>
               </div>
             )}
-
-            {/* Timeline */}
             <div className="bg-steel-50 rounded-xl p-4 space-y-2">
               <div className="text-xs font-bold text-steel-500 uppercase tracking-wider mb-2">Timeline</div>
-              {detail.scheduled_at && (
-                <TimelineRow label="Agendada para" value={fmtDateTime(detail.scheduled_at)} done />
-              )}
-              <TimelineRow label="Criada"    value={fmtDateTime(detail.created_at)}                             done />
+              {detail.scheduled_at && <TimelineRow label="Agendada para" value={fmtDateTime(detail.scheduled_at)} done />}
+              <TimelineRow label="Criada"    value={fmtDateTime(detail.created_at)} done />
               <TimelineRow label="Iniciada"  value={detail.started_at   ? fmtDateTime(detail.started_at)   : '—'} done={!!detail.started_at}   />
               <TimelineRow label="Concluída" value={detail.completed_at ? fmtDateTime(detail.completed_at) : '—'} done={!!detail.completed_at} />
               {durationMin(detail) !== null && (
@@ -618,53 +643,30 @@ export default function ServiceOrders() {
                 </div>
               )}
             </div>
-
-            {/* Info grid */}
             <div className="grid grid-cols-2 gap-3 text-sm">
-              {detail.customer  && <InfoCard label="Cliente" value={detail.customer.full_name} />}
-              {detail.vehicle   && <InfoCard label="Veículo" value={`${detail.vehicle.plate} · ${detail.vehicle.make} ${detail.vehicle.model}`} />}
-              {detail.mechanic  && <InfoCard label="Mecânico" value={detail.mechanic.name} sub={detail.mechanic.specialty ?? undefined} />}
-              <InfoCard label="Valor total" value={`R$ ${detail.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} bold />
-              {detail.estimated_hours != null && (
-                <InfoCard label="Tempo estimado" value={`${detail.estimated_hours}h`} />
-              )}
-              {detail.km_reading != null && (
-                <InfoCard label="KM atual" value={`${detail.km_reading.toLocaleString('pt-BR')} km`} />
-              )}
-              {detail.parts_cost != null && (
-                <InfoCard label="Peças" value={`R$ ${detail.parts_cost.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} />
-              )}
-              {detail.labor_cost != null && (
-                <InfoCard label="Mão de obra" value={`R$ ${detail.labor_cost.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} />
-              )}
+              {detail.customer      && <InfoCard label="Cliente"       value={detail.customer.full_name} />}
+              {detail.vehicle       && <InfoCard label="Veículo"       value={`${detail.vehicle.plate} · ${detail.vehicle.make} ${detail.vehicle.model}`} />}
+              {detail.mechanic      && <InfoCard label="Mecânico"      value={detail.mechanic.name} sub={detail.mechanic.specialty ?? undefined} />}
+              <InfoCard label="Valor total"   value={`R$ ${detail.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} bold />
+              {detail.estimated_hours != null && <InfoCard label="Tempo estimado" value={`${detail.estimated_hours}h`} />}
+              {detail.km_reading     != null && <InfoCard label="KM atual"        value={`${detail.km_reading.toLocaleString('pt-BR')} km`} />}
+              {detail.parts_cost     != null && <InfoCard label="Peças"           value={`R$ ${detail.parts_cost.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} />}
+              {detail.labor_cost     != null && <InfoCard label="Mão de obra"     value={`R$ ${detail.labor_cost.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} />}
             </div>
-
-            {/* Ações */}
             {detail.status !== 'completed' && detail.status !== 'cancelled' && (
               <div>
                 <div className="label mb-2">Alterar status</div>
                 <div className="flex gap-2 flex-wrap">
-                  {detail.status === 'open' && (
-                    <button onClick={() => updateStatus(detail, 'in_progress')}
-                      className="btn-secondary text-sm">▶ Iniciar (marca horário)</button>
-                  )}
-                  {detail.status === 'in_progress' && (
-                    <button onClick={() => updateStatus(detail, 'completed')}
-                      className="btn-primary text-sm">✓ Concluir (marca horário)</button>
-                  )}
-                  <button onClick={() => updateStatus(detail, 'cancelled')}
-                    className="btn-ghost text-sm text-alert-600 hover:bg-alert-50">Cancelar OS</button>
+                  {detail.status === 'open'        && <button onClick={() => updateStatus(detail,'in_progress')} className="btn-secondary text-sm">▶ Iniciar</button>}
+                  {detail.status === 'in_progress' && <button onClick={() => updateStatus(detail,'completed')}   className="btn-primary  text-sm">✓ Concluir</button>}
+                  <button onClick={() => updateStatus(detail,'cancelled')} className="btn-ghost text-sm text-alert-600 hover:bg-alert-50">Cancelar OS</button>
                 </div>
               </div>
             )}
-
             {detail.status === 'completed' && (
               <div className="bg-signal-50 border border-signal-200 rounded-xl p-3 text-sm text-signal-700 font-semibold flex items-center gap-2">
                 <span>✓</span>
-                <span>
-                  Concluída · R$ {detail.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}
-                  {durationMin(detail) !== null && ` · ${fmtDur(durationMin(detail)!)}`}
-                </span>
+                <span>Concluída · R$ {detail.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}{durationMin(detail) !== null && ` · ${fmtDur(durationMin(detail)!)}`}</span>
               </div>
             )}
           </div>
@@ -679,40 +681,56 @@ export default function ServiceOrders() {
 
             <h2 className="text-xl font-bold sticky top-0 bg-white py-1">Nova Ordem de Serviço</h2>
 
+            {/* ── Tipo de mecânico ── */}
+            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+              <div className="text-xs font-bold text-steel-500 uppercase tracking-wider">Quem vai executar?</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setMechType('internal')}
+                  className={`py-3 rounded-xl text-sm font-semibold border-2 transition flex flex-col items-center gap-1 ${
+                    mechType === 'internal'
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
+                  }`}>
+                  <span className="text-xl">🔧</span>
+                  <span>Mecânico interno</span>
+                </button>
+                <button type="button" onClick={() => setMechType('marketplace')}
+                  className={`py-3 rounded-xl text-sm font-semibold border-2 transition flex flex-col items-center gap-1 ${
+                    mechType === 'marketplace'
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
+                  }`}>
+                  <span className="text-xl">🌐</span>
+                  <span>Marketplace</span>
+                </button>
+              </div>
+
+              {mechType === 'marketplace' && (
+                <div className="bg-brand-50 border border-brand-200 rounded-xl px-3 py-2.5 text-xs text-brand-700">
+                  🌐 A OS será publicada no marketplace e mecânicos cadastrados poderão aceitar o serviço.
+                </div>
+              )}
+            </div>
+
             {/* ── Agendamento ── */}
             <div className="bg-steel-50 rounded-xl p-4 space-y-3">
               <div className="text-xs font-bold text-steel-500 uppercase tracking-wider">Quando executar?</div>
               <div className="flex gap-2">
-                <button type="button"
-                  onClick={() => setScheduleMode('now')}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition ${
-                    scheduleMode === 'now'
-                      ? 'bg-brand-500 text-white border-brand-500'
-                      : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
-                  }`}>
-                  ⚡ Executar agora
+                <button type="button" onClick={() => setScheduleMode('now')}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition ${scheduleMode === 'now' ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'}`}>
+                  ⚡ Agora
                 </button>
-                <button type="button"
-                  onClick={() => setScheduleMode('later')}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition ${
-                    scheduleMode === 'later'
-                      ? 'bg-brand-500 text-white border-brand-500'
-                      : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
-                  }`}>
+                <button type="button" onClick={() => setScheduleMode('later')}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition ${scheduleMode === 'later' ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'}`}>
                   📅 Agendar para...
                 </button>
               </div>
               {scheduleMode === 'later' && (
                 <div>
                   <label className="label">Data e hora</label>
-                  <input
-                    type="datetime-local"
-                    className="input"
-                    required={scheduleMode === 'later'}
-                    value={scheduledAt}
-                    min={toDatetimeLocal(new Date().toISOString())}
-                    onChange={e => setScheduledAt(e.target.value)}
-                  />
+                  <input type="datetime-local" className="input" required={scheduleMode === 'later'}
+                    value={scheduledAt} min={toDatetimeLocal(new Date().toISOString())}
+                    onChange={e => setScheduledAt(e.target.value)} />
                 </div>
               )}
             </div>
@@ -739,7 +757,7 @@ export default function ServiceOrders() {
                 <input className="input" type="number" min="0" step="0.5"
                   value={formOS.estimated_hours}
                   onChange={e => setFormOS(f => ({ ...f, estimated_hours: e.target.value }))}
-                  placeholder="Ex.: 2" />
+                  placeholder="2" />
               </div>
             </div>
 
@@ -750,110 +768,278 @@ export default function ServiceOrders() {
                 placeholder="Descreva o problema, diagnóstico inicial…" />
             </div>
 
-            <div>
-              <label className="label">Notas internas</label>
-              <textarea className="input" rows={2} value={formOS.notes}
-                onChange={e => setFormOS(f => ({ ...f, notes: e.target.value }))}
-                placeholder="Observações internas (não visíveis ao cliente)…" />
-            </div>
+            {mechType === 'internal' && (
+              <div>
+                <label className="label">Notas internas</label>
+                <textarea className="input" rows={2} value={formOS.notes}
+                  onChange={e => setFormOS(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Observações internas da oficina…" />
+              </div>
+            )}
 
-            {/* ── Cliente / Veículo ── */}
+            {/* ── Cliente & Veículo ── */}
             <div className="bg-steel-50 rounded-xl p-4 space-y-3">
               <div className="text-xs font-bold text-steel-500 uppercase tracking-wider">Cliente & Veículo</div>
-              <div>
-                <label className="label">Cliente</label>
-                <select className="input" value={formOS.customer_id}
-                  onChange={e => {
-                    setFormOS(f => ({ ...f, customer_id: e.target.value, vehicle_id: '' }));
-                    if (e.target.value) loadVehicles(e.target.value); else setVehicles([]);
-                  }}>
-                  <option value="">— Selecionar cliente —</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-                </select>
-              </div>
-              {formOS.customer_id && (
+
+              {/* Select cliente */}
+              {!showNewCust ? (
+                <div>
+                  <label className="label">Cliente</label>
+                  <div className="flex gap-2">
+                    <select className="input flex-1" value={formOS.customer_id}
+                      onChange={e => {
+                        setFormOS(f => ({ ...f, customer_id: e.target.value, vehicle_id: '' }));
+                        setShowNewVeh(false);
+                        if (e.target.value) loadVehicles(e.target.value); else setVehicles([]);
+                      }}>
+                      <option value="">— Selecionar cliente —</option>
+                      {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}{c.phone ? ` · ${c.phone}` : ''}</option>)}
+                    </select>
+                    <button type="button" onClick={() => setShowNewCust(true)}
+                      className="shrink-0 px-3 py-2 rounded-xl bg-brand-500 text-white text-xs font-bold hover:bg-brand-600 transition whitespace-nowrap">
+                      + Novo
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Formulário inline – novo cliente */
+                <div className="bg-white border border-brand-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-brand-700">➕ Cadastrar novo cliente</span>
+                    <button type="button" onClick={() => setShowNewCust(false)} className="text-steel-400 hover:text-steel-700 text-lg leading-none">✕</button>
+                  </div>
+                  <div>
+                    <label className="label">Nome completo *</label>
+                    <input className="input" required value={inlineCust.full_name}
+                      onChange={e => setInlineCust(f => ({ ...f, full_name: e.target.value }))}
+                      placeholder="Maria da Silva" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">Telefone</label>
+                      <input className="input" value={inlineCust.phone}
+                        onChange={e => setInlineCust(f => ({ ...f, phone: e.target.value }))}
+                        placeholder="(11) 9..." />
+                    </div>
+                    <div>
+                      <label className="label">CPF</label>
+                      <input className="input" value={inlineCust.cpf}
+                        onChange={e => setInlineCust(f => ({ ...f, cpf: e.target.value }))}
+                        placeholder="000.000.000-00" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">E-mail</label>
+                    <input className="input" type="email" value={inlineCust.email}
+                      onChange={e => setInlineCust(f => ({ ...f, email: e.target.value }))}
+                      placeholder="maria@email.com" />
+                  </div>
+                  <button type="button" onClick={createCustomerInline} disabled={savingCust || !inlineCust.full_name.trim()}
+                    className="btn-primary w-full text-sm disabled:opacity-50">
+                    {savingCust ? '…' : '✓ Salvar e selecionar cliente'}
+                  </button>
+                </div>
+              )}
+
+              {/* Select veículo */}
+              {formOS.customer_id && !showNewCust && (
                 <div>
                   <label className="label">Veículo</label>
-                  <select className="input" value={formOS.vehicle_id}
-                    onChange={e => setFormOS(f => ({ ...f, vehicle_id: e.target.value }))}>
-                    <option value="">— Selecionar veículo —</option>
-                    {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} · {v.make} {v.model}</option>)}
-                  </select>
+                  {!showNewVeh ? (
+                    <div className="flex gap-2">
+                      <select className="input flex-1" value={formOS.vehicle_id}
+                        onChange={e => setFormOS(f => ({ ...f, vehicle_id: e.target.value }))}>
+                        <option value="">— Selecionar veículo —</option>
+                        {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} · {v.make} {v.model}{v.year ? ` (${v.year})` : ''}</option>)}
+                      </select>
+                      <button type="button" onClick={() => setShowNewVeh(true)}
+                        className="shrink-0 px-3 py-2 rounded-xl bg-brand-500 text-white text-xs font-bold hover:bg-brand-600 transition whitespace-nowrap">
+                        + Novo
+                      </button>
+                    </div>
+                  ) : (
+                    /* Formulário inline – novo veículo */
+                    <div className="bg-white border border-brand-200 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-brand-700">🚗 Cadastrar novo veículo</span>
+                        <button type="button" onClick={() => setShowNewVeh(false)} className="text-steel-400 hover:text-steel-700 text-lg leading-none">✕</button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="label">Placa *</label>
+                          <input className="input uppercase" required value={inlineVeh.plate}
+                            onChange={e => setInlineVeh(f => ({ ...f, plate: e.target.value.toUpperCase() }))}
+                            placeholder="ABC1D23" />
+                        </div>
+                        <div>
+                          <label className="label">Ano</label>
+                          <input className="input" type="number" min={1950} max={2030} value={inlineVeh.year}
+                            onChange={e => setInlineVeh(f => ({ ...f, year: e.target.value }))}
+                            placeholder="2020" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="label">Marca *</label>
+                          <input className="input" required value={inlineVeh.make}
+                            onChange={e => setInlineVeh(f => ({ ...f, make: e.target.value }))}
+                            placeholder="Honda" />
+                        </div>
+                        <div>
+                          <label className="label">Modelo *</label>
+                          <input className="input" required value={inlineVeh.model}
+                            onChange={e => setInlineVeh(f => ({ ...f, model: e.target.value }))}
+                            placeholder="Civic" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="label">Cor</label>
+                        <input className="input" value={inlineVeh.color}
+                          onChange={e => setInlineVeh(f => ({ ...f, color: e.target.value }))}
+                          placeholder="Prata" />
+                      </div>
+                      <button type="button" onClick={createVehicleInline}
+                        disabled={savingVeh || !inlineVeh.plate.trim() || !inlineVeh.make.trim() || !inlineVeh.model.trim()}
+                        className="btn-primary w-full text-sm disabled:opacity-50">
+                        {savingVeh ? '…' : '✓ Salvar e selecionar veículo'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* KM */}
+              {mechType === 'internal' && (
+                <div>
+                  <label className="label">KM atual do veículo</label>
+                  <input className="input" type="number" min="0"
+                    value={formOS.km_reading}
+                    onChange={e => setFormOS(f => ({ ...f, km_reading: e.target.value }))}
+                    placeholder="Ex.: 85000" />
+                </div>
+              )}
+            </div>
+
+            {/* ── Mecânico (interno) ── */}
+            {mechType === 'internal' && (
               <div>
-                <label className="label">KM atual do veículo</label>
-                <input className="input" type="number" min="0"
-                  value={formOS.km_reading}
-                  onChange={e => setFormOS(f => ({ ...f, km_reading: e.target.value }))}
-                  placeholder="Ex.: 85000" />
+                <label className="label">Mecânico responsável</label>
+                <select className="input" value={formOS.workshop_mechanic_id}
+                  onChange={e => setFormOS(f => ({ ...f, workshop_mechanic_id: e.target.value }))}>
+                  <option value="">— Selecionar —</option>
+                  {internalMechs.map(m => <option key={m.id} value={m.id}>{m.name}{m.specialty ? ` · ${m.specialty}` : ''}</option>)}
+                </select>
+                {internalMechs.length === 0 && (
+                  <p className="text-xs text-steel-400 mt-1">
+                    <button type="button" className="text-brand-500 underline"
+                      onClick={() => { setModalOS(false); setTab('mecanicos'); openNewMech(); }}>
+                      Cadastrar mecânico primeiro
+                    </button>
+                  </p>
+                )}
               </div>
-            </div>
+            )}
 
-            {/* ── Mecânico / Valor ── */}
-            <div>
-              <label className="label">Mecânico responsável</label>
-              <select className="input" value={formOS.workshop_mechanic_id}
-                onChange={e => setFormOS(f => ({ ...f, workshop_mechanic_id: e.target.value }))}>
-                <option value="">— Selecionar —</option>
-                {internalMechs.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-              {internalMechs.length === 0 && (
-                <p className="text-xs text-steel-400 mt-1">
-                  <button type="button" className="text-brand-500 underline"
-                    onClick={() => { setModalOS(false); setTab('mecanicos'); openNewMech(); }}>
-                    Cadastrar mecânico primeiro
-                  </button>
-                </p>
-              )}
-            </div>
+            {/* ── Marketplace: skills e remuneração ── */}
+            {mechType === 'marketplace' && (
+              <div className="bg-brand-50 border border-brand-200 rounded-xl p-4 space-y-4">
+                <div className="text-xs font-bold text-brand-700 uppercase tracking-wider">Configuração do Marketplace</div>
 
-            {/* Breakdown de valor */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-xs font-bold text-steel-500 uppercase tracking-wider">Valor do serviço</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Peças (R$)</label>
-                  <input className="input font-display" inputMode="decimal"
-                    value={formOS.parts_cost}
-                    onChange={e => setFormOS(f => ({ ...f, parts_cost: e.target.value }))}
-                    placeholder="0,00" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Valor/hora (R$)</label>
+                    <input className="input font-display" inputMode="numeric"
+                      placeholder="0,00"
+                      value={mktPricePerHour === 0 ? '' : toBRL(mktPricePerHour)}
+                      onChange={e => setMktPricePerHour(parseCents(e.target.value))} />
+                  </div>
+                  <div>
+                    <label className="label">Máx. de horas</label>
+                    <input className="input" type="number" min="1" step="0.5"
+                      value={mktMaxHours}
+                      onChange={e => setMktMaxHours(e.target.value)}
+                      placeholder="Ex.: 4" />
+                  </div>
                 </div>
+
                 <div>
-                  <label className="label">Mão de obra (R$)</label>
-                  <input className="input font-display" inputMode="decimal"
-                    value={formOS.labor_cost}
-                    onChange={e => setFormOS(f => ({ ...f, labor_cost: e.target.value }))}
-                    placeholder="0,00" />
-                </div>
-              </div>
-              {/* Fallback: valor manual */}
-              {(!formOS.parts_cost && !formOS.labor_cost) && (
-                <div>
-                  <label className="label">Ou valor total (R$)</label>
-                  <input
-                    className="input font-display"
-                    inputMode="numeric"
-                    placeholder="0,00"
+                  <label className="label">Valor fixo do serviço (R$)</label>
+                  <input className="input font-display" inputMode="numeric"
+                    placeholder="0,00 (opcional se usar valor/hora)"
                     value={priceCents === 0 ? '' : toBRL(priceCents)}
-                    onChange={e => setPriceCents(parseCents(e.target.value))}
-                  />
+                    onChange={e => setPriceCents(parseCents(e.target.value))} />
                 </div>
-              )}
-              {(formOS.parts_cost || formOS.labor_cost) && (
-                <div className="flex justify-between items-center pt-1 border-t border-steel-200">
-                  <span className="text-sm text-steel-500">Total calculado</span>
-                  <span className="font-bold font-display text-lg">
-                    R$ {((parseFloat(formOS.parts_cost || '0')) + (parseFloat(formOS.labor_cost || '0'))).toLocaleString('pt-BR',{minimumFractionDigits:2})}
-                  </span>
+
+                <div>
+                  <label className="label">Habilidades necessárias</label>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {SKILL_OPTIONS.map(s => (
+                      <button key={s} type="button" onClick={() => toggleMktSkill(s)}
+                        className={`text-xs px-2.5 py-1 rounded-full border font-semibold transition ${
+                          mktSkills.includes(s)
+                            ? 'bg-brand-500 text-white border-brand-500'
+                            : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
+                        }`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
-            </div>
+
+                {mktPricePerHour > 0 && mktMaxHours && (
+                  <div className="flex justify-between items-center pt-1 border-t border-brand-200">
+                    <span className="text-sm text-brand-600">Estimativa total</span>
+                    <span className="font-bold font-display text-brand-700 text-lg">
+                      R$ {((mktPricePerHour / 100) * parseFloat(mktMaxHours)).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Valor (interno) ── */}
+            {mechType === 'internal' && (
+              <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+                <div className="text-xs font-bold text-steel-500 uppercase tracking-wider">Valor do serviço</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Peças (R$)</label>
+                    <input className="input font-display" inputMode="decimal"
+                      value={formOS.parts_cost} onChange={e => setFormOS(f => ({ ...f, parts_cost: e.target.value }))}
+                      placeholder="0,00" />
+                  </div>
+                  <div>
+                    <label className="label">Mão de obra (R$)</label>
+                    <input className="input font-display" inputMode="decimal"
+                      value={formOS.labor_cost} onChange={e => setFormOS(f => ({ ...f, labor_cost: e.target.value }))}
+                      placeholder="0,00" />
+                  </div>
+                </div>
+                {(!formOS.parts_cost && !formOS.labor_cost) && (
+                  <div>
+                    <label className="label">Ou valor total (R$)</label>
+                    <input className="input font-display" inputMode="numeric" placeholder="0,00"
+                      value={priceCents === 0 ? '' : toBRL(priceCents)}
+                      onChange={e => setPriceCents(parseCents(e.target.value))} />
+                  </div>
+                )}
+                {(formOS.parts_cost || formOS.labor_cost) && (
+                  <div className="flex justify-between items-center pt-1 border-t border-steel-200">
+                    <span className="text-sm text-steel-500">Total calculado</span>
+                    <span className="font-bold font-display text-lg">
+                      R$ {((parseFloat(formOS.parts_cost||'0'))+(parseFloat(formOS.labor_cost||'0'))).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setModalOS(false)} className="btn-ghost flex-1">Cancelar</button>
               <button className="btn-primary flex-1 btn-lg" disabled={saving}>
-                {saving ? '…' : scheduleMode === 'later' ? '📅 Agendar OS' : 'Criar OS'}
+                {saving ? '…' : mechType === 'marketplace'
+                  ? (scheduleMode === 'later' ? '📅 Agendar no Marketplace' : '🌐 Publicar no Marketplace')
+                  : (scheduleMode === 'later' ? '📅 Agendar OS' : 'Criar OS')}
               </button>
             </div>
           </form>
@@ -865,19 +1051,15 @@ export default function ServiceOrders() {
         <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setModalMech(false)}>
           <form onSubmit={saveMech} onClick={e => e.stopPropagation()}
             className="card max-w-md w-full max-h-[90vh] overflow-y-auto space-y-5">
-
             <div>
               <h2 className="text-xl font-bold">{editMech ? 'Editar mecânico' : 'Novo mecânico'}</h2>
               <p className="text-sm text-steel-500 mt-0.5">Funcionário interno da oficina.</p>
             </div>
-
             <div>
               <label className="label">Nome completo *</label>
               <input className="input" required value={formMech.name}
-                onChange={e => setFormMech(f => ({ ...f, name: e.target.value }))}
-                placeholder="João da Silva" />
+                onChange={e => setFormMech(f => ({ ...f, name: e.target.value }))} placeholder="João da Silva" />
             </div>
-
             <div>
               <label className="label">Especialidade principal</label>
               <select className="input" value={formMech.specialty}
@@ -886,17 +1068,15 @@ export default function ServiceOrders() {
                 {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-
             <div>
               <label className="label">Habilidades</label>
               <div className="flex flex-wrap gap-2 mb-3 min-h-[28px]">
                 {formMech.skills.map(s => (
                   <span key={s} className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-brand-500/15 text-brand-700 border border-brand-300/40">
-                    {s}
-                    <button type="button" onClick={() => removeSkill(s)} className="hover:text-alert-600 leading-none text-sm">×</button>
+                    {s}<button type="button" onClick={() => removeSkill(s)} className="hover:text-alert-600 text-sm">×</button>
                   </span>
                 ))}
-                {formMech.skills.length === 0 && <span className="text-sm text-steel-400">Nenhuma selecionada ainda.</span>}
+                {formMech.skills.length === 0 && <span className="text-sm text-steel-400">Nenhuma selecionada.</span>}
               </div>
               <div className="text-[10px] text-steel-500 uppercase tracking-wider font-semibold mb-2">Sugestões rápidas</div>
               <div className="flex flex-wrap gap-1.5 mb-3">
@@ -914,7 +1094,6 @@ export default function ServiceOrders() {
                 <button type="button" onClick={() => addSkill(newSkill)} className="btn-primary !py-2 !px-4 shrink-0 text-sm">+</button>
               </div>
             </div>
-
             <div className="flex gap-3 pt-1">
               <button type="button" onClick={() => setModalMech(false)} className="btn-ghost flex-1">Cancelar</button>
               <button className="btn-primary flex-1" disabled={saving}>{saving ? '…' : editMech ? 'Salvar' : 'Cadastrar'}</button>
@@ -937,7 +1116,9 @@ function OsCard({ os, onClick }: { os: OsRow; onClick: () => void }) {
             <span className={`badge text-xs ${osColor(os.status)}`}>{osLabel(os.status)}</span>
             {os.category && <span className="badge bg-steel-100 text-steel-600 text-xs">{os.category}</span>}
             {os.scheduled_at && os.status === 'open' && (
-              <span className="badge bg-brand-50 text-brand-700 text-xs border border-brand-200">📅 {new Date(os.scheduled_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}</span>
+              <span className="badge bg-brand-50 text-brand-700 text-xs border border-brand-200">
+                📅 {new Date(os.scheduled_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}
+              </span>
             )}
             <span className="font-bold truncate">{os.title}</span>
           </div>
@@ -948,15 +1129,11 @@ function OsCard({ os, onClick }: { os: OsRow; onClick: () => void }) {
           </div>
           <div className="text-xs text-steel-400 mt-1">
             <span>{fmtDate(os.created_at)}</span>
-            {os.completed_at && durationMin(os) !== null && (
-              <span className="ml-3">⏱ {fmtDur(durationMin(os)!)}</span>
-            )}
+            {os.completed_at && durationMin(os) !== null && <span className="ml-3">⏱ {fmtDur(durationMin(os)!)}</span>}
           </div>
         </div>
         <div className="text-right shrink-0">
-          <div className="text-lg font-bold font-display">
-            R$ {os.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}
-          </div>
+          <div className="text-lg font-bold font-display">R$ {os.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
         </div>
       </div>
     </button>
@@ -976,9 +1153,9 @@ function KPI({ label, value, sub, color }: { label: string; value: string|number
 function TimelineRow({ label, value, done }: { label: string; value: string; done: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <div className={`h-5 w-5 rounded-full grid place-items-center text-xs shrink-0 ${
-        done ? 'bg-signal-500 text-white' : 'bg-steel-200 text-steel-400'
-      }`}>{done ? '✓' : '·'}</div>
+      <div className={`h-5 w-5 rounded-full grid place-items-center text-xs shrink-0 ${done ? 'bg-signal-500 text-white' : 'bg-steel-200 text-steel-400'}`}>
+        {done ? '✓' : '·'}
+      </div>
       <div className="flex-1 flex justify-between text-sm">
         <span className={done ? 'font-semibold text-steel-700' : 'text-steel-400'}>{label}</span>
         <span className="text-steel-500">{value}</span>
