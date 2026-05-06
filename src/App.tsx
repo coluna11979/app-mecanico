@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 import Landing from './pages/public/Landing';
+import LandingMecanico from './pages/public/LandingMecanico';
+import LandingOficina from './pages/public/LandingOficina';
 import Login from './pages/public/Login';
 import SignupMechanic from './pages/public/SignupMechanic';
 import SignupWorkshop from './pages/public/SignupWorkshop';
@@ -36,6 +38,8 @@ export default function App() {
     <Routes>
       {/* Público */}
       <Route path="/" element={<Landing />} />
+      <Route path="/mecanico" element={<LandingMecanico />} />
+      <Route path="/oficina" element={<LandingOficina />} />
       <Route path="/login" element={<Login />} />
       <Route path="/cadastro/mecanico" element={<SignupMechanic />} />
       <Route path="/cadastro/oficina" element={<SignupWorkshop />} />
