@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
@@ -56,11 +56,13 @@ export default function WorkshopTracking() {
   /* Stripe Cartão */
   const [stripe, setStripe]             = useState<any>(null);
   const [cardSecret, setCardSecret]     = useState<string | null>(null);
-  const [cardEl, setCardEl]             = useState<any>(null);
+  const [cardElReady, setCardElReady]   = useState(false);
   const [cardLoading, setCardLoading]   = useState(false);
   const [cardProcessing, setCardProcessing] = useState(false);
   const [cardError, setCardError]       = useState<string | null>(null);
   const [cardSuccess, setCardSuccess]   = useState(false);
+  const cardDivRef  = useRef<HTMLDivElement>(null);
+  const cardElRef   = useRef<any>(null);
 
   /* Misc */
   const [rating, setRating]         = useState(0);
@@ -201,34 +203,40 @@ export default function WorkshopTracking() {
     setCardLoading(false);
   }
 
-  /* Callback ref — monta o Stripe Card Element quando o div aparece no DOM */
-  const cardDivCallback = useCallback((node: HTMLDivElement | null) => {
-    if (!node || !stripe || !cardSecret || cardEl) return;
-    const elements = stripe.elements();
-    const el = elements.create('card', {
-      hidePostalCode: true,
-      style: {
-        base: {
-          fontSize: '16px',
-          fontFamily: 'inherit',
-          color: '#111827',
-          '::placeholder': { color: '#9ca3af' },
-          iconColor: '#6b7280',
+  /* Monta o Stripe Card Element assim que stripe + cardSecret + div estiverem prontos */
+  useEffect(() => {
+    if (!stripe || !cardSecret || cardElRef.current) return;
+    // Aguarda o próximo tick para garantir que o div já está no DOM
+    const timer = setTimeout(() => {
+      if (!cardDivRef.current) return;
+      const elements = stripe.elements();
+      const el = elements.create('card', {
+        hidePostalCode: true,
+        style: {
+          base: {
+            fontSize: '16px',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            color: '#111827',
+            '::placeholder': { color: '#9ca3af' },
+            iconColor: '#6b7280',
+          },
+          invalid: { color: '#ef4444', iconColor: '#ef4444' },
         },
-        invalid: { color: '#ef4444', iconColor: '#ef4444' },
-      },
-    });
-    el.mount(node);
-    setCardEl(el);
+      });
+      el.mount(cardDivRef.current);
+      cardElRef.current = el;
+      setCardElReady(true);
+    }, 80);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stripe, cardSecret, cardEl]);
+  }, [stripe, cardSecret]);
 
   async function payWithCard() {
-    if (!stripe || !cardEl || !cardSecret) return;
+    if (!stripe || !cardElRef.current || !cardSecret) return;
     setCardProcessing(true);
     setCardError(null);
     const { error, paymentIntent } = await stripe.confirmCardPayment(cardSecret, {
-      payment_method: { card: cardEl },
+      payment_method: { card: cardElRef.current },
     });
     if (error) {
       setCardError(error.message ?? 'Erro no pagamento. Verifique os dados do cartão.');
@@ -546,23 +554,24 @@ export default function WorkshopTracking() {
                     <p className="text-lg font-bold text-signal-700">Pagamento confirmado!</p>
                     <p className="text-sm text-signal-600">O serviço já pode ser iniciado.</p>
                   </div>
-                ) : cardLoading ? (
-                  /* Carregando */
-                  <div className="flex flex-col items-center gap-3 py-6">
-                    <div className="h-10 w-10 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
-                    <p className="text-sm text-steel-500">Preparando pagamento seguro…</p>
-                  </div>
-                ) : cardSecret ? (
-                  /* Formulário do cartão */
+                ) : (
                   <div className="space-y-4">
-                    <div>
+                    {/* Spinner enquanto carrega — div do cartão fica abaixo sempre renderizado */}
+                    {cardLoading && (
+                      <div className="flex flex-col items-center gap-3 py-4">
+                        <div className="h-8 w-8 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
+                        <p className="text-sm text-steel-500">Preparando pagamento seguro…</p>
+                      </div>
+                    )}
+
+                    {/* Div do Stripe — sempre no DOM quando este bloco renderiza */}
+                    <div style={{ display: cardLoading ? 'none' : 'block' }}>
                       <label className="text-xs font-bold text-steel-500 uppercase tracking-widest mb-2 block">
                         Dados do cartão
                       </label>
-                      {/* Stripe Card Element montado aqui via callback ref */}
                       <div
-                        ref={cardDivCallback}
-                        className="border border-steel-300 rounded-xl px-4 py-3.5 bg-white focus-within:border-brand-500 transition"
+                        ref={cardDivRef}
+                        className="border border-steel-300 rounded-xl px-4 py-3.5 bg-white min-h-[52px] focus-within:border-brand-500 transition"
                       />
                     </div>
 
@@ -572,39 +581,30 @@ export default function WorkshopTracking() {
                       </p>
                     )}
 
-                    <button
-                      onClick={payWithCard}
-                      disabled={cardProcessing || !cardEl}
-                      className="btn-primary w-full disabled:opacity-60 touch-manipulation"
-                    >
-                      {cardProcessing
-                        ? <span className="flex items-center justify-center gap-2">
-                            <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                            Processando…
-                          </span>
-                        : `Pagar R$ ${cap.toFixed(2)}`
-                      }
-                    </button>
+                    {!cardLoading && (
+                      <button
+                        onClick={payWithCard}
+                        disabled={cardProcessing || !cardElReady}
+                        className="btn-primary w-full disabled:opacity-60 touch-manipulation"
+                      >
+                        {cardProcessing
+                          ? <span className="flex items-center justify-center gap-2">
+                              <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                              Processando…
+                            </span>
+                          : `Pagar R$ ${cap.toFixed(2)}`
+                        }
+                      </button>
+                    )}
 
                     {/* Cartões de teste */}
-                    <div className="bg-steel-50 rounded-xl px-3 py-2 text-center">
-                      <p className="text-[11px] text-steel-400 font-mono">
-                        Teste: <strong>4242 4242 4242 4242</strong> · qualquer validade/CVV
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  /* Erro ao carregar */
-                  <div className="space-y-3">
-                    {cardError && (
-                      <p className="text-sm text-alert-600 text-center">{cardError}</p>
+                    {!cardLoading && (
+                      <div className="bg-steel-50 rounded-xl px-3 py-2 text-center">
+                        <p className="text-[11px] text-steel-400 font-mono">
+                          Teste: <strong>4242 4242 4242 4242</strong> · qualquer validade/CVV
+                        </p>
+                      </div>
                     )}
-                    <button
-                      onClick={() => { setCardError(null); if (job?.id) loadCardSecret(job.id); }}
-                      className="btn-primary w-full touch-manipulation"
-                    >
-                      Tentar novamente
-                    </button>
                   </div>
                 )}
               </div>
