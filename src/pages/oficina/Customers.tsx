@@ -6,7 +6,7 @@ import type { Customer, Vehicle, Workshop, ServiceOrder } from '@/types/database
 
 type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
 
-const EMPTY_C = { full_name: '', phone: '', email: '', cpf: '', address: '', city: '', birth_date: '' };
+const EMPTY_C = { full_name: '', phone: '', email: '', cpf: '', address: '', city: '', birth_date: '', veh_make: '', veh_model: '', veh_plate: '', veh_year: '' };
 const EMPTY_V = { plate: '', make: '', model: '', year: '', color: '', notes: '' };
 
 export default function Customers() {
@@ -45,15 +45,25 @@ export default function Customers() {
     const payload = {
       workshop_id: shop.id,
       full_name:   formC.full_name.trim(),
-      phone:       formC.phone.trim()  || null,
-      email:       formC.email.trim()  || null,
-      cpf:         formC.cpf.trim()    || null,
-      address:     formC.address.trim() || null,
-      city:        formC.city.trim()   || null,
-      birth_date:  formC.birth_date    || null,
+      phone:       formC.phone.trim()      || null,
+      email:       formC.email.trim()      || null,
+      cpf:         formC.cpf.trim()        || null,
+      address:     formC.address.trim()    || null,
+      city:        formC.city.trim()       || null,
+      birth_date:  formC.birth_date        || null,
     };
-    const { data } = await supabase.from('customers').insert(payload).select('*, vehicles(*, service_orders(*))').single();
-    setList(prev => [data as CustomerFull, ...prev]);
+    const { data: custData } = await supabase.from('customers').insert(payload).select('*').single();
+    if (custData && formC.veh_make.trim() && formC.veh_model.trim()) {
+      await supabase.from('vehicles').insert({
+        customer_id: custData.id,
+        workshop_id: shop.id,
+        plate: formC.veh_plate.toUpperCase().trim() || 'S/P',
+        make:  formC.veh_make.trim(),
+        model: formC.veh_model.trim(),
+        year:  formC.veh_year ? parseInt(formC.veh_year) : null,
+      });
+    }
+    await fetchCustomers(shop.id);
     setModalC(false); setFormC(EMPTY_C);
     setSaving(false);
   }
@@ -271,9 +281,47 @@ export default function Customers() {
               </div>
             </div>
 
+            {/* Veículo */}
+            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
+              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">🚗 Veículo (opcional — cadastra junto)</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Marca</label>
+                  <input className="input" value={formC.veh_make}
+                    onChange={e => setFormC(f => ({ ...f, veh_make: e.target.value }))}
+                    placeholder="Honda" />
+                </div>
+                <div>
+                  <label className="label">Modelo</label>
+                  <input className="input" value={formC.veh_model}
+                    onChange={e => setFormC(f => ({ ...f, veh_model: e.target.value }))}
+                    placeholder="Civic" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Placa</label>
+                  <input className="input uppercase" value={formC.veh_plate}
+                    onChange={e => setFormC(f => ({ ...f, veh_plate: e.target.value.toUpperCase() }))}
+                    placeholder="ABC1D23" />
+                </div>
+                <div>
+                  <label className="label">Ano</label>
+                  <input className="input" type="number" min={1950} max={2030} value={formC.veh_year}
+                    onChange={e => setFormC(f => ({ ...f, veh_year: e.target.value }))}
+                    placeholder="2020" />
+                </div>
+              </div>
+              {formC.veh_make && formC.veh_model && (
+                <p className="text-xs text-signal-600 font-semibold">✓ O veículo será cadastrado junto com o cliente</p>
+              )}
+            </div>
+
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setModalC(false)} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={saving}>{saving ? '…' : 'Salvar cliente'}</button>
+              <button className="btn-primary flex-1" disabled={saving}>
+                {saving ? '…' : formC.veh_make && formC.veh_model ? 'Salvar cliente + veículo' : 'Salvar cliente'}
+              </button>
             </div>
           </form>
         </div>

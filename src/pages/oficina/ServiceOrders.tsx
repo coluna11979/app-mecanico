@@ -21,6 +21,7 @@ type MechType  = 'internal' | 'marketplace';
 const STATUSES: OsStatus[] = ['open', 'in_progress', 'completed', 'cancelled'];
 
 const OS_CATEGORIES = [
+  'Avaliação','Alinhamento','Balanceamento',
   'Troca de óleo','Freios','Suspensão','Elétrica','Motor',
   'Câmbio','Revisão geral','Diagnóstico','Ar-condicionado',
   'Funilaria','Pneus','Transmissão','Embreagem','Injeção eletrônica','Outro',
@@ -44,7 +45,7 @@ const EMPTY_OS = {
   parts_cost: '', labor_cost: '',
 };
 const EMPTY_MECH        = { name: '', specialty: '', skills: [] as string[] };
-const EMPTY_INLINE_CUST = { full_name: '', phone: '', cpf: '', email: '' };
+const EMPTY_INLINE_CUST = { full_name: '', phone: '', cpf: '', email: '', veh_make: '', veh_model: '', veh_plate: '' };
 const EMPTY_INLINE_VEH  = { plate: '', make: '', model: '', year: '', color: '' };
 
 /* ─── helpers ───────────────────────────────────────────────── */
@@ -119,6 +120,9 @@ export default function ServiceOrders() {
   const [mktMaxHours, setMktMaxHours]         = useState('');
   const [mktSkills, setMktSkills]             = useState<string[]>([]);
 
+  /* Check-up */
+  const [isCheckup, setIsCheckup]           = useState(false);
+
   /* Inline – novo cliente */
   const [showNewCust, setShowNewCust]       = useState(false);
   const [inlineCust, setInlineCust]         = useState(EMPTY_INLINE_CUST);
@@ -165,7 +169,7 @@ export default function ServiceOrders() {
     setVehicles((data as Vehicle[]) ?? []);
   }
 
-  /* ── inline: criar cliente ── */
+  /* ── inline: criar cliente (+ veículo opcional) ── */
   async function createCustomerInline() {
     if (!shop || !inlineCust.full_name.trim()) return;
     setSavingCust(true);
@@ -180,7 +184,24 @@ export default function ServiceOrders() {
       const c = data as Customer;
       setCustomers(prev => [...prev, c].sort((a,b) => a.full_name.localeCompare(b.full_name)));
       setFormOS(f => ({ ...f, customer_id: c.id, vehicle_id: '' }));
-      setVehicles([]);
+
+      // Se preencheu veículo, já cria e seleciona
+      if (inlineCust.veh_make.trim() && inlineCust.veh_model.trim()) {
+        const { data: vData } = await supabase.from('vehicles').insert({
+          customer_id: c.id,
+          workshop_id: shop.id,
+          plate: inlineCust.veh_plate.toUpperCase().trim() || 'S/P',
+          make:  inlineCust.veh_make.trim(),
+          model: inlineCust.veh_model.trim(),
+        }).select('*').single();
+        if (vData) {
+          const v = vData as Vehicle;
+          setVehicles([v]);
+          setFormOS(f => ({ ...f, customer_id: c.id, vehicle_id: v.id }));
+        }
+      } else {
+        setVehicles([]);
+      }
     }
     setShowNewCust(false);
     setInlineCust(EMPTY_INLINE_CUST);
@@ -242,9 +263,17 @@ export default function ServiceOrders() {
   }
 
   /* ── abrir modal OS ── */
-  function openModalOS() {
-    setFormOS(EMPTY_OS); setPriceCents(0);
-    setScheduleMode('now'); setScheduledAt('');
+  function openModalOS(opts?: { checkup?: boolean; schedMode?: 'now' | 'later' }) {
+    const checkup = opts?.checkup ?? false;
+    setIsCheckup(checkup);
+    setFormOS({
+      ...EMPTY_OS,
+      title:    checkup ? 'Check-up Gratuito' : '',
+      category: checkup ? 'Avaliação' : '',
+    });
+    setPriceCents(0);
+    setScheduleMode(opts?.schedMode ?? 'now');
+    setScheduledAt('');
     setMechType('internal');
     setMktPricePerHour(0); setMktMaxHours(''); setMktSkills([]);
     setVehicles([]);
@@ -279,7 +308,7 @@ export default function ServiceOrders() {
       const partsVal  = formOS.parts_cost ? parseFloat(formOS.parts_cost) : null;
       const laborVal  = formOS.labor_cost ? parseFloat(formOS.labor_cost) : null;
       const computed  = (partsVal ?? 0) + (laborVal ?? 0);
-      const finalPrice = computed > 0 ? computed : priceCents / 100;
+      const finalPrice = isCheckup ? 0 : (computed > 0 ? computed : priceCents / 100);
 
       await supabase.from('service_orders').insert({
         workshop_id:          shop.id,
@@ -383,7 +412,7 @@ export default function ServiceOrders() {
           <h1 className="text-3xl font-bold tracking-tight">Ordens de Serviço</h1>
           <p className="text-sm text-steel-500 mt-1">{list.length} OS cadastradas</p>
         </div>
-        <button onClick={tab === 'mecanicos' ? openNewMech : openModalOS} className="btn-primary">
+        <button onClick={() => tab === 'mecanicos' ? openNewMech() : openModalOS()} className="btn-primary">
           {tab === 'mecanicos' ? '+ Mecânico' : '+ Nova OS'}
         </button>
       </div>
@@ -415,6 +444,31 @@ export default function ServiceOrders() {
       {/* ══ TAB: OS ══ */}
       {tab === 'os' && (
         <div className="space-y-5">
+
+          {/* ── Banner Check-up Gratuito ── */}
+          <div className="rounded-2xl overflow-hidden border border-signal-200 bg-gradient-to-r from-signal-50 to-brand-50">
+            <div className="px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="text-4xl shrink-0">🎁</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-steel-800 text-base">Check-up Gratuito — Estratégia de captação</div>
+                <p className="text-sm text-steel-500 mt-0.5">
+                  Ofereça uma avaliação gratuita do veículo para atrair novos clientes.
+                  Pode ser executado por mecânico interno ou profissional do marketplace.
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0 flex-wrap">
+                <button onClick={() => openModalOS({ checkup: true, schedMode: 'now' })}
+                  className="btn-primary text-sm !py-2 !px-4">
+                  ⚡ Agora
+                </button>
+                <button onClick={() => openModalOS({ checkup: true, schedMode: 'later' })}
+                  className="btn-secondary text-sm !py-2 !px-4">
+                  📅 Agendar
+                </button>
+              </div>
+            </div>
+          </div>
+
           {topCats.length > 0 && (
             <div className="card">
               <h2 className="font-bold text-steel-800 mb-4">Serviços mais realizados</h2>
@@ -484,7 +538,7 @@ export default function ServiceOrders() {
               <div className="text-4xl mb-3">📅</div>
               <p className="text-lg font-semibold">Nenhum serviço agendado</p>
               <p className="text-sm mt-1">Ao criar uma OS, escolha "Agendar para uma data".</p>
-              <button onClick={openModalOS} className="btn-primary mt-5">+ Agendar OS</button>
+              <button onClick={() => openModalOS()} className="btn-primary mt-5">+ Agendar OS</button>
             </div>
           ) : (
             <>
@@ -679,7 +733,20 @@ export default function ServiceOrders() {
           <form onSubmit={saveOS} onClick={e => e.stopPropagation()}
             className="card max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
 
-            <h2 className="text-xl font-bold sticky top-0 bg-white py-1">Nova Ordem de Serviço</h2>
+            <h2 className="text-xl font-bold sticky top-0 bg-white py-1">
+              {isCheckup ? '🎁 Check-up Gratuito' : 'Nova Ordem de Serviço'}
+            </h2>
+
+            {/* ── Badge check-up ── */}
+            {isCheckup && (
+              <div className="bg-signal-50 border border-signal-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                <span className="text-2xl">🎁</span>
+                <div>
+                  <div className="font-bold text-signal-700 text-sm">Serviço gratuito — Check-up de captação</div>
+                  <div className="text-xs text-signal-600">Preço fixado em R$ 0,00. Use para atrair e cadastrar novos clientes.</div>
+                </div>
+              </div>
+            )}
 
             {/* ── Tipo de mecânico ── */}
             <div className="bg-steel-50 rounded-xl p-4 space-y-3">
@@ -808,6 +875,8 @@ export default function ServiceOrders() {
                     <span className="text-sm font-bold text-brand-700">➕ Cadastrar novo cliente</span>
                     <button type="button" onClick={() => setShowNewCust(false)} className="text-steel-400 hover:text-steel-700 text-lg leading-none">✕</button>
                   </div>
+
+                  {/* Dados do cliente */}
                   <div>
                     <label className="label">Nome completo *</label>
                     <input className="input" required value={inlineCust.full_name}
@@ -816,10 +885,10 @@ export default function ServiceOrders() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="label">Telefone</label>
+                      <label className="label">Telefone / WhatsApp</label>
                       <input className="input" value={inlineCust.phone}
                         onChange={e => setInlineCust(f => ({ ...f, phone: e.target.value }))}
-                        placeholder="(11) 9..." />
+                        placeholder="(11) 9 9999-9999" />
                     </div>
                     <div>
                       <label className="label">CPF</label>
@@ -828,15 +897,37 @@ export default function ServiceOrders() {
                         placeholder="000.000.000-00" />
                     </div>
                   </div>
-                  <div>
-                    <label className="label">E-mail</label>
-                    <input className="input" type="email" value={inlineCust.email}
-                      onChange={e => setInlineCust(f => ({ ...f, email: e.target.value }))}
-                      placeholder="maria@email.com" />
+
+                  {/* Veículo rápido */}
+                  <div className="bg-steel-50 rounded-xl p-3 space-y-2">
+                    <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">🚗 Veículo (opcional — cadastra junto)</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="label !text-[10px]">Marca</label>
+                        <input className="input text-sm" value={inlineCust.veh_make}
+                          onChange={e => setInlineCust(f => ({ ...f, veh_make: e.target.value }))}
+                          placeholder="Honda" />
+                      </div>
+                      <div>
+                        <label className="label !text-[10px]">Modelo</label>
+                        <input className="input text-sm" value={inlineCust.veh_model}
+                          onChange={e => setInlineCust(f => ({ ...f, veh_model: e.target.value }))}
+                          placeholder="Civic" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label !text-[10px]">Placa</label>
+                      <input className="input text-sm uppercase" value={inlineCust.veh_plate}
+                        onChange={e => setInlineCust(f => ({ ...f, veh_plate: e.target.value.toUpperCase() }))}
+                        placeholder="ABC1D23 (opcional)" />
+                    </div>
                   </div>
+
                   <button type="button" onClick={createCustomerInline} disabled={savingCust || !inlineCust.full_name.trim()}
                     className="btn-primary w-full text-sm disabled:opacity-50">
-                    {savingCust ? '…' : '✓ Salvar e selecionar cliente'}
+                    {savingCust ? '…' : inlineCust.veh_make && inlineCust.veh_model
+                      ? '✓ Salvar cliente + veículo'
+                      : '✓ Salvar e selecionar cliente'}
                   </button>
                 </div>
               )}
