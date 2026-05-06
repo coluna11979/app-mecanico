@@ -7,32 +7,18 @@ interface Props {
   jobId: string;
   otherName: string;
   dark?: boolean;
+  /** Messages from the parent's useMessages() hook — subscription lives at
+   *  parent level so it survives tab switches / panel toggles. */
+  messages: Message[];
 }
 
-export function ChatBox({ jobId, otherName, dark = false }: Props) {
+export function ChatBox({ jobId, otherName, dark = false, messages }: Props) {
   const { user } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [text, setText] = useState('');
+  const [text, setText]       = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    supabase.from('messages').select('*').eq('job_id', jobId)
-      .order('created_at', { ascending: true })
-      .then(({ data }) => setMessages((data as Message[]) ?? []));
-
-    const channel = supabase.channel(`chat:${jobId}:${Date.now()}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'messages',
-        filter: `job_id=eq.${jobId}`,
-      }, payload => {
-        setMessages(prev => [...prev, payload.new as Message]);
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [jobId]);
-
+  // Scroll to bottom when new messages arrive
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -41,21 +27,27 @@ export function ChatBox({ jobId, otherName, dark = false }: Props) {
     e.preventDefault();
     if (!text.trim() || !user) return;
     setSending(true);
-    await supabase.from('messages').insert({ job_id: jobId, sender_id: user.id, content: text.trim() });
+    await supabase.from('messages').insert({
+      job_id: jobId,
+      sender_id: user.id,
+      content: text.trim(),
+    });
     setText('');
     setSending(false);
   }
 
-  const border = dark ? 'border-steel-700' : 'border-steel-200';
-  const emptyText = dark ? 'text-steel-500' : 'text-steel-400';
-  const inputBg = dark ? '!bg-steel-700 !border-steel-600 !text-steel-100 !placeholder:text-steel-400' : '';
+  const border   = dark ? 'border-steel-700' : 'border-steel-200';
+  const emptyTxt = dark ? 'text-steel-500'   : 'text-steel-400';
+  const inputBg  = dark
+    ? '!bg-steel-700 !border-steel-600 !text-steel-100 placeholder:!text-steel-400'
+    : '';
 
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {messages.length === 0 && (
-          <div className={`text-center text-sm py-6 ${emptyText}`}>
+          <div className={`text-center text-sm py-6 ${emptyTxt}`}>
             Nenhuma mensagem ainda.<br />Diga olá para {otherName}!
           </div>
         )}
@@ -71,8 +63,12 @@ export function ChatBox({ jobId, otherName, dark = false }: Props) {
                     : 'bg-steel-100 text-steel-800 rounded-bl-none'
               }`}>
                 <div>{m.content}</div>
-                <div className={`text-[10px] mt-0.5 ${isMe ? 'text-white/60' : dark ? 'text-steel-400' : 'text-steel-400'}`}>
-                  {new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                <div className={`text-[10px] mt-0.5 ${
+                  isMe ? 'text-white/60' : dark ? 'text-steel-400' : 'text-steel-400'
+                }`}>
+                  {new Date(m.created_at).toLocaleTimeString('pt-BR', {
+                    hour: '2-digit', minute: '2-digit',
+                  })}
                 </div>
               </div>
             </div>
@@ -85,10 +81,15 @@ export function ChatBox({ jobId, otherName, dark = false }: Props) {
       <form onSubmit={send} className={`flex gap-2 p-3 border-t ${border}`}>
         <input
           className={`input flex-1 !py-2 text-sm ${inputBg}`}
-          placeholder={`Mensagem…`}
+          placeholder="Mensagem…"
           value={text}
           onChange={e => setText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e as never); } }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              send(e as never);
+            }
+          }}
           disabled={sending}
           autoComplete="off"
         />

@@ -6,6 +6,7 @@ import { useGeoBroadcast } from '@/hooks/useGeoBroadcast';
 import { getSetting } from '@/lib/settings';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
+import { useMessages } from '@/hooks/useMessages';
 import type { Job, Workshop } from '@/types/database';
 
 /* ── Haversine distance in km ── */
@@ -42,6 +43,11 @@ export default function MechanicTracking() {
   const [chatOpen, setChatOpen]     = useState(false);
   const [hoursModal, setHoursModal] = useState(false);
   const [actualHours, setActualHours] = useState('');
+
+  /* ── Chat — subscription vive aqui (fora de qualquer condicional) ── */
+  const messages   = useMessages(id);
+  const [chatSeen, setChatSeen] = useState(0);
+  const chatUnread = !chatOpen ? Math.max(0, messages.length - chatSeen) : 0;
 
   /* ── Toast de notificação ── */
   const [toast, setToast]           = useState<string | null>(null);
@@ -255,10 +261,20 @@ export default function MechanicTracking() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setChatOpen(o => !o)}
-            className="bg-steel-800/90 backdrop-blur rounded-full px-4 py-2 text-sm font-semibold flex items-center gap-2 border border-steel-700"
+            onClick={() => {
+              setChatOpen(o => {
+                if (!o) setChatSeen(messages.length); // abrindo → marca como lido
+                return !o;
+              });
+            }}
+            className="relative bg-steel-800/90 backdrop-blur rounded-full px-4 py-2 text-sm font-semibold flex items-center gap-2 border border-steel-700"
           >
             💬 Chat
+            {chatUnread > 0 && (
+              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-brand-500 text-white text-[10px] font-bold grid place-items-center leading-none">
+                {chatUnread > 9 ? '9+' : chatUnread}
+              </span>
+            )}
           </button>
           <div className="bg-brand-500 text-white text-xs font-semibold rounded-full px-3 py-2 flex items-center gap-2 shadow-brand">
             <span className="h-2 w-2 rounded-full bg-white animate-pulse-soft" />
@@ -393,7 +409,12 @@ export default function MechanicTracking() {
             <button onClick={() => setChatOpen(false)} className="text-steel-400 hover:text-white text-xl leading-none">✕</button>
           </div>
           <div className="flex-1 min-h-0">
-            <ChatBox jobId={id} otherName={shop?.business_name ?? 'Oficina'} dark />
+            <ChatBox
+              jobId={id}
+              otherName={shop?.business_name ?? 'Oficina'}
+              dark
+              messages={messages}
+            />
           </div>
         </div>
       )}

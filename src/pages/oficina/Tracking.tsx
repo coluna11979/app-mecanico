@@ -5,6 +5,7 @@ import { ChatBox } from '@/components/chat/ChatBox';
 import { supabase } from '@/lib/supabase';
 import { getSetting } from '@/lib/settings';
 import { useMechanicLive } from '@/hooks/useMechanicLive';
+import { useMessages } from '@/hooks/useMessages';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
@@ -73,6 +74,12 @@ export default function WorkshopTracking() {
   const [toast, setToast]           = useState<string | null>(null);
   const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
   const prevStatusRef  = useRef<string | null>(null);
+
+  /* ── Chat — subscription vive aqui (fora de qualquer condicional) ── */
+  const messages    = useMessages(id);
+  const [chatSeen, setChatSeen] = useState(0);
+  // Mensagens não lidas: só conta quando a aba chat não está visível
+  const chatUnread  = (tab !== 'chat' || !sheetOpen) ? Math.max(0, messages.length - chatSeen) : 0;
 
   function showToast(msg: string) {
     setToast(msg);
@@ -393,7 +400,13 @@ export default function WorkshopTracking() {
       <div className="bg-white border-t border-steel-200 shadow-2xl z-10">
 
         <button
-          onClick={() => setSheetOpen(o => !o)}
+          onClick={() => {
+            setSheetOpen(o => {
+              const next = !o;
+              if (next && tab === 'chat') setChatSeen(messages.length);
+              return next;
+            });
+          }}
           className="w-full flex flex-col items-center pt-2 pb-1 touch-manipulation"
           aria-label="Expandir painel"
         >
@@ -450,12 +463,20 @@ export default function WorkshopTracking() {
               {(['progresso', 'chat'] as Tab[]).map(t => (
                 <button
                   key={t}
-                  onClick={() => setTab(t)}
-                  className={`flex-1 rounded-lg py-1.5 text-sm font-semibold capitalize transition touch-manipulation ${
+                  onClick={() => {
+                    setTab(t);
+                    if (t === 'chat') setChatSeen(messages.length);
+                  }}
+                  className={`relative flex-1 rounded-lg py-1.5 text-sm font-semibold capitalize transition touch-manipulation ${
                     tab === t ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'
                   }`}
                 >
                   {t === 'chat' ? '💬 Chat' : '📋 Progresso'}
+                  {t === 'chat' && chatUnread > 0 && (
+                    <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-brand-500 text-white text-[10px] font-bold grid place-items-center leading-none">
+                      {chatUnread > 9 ? '9+' : chatUnread}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -533,7 +554,13 @@ export default function WorkshopTracking() {
               </div>
             ) : (
               <div className="h-64">
-                {id && <ChatBox jobId={id} otherName={mech?.profile.full_name ?? 'Mecânico'} />}
+                {id && (
+                  <ChatBox
+                    jobId={id}
+                    otherName={mech?.profile.full_name ?? 'Mecânico'}
+                    messages={messages}
+                  />
+                )}
               </div>
             )}
           </div>
