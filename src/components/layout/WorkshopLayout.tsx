@@ -4,8 +4,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
 import { supabase } from '@/lib/supabase';
 
-interface NavItem { to: string; icon: string; label: string }
+interface NavItem  { to: string; icon: string; label: string }
 interface SoonItem { icon: string; label: string; desc: string }
+interface SoonDept { dept: string; items: SoonItem[] }
 
 const PLATAFORMA: NavItem[] = [
   { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'         },
@@ -19,24 +20,51 @@ const GESTAO: NavItem[] = [
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
 ];
 
-// Módulos futuros agrupados por departamento
-const SOON_RH: SoonItem[] = [
-  { icon: '🪪', label: 'Funcionários',  desc: 'Cadastro e documentos'  },
-  { icon: '💵', label: 'Salários',      desc: 'Folha e pagamentos'      },
-  { icon: '%',  label: 'Comissões',     desc: 'Metas e bonificações'    },
-];
-const SOON_FIN: SoonItem[] = [
-  { icon: '📊', label: 'Financeiro',    desc: 'DRE, fluxo de caixa'    },
-  { icon: '🧾', label: 'Faturamento',   desc: 'NF-e e recebimentos'    },
-];
-const SOON_OPS: SoonItem[] = [
-  { icon: '📅', label: 'Agendamentos',  desc: 'Agenda de serviços'      },
-  { icon: '📋', label: 'OS digital',    desc: 'Ordem de serviço completa'},
-  { icon: '📌', label: 'POPs',          desc: 'Proc. Operacionais Padrão'},
-];
-const SOON_EXTRA: SoonItem[] = [
-  { icon: '📦', label: 'Estoque',       desc: 'Peças e insumos'         },
-  { icon: '⭐', label: 'Avaliações',    desc: 'NPS e reputação'         },
+// Todos os módulos premium agrupados por departamento
+const ADVANCED: SoonDept[] = [
+  {
+    dept: '👥 RH & Pessoal',
+    items: [
+      { icon: '🪪', label: 'Funcionários',    desc: 'Cadastro, docs e histórico'     },
+      { icon: '💵', label: 'Folha de Salário', desc: 'Pagamentos e holerites'         },
+      { icon: '%',  label: 'Comissões',        desc: 'Metas, bonificações e ranking'  },
+      { icon: '📆', label: 'Ponto Digital',    desc: 'Controle de jornada'            },
+    ],
+  },
+  {
+    dept: '💰 Financeiro',
+    items: [
+      { icon: '📊', label: 'DRE & Caixa',     desc: 'Receitas, despesas, lucro'      },
+      { icon: '🧾', label: 'NF-e / Fiscal',   desc: 'Emissão de notas fiscais'       },
+      { icon: '💳', label: 'Contas a Receber', desc: 'Cobranças e inadimplência'      },
+      { icon: '🏦', label: 'Contas a Pagar',   desc: 'Fornecedores e vencimentos'     },
+    ],
+  },
+  {
+    dept: '⚙️ Operações',
+    items: [
+      { icon: '📅', label: 'Agenda Online',    desc: 'Agendamento pelo cliente'       },
+      { icon: '📌', label: 'POPs',             desc: 'Proc. Operacionais Padrão'      },
+      { icon: '🗂️', label: 'Garantias',        desc: 'Controle de garantia de peças'  },
+      { icon: '🖨️', label: 'OS Impressa',      desc: 'PDF e assinatura digital'       },
+    ],
+  },
+  {
+    dept: '📦 Estoque & Compras',
+    items: [
+      { icon: '📦', label: 'Estoque',          desc: 'Peças, insumos e alertas'       },
+      { icon: '🛒', label: 'Pedidos',          desc: 'Compras a fornecedores'         },
+    ],
+  },
+  {
+    dept: '⭐ CRM & Marketing',
+    items: [
+      { icon: '⭐', label: 'NPS & Avaliações', desc: 'Reputação e feedback'           },
+      { icon: '🎁', label: 'Fidelidade',       desc: 'Pontos e promoções'             },
+      { icon: '📲', label: 'Campanhas',        desc: 'WhatsApp e notificações'        },
+      { icon: '📈', label: 'Relatórios',       desc: 'BI e indicadores de gestão'     },
+    ],
+  },
 ];
 
 const BOTTOM_TABS: NavItem[] = [
@@ -171,17 +199,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {/* ── Em breve: Dep. Pessoal / RH ── */}
-          <SoonGroup label="Dep. Pessoal · RH" items={SOON_RH} />
-
-          {/* ── Em breve: Financeiro ── */}
-          <SoonGroup label="Financeiro" items={SOON_FIN} />
-
-          {/* ── Em breve: Operações ── */}
-          <SoonGroup label="Operações" items={SOON_OPS} />
-
-          {/* ── Em breve: Extras ── */}
-          <SoonGroup label="Estoque & Qualidade" items={SOON_EXTRA} />
+          {/* ── Gestão Avançada (upgrade) ── */}
+          <AdvancedSection />
         </nav>
 
         {/* User footer */}
@@ -293,34 +312,66 @@ function SideItem({ to, icon, label, badge, onClick }: NavItem & { badge: number
   );
 }
 
-/* ── Coming-soon group ── */
-function SoonGroup({ label, items }: { label: string; items: SoonItem[] }) {
-  return (
-    <div>
-      <div className="flex items-center gap-2 px-3 mb-2">
-        <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">{label}</div>
-        <span className="text-[9px] font-bold bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
-          Em breve
-        </span>
-      </div>
-      <div className="space-y-0.5">
-        {items.map(item => (
-          <ComingSoonItem key={item.label} {...item} />
-        ))}
-      </div>
-    </div>
-  );
-}
+/* ── Gestão Avançada — acordeão colapsável ── */
+function AdvancedSection() {
+  const [open, setOpen] = useState(false);
 
-function ComingSoonItem({ icon, label, desc }: SoonItem) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-not-allowed group select-none opacity-50 hover:opacity-70 transition-opacity">
-      <span className="text-base w-5 text-center text-steel-500">{icon}</span>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-steel-400 leading-none">{label}</div>
-        <div className="text-[10px] text-steel-600 mt-0.5 truncate">{desc}</div>
-      </div>
-      <span className="text-steel-700 text-xs shrink-0">🔒</span>
+    <div className="mt-2">
+      {/* Botão cabeçalho */}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all select-none
+          ${open
+            ? 'bg-brand-500/15 text-brand-300'
+            : 'text-steel-400 hover:bg-steel-800 hover:text-steel-200'
+          }`}
+      >
+        <span className="text-base w-5 text-center">🚀</span>
+        <div className="flex-1 text-left">
+          <div className="text-sm font-semibold leading-none">Gestão Avançada</div>
+          <div className="text-[10px] text-steel-500 mt-0.5">Módulos premium</div>
+        </div>
+        <span className="text-[9px] font-bold bg-brand-500/25 text-brand-400 px-1.5 py-0.5 rounded-full uppercase tracking-wide shrink-0">
+          Upgrade
+        </span>
+        <span className={`text-steel-500 text-xs transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </button>
+
+      {/* Conteúdo colapsável */}
+      {open && (
+        <div className="mt-1 ml-2 border-l border-steel-700 pl-3 space-y-4 py-2">
+          {ADVANCED.map(dept => (
+            <div key={dept.dept}>
+              <div className="text-[9px] font-bold text-steel-600 uppercase tracking-widest mb-1.5 px-1">
+                {dept.dept}
+              </div>
+              <div className="space-y-0.5">
+                {dept.items.map(item => (
+                  <div key={item.label}
+                    className="flex items-center gap-2.5 px-2 py-2 rounded-lg cursor-not-allowed select-none opacity-45 hover:opacity-60 transition-opacity">
+                    <span className="text-sm w-4 text-center text-steel-500">{item.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium text-steel-400 leading-none">{item.label}</div>
+                      <div className="text-[9px] text-steel-600 mt-0.5 truncate">{item.desc}</div>
+                    </div>
+                    <span className="text-steel-700 text-[10px] shrink-0">🔒</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* CTA upgrade */}
+          <div className="mx-1 mt-2 bg-brand-500/10 border border-brand-500/20 rounded-xl px-3 py-2.5 text-center">
+            <div className="text-[10px] font-bold text-brand-400 uppercase tracking-wider">Quer acesso?</div>
+            <div className="text-[9px] text-steel-500 mt-0.5">Fale com nosso time para fazer upgrade</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
