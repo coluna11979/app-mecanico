@@ -9,11 +9,9 @@ if (!url || !anon) {
 
 export const supabase = createClient(url, anon, {
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    // Bypasses Web Locks API que trava em ambientes sandbox/iframe
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    lock: async (_name: string, _timeout: number, fn: () => Promise<any>) => fn(),
+    persistSession:      true,   // salva sessão no localStorage
+    autoRefreshToken:    true,   // renova JWT automaticamente antes de expirar
+    detectSessionInUrl:  true,   // captura token de magic-link / OAuth na URL
+    storageKey:          'mec-app-auth', // chave única — evita conflito entre abas
   },
 });

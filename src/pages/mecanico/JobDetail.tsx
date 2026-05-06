@@ -98,8 +98,8 @@ export default function MechanicJobDetail() {
             <div className="card !bg-steel-800 border border-signal-500/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs text-steel-500 uppercase tracking-wider">Seu repasse (85%)</div>
-                  <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {(cap * 0.85).toFixed(2)}</div>
+                  <div className="text-xs text-steel-500 uppercase tracking-wider">Seu repasse (82%)</div>
+                  <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {(cap * 0.82).toFixed(2)}</div>
                   <div className="text-xs text-steel-500 mt-0.5">se cobrar as {job.max_hours}h máximas</div>
                 </div>
                 <div className="h-12 w-12 rounded-full bg-signal-500/10 grid place-items-center text-2xl">💸</div>

@@ -259,7 +259,7 @@ export default function MechanicMapa() {
               <div className="text-right">
                 <div className="text-xs text-steel-500">Teto do job</div>
                 <div className="text-2xl font-bold text-signal-400 font-display leading-none">R$ {cap.toFixed(0)}</div>
-                <div className="text-xs text-steel-600 mt-1">seus R$ {(cap * 0.85).toFixed(0)}</div>
+                <div className="text-xs text-steel-600 mt-1">seus R$ {(cap * 0.82).toFixed(0)}</div>
               </div>
             </div>
 

@@ -50,12 +50,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // Sessão inicial
+    // Sessão inicial — tenta getSession, se vazia tenta refreshSession
     (async () => {
       try {
-        const { data } = await supabase.auth.getSession();
+        let session: import('@supabase/supabase-js').Session | null = null;
+
+        const { data: sd } = await supabase.auth.getSession();
+        session = sd.session;
+
+        // Token expirado mas refresh_token ainda válido → renova silenciosamente
+        if (!session) {
+          const { data: rd } = await supabase.auth.refreshSession();
+          session = rd.session;
+        }
+
         if (!mounted) return;
-        await handleSession(data.session);
+        await handleSession(session);
       } catch (e) {
         console.warn('[auth] getSession error:', e);
       } finally {
@@ -63,11 +73,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })();
 
-    // Mudanças subsequentes
+    // Mudanças subsequentes de estado de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, s) => {
+        // INITIAL_SESSION já tratado acima manualmente
         if (event === 'INITIAL_SESSION') return;
         if (!mounted) return;
+
+        // TOKEN_REFRESHED: só atualiza a sessão sem buscar perfil de novo
+        if (event === 'TOKEN_REFRESHED' && s) {
+          setSession(s);
+          return;
+        }
+
         await handleSession(s);
       }
     );
