@@ -84,10 +84,11 @@ export default function MechanicProfile() {
     setTimeout(() => setMsg(null), 3000);
   }
 
-  const totalEarnings = history.reduce((a, j) => a + j.price * 0.85, 0);
+  const MECH_PCT = 0.82; // 100% - 18% taxa plataforma
+  const totalEarnings = history.reduce((a, j) => a + (j.price ?? 0) * MECH_PCT, 0);
   const monthEarnings = history
     .filter(j => new Date(j.completed_at!).getMonth() === new Date().getMonth())
-    .reduce((a, j) => a + j.price * 0.85, 0);
+    .reduce((a, j) => a + (j.price ?? 0) * MECH_PCT, 0);
   const initials = (profile?.full_name ?? 'M').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
   if (loading) return (
@@ -143,7 +144,7 @@ export default function MechanicProfile() {
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
             <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Este mês</div>
             <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {monthEarnings.toFixed(0)}</div>
-            <div className="text-[11px] text-steel-500 mt-0.5">seus 85%</div>
+            <div className="text-[11px] text-steel-500 mt-0.5">seus 82%</div>
           </div>
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
             <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Total ganho</div>
@@ -193,8 +194,10 @@ export default function MechanicProfile() {
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-signal-400 font-bold font-display">R$ {(j.price * 0.85).toFixed(0)}</div>
-                    <div className="text-[10px] text-steel-600">seus 85%</div>
+                    <div className="text-signal-400 font-bold font-display">
+                      {(j.price ?? 0) > 0 ? `R$ ${((j.price ?? 0) * MECH_PCT).toFixed(0)}` : '—'}
+                    </div>
+                    <div className="text-[10px] text-steel-600">seus 82%</div>
                   </div>
                 </div>
               ))}

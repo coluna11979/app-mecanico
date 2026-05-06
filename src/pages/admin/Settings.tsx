@@ -10,21 +10,21 @@ interface FieldDef {
 }
 
 const FIELDS: FieldDef[] = [
-  // Geral
-  { key: 'support_email',          label: 'Email de suporte',           description: 'Email exibido para usuários em caso de dúvida.',                                   section: 'Geral' },
-  { key: 'maintenance_mode',       label: 'Modo manutenção',            description: 'Bloqueia o acesso ao app para manutenção.',          type: 'toggle',  section: 'Geral' },
-  // Financeiro
-  { key: 'platform_fee_percent',   label: 'Taxa da plataforma (%)',     description: 'Comissão cobrada do mecânico ao concluir o job.',    type: 'number',  section: 'Financeiro' },
-  // Stripe
-  { key: 'stripe_publishable_key', label: 'Chave pública (pk_…)',       description: 'Usada no frontend para Stripe Elements.',            type: 'key',     section: 'Stripe' },
-  { key: 'stripe_secret_key',      label: 'Chave secreta (sk_…)',       description: 'Usada nas Edge Functions para criar pagamentos.',    type: 'password', section: 'Stripe' },
-  { key: 'stripe_webhook_secret',  label: 'Webhook secret (whsec_…)',  description: 'Valida eventos recebidos do Stripe.',                type: 'password', section: 'Stripe' },
-  // Mapbox
-  { key: 'mapbox_token',           label: 'Token Mapbox',               description: 'Usado nos mapas de rastreamento.',                  type: 'key',     section: 'Mapas' },
+  { key: 'support_email',          label: 'Email de suporte',          description: 'Email exibido para usuários em caso de dúvida.',             section: 'Geral' },
+  { key: 'maintenance_mode',       label: 'Modo manutenção',           description: 'Bloqueia o acesso de todos os usuários.',   type: 'toggle',   section: 'Geral' },
+  { key: 'platform_fee_percent',   label: 'Taxa da plataforma (%)',    description: 'Comissão cobrada do mecânico por job.',     type: 'number',   section: 'Financeiro' },
+  { key: 'stripe_publishable_key', label: 'Chave pública',             description: 'Usada no frontend (Stripe Elements).',     type: 'key',      section: 'Stripe' },
+  { key: 'stripe_secret_key',      label: 'Chave secreta',             description: 'Usada nas Edge Functions.',                type: 'password', section: 'Stripe' },
+  { key: 'stripe_webhook_secret',  label: 'Webhook secret',            description: 'Valida eventos recebidos do Stripe.',      type: 'password', section: 'Stripe' },
+  { key: 'mapbox_token',           label: 'Token público',             description: 'Usado nos mapas de rastreamento.',         type: 'key',      section: 'Mapas' },
 ];
 
-const SECTION_ICONS: Record<string, string> = {
-  Geral: '⚙️', Financeiro: '💰', Stripe: '💳', Mapas: '🗺️',
+type Section = { label: string; icon: string; color: string; bg: string };
+const SECTIONS: Record<string, Section> = {
+  Geral:      { label: 'Geral',      icon: '⚙️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
+  Financeiro: { label: 'Financeiro', icon: '💰',  color: 'text-signal-700', bg: 'bg-signal-50'  },
+  Stripe:     { label: 'Stripe',     icon: '💳',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
+  Mapas:      { label: 'Mapas',      icon: '🗺️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
 };
 
 export default function AdminSettings() {
@@ -48,125 +48,138 @@ export default function AdminSettings() {
     const def = FIELDS.find(f => f.key === key);
     const { error } = await setSetting(key, vals[key] ?? '', def?.description);
     clearSettingsCache();
-    if (error) setErrors(e => ({ ...e, [key]: 'Erro ao salvar. Verifique sua sessão.' }));
+    if (error) setErrors(e => ({ ...e, [key]: 'Erro ao salvar.' }));
     else setSavedAt(s => ({ ...s, [key]: Date.now() }));
     setSaving(null);
   }
+
+  const isSaved = (key: string) => !!savedAt[key] && Date.now() - savedAt[key] < 3000;
 
   const sections = Array.from(new Set(FIELDS.map(f => f.section)));
 
   return (
     <AdminLayout>
-      <h1 className="text-3xl font-bold tracking-tight mb-1">Configurações</h1>
-      <p className="text-steel-500 mb-8 text-sm">Tudo editável aqui — nada hardcoded no código.</p>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
+        <p className="text-steel-500 text-sm mt-1">Gerencie chaves e parâmetros do sistema. Nada está hardcoded no código.</p>
+      </div>
 
-      <div className="space-y-6 max-w-2xl">
-        {sections.map(sec => (
-          <section key={sec} className="card">
-            {/* Cabeçalho da seção */}
-            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-steel-100">
-              <span className="text-lg">{SECTION_ICONS[sec] ?? '🔧'}</span>
-              <h2 className="text-sm font-bold uppercase tracking-wider text-steel-600">{sec}</h2>
-            </div>
+      <div className="max-w-2xl space-y-5">
+        {sections.map(sec => {
+          const meta = SECTIONS[sec];
+          const fields = FIELDS.filter(f => f.section === sec);
+          return (
+            <div key={sec} className="bg-white rounded-2xl border border-steel-200 shadow-sm overflow-hidden">
 
-            {/* Dica Stripe */}
-            {sec === 'Stripe' && (
-              <div className="bg-brand-50 border border-brand-200 rounded-xl px-3 py-2.5 mb-4 flex gap-2 items-start text-xs">
-                <span className="shrink-0 mt-0.5">💳</span>
-                <p className="text-brand-700">
-                  Chaves salvas aqui ficam seguras no banco e são lidas automaticamente pelas Edge Functions.{' '}
-                  <a href="https://supabase.com/dashboard/project/qpwdwjzbgasjsnzpgcyo/settings/edge-functions"
-                    target="_blank" rel="noreferrer" className="underline font-semibold">
-                    Mover para Secrets (mais seguro)
-                  </a>
-                </p>
+              {/* Cabeçalho */}
+              <div className={`flex items-center gap-2.5 px-5 py-3.5 border-b border-steel-100 ${meta.bg}`}>
+                <span className="text-base leading-none">{meta.icon}</span>
+                <span className={`text-xs font-bold uppercase tracking-widest ${meta.color}`}>{meta.label}</span>
               </div>
-            )}
 
-            <div className="space-y-4">
-              {FIELDS.filter(f => f.section === sec).map(f => (
-                <div key={f.key}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <label className="font-semibold text-sm">{f.label}</label>
+              {/* Alerta Stripe */}
+              {sec === 'Stripe' && (
+                <div className="mx-5 mt-4 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex gap-3 text-xs text-brand-700">
+                  <span className="shrink-0 text-sm">🔒</span>
+                  <span>
+                    Chaves salvas aqui ficam criptografadas no banco.
+                    Em produção, prefira{' '}
+                    <a href="https://supabase.com/dashboard/project/qpwdwjzbgasjsnzpgcyo/settings/edge-functions"
+                      target="_blank" rel="noreferrer" className="font-semibold underline">
+                      Supabase → Edge Function Secrets
+                    </a>.
+                  </span>
+                </div>
+              )}
+
+              {/* Campos */}
+              <div className="divide-y divide-steel-100">
+                {fields.map(f => (
+                  <div key={f.key} className="px-5 py-4">
+                    <div className="flex items-center justify-between gap-4">
+
+                      {/* Label + desc */}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-steel-800">{f.label}</div>
+                        <div className="text-xs text-steel-400 mt-0.5">{f.description}</div>
                       </div>
-                      <p className="text-xs text-steel-400 mb-2">{f.description}</p>
 
-                      {/* Campos por tipo */}
+                      {/* Botão salvar */}
+                      <button
+                        onClick={() => save(f.key)}
+                        disabled={saving === f.key}
+                        className={`shrink-0 text-xs font-semibold px-4 py-2 rounded-xl transition disabled:opacity-50 ${
+                          isSaved(f.key)
+                            ? 'bg-signal-500 text-white'
+                            : 'bg-brand-500 hover:bg-brand-600 text-white'
+                        }`}
+                      >
+                        {saving === f.key ? '…' : isSaved(f.key) ? '✓ Salvo' : 'Salvar'}
+                      </button>
+                    </div>
+
+                    {/* Input */}
+                    <div className="mt-3">
                       {f.type === 'toggle' ? (
                         <button
                           onClick={() => setVals(v => ({ ...v, [f.key]: v[f.key] === 'true' ? 'false' : 'true' }))}
-                          className={`relative w-12 h-6 rounded-full transition ${vals[f.key] === 'true' ? 'bg-alert-500' : 'bg-steel-300'}`}
+                          className={`relative w-11 h-6 rounded-full transition-colors ${vals[f.key] === 'true' ? 'bg-alert-500' : 'bg-steel-300'}`}
                         >
-                          <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${vals[f.key] === 'true' ? 'translate-x-6' : ''}`} />
+                          <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${vals[f.key] === 'true' ? 'translate-x-5' : ''}`} />
                         </button>
-                      ) : f.type === 'key' ? (
-                        /* Chaves longas: campo compacto com show/hide e truncate */
-                        <div className="flex gap-2">
-                          <div className="relative flex-1 min-w-0">
-                            <input
-                              type={show[f.key] ? 'text' : 'password'}
-                              className="input font-mono text-xs pr-10 truncate"
-                              value={vals[f.key] ?? ''}
-                              onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
-                              placeholder="Cole a chave aqui…"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShow(s => ({ ...s, [f.key]: !s[f.key] }))}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-steel-400 hover:text-steel-700 text-xs"
-                            >
-                              {show[f.key] ? '🙈' : '👁️'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : f.type === 'password' ? (
+
+                      ) : f.type === 'key' || f.type === 'password' ? (
                         <div className="relative">
                           <input
                             type={show[f.key] ? 'text' : 'password'}
-                            className="input font-mono text-xs pr-10"
+                            className="w-full rounded-xl border border-steel-200 bg-steel-50 px-3 py-2.5 pr-10 text-xs font-mono text-steel-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition"
                             value={vals[f.key] ?? ''}
                             onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
-                            placeholder="Cole o secret aqui…"
+                            placeholder={f.type === 'key' ? 'pk_… ou token' : 'sk_… ou whsec_…'}
                           />
                           <button
                             type="button"
                             onClick={() => setShow(s => ({ ...s, [f.key]: !s[f.key] }))}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-steel-400 hover:text-steel-700 text-xs"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 hover:text-steel-700 transition text-sm"
+                            title={show[f.key] ? 'Ocultar' : 'Mostrar'}
                           >
                             {show[f.key] ? '🙈' : '👁️'}
                           </button>
                         </div>
+
+                      ) : f.type === 'number' ? (
+                        <div className="relative w-32">
+                          <input
+                            type="number"
+                            min={0} max={100}
+                            className="w-full rounded-xl border border-steel-200 bg-steel-50 px-3 py-2.5 pr-8 text-sm font-semibold text-steel-800 focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
+                            value={vals[f.key] ?? ''}
+                            onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-xs font-bold">%</span>
+                        </div>
+
                       ) : (
                         <input
-                          type={f.type ?? 'text'}
-                          className="input text-sm"
+                          type="text"
+                          className="w-full rounded-xl border border-steel-200 bg-steel-50 px-3 py-2.5 text-sm text-steel-800 focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
                           value={vals[f.key] ?? ''}
                           onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
                         />
                       )}
 
-                      {errors[f.key] && <p className="text-xs text-alert-600 mt-1">{errors[f.key]}</p>}
+                      {errors[f.key] && (
+                        <p className="text-xs text-alert-600 mt-1.5 flex items-center gap-1">
+                          <span>⚠️</span> {errors[f.key]}
+                        </p>
+                      )}
                     </div>
-
-                    <button
-                      onClick={() => save(f.key)}
-                      disabled={saving === f.key}
-                      className="btn-primary text-xs shrink-0 mt-6 disabled:opacity-60"
-                    >
-                      {saving === f.key
-                        ? '…'
-                        : savedAt[f.key] && Date.now() - savedAt[f.key] < 3000
-                          ? '✓'
-                          : 'Salvar'}
-                    </button>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </section>
-        ))}
+          );
+        })}
       </div>
     </AdminLayout>
   );
