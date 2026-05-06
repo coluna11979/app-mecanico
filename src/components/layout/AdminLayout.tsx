@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: '/admin/mecanicos',      icon: '🔧', label: 'Mecânicos'   },
   { to: '/admin/oficinas',       icon: '🏭', label: 'Oficinas'    },
   { to: '/admin/jobs',           icon: '📋', label: 'Jobs'        },
+  { to: '/admin/repasses',       icon: '💸', label: 'Repasses'    },
   { to: '/admin/configuracoes',  icon: '⚙️', label: 'Config.'     },
 ];
 

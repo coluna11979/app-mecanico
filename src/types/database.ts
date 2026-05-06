@@ -44,6 +44,7 @@ export interface Mechanic {
   current_lat: number | null;
   current_lng: number | null;
   last_location_update: string | null;
+  pix_key: string | null;
 }
 
 export interface Job {
@@ -63,6 +64,8 @@ export interface Job {
   arrived_at: string | null;
   pix_paid_at: string | null;
   workshop_confirmed_at: string | null;
+  repasse_pago_at: string | null;
+  repasse_valor: number | null;
   mechanic_rating: number | null;
   mechanic_rating_note: string | null;
   workshop_rating: number | null;
