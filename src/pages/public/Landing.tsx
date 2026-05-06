@@ -25,7 +25,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-5 lg:px-8 h-16 flex items-center justify-between">
           <Logo />
           <div className="flex items-center gap-3">
-            <Link to="/login" className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-4 py-2 transition">
+            <Link to="/login" state={{ fresh: true }} className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-4 py-2 transition">
               Entrar
             </Link>
           </div>
@@ -183,7 +183,7 @@ export default function Landing() {
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-steel-500">
           <Logo />
           <div className="flex items-center gap-6">
-            <Link to="/login" className="hover:text-steel-900 transition">Entrar</Link>
+            <Link to="/login" state={{ fresh: true }} className="hover:text-steel-900 transition">Entrar</Link>
             <Link to="/mecanico" className="hover:text-steel-900 transition">Mecânico</Link>
             <Link to="/oficina" className="hover:text-steel-900 transition">Oficina</Link>
           </div>

@@ -14,7 +14,7 @@ export default function LandingMecanico() {
         <div className="max-w-6xl mx-auto px-5 lg:px-8 h-16 flex items-center justify-between">
           <Link to="/"><Logo /></Link>
           <div className="flex items-center gap-2">
-            <Link to="/login" className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-3 py-2 transition">
+            <Link to="/login" state={{ fresh: true }} className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-3 py-2 transition">
               Entrar
             </Link>
             <Link to="/cadastro/mecanico"
@@ -59,7 +59,7 @@ export default function LandingMecanico() {
                   Cadastrar grátis em 2 minutos
                   <span>→</span>
                 </Link>
-                <Link to="/login"
+                <Link to="/login" state={{ fresh: true }}
                   className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-4 py-4 transition flex items-center justify-center">
                   Já tenho cadastro
                 </Link>
@@ -109,6 +109,72 @@ export default function LandingMecanico() {
                 <div className="text-[10px] opacity-90">há 23h</div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── DIFERENCIAL: ZERO INVESTIMENTO ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12 max-w-3xl mx-auto">
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">O grande diferencial</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
+              Você só leva o que <span className="text-brand-500">ninguém pode replicar</span>:<br />
+              seu talento.
+            </h2>
+            <p className="mt-6 text-lg text-steel-600 leading-relaxed">
+              Diferente de Uber, iFood ou atender cliente particular —
+              aqui você <strong className="text-steel-900">não investe nada</strong>.
+              Quem dá a estrutura é a oficina.
+            </p>
+          </div>
+
+          {/* Comparativo 3 colunas */}
+          <div className="grid md:grid-cols-3 gap-4">
+            {/* Uber/iFood */}
+            <div className="bg-white border border-steel-200 rounded-2xl p-5 shadow-sm">
+              <div className="text-xs font-bold text-steel-500 uppercase tracking-widest">No Uber / iFood</div>
+              <h3 className="mt-2 text-lg font-bold text-steel-700">Você é o capital</h3>
+              <ul className="mt-4 space-y-2 text-sm text-steel-600">
+                <ItemX>Carro/moto próprio</ItemX>
+                <ItemX>Gasolina, IPVA, seguro</ItemX>
+                <ItemX>Manutenção do veículo</ItemX>
+                <ItemX>Depreciação</ItemX>
+                <ItemX>Você assume todo o risco</ItemX>
+              </ul>
+            </div>
+
+            {/* Atendimento particular */}
+            <div className="bg-white border border-steel-200 rounded-2xl p-5 shadow-sm">
+              <div className="text-xs font-bold text-steel-500 uppercase tracking-widest">Atendendo particular</div>
+              <h3 className="mt-2 text-lg font-bold text-steel-700">Investimento alto</h3>
+              <ul className="mt-4 space-y-2 text-sm text-steel-600">
+                <ItemX>Caixa de ferramenta completa</ItemX>
+                <ItemX>Carro pra ir até o cliente</ItemX>
+                <ItemX>Comprar peça do bolso</ItemX>
+                <ItemX>Achar cliente sozinho</ItemX>
+                <ItemX>Cobrar e correr atrás</ItemX>
+              </ul>
+            </div>
+
+            {/* MecânicoApp */}
+            <div className="bg-gradient-to-br from-brand-500 to-brand-600 rounded-2xl p-5 shadow-xl shadow-brand-500/30 text-white">
+              <div className="text-xs font-bold text-white/90 uppercase tracking-widest">No MecânicoApp</div>
+              <h3 className="mt-2 text-lg font-bold">Só seu talento</h3>
+              <ul className="mt-4 space-y-2 text-sm">
+                <ItemCheckLight>Oficina dá ferramenta e elevador</ItemCheckLight>
+                <ItemCheckLight>Peça já tá lá, é da oficina</ItemCheckLight>
+                <ItemCheckLight>Você vai ao local indicado</ItemCheckLight>
+                <ItemCheckLight>Cliente já pagou — sem cobrar</ItemCheckLight>
+                <ItemCheckLight>Zero investimento. Zero risco.</ItemCheckLight>
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-8 text-center">
+            <p className="text-sm text-steel-500 max-w-2xl mx-auto">
+              💡 <strong>Você é o profissional. Não o investidor.</strong> Sua mão e sua experiência valem ouro — não faz sentido você ainda comprar ferramenta, carro e correr atrás de cliente.
+            </p>
           </div>
         </div>
       </section>
@@ -232,7 +298,7 @@ export default function LandingMecanico() {
           <div className="flex items-center gap-6">
             <Link to="/" className="hover:text-steel-900 transition">Início</Link>
             <Link to="/oficina" className="hover:text-steel-900 transition">Sou oficina</Link>
-            <Link to="/login" className="hover:text-steel-900 transition">Entrar</Link>
+            <Link to="/login" state={{ fresh: true }} className="hover:text-steel-900 transition">Entrar</Link>
           </div>
           <div className="text-xs">© MecânicoApp {new Date().getFullYear()}</div>
         </div>
@@ -287,5 +353,23 @@ function StatCard({ n, label }: { n: string; label: string }) {
       <div className="text-5xl font-bold text-brand-500 leading-none">{n}</div>
       <div className="mt-2 text-sm text-steel-600 font-medium">{label}</div>
     </div>
+  );
+}
+
+function ItemX({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="text-steel-400 shrink-0 mt-0.5">✗</span>
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function ItemCheckLight({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="text-white shrink-0 mt-0.5 font-bold">✓</span>
+      <span>{children}</span>
+    </li>
   );
 }

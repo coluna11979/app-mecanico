@@ -1,5 +1,5 @@
 import { FormEvent, useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
@@ -79,17 +79,22 @@ const ROLE_ICON: Record<Role, string> = {
 
 export default function Login() {
   const nav = useNavigate();
-  const { profile, loading: authLoading } = useAuth();
+  const loc = useLocation();
+  const { profile, loading: authLoading, signOut } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [welcome, setWelcome] = useState<WelcomeData | null>(null);
 
+  // Se chegou via link "Entrar" das LPs públicas, NÃO redireciona automaticamente
+  // — mostra um aviso pra escolher entre "ir pro painel" ou "trocar de conta"
+  const fresh = (loc.state as { fresh?: boolean } | null)?.fresh === true;
+
   useEffect(() => {
-    if (authLoading || submitting || !profile) return;
+    if (authLoading || submitting || !profile || fresh) return;
     nav(destino(profile.role, profile.status), { replace: true });
-  }, [profile, authLoading, submitting, nav]);
+  }, [profile, authLoading, submitting, fresh, nav]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -150,6 +155,34 @@ export default function Login() {
         <div className="max-w-sm w-full mx-auto">
           <h1 className="text-3xl font-bold tracking-tight">Entrar</h1>
           <p className="text-steel-500 text-sm mt-1">Mecânico, oficina ou admin — tudo aqui.</p>
+
+          {/* Já está logado (veio de uma LP pública) */}
+          {fresh && profile && (
+            <div className="mt-6 bg-brand-50 border border-brand-200 rounded-xl p-4 space-y-3">
+              <div>
+                <div className="text-xs font-bold text-brand-600 uppercase tracking-wider">Você já está logado</div>
+                <div className="text-sm font-semibold text-steel-800 mt-0.5">{profile.full_name}</div>
+                <div className="text-xs text-steel-500">
+                  {profile.role === 'admin' ? '⚙️ Administrador' :
+                   profile.role === 'mechanic' ? '🔧 Mecânico' : '🏪 Oficina'}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => nav(destino(profile.role, profile.status), { replace: true })}
+                  className="flex-1 bg-brand-500 text-white text-sm font-bold rounded-xl px-3 py-2 hover:bg-brand-600 transition"
+                >
+                  Ir para meu painel
+                </button>
+                <button
+                  onClick={async () => { await signOut(); }}
+                  className="flex-1 bg-white border border-steel-300 text-steel-700 text-sm font-semibold rounded-xl px-3 py-2 hover:bg-steel-50 transition"
+                >
+                  Trocar conta
+                </button>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             <div>

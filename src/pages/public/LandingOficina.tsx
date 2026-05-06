@@ -14,7 +14,7 @@ export default function LandingOficina() {
         <div className="max-w-6xl mx-auto px-5 lg:px-8 h-16 flex items-center justify-between">
           <Link to="/"><Logo /></Link>
           <div className="flex items-center gap-2">
-            <Link to="/login" className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-3 py-2 transition">
+            <Link to="/login" state={{ fresh: true }} className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-3 py-2 transition">
               Entrar
             </Link>
             <Link to="/cadastro/oficina"
@@ -58,7 +58,7 @@ export default function LandingOficina() {
                   Cadastrar oficina grátis
                   <span>→</span>
                 </Link>
-                <Link to="/login"
+                <Link to="/login" state={{ fresh: true }}
                   className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-4 py-4 transition flex items-center justify-center">
                   Já sou cadastrado
                 </Link>
@@ -303,7 +303,7 @@ export default function LandingOficina() {
           <div className="flex items-center gap-6">
             <Link to="/" className="hover:text-steel-900 transition">Início</Link>
             <Link to="/mecanico" className="hover:text-steel-900 transition">Sou mecânico</Link>
-            <Link to="/login" className="hover:text-steel-900 transition">Entrar</Link>
+            <Link to="/login" state={{ fresh: true }} className="hover:text-steel-900 transition">Entrar</Link>
           </div>
           <div className="text-xs">© MecânicoApp {new Date().getFullYear()}</div>
         </div>
