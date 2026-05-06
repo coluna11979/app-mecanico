@@ -17,15 +17,29 @@ const Ctx = createContext<AuthCtx>({
   signOut: async () => {}, refreshProfile: async () => {},
 });
 
+/** Promise.race com timeout — evita que await trave infinito */
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 async function fetchProfile(uid: string): Promise<Profile | null> {
   try {
-    const { data, error } = await supabase
+    const query = supabase
       .from('profiles').select('*').eq('id', uid).maybeSingle();
-    if (error) {
-      console.warn('[auth] fetchProfile error:', error.message);
+    // Timeout de 6s — se a query travar, devolve null em vez de pendurar
+    const result = await withTimeout(
+      query as unknown as Promise<{ data: Profile | null; error: { message: string } | null }>,
+      6000,
+      { data: null, error: { message: 'timeout' } },
+    );
+    if (result.error) {
+      console.warn('[auth] fetchProfile error:', result.error.message);
       return null;
     }
-    return (data as Profile) ?? null;
+    return (result.data as Profile) ?? null;
   } catch (e) {
     console.warn('[auth] fetchProfile exception:', e);
     return null;
@@ -50,33 +64,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
+    /* ── Kill switch: garante que loading vira false em no máximo 8s ──
+       Se qualquer coisa travar (rede ruim, query pendurada, SW em estado
+       estranho) o usuário não fica preso na tela "Carregando…". */
+    const killSwitch = setTimeout(() => {
+      if (mounted) {
+        console.warn('[auth] kill switch acionado — forçando loading=false');
+        setLoading(false);
+      }
+    }, 8000);
+
     // Sessão inicial — tenta getSession, se vazia tenta refreshSession
     (async () => {
       try {
-        let session: import('@supabase/supabase-js').Session | null = null;
+        let session: Session | null = null;
 
-        const { data: sd } = await supabase.auth.getSession();
-        session = sd.session;
+        const sessionRes = await withTimeout(
+          supabase.auth.getSession(),
+          5000,
+          { data: { session: null }, error: null } as any,
+        );
+        session = sessionRes.data?.session ?? null;
 
         // Token expirado mas refresh_token ainda válido → renova silenciosamente
         if (!session) {
-          const { data: rd } = await supabase.auth.refreshSession();
-          session = rd.session;
+          try {
+            const refreshRes = await withTimeout(
+              supabase.auth.refreshSession(),
+              5000,
+              { data: { session: null }, error: null } as any,
+            );
+            session = refreshRes.data?.session ?? null;
+          } catch {
+            session = null;
+          }
         }
 
         if (!mounted) return;
         await handleSession(session);
       } catch (e) {
-        console.warn('[auth] getSession error:', e);
+        console.warn('[auth] init error:', e);
       } finally {
         if (mounted) setLoading(false);
+        clearTimeout(killSwitch);
       }
     })();
 
     // Mudanças subsequentes de estado de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, s) => {
-        // INITIAL_SESSION já tratado acima manualmente
         if (event === 'INITIAL_SESSION') return;
         if (!mounted) return;
 
@@ -92,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      clearTimeout(killSwitch);
       subscription.unsubscribe();
     };
   }, [handleSession]);

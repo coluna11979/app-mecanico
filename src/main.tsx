@@ -5,12 +5,26 @@ import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import './styles/globals.css';
 
-// Quando o Service Worker novo assume o controle, recarrega a página
-// para que os usuários do PWA instalado recebam sempre o código mais recente.
+/**
+ * Service Worker auto-update.
+ *
+ * Padrão seguro: só recarrega quando havia um SW controlando a página
+ * E só uma vez por sessão. Isso evita o loop infinito que acontece
+ * quando o primeiro SW ativa com clientsClaim:true (controllerchange
+ * dispara, recarrega, no novo load dispara de novo, etc).
+ */
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    window.location.reload();
-  });
+  // Se a página já está sob controle de um SW antigo, listenamos por updates.
+  // Se NÃO está controlada (primeira visita), o controllerchange que vem
+  // a seguir é da instalação inicial — ignoramos para não recarregar à toa.
+  if (navigator.serviceWorker.controller) {
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    });
+  }
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
