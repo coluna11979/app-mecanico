@@ -70,7 +70,14 @@ export default function WorkshopTracking() {
   const [hovered, setHovered]       = useState(0);
   const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
   const [sheetOpen, setSheetOpen]   = useState(false);
+  const [toast, setToast]           = useState<string | null>(null);
   const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
+  const prevStatusRef  = useRef<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 6000);
+  }
 
   /* Carrega Stripe.js — tenta env var primeiro, depois app_settings */
   useEffect(() => {
@@ -110,6 +117,34 @@ export default function WorkshopTracking() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [id]);
+
+  /* Polling fallback — garante atualização mesmo se realtime cair */
+  useEffect(() => {
+    if (!id) return;
+    const poll = setInterval(async () => {
+      const { data } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
+      if (data) setJob(data as Job);
+    }, 5000);
+    return () => clearInterval(poll);
+  }, [id]);
+
+  /* Detecta mudanças de status e dispara toast */
+  useEffect(() => {
+    if (!job) return;
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = job.status;
+    if (prev === null) return; // primeiro load
+
+    if (prev !== 'in_progress' && job.status === 'in_progress') {
+      setSheetOpen(true);
+      showToast('💳 Pagamento confirmado! Mecânico iniciando o serviço.');
+    }
+    if (prev !== 'completed' && job.status === 'completed') {
+      setSheetOpen(true);
+      showToast('🔔 Mecânico finalizou o serviço! Avalie para liberar o pagamento.');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.status]);
 
   const live = useMechanicLive(mech?.id ?? null, id);
 
@@ -307,6 +342,13 @@ export default function WorkshopTracking() {
   /* ── RENDER ── */
   return (
     <div className="fixed inset-0 flex flex-col bg-steel-900">
+
+      {/* ── Toast de notificação ── */}
+      {toast && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-brand-600 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl max-w-xs text-center">
+          {toast}
+        </div>
+      )}
 
       {/* ── Top bar ── */}
       <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between gap-2 p-3">

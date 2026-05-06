@@ -22,7 +22,7 @@ function distKm(lat1: number, lng1: number, lat2: number, lng2: number) {
 }
 
 function etaLabel(km: number): string {
-  const mins = Math.round((km / 30) * 60); // 30 km/h média urbana
+  const mins = Math.round((km / 30) * 60);
   if (mins < 1)  return 'Chegando!';
   if (mins < 60) return `~${mins} min`;
   const h = Math.floor(mins / 60);
@@ -43,7 +43,12 @@ export default function MechanicTracking() {
   const [hoursModal, setHoursModal] = useState(false);
   const [actualHours, setActualHours] = useState('');
 
-  /* ── Posição GPS do mecânico (exibição local) ── */
+  /* ── Toast de notificação ── */
+  const [toast, setToast]           = useState<string | null>(null);
+  const prevStatusRef               = useRef<string | null>(null);
+  const prevPixPaidRef              = useRef<boolean>(false);
+
+  /* ── Posição GPS do mecânico ── */
   const [mechPos, setMechPos] = useState<{ lat: number; lng: number } | null>(null);
   const watchRef = useRef<number | null>(null);
 
@@ -51,6 +56,7 @@ export default function MechanicTracking() {
   const [routeCoords, setRouteCoords] = useState<[number, number][] | null>(null);
   const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
 
+  /* GPS watch */
   useEffect(() => {
     if (!navigator.geolocation) return;
     watchRef.current = navigator.geolocation.watchPosition(
@@ -69,21 +75,68 @@ export default function MechanicTracking() {
     const { data: m } = await supabase.from('mechanics').select('id').eq('profile_id', user!.id).maybeSingle();
     setMechanicId(m?.id ?? null);
     const { data: j } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
-    setJob(j as Job);
+    setJob(prev => {
+      // Define estado inicial dos refs sem disparar toast
+      if (!prev && j) {
+        prevStatusRef.current  = j.status;
+        prevPixPaidRef.current = !!j.pix_paid_at;
+      }
+      return j as Job;
+    });
     if (j?.workshop_id) {
       const { data: w } = await supabase.from('workshops').select('*').eq('id', j.workshop_id).maybeSingle();
       setShop(w as Workshop);
     }
   }
 
+  /* ── Realtime: escuta mudanças no job ── */
   useEffect(() => {
     if (!id) return;
     const ch = supabase.channel(`job:${id}:mecanico`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jobs', filter: `id=eq.${id}` },
-        payload => setJob(payload.new as Job))
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'jobs', filter: `id=eq.${id}`,
+      }, payload => setJob(payload.new as Job))
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [id]);
+
+  /* ── Polling fallback: garante atualização mesmo se realtime cair ── */
+  useEffect(() => {
+    if (!id) return;
+    const poll = setInterval(async () => {
+      const { data } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
+      if (data) setJob(data as Job);
+    }, 5000);
+    return () => clearInterval(poll);
+  }, [id]);
+
+  /* ── Detecta mudanças de status e dispara toast ── */
+  useEffect(() => {
+    if (!job) return;
+    const prevStatus  = prevStatusRef.current;
+    const prevPixPaid = prevPixPaidRef.current;
+
+    // Atualiza refs
+    prevStatusRef.current  = job.status;
+    prevPixPaidRef.current = !!job.pix_paid_at;
+
+    // Sem estado anterior = primeiro load, não notifica
+    if (prevStatus === null) return;
+
+    // Pagamento recebido → serviço liberado
+    if (!prevPixPaid && job.pix_paid_at) {
+      showToast('💳 Pagamento confirmado! O serviço foi iniciado.');
+    }
+    // Oficina confirmou / encerrou
+    if (prevStatus !== 'completed' && job.status === 'completed') {
+      showToast('✅ Serviço marcado como concluído.');
+    }
+  }, [job?.status, job?.pix_paid_at]);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 5000);
+  }
 
   useGeoBroadcast({
     enabled: !!job && (job.status === 'assigned' || job.status === 'in_progress'),
@@ -91,45 +144,39 @@ export default function MechanicTracking() {
     mechanicId,
   });
 
-  /* ── Remove a rota quando mecânico chega ── */
+  /* Remove rota quando chegou */
   useEffect(() => {
     if (job?.arrived_at || job?.status === 'in_progress' || job?.status === 'completed') {
       setRouteCoords(null);
     }
   }, [job?.arrived_at, job?.status]);
 
-  /* ── Busca rota Mapbox Directions (só quando a caminho) ── */
+  /* Busca rota Mapbox Directions */
   useEffect(() => {
     if (job?.status !== 'assigned' || job?.arrived_at) return;
     if (!mechPos || !shop?.lat || !shop?.lng) return;
 
-    // Só refaz a rota se o mecânico se moveu > 30 metros
     const prev = lastRouteFetch.current;
     if (prev) {
       const dlat = Math.abs(prev.lat - mechPos.lat);
       const dlng = Math.abs(prev.lng - mechPos.lng);
-      if (dlat < 0.0003 && dlng < 0.0003) return; // ~30 m
+      if (dlat < 0.0003 && dlng < 0.0003) return;
     }
-
     lastRouteFetch.current = { lat: mechPos.lat, lng: mechPos.lng };
 
     (async () => {
       try {
         const token = await getSetting('mapbox_token', '');
         if (!token) return;
-
         const url =
           `https://api.mapbox.com/directions/v5/mapbox/driving/` +
           `${mechPos.lng},${mechPos.lat};${shop.lng},${shop.lat}` +
           `?geometries=geojson&overview=full&steps=false&access_token=${token}`;
-
         const res  = await fetch(url);
         const data = await res.json();
         const coords = data?.routes?.[0]?.geometry?.coordinates as [number, number][] | undefined;
         if (coords?.length) setRouteCoords(coords);
-      } catch {
-        // silencioso — rota é um extra, não bloqueia o tracking
-      }
+      } catch { /* silencioso */ }
     })();
   }, [mechPos, shop, job?.status, job?.arrived_at]);
 
@@ -161,17 +208,15 @@ export default function MechanicTracking() {
     nav('/mecanico/dashboard');
   }
 
-  const arrived  = !!job?.arrived_at;
-  const pixPaid  = !!job?.pix_paid_at;
-  const cap      = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
+  const arrived = !!job?.arrived_at;
+  const pixPaid = !!job?.pix_paid_at;
+  const cap     = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
 
-  /* ── ETA e distância ── */
   const km = mechPos && shop?.lat && shop?.lng
     ? distKm(mechPos.lat, mechPos.lng, shop.lat, shop.lng)
     : null;
   const eta = km !== null ? etaLabel(km) : null;
 
-  /* ── Centro do mapa: mostra os dois pontos ── */
   const mapCenter: [number, number] =
     mechPos && shop?.lat && shop?.lng
       ? [(mechPos.lat + shop.lat) / 2, (mechPos.lng + shop.lng) / 2]
@@ -186,6 +231,13 @@ export default function MechanicTracking() {
   return (
     <div className="dark fixed inset-0 bg-steel-900 text-steel-100 flex flex-col">
 
+      {/* ── Toast de notificação ── */}
+      {toast && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-signal-500 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl max-w-xs text-center animate-fade-in">
+          {toast}
+        </div>
+      )}
+
       {/* Topo */}
       <div className="absolute top-3 left-3 right-3 z-10 flex justify-between items-start gap-2">
         <button onClick={() => nav('/mecanico/dashboard')}
@@ -193,14 +245,11 @@ export default function MechanicTracking() {
           ← Sair
         </button>
 
-        {/* Badge ETA — só aparece quando em rota */}
         {eta && !arrived && job?.status === 'assigned' && (
           <div className="bg-steel-900/95 backdrop-blur border border-steel-700 rounded-2xl px-4 py-2 text-center shadow-xl">
             <div className="text-[10px] text-brand-400 font-bold uppercase tracking-wider">Estimativa</div>
             <div className="text-2xl font-bold text-white leading-none mt-0.5">{eta}</div>
-            {km !== null && (
-              <div className="text-[11px] text-steel-400 mt-0.5">{km.toFixed(1)} km</div>
-            )}
+            {km !== null && <div className="text-[11px] text-steel-400 mt-0.5">{km.toFixed(1)} km</div>}
           </div>
         )}
 
@@ -218,7 +267,7 @@ export default function MechanicTracking() {
         </div>
       </div>
 
-      {/* Mapa — centro dinâmico mostrando mecânico + oficina */}
+      {/* Mapa */}
       <div className="flex-1">
         <MapView
           center={mapCenter}
@@ -235,18 +284,22 @@ export default function MechanicTracking() {
       {/* Painel inferior */}
       <div className="bg-steel-800 border-t border-steel-700 p-5 space-y-4">
 
-        {/* Info da oficina */}
         {shop && (
           <div>
             <div className="text-xs text-brand-400 uppercase tracking-wider font-bold mb-1">
-              {job?.status === 'in_progress' ? '🔧 Em serviço' : arrived && !pixPaid ? '⏳ Aguardando PIX' : '🧭 Indo para'}
+              {job?.status === 'in_progress'
+                ? '🔧 Em serviço'
+                : arrived && !pixPaid
+                  ? '⏳ Aguardando pagamento'
+                  : arrived && pixPaid
+                    ? '✅ Pagamento recebido'
+                    : '🧭 Indo para'}
             </div>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="font-bold text-lg leading-tight">{shop.business_name}</div>
                 <div className="text-sm text-steel-400">{shop.address}, {shop.city}</div>
               </div>
-              {/* ETA compacto no painel se ainda não chegou */}
               {eta && !arrived && km !== null && (
                 <div className="text-right shrink-0">
                   <div className="text-2xl font-bold text-brand-400 leading-none">{eta}</div>
@@ -260,7 +313,7 @@ export default function MechanicTracking() {
           </div>
         )}
 
-        {/* Ações */}
+        {/* Ações por estado */}
         {job?.status === 'assigned' && !arrived && (
           <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full">
             {busy ? '…' : '📍 Confirmar chegada'}
@@ -268,9 +321,9 @@ export default function MechanicTracking() {
         )}
 
         {job?.status === 'assigned' && arrived && !pixPaid && (
-          <div className="bg-pending-500/10 border border-pending-500/30 rounded-2xl px-4 py-3 text-center">
-            <div className="text-pending-400 font-semibold text-sm">⏳ Aguardando pagamento PIX da oficina…</div>
-            <div className="text-xs text-steel-500 mt-1">A oficina foi notificada. Assim que confirmar o PIX você poderá iniciar.</div>
+          <div className="bg-pending-500/10 border border-pending-500/30 rounded-2xl px-4 py-3 text-center space-y-1">
+            <div className="text-pending-400 font-semibold text-sm">⏳ Aguardando pagamento da oficina…</div>
+            <div className="text-xs text-steel-500">O serviço inicia automaticamente assim que o pagamento for confirmado.</div>
           </div>
         )}
 
