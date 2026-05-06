@@ -40,15 +40,16 @@ export default function MechanicGanhos() {
     return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
   }
 
+  const MECH_PCT = 0.82; // 100% - 18% taxa plataforma
   const filtered = jobs.filter(filter);
-  const gross    = filtered.reduce((a, j) => a + j.price, 0);
-  const net      = gross * 0.85;
-  const fee      = gross * 0.15;
+  const gross    = filtered.reduce((a, j) => a + (j.price ?? 0), 0);
+  const net      = gross * MECH_PCT;
+  const fee      = gross * (1 - MECH_PCT);
 
   const byMonth: Record<string, number> = {};
   jobs.forEach(j => {
     const key = new Date(j.completed_at!).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    byMonth[key] = (byMonth[key] ?? 0) + j.price * 0.85;
+    byMonth[key] = (byMonth[key] ?? 0) + (j.price ?? 0) * MECH_PCT;
   });
   const months = Object.entries(byMonth).slice(0, 6);
 
@@ -76,7 +77,7 @@ export default function MechanicGanhos() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
-            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Seus ganhos (85%)</div>
+            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Seus ganhos (82%)</div>
             <div className="text-2xl font-bold text-signal-400 font-display mt-1">
               {loading ? '…' : `R$ ${net.toFixed(0)}`}
             </div>
@@ -143,8 +144,10 @@ export default function MechanicGanhos() {
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-signal-400 font-bold font-display">R$ {(j.price * 0.85).toFixed(0)}</div>
-                    <div className="text-[10px] text-steel-600">seus 85%</div>
+                    <div className="text-signal-400 font-bold font-display">
+                      {(j.price ?? 0) > 0 ? `R$ ${((j.price ?? 0) * MECH_PCT).toFixed(0)}` : '—'}
+                    </div>
+                    <div className="text-[10px] text-steel-600">seus 82%</div>
                   </div>
                 </div>
               ))}
