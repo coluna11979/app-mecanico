@@ -224,25 +224,40 @@ export default function MechanicDashboard() {
           </section>
         )}
 
-        {/* Avaliações pendentes */}
+        {/* 🔔 Avaliações pendentes — destaque alto */}
         {pendingRatings.length > 0 && (
           <section>
-            <h2 className="text-sm font-bold text-steel-400 uppercase tracking-wider mb-2">Avaliar oficina</h2>
-            <div className="space-y-2">
-              {pendingRatings.map(j => (
-                <button key={j.id} onClick={() => { setRatingJob(j); setStars(0); setRatingNote(''); }}
-                  className="card !bg-steel-800 w-full text-left border border-brand-500/30 hover:border-brand-500/60 transition">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold text-sm">{j.title}</div>
-                      <div className="text-xs text-steel-400 mt-0.5">{j.workshop_name ?? 'Oficina'}</div>
+            <div className="bg-gradient-to-r from-brand-500/20 to-brand-600/10 border-2 border-brand-500/50 rounded-2xl p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="text-2xl shrink-0 animate-pulse">🔔</div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-white text-base leading-tight">
+                    {pendingRatings.length === 1
+                      ? 'Avalie a oficina'
+                      : `${pendingRatings.length} oficinas pra avaliar`}
+                  </h3>
+                  <p className="text-xs text-steel-300 mt-0.5">
+                    Pagamento já liberado — sua avaliação fecha o ciclo.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {pendingRatings.map(j => (
+                  <button
+                    key={j.id}
+                    onClick={() => { setRatingJob(j); setStars(0); setRatingNote(''); }}
+                    className="w-full bg-steel-800/80 hover:bg-steel-800 rounded-xl px-3 py-2.5 transition flex items-center justify-between gap-3 border border-steel-700"
+                  >
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="font-semibold text-sm text-white truncate">{j.title}</div>
+                      <div className="text-xs text-steel-400 mt-0.5">🏭 {j.workshop_name ?? 'Oficina'}</div>
                     </div>
-                    <span className="text-brand-400 text-xs font-semibold bg-brand-500/10 px-3 py-1 rounded-full">
+                    <span className="bg-brand-500 text-white text-xs font-bold rounded-lg px-3 py-1.5 shrink-0">
                       ★ Avaliar
                     </span>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                ))}
+              </div>
             </div>
           </section>
         )}

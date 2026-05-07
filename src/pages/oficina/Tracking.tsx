@@ -141,23 +141,41 @@ export default function WorkshopTracking() {
     return () => clearInterval(poll);
   }, [id]);
 
-  /* Detecta mudanças de status e dispara toast */
+  /* Detecta mudanças de status e dispara toast.
+     ALÉM disso, no PRIMEIRO load abre o sheet automaticamente se há ação pendente
+     do usuário (pagamento ou avaliação) — evita o cenário onde a oficina entra na
+     tracking depois do mecânico finalizar e não enxerga a UI de avaliação. */
   useEffect(() => {
     if (!job) return;
     const prev = prevStatusRef.current;
+
+    // Primeiro load: detecta ação pendente e abre o sheet
+    if (prev === null) {
+      const needsAction =
+        (job.status === 'completed' && !job.workshop_confirmed_at) ||                  // precisa avaliar
+        (!!job.arrived_at && !job.pix_paid_at && job.status === 'assigned');           // precisa pagar
+      if (needsAction) {
+        setSheetOpen(true);
+        setTab('progresso'); // garante que o usuário enxerga a UI de avaliação/pagamento
+      }
+      prevStatusRef.current = job.status;
+      return;
+    }
+
     prevStatusRef.current = job.status;
-    if (prev === null) return; // primeiro load
 
     if (prev !== 'in_progress' && job.status === 'in_progress') {
       setSheetOpen(true);
+      setTab('progresso');
       showToast('💳 Pagamento confirmado! Mecânico iniciando o serviço.');
     }
     if (prev !== 'completed' && job.status === 'completed') {
       setSheetOpen(true);
+      setTab('progresso');
       showToast('🔔 Mecânico finalizou o serviço! Avalie para liberar o pagamento.');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job?.status]);
+  }, [job?.status, job?.workshop_confirmed_at, job?.arrived_at, job?.pix_paid_at]);
 
   const live = useMechanicLive(mech?.id ?? null, id);
 
