@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSetting } from '@/lib/settings';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
+import { attachAutoUnlock } from '@/lib/alertSound';
 import mapboxgl from 'mapbox-gl';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
@@ -37,6 +38,9 @@ export default function MechanicMapa() {
       if (j) setJobs(prev => [j as JobWithShop, ...prev.filter(x => x.id !== j.id)]);
     },
   });
+
+  /* Destrava áudio na primeira interação do usuário */
+  useEffect(() => { attachAutoUnlock(); }, []);
 
   /* ── Load mechanic + open jobs ── */
   useEffect(() => {

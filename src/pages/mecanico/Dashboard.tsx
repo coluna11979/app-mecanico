@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { unlockAudio } from '@/lib/alertSound';
+import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import type { Job, Mechanic } from '@/types/database';
 
@@ -33,6 +33,9 @@ export default function MechanicDashboard() {
   );
 
   useEffect(() => { if (user) load(); }, [user]);
+
+  /* Destrava áudio na primeira interação (clique/toque/tecla) */
+  useEffect(() => { attachAutoUnlock(); }, []);
 
   /* ── Alerta sonoro de novo job ── */
   useNewJobAlert({

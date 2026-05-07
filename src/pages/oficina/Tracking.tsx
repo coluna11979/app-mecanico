@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { getSetting } from '@/lib/settings';
 import { useMechanicLive } from '@/hooks/useMechanicLive';
 import { useMessages } from '@/hooks/useMessages';
+import { attachAutoUnlock } from '@/lib/alertSound';
+import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
@@ -76,10 +78,14 @@ export default function WorkshopTracking() {
   const prevStatusRef  = useRef<string | null>(null);
 
   /* ── Chat — subscription vive aqui (fora de qualquer condicional) ── */
-  const messages    = useMessages(id);
+  const { user } = useAuth();
+  const messages    = useMessages(id, user?.id);
   const [chatSeen, setChatSeen] = useState(0);
   // Mensagens não lidas: só conta quando a aba chat não está visível
   const chatUnread  = (tab !== 'chat' || !sheetOpen) ? Math.max(0, messages.length - chatSeen) : 0;
+
+  /* Destrava áudio na primeira interação do usuário */
+  useEffect(() => { attachAutoUnlock(); }, []);
 
   function showToast(msg: string) {
     setToast(msg);

@@ -7,6 +7,7 @@ import { getSetting } from '@/lib/settings';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import { useMessages } from '@/hooks/useMessages';
+import { attachAutoUnlock } from '@/lib/alertSound';
 import type { Job, Workshop } from '@/types/database';
 
 /* ── Haversine distance in km ── */
@@ -45,9 +46,12 @@ export default function MechanicTracking() {
   const [actualHours, setActualHours] = useState('');
 
   /* ── Chat — subscription vive aqui (fora de qualquer condicional) ── */
-  const messages   = useMessages(id);
+  const messages   = useMessages(id, user?.id);
   const [chatSeen, setChatSeen] = useState(0);
   const chatUnread = !chatOpen ? Math.max(0, messages.length - chatSeen) : 0;
+
+  /* Destrava áudio na primeira interação do usuário */
+  useEffect(() => { attachAutoUnlock(); }, []);
 
   /* ── Toast de notificação ── */
   const [toast, setToast]           = useState<string | null>(null);

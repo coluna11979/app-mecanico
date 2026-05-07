@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { playChatAlert } from '@/lib/alertSound';
 import type { Message } from '@/types/database';
 
 /**
  * Persistent message subscription that survives tab switches and panel toggles.
  * Uses postgres_changes (realtime) + a 4-second polling fallback so messages
  * always arrive even if the realtime socket drops.
+ *
+ * @param jobId   id do job
+ * @param myId    id do usuário atual — para NÃO tocar som quando ele mesmo envia
  */
-export function useMessages(jobId: string | undefined): Message[] {
+export function useMessages(jobId: string | undefined, myId?: string): Message[] {
   const [messages, setMessages] = useState<Message[]>([]);
   const lastEventAt = useRef<number>(0);
+  const initialLoadDone = useRef<boolean>(false);
 
   const fetchAll = useCallback(async () => {
     if (!jobId) return;
@@ -21,11 +26,13 @@ export function useMessages(jobId: string | undefined): Message[] {
     if (data) {
       setMessages(data as Message[]);
       lastEventAt.current = Date.now();
+      initialLoadDone.current = true;
     }
   }, [jobId]);
 
   useEffect(() => {
     if (!jobId) return;
+    initialLoadDone.current = false;
 
     // 1. Initial load
     fetchAll();
@@ -42,6 +49,11 @@ export function useMessages(jobId: string | undefined): Message[] {
             if (prev.some(m => m.id === msg.id)) return prev; // dedup
             return [...prev, msg];
           });
+          // 🔔 Toca som SE: load inicial concluído (não buzina pelas msgs antigas)
+          //              E a mensagem é de OUTRO usuário (não eu mesmo enviando)
+          if (initialLoadDone.current && myId && msg.sender_id !== myId) {
+            playChatAlert();
+          }
           lastEventAt.current = Date.now();
         },
       )
