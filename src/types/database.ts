@@ -20,6 +20,9 @@ export interface Workshop {
   business_name: string;
   cnpj: string;
   address: string;
+  number: string | null;
+  neighborhood: string | null;
+  cep: string | null;
   city: string;
   state: string;
   lat: number | null;
