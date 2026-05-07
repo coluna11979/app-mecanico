@@ -6,22 +6,29 @@ import { AvatarUpload } from '@/components/AvatarUpload';
 import type { Workshop } from '@/types/database';
 
 export default function WorkshopProfile() {
-  const { user, profile, refreshProfile, currentWorkshop, refreshWorkshops } = useAuth();
+  const { user, profile, refreshProfile, currentWorkshop, refreshWorkshops, loading: authLoading, workshops } = useAuth();
   const [shop, setShop]             = useState<Workshop | null>(null);
-  const [loading, setLoading]       = useState(true);
   const [busy, setBusy]             = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const [msg, setMsg]               = useState<{ text: string; ok: boolean } | null>(null);
   const [cep, setCep]               = useState('');
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError]     = useState('');
+  const [retrying, setRetrying]     = useState(false);
+
+  // O loading é derivado: enquanto auth tá carregando OU enquanto não tem workshop selecionada
+  const loading = authLoading;
 
   // Edita a oficina ATUAL (a selecionada no seletor)
   useEffect(() => {
-    if (!currentWorkshop) { setShop(null); setLoading(false); return; }
-    setShop(currentWorkshop);
-    setLoading(false);
+    setShop(currentWorkshop ?? null);
   }, [currentWorkshop?.id]);
+
+  async function retryLoad() {
+    setRetrying(true);
+    await refreshWorkshops();
+    setRetrying(false);
+  }
 
   /* ── Busca CEP na ViaCEP ── */
   async function fetchCep(raw: string) {
@@ -111,10 +118,24 @@ export default function WorkshopProfile() {
 
   if (!shop) return (
     <WorkshopLayout>
-      <div className="card max-w-md text-center py-12">
+      <div className="card max-w-md text-center py-10">
         <div className="text-4xl mb-3">🏪</div>
-        <h2 className="text-xl font-bold">Perfil não encontrado</h2>
-        <p className="text-sm text-steel-500 mt-2">Seu cadastro de oficina ainda não foi criado. Contate o suporte.</p>
+        <h2 className="text-xl font-bold">
+          {workshops.length === 0 ? 'Nenhuma oficina cadastrada' : 'Selecione uma oficina'}
+        </h2>
+        <p className="text-sm text-steel-500 mt-2">
+          {workshops.length === 0
+            ? 'Parece que você ainda não tem nenhuma oficina vinculada à sua conta.'
+            : 'Escolha qual oficina você quer editar usando o seletor 🏪 no topo do menu.'}
+        </p>
+        <div className="mt-5 flex gap-2 justify-center">
+          <button onClick={retryLoad} disabled={retrying} className="btn-ghost text-sm">
+            {retrying ? 'Recarregando…' : 'Recarregar'}
+          </button>
+          {workshops.length === 0 && (
+            <a href="/oficina/nova" className="btn-primary text-sm">Cadastrar oficina</a>
+          )}
+        </div>
       </div>
     </WorkshopLayout>
   );

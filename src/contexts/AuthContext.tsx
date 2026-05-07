@@ -55,24 +55,42 @@ async function fetchProfile(uid: string): Promise<Profile | null> {
   }
 }
 
-/** Carrega TODAS as oficinas que o usuário é membro */
+/** Carrega TODAS as oficinas que o usuário é membro.
+ *  Faz em 2 queries (mais confiável que JOIN aninhado) com timeouts independentes. */
 async function fetchWorkshops(uid: string): Promise<Workshop[]> {
   try {
-    const query = supabase
+    // 1. Pega todos os workshop_id em que o usuário é membro
+    const memQuery = supabase
       .from('workshop_members')
-      .select('workshop:workshops(*)')
+      .select('workshop_id')
       .eq('profile_id', uid);
-    const result = await withTimeout(
-      query as unknown as Promise<{ data: { workshop: Workshop }[] | null; error: { message: string } | null }>,
+    const memRes = await withTimeout(
+      memQuery as unknown as Promise<{ data: { workshop_id: string }[] | null; error: { message: string } | null }>,
       6000,
       { data: null, error: { message: 'timeout' } },
     );
-    if (result.error || !result.data) return [];
-    // Ordena pelo nome para consistência visual
-    return result.data
-      .map(r => r.workshop)
-      .filter(Boolean)
-      .sort((a, b) => a.business_name.localeCompare(b.business_name));
+    if (memRes.error || !memRes.data || memRes.data.length === 0) {
+      if (memRes.error) console.warn('[auth] fetchWorkshops members error:', memRes.error.message);
+      return [];
+    }
+    const ids = memRes.data.map(m => m.workshop_id);
+
+    // 2. Busca os dados das oficinas
+    const wsQuery = supabase
+      .from('workshops')
+      .select('*')
+      .in('id', ids);
+    const wsRes = await withTimeout(
+      wsQuery as unknown as Promise<{ data: Workshop[] | null; error: { message: string } | null }>,
+      6000,
+      { data: null, error: { message: 'timeout' } },
+    );
+    if (wsRes.error || !wsRes.data) {
+      if (wsRes.error) console.warn('[auth] fetchWorkshops shops error:', wsRes.error.message);
+      return [];
+    }
+    // Ordena pelo nome
+    return wsRes.data.sort((a, b) => a.business_name.localeCompare(b.business_name));
   } catch (e) {
     console.warn('[auth] fetchWorkshops exception:', e);
     return [];
