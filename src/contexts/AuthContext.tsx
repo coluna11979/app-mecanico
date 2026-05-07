@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { Profile, Workshop } from '@/types/database';
@@ -104,6 +104,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentWorkshop, setCurrentWorkshopState] = useState<Workshop | null>(null);
   const [loading, setLoading] = useState(true);
 
+  /** Marca se o usuário pediu signout explicitamente — diferencia de SIGNED_OUT espúrio */
+  const intentionalSignOut = useRef(false);
+  /** Marca se já tivemos sessão válida — pra detectar drops espúrios */
+  const wasSignedIn = useRef(false);
+
   /** Persiste a oficina atual em localStorage para sobreviver entre sessões */
   const setCurrentWorkshop = useCallback((w: Workshop) => {
     setCurrentWorkshopState(w);
@@ -131,8 +136,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session?.user, applyWorkshops]);
 
   const handleSession = useCallback(async (s: Session | null) => {
+    /** Recovery: se a sessão sumiu sem o usuário pedir signout,
+     *  tenta recuperar antes de limpar tudo (evita logout espúrio). */
+    if (!s && wasSignedIn.current && !intentionalSignOut.current) {
+      console.warn('[auth] sessão sumiu sem signout — tentando recuperar');
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) s = data.session;
+      } catch { /* ignora */ }
+      if (!s) {
+        try {
+          const { data } = await supabase.auth.refreshSession();
+          if (data.session) s = data.session;
+        } catch { /* ignora */ }
+      }
+      if (s) console.log('[auth] sessão recuperada com sucesso');
+      else   console.warn('[auth] não foi possível recuperar — fazendo logout');
+    }
+
     setSession(s);
     if (s?.user) {
+      wasSignedIn.current = true;
       const p = await fetchProfile(s.user.id);
       setProfile(p);
       if (p?.role === 'workshop') {
@@ -143,6 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCurrentWorkshopState(null);
       }
     } else {
+      wasSignedIn.current = false;
+      intentionalSignOut.current = false;
       setProfile(null);
       setWorkshops([]);
       setCurrentWorkshopState(null);
@@ -195,7 +221,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, s) => {
         if (event === 'INITIAL_SESSION') return;
         if (!mounted) return;
+        // TOKEN_REFRESHED: só atualiza sessão sem refazer profile
         if (event === 'TOKEN_REFRESHED' && s) { setSession(s); return; }
+        // USER_UPDATED com sessão válida: também só atualiza
+        if (event === 'USER_UPDATED' && s) { setSession(s); return; }
+        // SIGNED_OUT explícito: limpa direto, sem tentar recuperar
+        if (event === 'SIGNED_OUT') {
+          intentionalSignOut.current = true;
+          await handleSession(null);
+          return;
+        }
+        // SIGNED_IN, PASSWORD_RECOVERY, ou demais — passa pelo handleSession (com recovery)
         await handleSession(s);
       }
     );
@@ -232,6 +268,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentWorkshop,
       refreshWorkshops,
       signOut: async () => {
+        intentionalSignOut.current = true;
+        wasSignedIn.current = false;
         setProfile(null);
         setSession(null);
         setWorkshops([]);

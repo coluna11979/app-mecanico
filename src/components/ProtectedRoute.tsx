@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Role } from '@/types/database';
 
@@ -7,6 +7,8 @@ export function ProtectedRoute({ allow, children }: { allow: Role[]; children: R
   const { user, profile, loading, refreshProfile } = useAuth();
   const loc = useLocation();
   const [waited, setWaited] = useState(false);
+  const [graceExpired, setGraceExpired] = useState(false);
+  const wasAuthed = useRef(false);
 
   // Se já carregou auth mas profile demora, espera 1.5s e tenta refazer
   useEffect(() => {
@@ -18,8 +20,27 @@ export function ProtectedRoute({ allow, children }: { allow: Role[]; children: R
     return () => clearTimeout(t);
   }, [loading, profile, user, refreshProfile]);
 
+  // Se o usuário JÁ esteve autenticado e ficou sem user de repente, dá uma janela
+  // de 2s pra ver se a sessão volta (recuperação de drop espúrio do SDK Supabase).
+  useEffect(() => {
+    if (user) {
+      wasAuthed.current = true;
+      setGraceExpired(false);
+      return;
+    }
+    // user é null
+    if (!wasAuthed.current || loading) return;
+    const t = setTimeout(() => setGraceExpired(true), 2000);
+    return () => clearTimeout(t);
+  }, [user, loading]);
+
   if (loading) return <FullScreenLoader />;
-  if (!user) return <Navigate to="/login" state={{ from: loc }} replace />;
+
+  // Sem user: se já estivemos autenticados, espera a janela de graça antes de mandar pro login
+  if (!user) {
+    if (wasAuthed.current && !graceExpired) return <FullScreenLoader />;
+    return <Navigate to="/login" state={{ from: loc }} replace />;
+  }
 
   if (!profile) {
     // Se já esperou e ainda não tem profile, manda pro login (sessão corrompida)
