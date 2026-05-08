@@ -12,7 +12,7 @@ export default function SignupMechanic() {
   const [err, setErr] = useState<string | null>(null);
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '', cpf: '', cnh: '',
-    experience_years: 1, hourly_rate: 80, skills: [] as string[],
+    experience_years: 1, hourly_rate: 80, pix_key: '', skills: [] as string[],
   });
 
   function update<K extends keyof typeof f>(k: K, v: typeof f[K]) {
@@ -40,6 +40,7 @@ export default function SignupMechanic() {
           skills: f.skills,
           experience_years: Number(f.experience_years),
           hourly_rate: Number(f.hourly_rate),
+          pix_key: f.pix_key.trim() || null,
         },
       },
     });
@@ -92,6 +93,15 @@ export default function SignupMechanic() {
                     <input className="input" type="number" min={0} value={f.experience_years} onChange={e => update('experience_years', Number(e.target.value))} /></div>
                   <div><label className="label">Valor / hora (R$)</label>
                     <input className="input" type="number" min={0} step={5} value={f.hourly_rate} onChange={e => update('hourly_rate', Number(e.target.value))} /></div>
+                </div>
+                <div>
+                  <label className="label">Chave PIX (para receber pagamento) ⭐</label>
+                  <input className="input" required value={f.pix_key}
+                    onChange={e => update('pix_key', e.target.value)}
+                    placeholder="CPF, e-mail, telefone ou chave aleatória" />
+                  <p className="text-xs text-steel-500 mt-1">
+                    Sem chave PIX, você não recebe os pagamentos dos jobs.
+                  </p>
                 </div>
               </>
             )}

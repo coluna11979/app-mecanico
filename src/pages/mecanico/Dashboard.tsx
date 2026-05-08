@@ -144,6 +144,29 @@ export default function MechanicDashboard() {
 
       <div className="p-4 space-y-4">
 
+        {/* 🚨 Sem chave PIX cadastrada — bloqueador pra receber pagamento */}
+        {me && !(me as any).pix_key && (
+          <Link to="/mecanico/perfil" className="block">
+            <div className="bg-gradient-to-r from-alert-500/20 to-alert-600/10 border-2 border-alert-500/50 rounded-2xl p-4 hover:border-alert-500 transition">
+              <div className="flex items-start gap-3">
+                <div className="text-3xl shrink-0 animate-pulse">⚠️</div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-white text-base leading-tight">
+                    Cadastre sua chave PIX agora
+                  </h3>
+                  <p className="text-xs text-steel-300 mt-1 leading-relaxed">
+                    Sem chave PIX cadastrada, você <strong className="text-alert-300">não recebe</strong> o repasse dos jobs.
+                    Toque pra cadastrar (leva 30 segundos).
+                  </p>
+                  <span className="inline-block mt-2 bg-alert-500 text-white text-xs font-bold rounded-lg px-3 py-1">
+                    Cadastrar chave PIX →
+                  </span>
+                </div>
+              </div>
+            </div>
+          </Link>
+        )}
+
         {/* Toggle disponibilidade */}
         <div className="card !bg-steel-800 border border-steel-700">
           <div className="flex items-center justify-between">
