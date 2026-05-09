@@ -28,6 +28,10 @@ export default function AdminUserDetail() {
   const [loading, setLoading]   = useState(true);
   const [busy, setBusy]         = useState(false);
   const [saved, setSaved]       = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [emailDraft, setEmailDraft] = useState('');
+  const [emailEditing, setEmailEditing] = useState(false);
+  const [emailMsg, setEmailMsg]   = useState<{ text: string; ok: boolean } | null>(null);
 
   // Form state
   const [edit, setEdit] = useState({
@@ -46,6 +50,13 @@ export default function AdminUserDetail() {
     const { data: p } = await supabase.from('profiles').select('*').eq('id', id).maybeSingle();
     if (!p) { setLoading(false); return; }
     setProfile(p as Profile);
+
+    // Busca email via RPC admin
+    const { data: emailData } = await supabase.rpc('admin_get_user_email', { target_profile_id: id });
+    if (emailData) {
+      setUserEmail(emailData as string);
+      setEmailDraft(emailData as string);
+    }
 
     if (p.role === 'mechanic') {
       const { data: m } = await supabase.from('mechanics').select('*').eq('profile_id', id).maybeSingle();
@@ -117,6 +128,24 @@ export default function AdminUserDetail() {
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
     load();
+  }
+
+  async function saveEmail() {
+    if (!profile || !emailDraft.trim()) return;
+    setBusy(true);
+    setEmailMsg(null);
+    const { data, error } = await supabase.functions.invoke('admin-update-user-email', {
+      body: { profile_id: profile.id, new_email: emailDraft.trim() },
+    });
+    setBusy(false);
+    if (error || data?.error) {
+      setEmailMsg({ text: data?.error ?? error?.message ?? 'Erro ao alterar email', ok: false });
+      return;
+    }
+    setUserEmail(emailDraft.trim());
+    setEmailEditing(false);
+    setEmailMsg({ text: 'Email alterado com sucesso', ok: true });
+    setTimeout(() => setEmailMsg(null), 4000);
   }
 
   async function changeStatus(status: ProfileStatus) {
@@ -204,6 +233,57 @@ export default function AdminUserDetail() {
             <Field label="Telefone / WhatsApp">
               <input className="input" value={edit.phone} onChange={e => setEdit(s => ({ ...s, phone: e.target.value }))} />
             </Field>
+
+            {/* Email — usa edge function pra atualizar */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-steel-500 uppercase tracking-wider">
+                  📧 Email (login + notificações)
+                </label>
+                {!emailEditing && userEmail && (
+                  <button
+                    onClick={() => { setEmailEditing(true); setEmailMsg(null); }}
+                    className="text-xs text-brand-500 hover:underline font-semibold"
+                  >
+                    Alterar
+                  </button>
+                )}
+              </div>
+              {!emailEditing ? (
+                <div className="bg-steel-50 border border-steel-200 rounded-xl px-3 py-2.5 text-sm font-mono text-steel-700 break-all">
+                  {userEmail || '— (carregando)'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    className="input text-sm"
+                    type="email"
+                    value={emailDraft}
+                    onChange={e => setEmailDraft(e.target.value)}
+                    placeholder="email@dominio.com"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setEmailEditing(false); setEmailDraft(userEmail); setEmailMsg(null); }}
+                      className="btn-ghost flex-1 text-sm py-2"
+                    >Cancelar</button>
+                    <button
+                      onClick={saveEmail}
+                      disabled={busy || !emailDraft.trim() || emailDraft === userEmail}
+                      className="btn-primary flex-1 text-sm py-2 disabled:opacity-50"
+                    >{busy ? 'Salvando…' : 'Salvar email'}</button>
+                  </div>
+                  <p className="text-[11px] text-steel-500">
+                    ⚠️ Mudar o email vai trocar o login do usuário também. Próximos emails de notificação serão enviados pra esse novo endereço.
+                  </p>
+                </div>
+              )}
+              {emailMsg && (
+                <p className={`text-xs mt-1.5 font-semibold ${emailMsg.ok ? 'text-signal-600' : 'text-alert-600'}`}>
+                  {emailMsg.ok ? '✓ ' : '✕ '}{emailMsg.text}
+                </p>
+              )}
+            </div>
           </div>
 
           {isMechanic && (

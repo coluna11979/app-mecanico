@@ -181,6 +181,7 @@ function ApprovalDrawer({
 }) {
   const [messages, setMessages] = useState<ApprovalMessage[]>([]);
   const [adminNotes, setAdminNotes] = useState(row.admin_notes ?? '');
+  const [userEmail, setUserEmail] = useState<string>('');
   const [busy, setBusy] = useState<string | null>(null);
 
   // Modal de solicitação de documentos
@@ -191,7 +192,7 @@ function ApprovalDrawer({
   const [rejOpen, setRejOpen] = useState(false);
   const [rejText, setRejText] = useState('');
 
-  useEffect(() => { loadMessages(); }, [row.id]);
+  useEffect(() => { loadMessages(); loadEmail(); }, [row.id]);
 
   async function loadMessages() {
     const { data } = await supabase
@@ -200,6 +201,11 @@ function ApprovalDrawer({
       .eq('profile_id', row.id)
       .order('created_at', { ascending: true });
     setMessages((data as ApprovalMessage[]) ?? []);
+  }
+
+  async function loadEmail() {
+    const { data } = await supabase.rpc('admin_get_user_email', { target_profile_id: row.id });
+    setUserEmail((data as string) ?? '');
   }
 
   async function changeStatus(status: ProfileStatus, message?: string) {
@@ -304,9 +310,19 @@ function ApprovalDrawer({
           <Section title="Dados pessoais">
             <Field label="Nome">{row.full_name}</Field>
             <Field label="Telefone / WhatsApp">{row.phone || '—'}</Field>
+            <Field label="📧 Email">
+              {userEmail ? (
+                <span className="font-mono text-xs">{userEmail}</span>
+              ) : (
+                <span className="text-steel-400 italic text-xs">carregando…</span>
+              )}
+            </Field>
             <Field label="Cadastrado em">
               {new Date(row.created_at).toLocaleString('pt-BR')}
             </Field>
+            <p className="text-[11px] text-steel-400 italic pt-1">
+              Pra editar email, abra a página completa do cadastro.
+            </p>
           </Section>
 
           {row.mechanic && (
