@@ -19,6 +19,7 @@ export default function WorkshopDashboard() {
   const shop = currentWorkshop;
   const [active, setActive]     = useState<Job[]>([]);
   const [history, setHistory]   = useState<Job[]>([]);
+  const [pendingConfirm, setPendingConfirm] = useState<Job[]>([]);
   const [pendingRate, setPendingRate] = useState<Job[]>([]);
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [modal, setModal]       = useState(false);
@@ -38,19 +39,26 @@ export default function WorkshopDashboard() {
   }, [user, currentWorkshop?.id]);
 
   async function fetchJobs(workshopId: string) {
-    const [{ data: a }, { data: h }, { data: p }] = await Promise.all([
+    const [{ data: a }, { data: h }, { data: pc }, { data: pr }] = await Promise.all([
+      // Em andamento
       supabase.from('jobs').select('*').eq('workshop_id', workshopId)
         .in('status', ['open', 'assigned', 'in_progress']).order('created_at', { ascending: false }),
+      // Histórico
       supabase.from('jobs').select('*').eq('workshop_id', workshopId)
         .in('status', ['completed', 'disputed', 'cancelled']).order('created_at', { ascending: false }).limit(10),
-      // Pendentes de avaliação: serviço terminou mas oficina ainda não confirmou + avaliou
+      // Aguardando CONFIRMAÇÃO (mecânico finalizou, oficina ainda não confirmou)
       supabase.from('jobs').select('*').eq('workshop_id', workshopId)
         .eq('status', 'completed').is('workshop_confirmed_at', null)
         .order('completed_at', { ascending: false }),
+      // Aguardando AVALIAÇÃO (oficina já confirmou, mas não avaliou ainda — opcional)
+      supabase.from('jobs').select('*').eq('workshop_id', workshopId)
+        .eq('status', 'completed').not('workshop_confirmed_at', 'is', null).is('mechanic_rating', null)
+        .order('workshop_confirmed_at', { ascending: false }).limit(10),
     ]);
     setActive((a as Job[]) ?? []);
     setHistory((h as Job[]) ?? []);
-    setPendingRate((p as Job[]) ?? []);
+    setPendingConfirm((pc as Job[]) ?? []);
+    setPendingRate((pr as Job[]) ?? []);
   }
 
   async function fetchMechanics() {
@@ -145,25 +153,25 @@ export default function WorkshopDashboard() {
         <KPI label="Avaliação"   value={`★ ${(shop?.rating ?? 0).toFixed(1)}`} />
       </div>
 
-      {/* 🔔 Avaliações pendentes — banner de ação prioritária */}
-      {pendingRate.length > 0 && (
+      {/* 🔔 Confirmações pendentes — ação prioritária */}
+      {pendingConfirm.length > 0 && (
         <section className="mb-6">
           <div className="bg-gradient-to-r from-brand-50 to-brand-100/40 border-2 border-brand-300 rounded-2xl p-4 sm:p-5">
             <div className="flex items-start gap-3 mb-3">
               <div className="text-3xl shrink-0 animate-pulse">🔔</div>
               <div className="flex-1 min-w-0">
                 <h3 className="font-bold text-brand-700 text-lg leading-tight">
-                  {pendingRate.length === 1
-                    ? '1 serviço aguardando sua avaliação'
-                    : `${pendingRate.length} serviços aguardando sua avaliação`}
+                  {pendingConfirm.length === 1
+                    ? '1 serviço aguardando confirmação'
+                    : `${pendingConfirm.length} serviços aguardando confirmação`}
                 </h3>
                 <p className="text-sm text-steel-600 mt-1">
-                  O mecânico finalizou — avalie pra liberar o pagamento e fechar o ciclo.
+                  O mecânico finalizou — confirme a conclusão para fechar o ciclo.
                 </p>
               </div>
             </div>
             <div className="space-y-2">
-              {pendingRate.map(j => (
+              {pendingConfirm.map(j => (
                 <Link
                   key={j.id}
                   to={`/oficina/job/${j.id}/tracking`}
@@ -172,17 +180,64 @@ export default function WorkshopDashboard() {
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-steel-900 truncate">{j.title}</div>
                     <div className="text-xs text-steel-500 mt-0.5">
-                      {j.actual_hours != null
-                        ? `${j.actual_hours}h × R$ ${j.price_per_hour}/h = R$ ${(j.actual_hours * (j.price_per_hour ?? 0)).toFixed(2)}`
-                        : `R$ ${j.price?.toFixed(2)}`}
+                      R$ {j.price?.toFixed(2)} fechado
+                      {j.actual_hours != null && ` · ⏱ ${j.actual_hours}h reais`}
                       {j.completed_at && ` · finalizado ${new Date(j.completed_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
                     </div>
                   </div>
                   <span className="bg-brand-500 text-white text-xs font-bold rounded-lg px-3 py-1.5 shrink-0">
-                    Avaliar →
+                    Confirmar →
                   </span>
                 </Link>
               ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ⭐ Avaliações pendentes — opcional, sem urgência */}
+      {pendingRate.length > 0 && (
+        <section className="mb-6">
+          <div className="bg-steel-50 border border-steel-200 rounded-2xl p-4 sm:p-5">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="text-2xl shrink-0">⭐</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-steel-800 text-base leading-tight">
+                    Avaliações pendentes
+                  </h3>
+                  <span className="text-[10px] text-steel-500 uppercase tracking-wider font-bold bg-white px-2 py-0.5 rounded-full">
+                    opcional
+                  </span>
+                </div>
+                <p className="text-xs text-steel-500 mt-1">
+                  Quando tiver um tempo, avalie os mecânicos. Ajuda a manter a qualidade da plataforma.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {pendingRate.slice(0, 3).map(j => (
+                <Link
+                  key={j.id}
+                  to={`/oficina/job/${j.id}/tracking`}
+                  className="flex items-center justify-between gap-3 bg-white rounded-xl px-3 py-2.5 hover:bg-steel-50 transition border border-steel-100"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-steel-900 truncate text-sm">{j.title}</div>
+                    <div className="text-[11px] text-steel-500 mt-0.5">
+                      Concluído {j.workshop_confirmed_at && new Date(j.workshop_confirmed_at).toLocaleDateString('pt-BR')}
+                    </div>
+                  </div>
+                  <span className="text-steel-600 text-xs font-semibold shrink-0">
+                    ⭐ Avaliar
+                  </span>
+                </Link>
+              ))}
+              {pendingRate.length > 3 && (
+                <div className="text-[11px] text-steel-400 text-center pt-1">
+                  +{pendingRate.length - 3} outros…
+                </div>
+              )}
             </div>
           </div>
         </section>

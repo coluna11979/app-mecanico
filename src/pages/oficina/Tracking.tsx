@@ -172,7 +172,7 @@ export default function WorkshopTracking() {
     if (prev !== 'completed' && job.status === 'completed') {
       setSheetOpen(true);
       setTab('progresso');
-      showToast('🔔 Mecânico finalizou o serviço! Avalie para liberar o pagamento.');
+      showToast('🔔 Mecânico finalizou o serviço! Confirme a conclusão.');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.status, job?.workshop_confirmed_at, job?.arrived_at, job?.pix_paid_at]);
@@ -327,15 +327,27 @@ export default function WorkshopTracking() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPixModal, job?.id, payMethod]);
 
+  /** Confirma a conclusão do serviço (sem rating obrigatório) */
   async function confirmJob() {
-    if (!job || rating === 0) return;
+    if (!job) return;
     setConfirming(true);
     await supabase.from('jobs').update({
       workshop_confirmed_at: new Date().toISOString(),
-      mechanic_rating:       rating,
-      mechanic_rating_note:  ratingNote.trim() || null,
     }).eq('id', job.id);
     setConfirming(false);
+  }
+
+  /** Envia a avaliação do mecânico (opcional, feita depois) */
+  async function submitRating() {
+    if (!job || rating === 0) return;
+    setConfirming(true);
+    await supabase.from('jobs').update({
+      mechanic_rating:      rating,
+      mechanic_rating_note: ratingNote.trim() || null,
+    }).eq('id', job.id);
+    setConfirming(false);
+    setRating(0);
+    setRatingNote('');
   }
 
   const steps: Step[] = (() => {
@@ -347,7 +359,7 @@ export default function WorkshopTracking() {
       { label: 'A caminho',           done: arrived || ['in_progress','completed'].includes(s),       active: s === 'assigned' && !arrived },
       { label: 'Chegou — pagamento',  done: pixPaid,                                                 active: arrived && !pixPaid },
       { label: 'Em serviço',          done: s === 'completed',                                        active: s === 'in_progress' },
-      { label: 'Finalizado',          done: !!job?.workshop_confirmed_at,                             active: s === 'completed' && !job?.workshop_confirmed_at },
+      { label: 'Aguardando confirmação', done: !!job?.workshop_confirmed_at,                          active: s === 'completed' && !job?.workshop_confirmed_at },
     ];
   })();
 
@@ -519,17 +531,40 @@ export default function WorkshopTracking() {
                   </div>
                 ))}
 
+                {/* Step 1 — Confirmação simples (sem rating obrigatório) */}
                 {job?.status === 'completed' && !job.workshop_confirmed_at && (
                   <div className="pt-3 border-t border-steel-200 space-y-3">
                     <div className="bg-signal-500/10 rounded-xl px-3 py-2 text-sm text-signal-700 font-semibold flex items-center justify-between">
-                      <span>Pacote pago: R$ {cap.toFixed(2)}</span>
+                      <span>✅ Mecânico finalizou o serviço</span>
                       {job.actual_hours != null && (
                         <span className="text-xs text-signal-600 font-normal">
-                          ⏱ Tempo real: {job.actual_hours}h
+                          ⏱ {job.actual_hours}h reais
                         </span>
                       )}
                     </div>
-                    <p className="text-sm font-semibold text-steel-700">Avalie o mecânico para liberar o pagamento</p>
+                    <p className="text-sm text-steel-600 leading-relaxed">
+                      Confirme que o serviço foi concluído. Você poderá avaliar o mecânico depois, no seu tempo.
+                    </p>
+                    <button
+                      onClick={confirmJob}
+                      disabled={confirming}
+                      className="btn-primary w-full disabled:opacity-50 touch-manipulation"
+                    >
+                      {confirming ? '…' : '✅ Confirmar conclusão'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Step 2 — Avaliação opcional (após confirmação, sem pressa) */}
+                {job?.status === 'completed' && job.workshop_confirmed_at && !job.mechanic_rating && (
+                  <div className="pt-3 border-t border-steel-100 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-steel-700">⭐ Avaliar o mecânico</p>
+                      <span className="text-[10px] text-steel-400 uppercase tracking-wider font-bold">opcional</span>
+                    </div>
+                    <p className="text-xs text-steel-500">
+                      Sua avaliação ajuda outros mecânicos e mantém a qualidade da plataforma.
+                    </p>
                     <div className="flex gap-1">
                       {[1,2,3,4,5].map(n => (
                         <button key={n} type="button"
@@ -546,24 +581,29 @@ export default function WorkshopTracking() {
                         </span>
                       )}
                     </div>
-                    <textarea
-                      className="input text-sm resize-none"
-                      rows={2}
-                      placeholder="Comentário opcional…"
-                      value={ratingNote}
-                      onChange={e => setRatingNote(e.target.value)}
-                    />
-                    <button
-                      onClick={confirmJob}
-                      disabled={confirming || rating === 0}
-                      className="btn-primary w-full disabled:opacity-50 touch-manipulation"
-                    >
-                      {confirming ? '…' : rating === 0 ? 'Selecione uma avaliação' : 'Confirmar e liberar pagamento'}
-                    </button>
+                    {rating > 0 && (
+                      <>
+                        <textarea
+                          className="input text-sm resize-none"
+                          rows={2}
+                          placeholder="Comentário (opcional)…"
+                          value={ratingNote}
+                          onChange={e => setRatingNote(e.target.value)}
+                        />
+                        <button
+                          onClick={submitRating}
+                          disabled={confirming}
+                          className="btn-primary w-full disabled:opacity-50 touch-manipulation"
+                        >
+                          {confirming ? '…' : 'Enviar avaliação'}
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
 
-                {job?.status === 'completed' && job.workshop_confirmed_at && job.mechanic_rating && (
+                {/* Step 3 — Avaliação já feita (visualização) */}
+                {job?.status === 'completed' && job.mechanic_rating && (
                   <div className="pt-3 border-t border-steel-100">
                     <div className="text-xs text-steel-400 mb-1">Sua avaliação do mecânico</div>
                     <div className="flex items-center gap-2">
