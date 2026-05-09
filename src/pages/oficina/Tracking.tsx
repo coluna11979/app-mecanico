@@ -693,14 +693,14 @@ export default function WorkshopTracking() {
                 💳 Cartão
               </button>
               <button
-                onClick={() => setPayMethod('pix')}
-                className={`flex-1 rounded-xl py-2 text-sm font-bold transition ${
-                  payMethod === 'pix'
-                    ? 'bg-white shadow text-steel-900'
-                    : 'text-steel-500 hover:text-steel-700'
-                }`}
+                disabled
+                title="PIX em breve — em fase de aprovação no Stripe"
+                className="flex-1 rounded-xl py-2 text-sm font-bold text-steel-400 cursor-not-allowed flex items-center justify-center gap-1.5"
               >
-                PIX
+                <span>PIX</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider bg-steel-200 text-steel-600 rounded-full px-1.5 py-0.5">
+                  Em breve
+                </span>
               </button>
             </div>
 
