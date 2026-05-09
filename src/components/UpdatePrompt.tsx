@@ -42,6 +42,30 @@ export function UpdatePrompt() {
 
   if (!needRefresh) return null;
 
+  /** Atualização robusta: tenta update normal, mas SEMPRE força reload no fim
+   *  (resolve casos onde controllerchange não dispara). */
+  async function doUpdate() {
+    try {
+      // Limpa todos os caches do Workbox / runtime
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch { /* ignora */ }
+
+    try {
+      await updateServiceWorker(true);
+    } catch { /* ignora */ }
+
+    // Garante reload mesmo se o SW não cooperar
+    setTimeout(() => {
+      // Adiciona timestamp na URL pra furar HTTP cache
+      const u = new URL(window.location.href);
+      u.searchParams.set('_v', Date.now().toString());
+      window.location.replace(u.toString());
+    }, 300);
+  }
+
   return (
     <div
       className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[1000] max-w-md w-[calc(100%-2rem)] animate-slide-up"
@@ -60,7 +84,7 @@ export function UpdatePrompt() {
           Depois
         </button>
         <button
-          onClick={() => updateServiceWorker(true)}
+          onClick={doUpdate}
           className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs px-4 py-2 rounded-xl shrink-0"
         >
           Atualizar
