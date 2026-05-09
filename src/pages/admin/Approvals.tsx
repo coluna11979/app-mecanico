@@ -217,13 +217,18 @@ function ApprovalDrawer({
       ? `${labels[status]} — ${message}`
       : labels[status];
 
+    const kind = status === 'rejected' || status === 'approved' ? 'status_change' : 'note';
+
     await supabase.from('approval_messages').insert({
       profile_id: row.id,
       sender_id: adminId,
       sender_role: 'admin',
-      kind: status === 'rejected' || status === 'approved' ? 'status_change' : 'note',
+      kind,
       content,
     });
+
+    // Dispara email (silencioso — não bloqueia se falhar/skipped)
+    void sendApprovalEmail(row.id, content, kind);
 
     setBusy(null);
     onChanged();
@@ -232,6 +237,7 @@ function ApprovalDrawer({
   async function requestDocuments() {
     if (!reqText.trim()) return;
     setBusy('req_docs');
+    const content = reqText.trim();
     // Marca como em análise + manda mensagem
     await supabase.from('profiles').update({ status: 'under_review' }).eq('id', row.id);
     await supabase.from('approval_messages').insert({
@@ -239,8 +245,10 @@ function ApprovalDrawer({
       sender_id: adminId,
       sender_role: 'admin',
       kind: 'request_documents',
-      content: reqText.trim(),
+      content,
     });
+    // Dispara email
+    void sendApprovalEmail(row.id, content, 'request_documents');
     setBusy(null);
     setReqOpen(false);
     setReqText('');
@@ -351,11 +359,11 @@ function ApprovalDrawer({
               <div className="flex-1">
                 <div className="font-bold text-pending-700">
                   {pendingRequests === 1
-                    ? '1 solicitação aguardando resposta do usuário'
-                    : `${pendingRequests} solicitações aguardando resposta do usuário`}
+                    ? '1 solicitação aguardando resposta'
+                    : `${pendingRequests} solicitações aguardando resposta`}
                 </div>
                 <p className="text-xs text-steel-600 mt-0.5">
-                  O usuário foi notificado e pode anexar documentos pela tela /aguardando-aprovacao.
+                  O usuário recebeu por email (se Resend estiver configurado) e também verá ao abrir o app. Vai poder anexar documentos pela tela direto.
                 </p>
               </div>
             </div>
@@ -480,6 +488,22 @@ function ApprovalDrawer({
 }
 
 /* ──────────────── Helpers ──────────────── */
+
+/**
+ * Dispara o email de notificação via Edge Function send-approval-email.
+ * Falha silenciosamente — se Resend não estiver configurado ou der erro,
+ * o app continua funcionando (a mensagem fica no histórico de qualquer forma).
+ */
+async function sendApprovalEmail(profileId: string, content: string, kind: ApprovalMessage['kind']) {
+  try {
+    const { error } = await supabase.functions.invoke('send-approval-email', {
+      body: { profile_id: profileId, content, kind },
+    });
+    if (error) console.warn('[send-approval-email] falhou:', error);
+  } catch (e) {
+    console.warn('[send-approval-email] erro:', e);
+  }
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

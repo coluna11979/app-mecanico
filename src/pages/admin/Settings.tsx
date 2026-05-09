@@ -11,20 +11,24 @@ interface FieldDef {
 
 const FIELDS: FieldDef[] = [
   { key: 'support_email',          label: 'Email de suporte',          description: 'Email exibido para usuários em caso de dúvida.',             section: 'Geral' },
+  { key: 'app_public_url',         label: 'URL pública do app',        description: 'Usada nos links dos emails (ex: https://mecanicoapp.com.br).', section: 'Geral' },
   { key: 'maintenance_mode',       label: 'Modo manutenção',           description: 'Bloqueia o acesso de todos os usuários.',   type: 'toggle',   section: 'Geral' },
   { key: 'platform_fee_percent',   label: 'Taxa da plataforma (%)',    description: 'Comissão cobrada do mecânico por job.',     type: 'number',   section: 'Financeiro' },
   { key: 'stripe_publishable_key', label: 'Chave pública',             description: 'Usada no frontend (Stripe Elements).',     type: 'key',      section: 'Stripe' },
   { key: 'stripe_secret_key',      label: 'Chave secreta',             description: 'Usada nas Edge Functions.',                type: 'password', section: 'Stripe' },
   { key: 'stripe_webhook_secret',  label: 'Webhook secret',            description: 'Valida eventos recebidos do Stripe.',      type: 'password', section: 'Stripe' },
   { key: 'mapbox_token',           label: 'Token público',             description: 'Usado nos mapas de rastreamento.',         type: 'key',      section: 'Mapas' },
+  { key: 'resend_api_key',         label: 'API Key (re_...)',          description: 'Crie em resend.com/api-keys (free tier 3000 emails/mês).', type: 'password', section: 'Email (Resend)' },
+  { key: 'resend_from_email',      label: 'Email remetente',           description: 'Precisa ter o domínio verificado no Resend (ex: noreply@mecanicoapp.com.br).', section: 'Email (Resend)' },
 ];
 
 type Section = { label: string; icon: string; color: string; bg: string };
 const SECTIONS: Record<string, Section> = {
-  Geral:      { label: 'Geral',      icon: '⚙️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
-  Financeiro: { label: 'Financeiro', icon: '💰',  color: 'text-signal-700', bg: 'bg-signal-50'  },
-  Stripe:     { label: 'Stripe',     icon: '💳',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
-  Mapas:      { label: 'Mapas',      icon: '🗺️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
+  Geral:             { label: 'Geral',           icon: '⚙️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
+  Financeiro:        { label: 'Financeiro',      icon: '💰',  color: 'text-signal-700', bg: 'bg-signal-50'  },
+  Stripe:            { label: 'Stripe',          icon: '💳',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
+  Mapas:             { label: 'Mapas',           icon: '🗺️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
+  'Email (Resend)':  { label: 'Email (Resend)',  icon: '📧',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
 };
 
 export default function AdminSettings() {
@@ -89,6 +93,23 @@ export default function AdminSettings() {
                       Supabase → Edge Function Secrets
                     </a>.
                   </span>
+                </div>
+              )}
+
+              {/* Tutorial Resend */}
+              {sec === 'Email (Resend)' && (
+                <div className="mx-5 mt-4 bg-pending-500/10 border border-pending-300 rounded-xl px-4 py-3 text-xs text-steel-700 space-y-1.5">
+                  <p className="font-bold text-pending-700 flex items-center gap-1.5">📋 Passo a passo</p>
+                  <ol className="list-decimal pl-5 space-y-0.5">
+                    <li>Crie conta gratuita em <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-brand-600 font-semibold underline">resend.com</a></li>
+                    <li>Em <a href="https://resend.com/domains" target="_blank" rel="noreferrer" className="text-brand-600 font-semibold underline">Domains</a>, adicione <code className="bg-white px-1.5 py-0.5 rounded">mecanicoapp.com.br</code> e configure os DNS (SPF + DKIM)</li>
+                    <li>Em <a href="https://resend.com/api-keys" target="_blank" rel="noreferrer" className="text-brand-600 font-semibold underline">API Keys</a>, crie uma key (escolha "Sending access" + seu domínio)</li>
+                    <li>Cole a key abaixo (formato <code className="bg-white px-1.5 py-0.5 rounded">re_xxx</code>)</li>
+                    <li>Defina o email remetente — ex: <code className="bg-white px-1.5 py-0.5 rounded">noreply@mecanicoapp.com.br</code></li>
+                  </ol>
+                  <p className="text-[11px] text-steel-500 pt-1">
+                    Free tier: 3000 emails/mês · 100/dia. Suficiente pra começar.
+                  </p>
                 </div>
               )}
 
