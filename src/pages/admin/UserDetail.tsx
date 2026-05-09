@@ -38,8 +38,12 @@ export default function AdminUserDetail() {
     full_name: '', phone: '',
     cpf: '', cnh: '', experience_years: 0, hourly_rate: 0, pix_key: '',
     business_name: '', cnpj: '', address: '', city: '', state: '', description: '',
+    lat: null as number | null, lng: null as number | null,
     admin_notes: '',
   });
+
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoMsg, setGeoMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -79,6 +83,7 @@ export default function AdminUserDetail() {
         business_name: w?.business_name ?? '', cnpj: w?.cnpj ?? '',
         address: w?.address ?? '', city: w?.city ?? '', state: w?.state ?? '',
         description: w?.description ?? '',
+        lat: w?.lat ?? null, lng: w?.lng ?? null,
         admin_notes: p.admin_notes ?? '',
       }));
     }
@@ -121,6 +126,8 @@ export default function AdminUserDetail() {
         city:    edit.city.trim(),
         state:   edit.state.trim().toUpperCase(),
         description: edit.description.trim() || null,
+        lat:     edit.lat,
+        lng:     edit.lng,
       }).eq('id', workshop.id);
     }
 
@@ -128,6 +135,32 @@ export default function AdminUserDetail() {
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
     load();
+  }
+
+  /** Geocodifica o endereço da oficina via Nominatim (OpenStreetMap, gratuito) */
+  async function geocodeAddress() {
+    const query = [edit.address, edit.city, edit.state, 'Brasil'].filter(Boolean).join(', ');
+    if (!query.trim()) {
+      setGeoMsg({ text: 'Preencha o endereço antes de localizar.', ok: false });
+      return;
+    }
+    setGeoLoading(true);
+    setGeoMsg(null);
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`;
+      const res  = await fetch(url, { headers: { 'Accept-Language': 'pt-BR' } });
+      const data = await res.json();
+      if (!data?.length) {
+        setGeoMsg({ text: 'Endereço não encontrado. Verifique e tente novamente.', ok: false });
+      } else {
+        setEdit(s => ({ ...s, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }));
+        setGeoMsg({ text: 'Localização encontrada! Clique em Salvar pra gravar.', ok: true });
+      }
+    } catch {
+      setGeoMsg({ text: 'Erro ao buscar localização. Verifique conexão.', ok: false });
+    }
+    setGeoLoading(false);
+    setTimeout(() => setGeoMsg(null), 5000);
   }
 
   async function saveEmail() {
@@ -355,6 +388,64 @@ export default function AdminUserDetail() {
               <div className="text-xs text-steel-500 pt-2 border-t border-steel-100">
                 ★ {workshop?.rating.toFixed(1) ?? '—'} · {workshop?.total_jobs ?? 0} jobs concluídos
               </div>
+            </div>
+          )}
+
+          {/* Localização no mapa — só pra oficinas */}
+          {!isMechanic && (
+            <div className="card space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">📍 Localização no mapa</h3>
+                <button
+                  type="button"
+                  onClick={geocodeAddress}
+                  disabled={geoLoading || !edit.address}
+                  className="btn-primary !py-1.5 !px-3 text-xs disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {geoLoading
+                    ? <><div className="h-3 w-3 rounded-full border border-white border-t-transparent animate-spin" /> Localizando…</>
+                    : <>📍 Localizar endereço</>
+                  }
+                </button>
+              </div>
+
+              <p className="text-xs text-steel-500 leading-relaxed">
+                Coordenadas usadas pra os mecânicos verem a oficina no mapa e calcularem ETA.
+                Clique em <strong>"Localizar endereço"</strong> pra converter o endereço acima em coordenadas.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Latitude">
+                  <input className="input font-mono text-sm" type="number" step="any"
+                    placeholder="-23.5505"
+                    value={edit.lat ?? ''}
+                    onChange={e => setEdit(s => ({ ...s, lat: e.target.value ? Number(e.target.value) : null }))} />
+                </Field>
+                <Field label="Longitude">
+                  <input className="input font-mono text-sm" type="number" step="any"
+                    placeholder="-46.6333"
+                    value={edit.lng ?? ''}
+                    onChange={e => setEdit(s => ({ ...s, lng: e.target.value ? Number(e.target.value) : null }))} />
+                </Field>
+              </div>
+
+              {geoMsg && (
+                <p className={`text-xs font-semibold ${geoMsg.ok ? 'text-signal-600' : 'text-alert-600'}`}>
+                  {geoMsg.ok ? '✓ ' : '⚠️ '}{geoMsg.text}
+                </p>
+              )}
+
+              {edit.lat && edit.lng ? (
+                <div className="flex items-center gap-1.5 text-xs text-signal-600 font-semibold">
+                  <span>✓</span>
+                  <span>Localização configurada — visível no mapa dos mecânicos</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs text-pending-600 font-semibold">
+                  <span>⚠️</span>
+                  <span>Sem coordenadas — oficina não aparece no mapa dos mecânicos</span>
+                </div>
+              )}
             </div>
           )}
 
