@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 type Row = Profile & { mechanic?: Mechanic; workshop?: Workshop };
@@ -259,12 +260,19 @@ function ApprovalDrawer({
     setBusy(null);
   }
 
-  const msgIcon: Record<ApprovalMessage['kind'], string> = {
-    request_documents: '📋',
-    reply: '💬',
-    note: '📝',
-    status_change: '🔄',
-  };
+  /* Calcula quais request_documents foram resolvidas */
+  const requestStates: Record<string, boolean> = {};
+  for (const m of messages) {
+    if (m.kind !== 'request_documents') continue;
+    const reqTime = new Date(m.created_at).getTime();
+    requestStates[m.id] = messages.some(r =>
+      r.kind === 'reply' &&
+      r.sender_role === 'user' &&
+      new Date(r.created_at).getTime() > reqTime
+    );
+  }
+
+  const pendingRequests = Object.entries(requestStates).filter(([_, v]) => !v).length;
 
   return (
     <div className="fixed inset-0 z-50 bg-steel-900/70 backdrop-blur flex justify-end">
@@ -336,24 +344,33 @@ function ApprovalDrawer({
             )}
           </Section>
 
+          {/* Banner de pendências */}
+          {pendingRequests > 0 && (
+            <div className="bg-pending-500/10 border border-pending-300 rounded-2xl p-4 flex items-start gap-3">
+              <span className="text-2xl shrink-0">⏳</span>
+              <div className="flex-1">
+                <div className="font-bold text-pending-700">
+                  {pendingRequests === 1
+                    ? '1 solicitação aguardando resposta do usuário'
+                    : `${pendingRequests} solicitações aguardando resposta do usuário`}
+                </div>
+                <p className="text-xs text-steel-600 mt-0.5">
+                  O usuário foi notificado e pode anexar documentos pela tela /aguardando-aprovacao.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Histórico de mensagens */}
           {messages.length > 0 && (
             <Section title={`Histórico (${messages.length})`}>
               <div className="space-y-2">
                 {messages.map(m => (
-                  <div key={m.id} className={`rounded-xl p-3 text-sm ${
-                    m.sender_role === 'admin' ? 'bg-brand-50 border border-brand-100' : 'bg-steel-50 border border-steel-100'
-                  }`}>
-                    <div className="flex items-center gap-2 text-xs text-steel-500 mb-1">
-                      <span>{msgIcon[m.kind]}</span>
-                      <span className="font-semibold uppercase tracking-wide">
-                        {m.sender_role === 'admin' ? 'Admin' : 'Usuário'}
-                      </span>
-                      <span>·</span>
-                      <span>{new Date(m.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <p className="text-steel-800 whitespace-pre-wrap leading-relaxed">{m.content}</p>
-                  </div>
+                  <ApprovalMessageItem
+                    key={m.id}
+                    message={m}
+                    resolved={m.kind === 'request_documents' ? requestStates[m.id] : undefined}
+                  />
                 ))}
               </div>
             </Section>

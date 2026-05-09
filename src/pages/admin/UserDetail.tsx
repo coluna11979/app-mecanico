@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
+import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 const STATUS_LABEL: Record<ProfileStatus, string> = {
@@ -308,27 +309,20 @@ export default function AdminUserDetail() {
             ) : (
               <div className="space-y-2 max-h-[600px] overflow-y-auto">
                 {messages.map(m => {
-                  const isAdmin = m.sender_role === 'admin';
-                  const icons = {
-                    request_documents: '📋',
-                    reply: '💬',
-                    note: '📝',
-                    status_change: '🔄',
-                  };
+                  const reqStates: Record<string, boolean> = {};
+                  if (m.kind === 'request_documents') {
+                    const reqTime = new Date(m.created_at).getTime();
+                    reqStates[m.id] = messages.some(r =>
+                      r.kind === 'reply' && r.sender_role === 'user' &&
+                      new Date(r.created_at).getTime() > reqTime
+                    );
+                  }
                   return (
-                    <div key={m.id} className={`rounded-xl p-3 text-sm ${
-                      isAdmin
-                        ? 'bg-brand-50 border border-brand-100'
-                        : 'bg-steel-50 border border-steel-100 ml-6'
-                    }`}>
-                      <div className="flex items-center gap-2 text-[11px] text-steel-500 mb-1 font-semibold uppercase tracking-wide">
-                        <span>{icons[m.kind]}</span>
-                        <span>{isAdmin ? 'Admin' : 'Usuário'}</span>
-                        <span>·</span>
-                        <span className="font-normal normal-case">{new Date(m.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      <p className="text-steel-800 whitespace-pre-wrap leading-relaxed">{m.content}</p>
-                    </div>
+                    <ApprovalMessageItem
+                      key={m.id}
+                      message={m}
+                      resolved={m.kind === 'request_documents' ? reqStates[m.id] : undefined}
+                    />
                   );
                 })}
               </div>

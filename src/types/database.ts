@@ -22,6 +22,11 @@ export interface ApprovalMessage {
   sender_role: 'admin' | 'user';
   kind: 'request_documents' | 'reply' | 'note' | 'status_change';
   content: string;
+  attachment_path: string | null;
+  attachment_name: string | null;
+  attachment_size: number | null;
+  attachment_mime: string | null;
+  resolved_by_message_id: string | null;
   created_at: string;
 }
 
