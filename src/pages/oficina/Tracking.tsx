@@ -272,12 +272,26 @@ export default function WorkshopTracking() {
     setCardLoading(false);
   }
 
-  /* Monta o Stripe Card Element assim que stripe + cardSecret + div estiverem prontos */
+  /* Calcula se o modal de pagamento deve aparecer (precisa estar acima dos useEffects que dependem dele) */
+  const cap          = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
+  const showPixModal = !!job?.arrived_at && !job?.pix_paid_at && job?.status === 'assigned';
+
+  /* Monta o Stripe Card Element. O div agora está SEMPRE visível (sem display:none),
+     então o Stripe consegue montar o iframe corretamente. */
   useEffect(() => {
     if (!stripe || !cardSecret || cardElRef.current) return;
-    // Aguarda o próximo tick para garantir que o div já está no DOM
-    const timer = setTimeout(() => {
-      if (!cardDivRef.current) return;
+    if (payMethod !== 'card') return; // só monta se a aba ativa for cartão
+    if (!showPixModal) return;        // só monta se o modal está aberto
+
+    let cancelled = false;
+
+    const tryMount = () => {
+      if (cancelled || cardElRef.current) return;
+      if (!cardDivRef.current) {
+        // Div ainda não no DOM — tenta de novo no próximo frame
+        requestAnimationFrame(tryMount);
+        return;
+      }
       const elements = stripe.elements();
       const el = elements.create('card', {
         hidePostalCode: true,
@@ -293,12 +307,27 @@ export default function WorkshopTracking() {
         },
       });
       el.mount(cardDivRef.current);
+      el.on('ready', () => { if (!cancelled) setCardElReady(true); });
       cardElRef.current = el;
-      setCardElReady(true);
-    }, 80);
-    return () => clearTimeout(timer);
+    };
+
+    // requestAnimationFrame garante que o React já comitou o DOM antes de montar
+    requestAnimationFrame(tryMount);
+
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stripe, cardSecret]);
+  }, [stripe, cardSecret, payMethod, showPixModal]);
+
+  /* Cleanup: desmonta o Stripe Element quando o modal fecha */
+  useEffect(() => {
+    if (!showPixModal && cardElRef.current) {
+      try { cardElRef.current.unmount(); } catch { /* ignora */ }
+      cardElRef.current = null;
+      setCardElReady(false);
+    }
+  }, [showPixModal]);
 
   async function payWithCard() {
     if (!stripe || !cardElRef.current || !cardSecret) return;
@@ -315,9 +344,6 @@ export default function WorkshopTracking() {
       setCardProcessing(false);
     }
   }
-
-  const cap          = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
-  const showPixModal = !!job?.arrived_at && !job?.pix_paid_at && job?.status === 'assigned';
 
   /* Dispara carregamento conforme método selecionado */
   useEffect(() => {
@@ -690,23 +716,24 @@ export default function WorkshopTracking() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* Spinner enquanto carrega — div do cartão fica abaixo sempre renderizado */}
-                    {cardLoading && (
-                      <div className="flex flex-col items-center gap-3 py-4">
-                        <div className="h-8 w-8 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
-                        <p className="text-sm text-steel-500">Preparando pagamento seguro…</p>
-                      </div>
-                    )}
-
-                    {/* Div do Stripe — sempre no DOM quando este bloco renderiza */}
-                    <div style={{ display: cardLoading ? 'none' : 'block' }}>
+                    {/* Container do Stripe Card Element — SEMPRE visível pra não dar mount em display:none */}
+                    <div>
                       <label className="text-xs font-bold text-steel-500 uppercase tracking-widest mb-2 block">
                         Dados do cartão
                       </label>
-                      <div
-                        ref={cardDivRef}
-                        className="border border-steel-300 rounded-xl px-4 py-3.5 bg-white min-h-[52px] focus-within:border-brand-500 transition"
-                      />
+                      <div className="relative">
+                        <div
+                          ref={cardDivRef}
+                          className="border border-steel-300 rounded-xl px-4 py-3.5 bg-white min-h-[52px] focus-within:border-brand-500 transition"
+                        />
+                        {/* Overlay de loading por cima — não esconde o div do Stripe */}
+                        {(cardLoading || !cardElReady) && (
+                          <div className="absolute inset-0 bg-white/95 rounded-xl flex items-center justify-center gap-3 pointer-events-none">
+                            <div className="h-5 w-5 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+                            <p className="text-sm text-steel-500">Preparando pagamento seguro…</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {cardError && (
@@ -715,30 +742,26 @@ export default function WorkshopTracking() {
                       </p>
                     )}
 
-                    {!cardLoading && (
-                      <button
-                        onClick={payWithCard}
-                        disabled={cardProcessing || !cardElReady}
-                        className="btn-primary w-full disabled:opacity-60 touch-manipulation"
-                      >
-                        {cardProcessing
-                          ? <span className="flex items-center justify-center gap-2">
-                              <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                              Processando…
-                            </span>
-                          : `Pagar R$ ${cap.toFixed(2)}`
-                        }
-                      </button>
-                    )}
+                    <button
+                      onClick={payWithCard}
+                      disabled={cardProcessing || !cardElReady}
+                      className="btn-primary w-full disabled:opacity-60 touch-manipulation"
+                    >
+                      {cardProcessing
+                        ? <span className="flex items-center justify-center gap-2">
+                            <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                            Processando…
+                          </span>
+                        : `Pagar R$ ${cap.toFixed(2)}`
+                      }
+                    </button>
 
                     {/* Cartões de teste */}
-                    {!cardLoading && (
-                      <div className="bg-steel-50 rounded-xl px-3 py-2 text-center">
-                        <p className="text-[11px] text-steel-400 font-mono">
-                          Teste: <strong>4242 4242 4242 4242</strong> · qualquer validade/CVV
-                        </p>
-                      </div>
-                    )}
+                    <div className="bg-steel-50 rounded-xl px-3 py-2 text-center">
+                      <p className="text-[11px] text-steel-400 font-mono">
+                        Teste: <strong>4242 4242 4242 4242</strong> · qualquer validade/CVV
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
