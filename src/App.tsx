@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { UpdatePrompt } from './components/UpdatePrompt';
 
 import Landing from './pages/public/Landing';
 import LandingMecanico from './pages/public/LandingMecanico';
@@ -36,6 +37,8 @@ import AdminUserDetail from './pages/admin/UserDetail';
 
 export default function App() {
   return (
+    <>
+    <UpdatePrompt />
     <Routes>
       {/* Público */}
       <Route path="/" element={<Landing />} />
@@ -76,5 +79,6 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
