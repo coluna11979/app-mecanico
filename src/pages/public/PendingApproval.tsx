@@ -45,7 +45,7 @@ export default function PendingApproval() {
   const nav = useNavigate();
   const [messages, setMessages] = useState<ApprovalMessage[]>([]);
   const [reply, setReply]       = useState('');
-  const [file, setFile]         = useState<File | null>(null);
+  const [files, setFiles]       = useState<File[]>([]);
   const [sending, setSending]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [toast, setToast]       = useState<string | null>(null);
@@ -113,57 +113,90 @@ export default function PendingApproval() {
   }
 
   function pickFile(e: ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
+    const picked = Array.from(e.target.files ?? []);
+    if (!picked.length) return;
     setError(null);
-    if (f.size > MAX_SIZE) {
-      setError(`Arquivo muito grande (máx ${fmtFileSize(MAX_SIZE)}).`);
-      return;
+
+    const accepted = ACCEPTED_MIMES.split(',');
+    for (const f of picked) {
+      if (f.size > MAX_SIZE) {
+        setError(`"${f.name}" é muito grande (máx ${fmtFileSize(MAX_SIZE)}).`);
+        return;
+      }
+      if (!accepted.includes(f.type)) {
+        setError(`"${f.name}" tem formato não aceito. Use JPG, PNG, WEBP, HEIC ou PDF.`);
+        return;
+      }
     }
-    if (!ACCEPTED_MIMES.split(',').includes(f.type)) {
-      setError('Formato não aceito. Use JPG, PNG, WEBP ou PDF.');
-      return;
-    }
-    setFile(f);
+
+    // Acumula com os já selecionados (deduplicando por nome)
+    setFiles(prev => {
+      const names = new Set(prev.map(p => p.name));
+      const novel = picked.filter(p => !names.has(p.name));
+      return [...prev, ...novel];
+    });
+
+    // Limpa o input pra permitir selecionar o mesmo arquivo de novo (caso remova)
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
+  function removeFile(idx: number) {
+    setFiles(prev => prev.filter((_, i) => i !== idx));
   }
 
   async function sendReply() {
     if (!user) return;
-    if (!reply.trim() && !file) {
-      setError('Digite uma mensagem ou anexe um documento.');
+    if (!reply.trim() && files.length === 0) {
+      setError('Digite uma mensagem ou anexe pelo menos um documento.');
       return;
     }
     setSending(true);
     setError(null);
 
-    let attachment: { path: string; name: string; size: number; mime: string } | null = null;
-    if (file) {
-      try {
-        attachment = await uploadApprovalAttachment(file, user.id);
-      } catch (err: any) {
-        setError('Erro ao enviar arquivo: ' + (err?.message ?? 'tente novamente'));
-        setSending(false);
-        return;
+    try {
+      // Upload de todos os arquivos (paralelo)
+      const uploaded = files.length > 0
+        ? await Promise.all(files.map(f => uploadApprovalAttachment(f, user.id)))
+        : [];
+
+      // Cada arquivo vira uma mensagem (texto vai no primeiro; se sem arquivos, mensagem-só-texto)
+      if (uploaded.length === 0) {
+        await supabase.from('approval_messages').insert({
+          profile_id:  user.id,
+          sender_id:   user.id,
+          sender_role: 'user',
+          kind:        'reply',
+          content:     reply.trim(),
+          attachment_path: null,
+          attachment_name: null,
+          attachment_size: null,
+          attachment_mime: null,
+        });
+      } else {
+        const inserts = uploaded.map((att, i) => ({
+          profile_id:  user.id,
+          sender_id:   user.id,
+          sender_role: 'user' as const,
+          kind:        'reply' as const,
+          content:     i === 0 && reply.trim()
+            ? reply.trim()
+            : `📎 ${att.name}`,
+          attachment_path: att.path,
+          attachment_name: att.name,
+          attachment_size: att.size,
+          attachment_mime: att.mime,
+        }));
+        await supabase.from('approval_messages').insert(inserts);
       }
+
+      setReply('');
+      setFiles([]);
+      if (fileRef.current) fileRef.current.value = '';
+    } catch (err: any) {
+      setError('Erro ao enviar: ' + (err?.message ?? 'tente novamente'));
+    } finally {
+      setSending(false);
     }
-
-    const { error: insertErr } = await supabase.from('approval_messages').insert({
-      profile_id:  user.id,
-      sender_id:   user.id,
-      sender_role: 'user',
-      kind:        'reply',
-      content:     reply.trim() || (file ? `📎 Documento enviado: ${file.name}` : ''),
-      attachment_path: attachment?.path ?? null,
-      attachment_name: attachment?.name ?? null,
-      attachment_size: attachment?.size ?? null,
-      attachment_mime: attachment?.mime ?? null,
-    });
-
-    if (insertErr) setError(insertErr.message);
-    setReply('');
-    setFile(null);
-    if (fileRef.current) fileRef.current.value = '';
-    setSending(false);
   }
 
   /* Calcula quais request_documents foram resolvidas (responde uma req se há reply do user posterior) */
@@ -250,19 +283,27 @@ export default function PendingApproval() {
                   disabled={sending}
                 />
 
-                {/* Preview do arquivo selecionado */}
-                {file && (
-                  <div className="bg-brand-50 border border-brand-200 rounded-xl px-3 py-2 flex items-center gap-3">
-                    <span className="text-2xl shrink-0">{fileIcon(file.type)}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-steel-800 truncate">{file.name}</div>
-                      <div className="text-xs text-steel-500">{fmtFileSize(file.size)}</div>
+                {/* Preview dos arquivos selecionados */}
+                {files.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] text-steel-500 font-semibold uppercase tracking-wider">
+                      {files.length === 1 ? '1 documento anexado' : `${files.length} documentos anexados`}
                     </div>
-                    <button
-                      onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }}
-                      className="text-steel-400 hover:text-alert-600 text-lg shrink-0"
-                      aria-label="Remover anexo"
-                    >✕</button>
+                    {files.map((f, i) => (
+                      <div key={`${f.name}-${i}`} className="bg-brand-50 border border-brand-200 rounded-xl px-3 py-2 flex items-center gap-3">
+                        <span className="text-2xl shrink-0">{fileIcon(f.type)}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm text-steel-800 truncate">{f.name}</div>
+                          <div className="text-xs text-steel-500">{fmtFileSize(f.size)}</div>
+                        </div>
+                        <button
+                          onClick={() => removeFile(i)}
+                          className="text-steel-400 hover:text-alert-600 text-lg shrink-0"
+                          aria-label="Remover anexo"
+                          disabled={sending}
+                        >✕</button>
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -275,6 +316,7 @@ export default function PendingApproval() {
                     ref={fileRef}
                     type="file"
                     accept={ACCEPTED_MIMES}
+                    multiple
                     onChange={pickFile}
                     className="hidden"
                   />
@@ -284,19 +326,23 @@ export default function PendingApproval() {
                     className="btn-ghost text-sm border border-steel-300"
                     disabled={sending}
                   >
-                    📎 Anexar
+                    📎 {files.length > 0 ? 'Adicionar mais' : 'Anexar'}
                   </button>
                   <button
                     onClick={sendReply}
-                    disabled={sending || (!reply.trim() && !file)}
+                    disabled={sending || (!reply.trim() && files.length === 0)}
                     className="btn-primary flex-1 disabled:opacity-50 text-sm"
                   >
-                    {sending ? 'Enviando…' : 'Enviar resposta'}
+                    {sending
+                      ? 'Enviando…'
+                      : files.length > 1
+                        ? `Enviar ${files.length} documentos`
+                        : 'Enviar resposta'}
                   </button>
                 </div>
 
                 <p className="text-[11px] text-steel-400 text-center">
-                  Aceitamos JPG, PNG, WEBP, HEIC ou PDF até 10 MB. Pode tirar foto do documento direto pelo celular.
+                  Aceitamos JPG, PNG, WEBP, HEIC ou PDF (máx 10 MB cada). Pode anexar quantos precisar e tirar foto direto pelo celular.
                 </p>
               </div>
             )}
