@@ -42,8 +42,6 @@ export default function MechanicTracking() {
   const [mechanicId, setMechanicId] = useState<string | null>(null);
   const [busy, setBusy]             = useState(false);
   const [chatOpen, setChatOpen]     = useState(false);
-  const [hoursModal, setHoursModal] = useState(false);
-  const [actualHours, setActualHours] = useState('');
 
   /* ── Chat — subscription vive aqui (fora de qualquer condicional) ── */
   const messages   = useMessages(id, user?.id);
@@ -206,13 +204,18 @@ export default function MechanicTracking() {
 
   async function completeJob() {
     if (!job) return;
-    const hours = Number(actualHours);
-    if (!hours || hours <= 0) return;
     setBusy(true);
-    const finalPrice = hours * (job.price_per_hour ?? 0);
+    const completedAt = new Date();
+    // Calcula horas reais a partir do started_at — apenas pra métrica (não afeta preço)
+    const startedAt = job.started_at ? new Date(job.started_at) : null;
+    const actualHours = startedAt
+      ? Math.max(0.1, +(((completedAt.getTime() - startedAt.getTime()) / 3_600_000)).toFixed(2))
+      : null;
+    // Preço é FECHADO — sempre price_per_hour × max_hours, independente do tempo real
     await supabase.from('jobs').update({
-      status: 'completed', completed_at: new Date().toISOString(),
-      actual_hours: hours, price: finalPrice,
+      status:       'completed',
+      completed_at: completedAt.toISOString(),
+      actual_hours: actualHours,
     }).eq('id', job.id);
     setBusy(false);
     nav('/mecanico/dashboard');
@@ -328,7 +331,7 @@ export default function MechanicTracking() {
               )}
             </div>
             <div className="text-xs text-steel-500 mt-1">
-              R$ {job?.price_per_hour?.toFixed(0) ?? '—'}/h · máx {job?.max_hours ?? '—'}h · até R$ {cap.toFixed(0)}
+              Pacote: {job?.max_hours ?? '—'}h × R$ {job?.price_per_hour?.toFixed(0) ?? '—'}/h · <span className="text-signal-400 font-bold">R$ {cap.toFixed(0)} fechado</span>
             </div>
           </div>
         )}
@@ -354,56 +357,11 @@ export default function MechanicTracking() {
         )}
 
         {job?.status === 'in_progress' && (
-          <button onClick={() => setHoursModal(true)} className="btn-primary btn-lg w-full !bg-signal-500">
-            Finalizar serviço
+          <button onClick={completeJob} disabled={busy} className="btn-primary btn-lg w-full !bg-signal-500">
+            {busy ? '…' : '✅ Finalizar serviço'}
           </button>
         )}
       </div>
-
-      {/* Modal: horas reais */}
-      {hoursModal && (
-        <div className="absolute inset-0 z-30 bg-steel-900/95 flex flex-col items-center justify-center p-6">
-          <div className="bg-steel-800 border border-steel-700 rounded-2xl p-6 w-full max-w-sm space-y-5">
-            <div>
-              <h3 className="text-xl font-bold">Finalizar serviço</h3>
-              <p className="text-sm text-steel-400 mt-1">Informe as horas reais trabalhadas para calcular o valor final.</p>
-            </div>
-
-            <div>
-              <label className="text-xs text-steel-400 uppercase tracking-wider">Horas trabalhadas</label>
-              <div className="relative mt-1">
-                <input
-                  type="number" min={0.5} max={job?.max_hours ?? 24} step={0.5}
-                  className="input !bg-steel-900 !text-white !border-steel-600 !pr-10 text-2xl font-bold"
-                  placeholder="1.5"
-                  value={actualHours}
-                  onChange={e => setActualHours(e.target.value)}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 font-semibold">h</span>
-              </div>
-              {actualHours && Number(actualHours) > 0 && (
-                <div className="mt-2 text-center">
-                  <span className="text-steel-400 text-sm">{actualHours}h × R$ {job?.price_per_hour?.toFixed(0)}/h = </span>
-                  <span className="text-signal-400 font-bold text-lg">
-                    R$ {(Number(actualHours) * (job?.price_per_hour ?? 0)).toFixed(2)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setHoursModal(false)} className="btn-ghost flex-1">Cancelar</button>
-              <button
-                onClick={completeJob}
-                disabled={busy || !actualHours || Number(actualHours) <= 0}
-                className="btn-primary flex-1 !bg-signal-500"
-              >
-                {busy ? '…' : 'Confirmar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Chat drawer */}
       {chatOpen && id && (

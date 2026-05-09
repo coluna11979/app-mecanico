@@ -316,8 +316,7 @@ export default function WorkshopTracking() {
     }
   }
 
-  const cap        = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
-  const finalPrice = job?.actual_hours != null ? (job.actual_hours * (job.price_per_hour ?? 0)) : null;
+  const cap          = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
   const showPixModal = !!job?.arrived_at && !job?.pix_paid_at && job?.status === 'assigned';
 
   /* Dispara carregamento conforme método selecionado */
@@ -468,12 +467,8 @@ export default function WorkshopTracking() {
 
             {job && (
               <div className="flex items-center justify-between text-sm py-2 border-b border-steel-100">
-                <span className="text-steel-500">R$ {job.price_per_hour?.toFixed(0)}/h · máx {job.max_hours}h</span>
-                <span className="font-bold">
-                  {finalPrice != null
-                    ? <>R$ {finalPrice.toFixed(2)} <span className="text-xs text-signal-600 font-semibold">final</span></>
-                    : <>até R$ {cap.toFixed(0)}</>}
-                </span>
+                <span className="text-steel-500">{job.max_hours}h × R$ {job.price_per_hour?.toFixed(0)}/h</span>
+                <span className="font-bold text-signal-600">R$ {cap.toFixed(2)} fechado</span>
               </div>
             )}
 
@@ -526,11 +521,14 @@ export default function WorkshopTracking() {
 
                 {job?.status === 'completed' && !job.workshop_confirmed_at && (
                   <div className="pt-3 border-t border-steel-200 space-y-3">
-                    {job.actual_hours != null && (
-                      <div className="bg-signal-500/10 rounded-xl px-3 py-2 text-sm text-signal-700 font-semibold">
-                        {job.actual_hours}h × R$ {job.price_per_hour}/h = R$ {(job.actual_hours * (job.price_per_hour ?? 0)).toFixed(2)}
-                      </div>
-                    )}
+                    <div className="bg-signal-500/10 rounded-xl px-3 py-2 text-sm text-signal-700 font-semibold flex items-center justify-between">
+                      <span>Pacote pago: R$ {cap.toFixed(2)}</span>
+                      {job.actual_hours != null && (
+                        <span className="text-xs text-signal-600 font-normal">
+                          ⏱ Tempo real: {job.actual_hours}h
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm font-semibold text-steel-700">Avalie o mecânico para liberar o pagamento</p>
                     <div className="flex gap-1">
                       {[1,2,3,4,5].map(n => (

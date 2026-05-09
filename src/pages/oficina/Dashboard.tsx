@@ -206,7 +206,7 @@ export default function WorkshopDashboard() {
                   <div className="font-bold truncate">{j.title}</div>
                   <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j.status)}</div>
                   <div className="text-xs text-steel-400 mt-1">
-                    R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h · máx {j.max_hours ?? '—'}h
+                    {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
                   </div>
                   {j.scheduled_at && (
                     <div className="text-xs text-steel-400 mt-0.5">
@@ -215,7 +215,7 @@ export default function WorkshopDashboard() {
                   )}
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-xs text-steel-400">até</div>
+                  <div className="text-xs text-steel-400">valor</div>
                   <div className="text-lg font-bold font-display">R$ {j.price.toFixed(0)}</div>
                   {j.mechanic_id ? (
                     <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
@@ -245,13 +245,14 @@ export default function WorkshopDashboard() {
                   <div className="text-xs text-steel-500">
                     {statusLabel(j.status)} · {j.completed_at ? new Date(j.completed_at).toLocaleDateString('pt-BR') : '—'}
                   </div>
-                  {j.actual_hours != null && (
-                    <div className="text-xs text-steel-400">{j.actual_hours}h × R$ {j.price_per_hour}/h</div>
-                  )}
+                  <div className="text-xs text-steel-400">
+                    Pacote: {j.max_hours}h × R$ {j.price_per_hour}/h
+                    {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="font-bold font-display">R$ {j.price.toFixed(2)}</div>
-                  {j.actual_hours != null && <div className="text-xs text-signal-600">final</div>}
+                  <div className="text-xs text-steel-500">fechado</div>
                 </div>
               </div>
             ))}
@@ -296,7 +297,7 @@ export default function WorkshopDashboard() {
 
               {/* Precificação */}
               <div>
-                <label className="label">Precificação por hora</label>
+                <label className="label">Precificação fechada</label>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="relative">
@@ -312,12 +313,15 @@ export default function WorkshopDashboard() {
                         placeholder="2" value={form.max_hours} onChange={set('max_hours')} />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
                     </div>
-                    <div className="text-xs text-steel-400 mt-1">Máximo de horas</div>
+                    <div className="text-xs text-steel-400 mt-1">Tempo previsto</div>
                   </div>
                 </div>
+                <p className="text-[11px] text-steel-500 mt-2 leading-relaxed">
+                  💡 <strong>Valor fechado:</strong> a oficina paga o pacote (hora × tempo previsto) e o mecânico recebe esse valor mesmo se terminar antes ou levar mais tempo. O tempo real é registrado para análise.
+                </p>
                 {estimated > 0 && (
                   <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
-                    <span className="text-sm text-brand-700">Teto do orçamento</span>
+                    <span className="text-sm text-brand-700">Valor fechado da demanda</span>
                     <span className="font-bold text-brand-700 font-display">R$ {estimated.toFixed(2)}</span>
                   </div>
                 )}

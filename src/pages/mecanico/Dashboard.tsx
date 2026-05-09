@@ -130,7 +130,7 @@ export default function MechanicDashboard() {
                 <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">Nova demanda!</div>
                 <div className="font-bold truncate">{t.job.title}</div>
                 <div className="text-xs opacity-80">
-                  R$ {(t.job.price_per_hour ?? 0).toFixed(0)}/h · até R$ {cap.toFixed(0)}
+                  R$ {cap.toFixed(0)} fechado · {t.job.max_hours ?? '—'}h previstas
                 </div>
               </div>
               <button
@@ -232,11 +232,11 @@ export default function MechanicDashboard() {
                       <div className="text-sm opacity-80">{j.status === 'assigned' ? 'A caminho' : 'Em serviço'}</div>
                       <div className="font-bold text-lg truncate">{j.title}</div>
                       <div className="text-xs opacity-70 mt-0.5">
-                        R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h · máx {j.max_hours ?? '—'}h
+                        Pacote: {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
                       </div>
                     </div>
                     <div className="text-right shrink-0 ml-3">
-                      <div className="text-xs opacity-70">até</div>
+                      <div className="text-xs opacity-70">valor</div>
                       <span className="text-2xl font-bold font-display">R$ {j.price.toFixed(0)}</span>
                     </div>
                   </div>
@@ -307,12 +307,12 @@ export default function MechanicDashboard() {
                         )}
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-brand-400 font-bold font-display text-lg">
-                          R$ {(j.price_per_hour ?? 0).toFixed(0)}<span className="text-sm font-normal">/h</span>
+                        <div className="text-signal-400 font-bold font-display text-2xl">
+                          R$ {cap.toFixed(0)}
                         </div>
-                        <div className="text-xs text-steel-500">máx {j.max_hours ?? 1}h</div>
-                        <div className="text-xs text-signal-400 font-semibold mt-0.5">
-                          até R$ {cap.toFixed(0)}
+                        <div className="text-[10px] text-steel-500 uppercase tracking-wider">fechado</div>
+                        <div className="text-xs text-steel-400 mt-0.5">
+                          {j.max_hours ?? 1}h × R$ {(j.price_per_hour ?? 0).toFixed(0)}/h
                         </div>
                       </div>
                     </div>

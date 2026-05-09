@@ -250,19 +250,18 @@ export default function MechanicMapa() {
               </button>
             </div>
 
-            {/* Price strip */}
+            {/* Price strip — valor fechado */}
             <div className="flex items-center justify-between bg-steel-800 rounded-2xl px-4 py-3 border border-steel-700/50">
               <div>
-                <div className="text-2xl font-bold text-brand-400 font-display leading-none">
-                  R$ {selected.price_per_hour?.toFixed(0)}
-                  <span className="text-sm font-normal text-steel-500">/h</span>
+                <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Pacote</div>
+                <div className="text-sm text-steel-300 font-semibold mt-0.5">
+                  {selected.max_hours}h × R$ {selected.price_per_hour?.toFixed(0)}/h
                 </div>
-                <div className="text-xs text-steel-500 mt-1">máx {selected.max_hours}h</div>
               </div>
               <div className="w-px h-10 bg-steel-700" />
               <div className="text-right">
-                <div className="text-xs text-steel-500">Teto do job</div>
-                <div className="text-2xl font-bold text-signal-400 font-display leading-none">R$ {cap.toFixed(0)}</div>
+                <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Valor fechado</div>
+                <div className="text-2xl font-bold text-signal-400 font-display leading-none mt-0.5">R$ {cap.toFixed(0)}</div>
                 <div className="text-xs text-steel-600 mt-1">seus R$ {(cap * 0.82).toFixed(0)}</div>
               </div>
             </div>

@@ -10,6 +10,7 @@ interface RepasseRow {
   repasse_pago_at: string | null;
   repasse_valor: number | null;
   actual_hours: number | null;
+  max_hours: number | null;
   price_per_hour: number;
   price: number;
   platform_fee_pct: number;
@@ -44,6 +45,7 @@ export default function AdminRepasses() {
         repasse_pago_at,
         repasse_valor,
         actual_hours,
+        max_hours,
         price_per_hour,
         price,
         stripe_payment_intent_id,
@@ -59,7 +61,8 @@ export default function AdminRepasses() {
 
     if (data) {
       setRows(data.map((j: any) => {
-        const total = j.price ?? (j.price_per_hour * (j.actual_hours ?? 0));
+        // price já é o valor fechado (price_per_hour × max_hours), salvo na criação da demanda
+        const total = j.price ?? 0;
         const mechAmount = parseFloat((total * (1 - FEE)).toFixed(2));
         return {
           job_id:                  j.id,
@@ -69,6 +72,7 @@ export default function AdminRepasses() {
           repasse_pago_at:         j.repasse_pago_at,
           repasse_valor:           j.repasse_valor,
           actual_hours:            j.actual_hours,
+          max_hours:               j.max_hours,
           price_per_hour:          j.price_per_hour,
           price:                   total,
           platform_fee_pct:        FEE * 100,
@@ -199,10 +203,21 @@ export default function AdminRepasses() {
                       <span className="text-steel-400">Concluído</span>
                       <div className="font-semibold">{fmtDate(r.workshop_confirmed_at)}</div>
                     </div>
-                    {r.actual_hours && (
+                    {r.max_hours != null && (
                       <div>
-                        <span className="text-steel-400">Horas</span>
-                        <div className="font-semibold">{r.actual_hours}h × {fmt(r.price_per_hour)}/h</div>
+                        <span className="text-steel-400">Tempo</span>
+                        <div className="font-semibold">
+                          {r.max_hours}h previstas
+                          {r.actual_hours != null && (() => {
+                            const diff = r.actual_hours - r.max_hours;
+                            const tag = diff < -0.1 ? '🟢' : diff > 0.1 ? '🔴' : '🟡';
+                            return (
+                              <span className="ml-1.5 text-xs font-normal text-steel-500">
+                                · {r.actual_hours}h reais {tag}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </div>
                     )}
                   </div>

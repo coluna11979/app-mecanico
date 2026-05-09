@@ -65,11 +65,11 @@ export default function MechanicJobDetail() {
                 <div className="text-xl font-bold text-brand-400 font-display mt-1">R$ {pph.toFixed(0)}</div>
               </div>
               <div className="px-2 py-1">
-                <div className="text-[10px] text-steel-500 uppercase tracking-wider">Máx. horas</div>
+                <div className="text-[10px] text-steel-500 uppercase tracking-wider">Tempo previsto</div>
                 <div className="text-xl font-bold text-white font-display mt-1">{mh}h</div>
               </div>
               <div className="px-2 py-1">
-                <div className="text-[10px] text-steel-500 uppercase tracking-wider">Teto</div>
+                <div className="text-[10px] text-signal-400 uppercase tracking-wider font-bold">Valor fechado</div>
                 <div className="text-xl font-bold text-signal-400 font-display mt-1">R$ {cap.toFixed(0)}</div>
               </div>
             </div>
@@ -100,7 +100,7 @@ export default function MechanicJobDetail() {
                 <div>
                   <div className="text-xs text-steel-500 uppercase tracking-wider">Seu repasse (82%)</div>
                   <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {(cap * 0.82).toFixed(2)}</div>
-                  <div className="text-xs text-steel-500 mt-0.5">se cobrar as {job.max_hours}h máximas</div>
+                  <div className="text-xs text-steel-500 mt-0.5">valor fechado · não muda com o tempo real</div>
                 </div>
                 <div className="h-12 w-12 rounded-full bg-signal-500/10 grid place-items-center text-2xl">💸</div>
               </div>
