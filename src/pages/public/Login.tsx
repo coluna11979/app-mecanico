@@ -81,7 +81,15 @@ export default function Login() {
   const nav = useNavigate();
   const loc = useLocation();
   const { profile, loading: authLoading, signOut } = useAuth();
-  const [email, setEmail] = useState('');
+
+  // Suporta query string ?email=xxx&next=/aguardando-aprovacao
+  // (vem dos emails enviados pela equipe — pré-preenche e redireciona depois)
+  const params = new URLSearchParams(loc.search);
+  const emailFromUrl = params.get('email') || '';
+  const nextRoute   = params.get('next');
+  const fromEmail   = !!emailFromUrl;
+
+  const [email, setEmail] = useState(emailFromUrl);
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -93,8 +101,13 @@ export default function Login() {
 
   useEffect(() => {
     if (authLoading || submitting || !profile || fresh) return;
+    // Se veio com ?next=, respeita
+    if (nextRoute) {
+      nav(nextRoute, { replace: true });
+      return;
+    }
     nav(destino(profile.role, profile.status), { replace: true });
-  }, [profile, authLoading, submitting, fresh, nav]);
+  }, [profile, authLoading, submitting, fresh, nav, nextRoute]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -117,7 +130,13 @@ export default function Login() {
     }
 
     if (p.status !== 'approved' && p.role !== 'admin') {
-      nav('/aguardando-aprovacao', { replace: true });
+      nav(nextRoute || '/aguardando-aprovacao', { replace: true });
+      return;
+    }
+
+    // Se veio do email com ?next=, redireciona pra lá direto (sem tela de welcome)
+    if (nextRoute) {
+      nav(nextRoute, { replace: true });
       return;
     }
 
@@ -155,6 +174,16 @@ export default function Login() {
         <div className="max-w-sm w-full mx-auto">
           <h1 className="text-3xl font-bold tracking-tight">Entrar</h1>
           <p className="text-steel-500 text-sm mt-1">Mecânico, oficina ou admin — tudo aqui.</p>
+
+          {fromEmail && (
+            <div className="mt-5 bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 flex items-start gap-2">
+              <span className="text-xl shrink-0">📧</span>
+              <div className="text-xs text-steel-700 leading-relaxed">
+                Você foi direcionado por um email da nossa equipe.
+                Faça login com a senha que criou no cadastro pra ver a mensagem e responder.
+              </div>
+            </div>
+          )}
 
           {/* Já está logado (veio de uma LP pública) */}
           {fresh && profile && (
