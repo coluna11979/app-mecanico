@@ -3,7 +3,10 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
 import { supabase } from '@/lib/supabase';
-import type { Workshop } from '@/types/database';
+import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
+import type { Job, Workshop } from '@/types/database';
+
+type ArrivalAlert = { jobId: string; title: string };
 
 interface NavItem  { to: string; icon: string; label: string }
 interface SoonItem { icon: string; label: string; desc: string }
@@ -90,6 +93,59 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const initials  = (profile?.full_name ?? 'O')
     .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
+  /* ── Alerta global: chegada de mecânico ── */
+  const [arrivalAlert, setArrivalAlert] = useState<ArrivalAlert | null>(null);
+  const arrivedRef = useRef<Set<string>>(new Set());
+
+  /* Destrava áudio na primeira interação */
+  useEffect(() => { attachAutoUnlock(); }, []);
+
+  /* Popula o set inicial com jobs já chegados (não toca som retroativo) */
+  useEffect(() => {
+    if (!shopId) return;
+    supabase
+      .from('jobs')
+      .select('id, arrived_at, pix_paid_at, status')
+      .eq('workshop_id', shopId)
+      .in('status', ['assigned', 'in_progress'])
+      .then(({ data }) => {
+        (data ?? []).forEach((j: any) => {
+          if (j.arrived_at) arrivedRef.current.add(j.id);
+        });
+      });
+  }, [shopId]);
+
+  /* Realtime — alerta quando arrived_at é setado pela primeira vez */
+  useEffect(() => {
+    if (!shopId) return;
+    const ch = supabase.channel(`layout:arrivals:${shopId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'jobs',
+        filter: `workshop_id=eq.${shopId}`,
+      }, (payload) => {
+        const newRow = payload.new as Job;
+        const oldRow = payload.old as Job | undefined;
+
+        // Só alerta na transição: arrived_at era null e agora foi setado, e ainda não pago
+        if (!newRow.arrived_at) return;
+        if (oldRow?.arrived_at) return;
+        if (newRow.pix_paid_at) return;
+        if (arrivedRef.current.has(newRow.id)) return;
+
+        // Não dispara se já está na página de tracking deste job (já viu lá)
+        if (window.location.pathname === `/oficina/job/${newRow.id}/tracking`) {
+          arrivedRef.current.add(newRow.id);
+          return;
+        }
+
+        arrivedRef.current.add(newRow.id);
+        playJobAlert();
+        setArrivalAlert({ jobId: newRow.id, title: newRow.title });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [shopId]);
+
   /* ── Conta mensagens não lidas ── */
   useEffect(() => {
     if (!shopId || !user) return;
@@ -146,6 +202,40 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex bg-steel-50">
+
+      {/* 🔔 Modal global: mecânico chegou — alerta sonoro + visual */}
+      {arrivalAlert && (
+        <div className="fixed inset-0 z-[100] bg-steel-900/70 backdrop-blur grid place-items-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl border-4 border-brand-500 shadow-2xl max-w-md w-full p-6 sm:p-8 text-center space-y-4">
+            <div className="text-6xl animate-bounce">🔔</div>
+            <h2 className="text-2xl font-bold text-steel-900">Mecânico chegou!</h2>
+            <p className="text-steel-600">
+              O mecânico está na sua oficina aguardando o pagamento para iniciar.
+            </p>
+            <div className="bg-steel-50 rounded-xl px-4 py-3 text-sm font-semibold text-steel-700 truncate">
+              📋 {arrivalAlert.title}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setArrivalAlert(null)}
+                className="btn-ghost flex-1"
+              >
+                Depois
+              </button>
+              <button
+                onClick={() => {
+                  const target = `/oficina/job/${arrivalAlert.jobId}/tracking`;
+                  setArrivalAlert(null);
+                  nav(target);
+                }}
+                className="btn-primary flex-[2] btn-lg"
+              >
+                💳 Pagar agora
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Overlay mobile */}
       {open && (

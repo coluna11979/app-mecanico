@@ -63,8 +63,9 @@ export default {
       },
       animation: {
         'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
-        'slide-up': 'slideUp 250ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'slide-up':   'slideUp 250ms cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-down': 'slideDown 350ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'fade-in':    'fadeIn 200ms ease-out',
       },
       // Safe-area padding for iPhone notch/home indicator
       padding: {
@@ -82,6 +83,10 @@ export default {
         slideDown: {
           '0%': { transform: 'translateY(-16px) scale(0.96)', opacity: '0' },
           '100%': { transform: 'translateY(0) scale(1)', opacity: '1' },
+        },
+        fadeIn: {
+          '0%':   { opacity: '0' },
+          '100%': { opacity: '1' },
         },
       },
     },

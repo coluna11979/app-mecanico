@@ -38,6 +38,27 @@ export default function WorkshopDashboard() {
     fetchMechanics();
   }, [user, currentWorkshop?.id]);
 
+  /* ── Realtime — atualiza listas em tempo real (status, chegada, etc) ── */
+  useEffect(() => {
+    if (!currentWorkshop?.id) return;
+    const wid = currentWorkshop.id;
+    const ch = supabase.channel(`oficina:dashboard:${wid}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'jobs',
+        filter: `workshop_id=eq.${wid}`,
+      }, () => fetchJobs(wid))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [currentWorkshop?.id]);
+
+  /* Polling fallback (8s) — caso realtime caia */
+  useEffect(() => {
+    if (!currentWorkshop?.id) return;
+    const wid = currentWorkshop.id;
+    const t = setInterval(() => fetchJobs(wid), 8000);
+    return () => clearInterval(t);
+  }, [currentWorkshop?.id]);
+
   async function fetchJobs(workshopId: string) {
     const [{ data: a }, { data: h }, { data: pc }, { data: pr }] = await Promise.all([
       // Em andamento
