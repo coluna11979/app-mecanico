@@ -24,13 +24,15 @@ const GESTAO: NavItem[] = [
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
 ];
 
-const PREMIUM_PREVIEW: NavItem[] = [
-  { to: '/oficina/checkup-premium', icon: '🔍', label: 'Check-up Premium'   },
-  { to: '/oficina/ia-insights',     icon: '🤖', label: 'Análise com IA'     },
-];
-
 // Todos os módulos premium agrupados por departamento
 const ADVANCED: SoonDept[] = [
+  {
+    dept: '🚀 Captação & Inteligência',
+    items: [
+      { icon: '🔍', label: 'Check-up Premium', desc: 'Captação gratuita + banco de OS' },
+      { icon: '🤖', label: 'Análise com IA',   desc: 'Insights automáticos do negócio' },
+    ],
+  },
   {
     dept: '👥 RH & Pessoal',
     items: [
@@ -301,23 +303,6 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {/* ── Premium Preview (em breve) ── */}
-          <div>
-            <div className="flex items-center gap-2 px-3 mb-2">
-              <span className="text-[10px] font-bold text-brand-400 uppercase tracking-widest">
-                Premium
-              </span>
-              <span className="text-[9px] font-bold uppercase tracking-wider bg-brand-500/20 text-brand-300 rounded-full px-1.5 py-0.5 border border-brand-500/30">
-                Em breve
-              </span>
-            </div>
-            <div className="space-y-0.5">
-              {PREMIUM_PREVIEW.map(item => (
-                <PremiumItem key={item.to} {...item} onClick={() => setOpen(false)} />
-              ))}
-            </div>
-          </div>
-
           {/* ── Gestão Avançada (upgrade) ── */}
           <AdvancedSection />
         </nav>
@@ -497,29 +482,6 @@ function WorkshopSwitcher({
         </div>
       )}
     </div>
-  );
-}
-
-/* Item de menu para features premium em breve — visual diferenciado com badge */
-function PremiumItem({ to, icon, label, onClick }: NavItem & { onClick: () => void }) {
-  return (
-    <NavLink
-      to={to}
-      onClick={onClick}
-      className={({ isActive }) => `
-        flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all relative
-        ${isActive
-          ? 'bg-gradient-to-r from-brand-500/20 to-brand-500/10 text-white border border-brand-500/40'
-          : 'text-steel-400 hover:text-white hover:bg-steel-800/60 border border-transparent hover:border-steel-700'
-        }
-      `}
-    >
-      <span className="text-base w-5 text-center">{icon}</span>
-      <span className="flex-1">{label}</span>
-      <span className="text-[9px] font-bold uppercase tracking-wider bg-brand-500/15 text-brand-300 rounded px-1.5 py-0.5 border border-brand-500/30">
-        Em breve
-      </span>
-    </NavLink>
   );
 }
 

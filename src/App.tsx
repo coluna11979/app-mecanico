@@ -24,8 +24,6 @@ import WorkshopServiceOrders from './pages/oficina/ServiceOrders';
 import WorkshopCustomers from './pages/oficina/Customers';
 import WorkshopMensagens from './pages/oficina/Mensagens';
 import WorkshopNovaOficina from './pages/oficina/NovaOficina';
-import WorkshopCheckupPremium from './pages/oficina/CheckupPremium';
-import WorkshopIAInsights from './pages/oficina/IAInsights';
 
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminApprovals from './pages/admin/Approvals';
@@ -65,8 +63,6 @@ export default function App() {
       <Route path="/oficina/mensagens" element={<ProtectedRoute allow={['workshop']}><WorkshopMensagens /></ProtectedRoute>} />
       <Route path="/oficina/perfil" element={<ProtectedRoute allow={['workshop']}><WorkshopProfile /></ProtectedRoute>} />
       <Route path="/oficina/nova"   element={<ProtectedRoute allow={['workshop']}><WorkshopNovaOficina /></ProtectedRoute>} />
-      <Route path="/oficina/checkup-premium" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckupPremium /></ProtectedRoute>} />
-      <Route path="/oficina/ia-insights"     element={<ProtectedRoute allow={['workshop']}><WorkshopIAInsights /></ProtectedRoute>} />
 
       {/* Admin */}
       <Route path="/admin/dashboard" element={<ProtectedRoute allow={['admin']}><AdminDashboard /></ProtectedRoute>} />
