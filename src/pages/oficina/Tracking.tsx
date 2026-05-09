@@ -756,10 +756,10 @@ export default function WorkshopTracking() {
                       }
                     </button>
 
-                    {/* Cartões de teste */}
+                    {/* Selo de segurança */}
                     <div className="bg-steel-50 rounded-xl px-3 py-2 text-center">
-                      <p className="text-[11px] text-steel-400 font-mono">
-                        Teste: <strong>4242 4242 4242 4242</strong> · qualquer validade/CVV
+                      <p className="text-[11px] text-steel-500">
+                        🔒 Pagamento seguro processado pela <strong>Stripe</strong>
                       </p>
                     </div>
                   </div>
