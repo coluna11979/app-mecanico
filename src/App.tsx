@@ -32,6 +32,7 @@ import AdminWorkshops from './pages/admin/Workshops';
 import AdminJobs from './pages/admin/Jobs';
 import AdminSettings from './pages/admin/Settings';
 import AdminRepasses from './pages/admin/Repasses';
+import AdminUserDetail from './pages/admin/UserDetail';
 
 export default function App() {
   return (
@@ -68,6 +69,7 @@ export default function App() {
       <Route path="/admin/aprovacoes" element={<ProtectedRoute allow={['admin']}><AdminApprovals /></ProtectedRoute>} />
       <Route path="/admin/mecanicos" element={<ProtectedRoute allow={['admin']}><AdminMechanics /></ProtectedRoute>} />
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />
+      <Route path="/admin/usuario/:id"   element={<ProtectedRoute allow={['admin']}><AdminUserDetail /></ProtectedRoute>} />
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
       <Route path="/admin/configuracoes" element={<ProtectedRoute allow={['admin']}><AdminSettings /></ProtectedRoute>} />

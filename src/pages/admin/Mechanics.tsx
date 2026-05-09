@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import type { Mechanic, Profile } from '@/types/database';
 
 type Row = Mechanic & { profile: Profile };
-type StatusVal = 'approved' | 'rejected' | 'pending';
 
 const STATUS_LABEL: Record<string, string> = {
-  approved: 'Aprovado',
-  rejected: 'Rejeitado',
-  pending:  'Pendente',
+  approved:     'Aprovado',
+  rejected:     'Rejeitado',
+  under_review: 'Em análise',
+  pending:      'Pendente',
 };
 
 export default function AdminMechanics() {
@@ -23,13 +24,6 @@ export default function AdminMechanics() {
       .order('created_at', { ascending: false })
       .then(({ data }) => setRows((data as unknown as Row[]) ?? []));
   }, []);
-
-  async function setStatus(profileId: string, status: StatusVal) {
-    await supabase.from('profiles').update({ status }).eq('id', profileId);
-    setRows(rs =>
-      rs.map(r => r.profile_id === profileId ? { ...r, profile: { ...r.profile, status } } : r)
-    );
-  }
 
   const filtered = rows.filter(r =>
     r.profile.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -64,23 +58,20 @@ export default function AdminMechanics() {
           </thead>
           <tbody className="divide-y divide-steel-100">
             {filtered.map(r => (
-              <tr key={r.id}>
+              <tr key={r.id} className="hover:bg-steel-50 transition">
                 <td className="py-3 pr-4 font-semibold">{r.profile.full_name}</td>
                 <td className="pr-4 text-steel-500">{r.cpf}</td>
                 <td className="pr-4 text-steel-500">{r.skills.slice(0, 3).join(', ')}</td>
                 <td className="pr-4">R$ {r.hourly_rate.toFixed(0)}</td>
                 <td className="pr-4">{r.rating.toFixed(1)}</td>
                 <td className="pr-4"><StatusBadge s={r.profile.status} /></td>
-                <td>
-                  <select
-                    className="input !py-1 !px-2 text-xs"
-                    value={r.profile.status}
-                    onChange={e => setStatus(r.profile_id, e.target.value as StatusVal)}
+                <td className="pr-2">
+                  <Link
+                    to={`/admin/usuario/${r.profile_id}`}
+                    className="btn-ghost !py-1 !px-3 text-xs border border-steel-200"
                   >
-                    <option value="pending">Pendente</option>
-                    <option value="approved">Aprovado</option>
-                    <option value="rejected">Rejeitado</option>
-                  </select>
+                    Ver →
+                  </Link>
                 </td>
               </tr>
             ))}
@@ -91,7 +82,7 @@ export default function AdminMechanics() {
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {filtered.map(r => (
-          <div key={r.id} className="card">
+          <Link key={r.id} to={`/admin/usuario/${r.profile_id}`} className="card block hover:shadow-md transition">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="font-bold truncate">{r.profile.full_name}</div>
@@ -109,17 +100,9 @@ export default function AdminMechanics() {
                 <span className="font-semibold">R$ {r.hourly_rate.toFixed(0)}/h</span>
                 <span className="text-steel-400 ml-2">★ {r.rating.toFixed(1)}</span>
               </div>
-              <select
-                className="input !py-1 !px-2 text-xs !w-auto"
-                value={r.profile.status}
-                onChange={e => setStatus(r.profile_id, e.target.value as StatusVal)}
-              >
-                <option value="pending">Pendente</option>
-                <option value="approved">Aprovado</option>
-                <option value="rejected">Rejeitado</option>
-              </select>
+              <span className="text-brand-500 text-xs font-bold">Ver detalhes →</span>
             </div>
-          </div>
+          </Link>
         ))}
         {filtered.length === 0 && (
           <div className="card text-center py-10 text-steel-500">Nenhum mecânico encontrado.</div>
@@ -131,7 +114,8 @@ export default function AdminMechanics() {
 
 function StatusBadge({ s }: { s: string }) {
   const cls =
-    s === 'approved' ? 'badge-success' :
-    s === 'rejected' ? 'badge-alert'   : 'badge-pending';
+    s === 'approved'     ? 'badge-success' :
+    s === 'rejected'     ? 'badge-alert'   :
+    s === 'under_review' ? 'badge-pending' : 'badge-pending';
   return <span className={cls}>{STATUS_LABEL[s] ?? s}</span>;
 }

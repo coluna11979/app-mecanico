@@ -1,0 +1,355 @@
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import AdminLayout from '@/components/layout/AdminLayout';
+import { supabase } from '@/lib/supabase';
+import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
+
+const STATUS_LABEL: Record<ProfileStatus, string> = {
+  pending:      '🆕 Novo',
+  under_review: '🔍 Em análise',
+  approved:     '✅ Aprovado',
+  rejected:     '❌ Rejeitado',
+};
+const STATUS_COLOR: Record<ProfileStatus, string> = {
+  pending:      'bg-brand-50 text-brand-700 border-brand-200',
+  under_review: 'bg-pending-500/10 text-pending-700 border-pending-300',
+  approved:     'bg-signal-500/10 text-signal-700 border-signal-300',
+  rejected:     'bg-alert-500/10 text-alert-700 border-alert-300',
+};
+
+export default function AdminUserDetail() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const [profile, setProfile]   = useState<Profile | null>(null);
+  const [mechanic, setMechanic] = useState<Mechanic | null>(null);
+  const [workshop, setWorkshop] = useState<Workshop | null>(null);
+  const [messages, setMessages] = useState<ApprovalMessage[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [busy, setBusy]         = useState(false);
+  const [saved, setSaved]       = useState(false);
+
+  // Form state
+  const [edit, setEdit] = useState({
+    full_name: '', phone: '',
+    cpf: '', cnh: '', experience_years: 0, hourly_rate: 0, pix_key: '',
+    business_name: '', cnpj: '', address: '', city: '', state: '', description: '',
+    admin_notes: '',
+  });
+
+  useEffect(() => { if (id) load(); }, [id]);
+
+  async function load() {
+    if (!id) return;
+    setLoading(true);
+
+    const { data: p } = await supabase.from('profiles').select('*').eq('id', id).maybeSingle();
+    if (!p) { setLoading(false); return; }
+    setProfile(p as Profile);
+
+    if (p.role === 'mechanic') {
+      const { data: m } = await supabase.from('mechanics').select('*').eq('profile_id', id).maybeSingle();
+      setMechanic(m as Mechanic);
+      setEdit(e => ({
+        ...e,
+        full_name: p.full_name, phone: p.phone ?? '',
+        cpf: m?.cpf ?? '', cnh: m?.cnh ?? '',
+        experience_years: m?.experience_years ?? 0,
+        hourly_rate: m?.hourly_rate ?? 0,
+        pix_key: (m as any)?.pix_key ?? '',
+        admin_notes: p.admin_notes ?? '',
+      }));
+    } else if (p.role === 'workshop') {
+      const { data: w } = await supabase.from('workshops').select('*').eq('profile_id', id).maybeSingle();
+      setWorkshop(w as Workshop);
+      setEdit(e => ({
+        ...e,
+        full_name: p.full_name, phone: p.phone ?? '',
+        business_name: w?.business_name ?? '', cnpj: w?.cnpj ?? '',
+        address: w?.address ?? '', city: w?.city ?? '', state: w?.state ?? '',
+        description: w?.description ?? '',
+        admin_notes: p.admin_notes ?? '',
+      }));
+    }
+
+    const { data: msgs } = await supabase
+      .from('approval_messages')
+      .select('*')
+      .eq('profile_id', id)
+      .order('created_at', { ascending: true });
+    setMessages((msgs as ApprovalMessage[]) ?? []);
+
+    setLoading(false);
+  }
+
+  async function save() {
+    if (!profile) return;
+    setBusy(true);
+
+    await supabase.from('profiles').update({
+      full_name: edit.full_name.trim(),
+      phone:     edit.phone.trim() || null,
+      admin_notes: edit.admin_notes.trim() || null,
+    }).eq('id', profile.id);
+
+    if (profile.role === 'mechanic' && mechanic) {
+      await supabase.from('mechanics').update({
+        cpf: edit.cpf.trim(),
+        cnh: edit.cnh.trim() || null,
+        experience_years: Number(edit.experience_years) || 0,
+        hourly_rate: Number(edit.hourly_rate) || 0,
+        pix_key: edit.pix_key.trim() || null,
+      }).eq('id', mechanic.id);
+    }
+
+    if (profile.role === 'workshop' && workshop) {
+      await supabase.from('workshops').update({
+        business_name: edit.business_name.trim(),
+        cnpj:    edit.cnpj.trim(),
+        address: edit.address.trim(),
+        city:    edit.city.trim(),
+        state:   edit.state.trim().toUpperCase(),
+        description: edit.description.trim() || null,
+      }).eq('id', workshop.id);
+    }
+
+    setBusy(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+    load();
+  }
+
+  async function changeStatus(status: ProfileStatus) {
+    if (!profile) return;
+    setBusy(true);
+    await supabase.from('profiles').update({ status }).eq('id', profile.id);
+    setBusy(false);
+    load();
+  }
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center gap-3 py-10 text-steel-500">
+          <div className="h-5 w-5 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+          Carregando…
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <AdminLayout>
+        <div className="card text-center py-16">
+          <div className="text-5xl mb-3">🤔</div>
+          <h2 className="text-xl font-bold">Cadastro não encontrado</h2>
+          <Link to="/admin/aprovacoes" className="btn-primary mt-4 inline-block">Voltar</Link>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  const isMechanic = profile.role === 'mechanic';
+
+  return (
+    <AdminLayout>
+      <button onClick={() => nav(-1)} className="text-sm text-steel-500 hover:text-brand-500 mb-2">← Voltar</button>
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className={`badge text-xs ${isMechanic ? 'badge-brand' : 'bg-steel-200 text-steel-700'}`}>
+              {isMechanic ? '🔧 Mecânico' : '🏪 Oficina'}
+            </span>
+            <span className={`text-xs font-bold rounded-full px-2.5 py-0.5 border ${STATUS_COLOR[profile.status]}`}>
+              {STATUS_LABEL[profile.status]}
+            </span>
+          </div>
+          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight truncate">
+            {workshop?.business_name ?? profile.full_name}
+          </h1>
+          <div className="text-sm text-steel-500">Cadastrado em {new Date(profile.created_at).toLocaleDateString('pt-BR')}</div>
+        </div>
+
+        {/* Status quick-change */}
+        <div className="flex gap-2 flex-wrap">
+          <button
+            disabled={busy || profile.status === 'under_review'}
+            onClick={() => changeStatus('under_review')}
+            className="btn-ghost text-xs py-1.5 px-3 border border-pending-300 text-pending-700 disabled:opacity-50"
+          >🔍 Em análise</button>
+          <button
+            disabled={busy || profile.status === 'rejected'}
+            onClick={() => changeStatus('rejected')}
+            className="btn-ghost text-xs py-1.5 px-3 border border-alert-300 text-alert-700 disabled:opacity-50"
+          >❌ Rejeitar</button>
+          <button
+            disabled={busy || profile.status === 'approved'}
+            onClick={() => changeStatus('approved')}
+            className="btn-primary text-xs py-1.5 px-3 disabled:opacity-50"
+          >✅ Aprovar</button>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* ── Coluna 1: dados editáveis ── */}
+        <div className="space-y-5">
+          <div className="card space-y-4">
+            <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">Dados pessoais</h3>
+            <Field label="Nome completo">
+              <input className="input" value={edit.full_name} onChange={e => setEdit(s => ({ ...s, full_name: e.target.value }))} />
+            </Field>
+            <Field label="Telefone / WhatsApp">
+              <input className="input" value={edit.phone} onChange={e => setEdit(s => ({ ...s, phone: e.target.value }))} />
+            </Field>
+          </div>
+
+          {isMechanic && (
+            <div className="card space-y-4">
+              <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">Dados profissionais</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="CPF">
+                  <input className="input" value={edit.cpf} onChange={e => setEdit(s => ({ ...s, cpf: e.target.value }))} />
+                </Field>
+                <Field label="CNH (opcional)">
+                  <input className="input" value={edit.cnh} onChange={e => setEdit(s => ({ ...s, cnh: e.target.value }))} />
+                </Field>
+                <Field label="Anos de experiência">
+                  <input className="input" type="number" min={0} max={50}
+                    value={edit.experience_years}
+                    onChange={e => setEdit(s => ({ ...s, experience_years: Number(e.target.value) }))} />
+                </Field>
+                <Field label="Valor/hora (R$)">
+                  <input className="input" type="number" min={0}
+                    value={edit.hourly_rate}
+                    onChange={e => setEdit(s => ({ ...s, hourly_rate: Number(e.target.value) }))} />
+                </Field>
+              </div>
+              <Field label="Chave PIX">
+                <input className="input" value={edit.pix_key}
+                  placeholder="CPF, e-mail, telefone ou chave aleatória"
+                  onChange={e => setEdit(s => ({ ...s, pix_key: e.target.value }))} />
+              </Field>
+              {mechanic?.skills && mechanic.skills.length > 0 && (
+                <Field label="Habilidades">
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {mechanic.skills.map(s => (
+                      <span key={s} className="badge bg-steel-100 text-steel-700">{s}</span>
+                    ))}
+                  </div>
+                </Field>
+              )}
+              <div className="text-xs text-steel-500 pt-2 border-t border-steel-100">
+                ★ {mechanic?.rating.toFixed(1) ?? '—'} · {mechanic?.total_jobs ?? 0} jobs concluídos
+              </div>
+            </div>
+          )}
+
+          {!isMechanic && (
+            <div className="card space-y-4">
+              <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">Dados da oficina</h3>
+              <Field label="Razão social">
+                <input className="input" value={edit.business_name} onChange={e => setEdit(s => ({ ...s, business_name: e.target.value }))} />
+              </Field>
+              <Field label="CNPJ">
+                <input className="input" value={edit.cnpj} onChange={e => setEdit(s => ({ ...s, cnpj: e.target.value }))} />
+              </Field>
+              <Field label="Endereço">
+                <input className="input" value={edit.address} onChange={e => setEdit(s => ({ ...s, address: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <Field label="Cidade">
+                    <input className="input" value={edit.city} onChange={e => setEdit(s => ({ ...s, city: e.target.value }))} />
+                  </Field>
+                </div>
+                <Field label="UF">
+                  <input className="input uppercase" maxLength={2} value={edit.state} onChange={e => setEdit(s => ({ ...s, state: e.target.value.toUpperCase() }))} />
+                </Field>
+              </div>
+              <Field label="Sobre">
+                <textarea className="input" rows={3} value={edit.description} onChange={e => setEdit(s => ({ ...s, description: e.target.value }))} />
+              </Field>
+              <div className="text-xs text-steel-500 pt-2 border-t border-steel-100">
+                ★ {workshop?.rating.toFixed(1) ?? '—'} · {workshop?.total_jobs ?? 0} jobs concluídos
+              </div>
+            </div>
+          )}
+
+          <div className="card space-y-2">
+            <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">Notas internas</h3>
+            <textarea
+              className="input text-sm resize-none"
+              rows={3}
+              placeholder="Anotações privadas sobre o cadastro…"
+              value={edit.admin_notes}
+              onChange={e => setEdit(s => ({ ...s, admin_notes: e.target.value }))}
+            />
+            <p className="text-[11px] text-steel-400">Somente o admin vê estas notas.</p>
+          </div>
+
+          <button onClick={save} disabled={busy} className="btn-primary w-full btn-lg">
+            {busy ? 'Salvando…' : '💾 Salvar alterações'}
+          </button>
+          {saved && (
+            <p className="text-center text-signal-600 text-sm font-semibold">✓ Alterações salvas com sucesso</p>
+          )}
+        </div>
+
+        {/* ── Coluna 2: histórico ── */}
+        <div className="space-y-5">
+          <div className="card">
+            <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider mb-3">
+              💬 Histórico ({messages.length})
+            </h3>
+            {messages.length === 0 ? (
+              <p className="text-sm text-steel-400 text-center py-6">Nenhuma mensagem ainda.</p>
+            ) : (
+              <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                {messages.map(m => {
+                  const isAdmin = m.sender_role === 'admin';
+                  const icons = {
+                    request_documents: '📋',
+                    reply: '💬',
+                    note: '📝',
+                    status_change: '🔄',
+                  };
+                  return (
+                    <div key={m.id} className={`rounded-xl p-3 text-sm ${
+                      isAdmin
+                        ? 'bg-brand-50 border border-brand-100'
+                        : 'bg-steel-50 border border-steel-100 ml-6'
+                    }`}>
+                      <div className="flex items-center gap-2 text-[11px] text-steel-500 mb-1 font-semibold uppercase tracking-wide">
+                        <span>{icons[m.kind]}</span>
+                        <span>{isAdmin ? 'Admin' : 'Usuário'}</span>
+                        <span>·</span>
+                        <span className="font-normal normal-case">{new Date(m.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <p className="text-steel-800 whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="mt-4 pt-3 border-t border-steel-100">
+              <Link to="/admin/aprovacoes" className="btn-secondary w-full text-sm text-center block">
+                📋 Gerenciar aprovações (mensagens, docs, etc)
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-xs font-semibold text-steel-500 uppercase tracking-wider mb-1 block">{label}</label>
+      {children}
+    </div>
+  );
+}

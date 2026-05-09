@@ -1,5 +1,5 @@
 export type Role = 'mechanic' | 'workshop' | 'admin';
-export type ProfileStatus = 'pending' | 'approved' | 'rejected';
+export type ProfileStatus = 'pending' | 'under_review' | 'approved' | 'rejected';
 export type JobStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'disputed' | 'cancelled';
 export type TxStatus = 'held' | 'released' | 'refunded';
 
@@ -10,8 +10,19 @@ export interface Profile {
   phone: string | null;
   avatar_url: string | null;
   status: ProfileStatus;
+  admin_notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ApprovalMessage {
+  id: string;
+  profile_id: string;
+  sender_id: string;
+  sender_role: 'admin' | 'user';
+  kind: 'request_documents' | 'reply' | 'note' | 'status_change';
+  content: string;
+  created_at: string;
 }
 
 export interface Workshop {

@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import type { Workshop, Profile } from '@/types/database';
 
 type Row = Workshop & { profile: Profile };
-type StatusVal = 'approved' | 'rejected' | 'pending';
 
 const STATUS_LABEL: Record<string, string> = {
-  approved: 'Aprovado',
-  rejected: 'Rejeitado',
-  pending:  'Pendente',
+  approved:     'Aprovado',
+  rejected:     'Rejeitado',
+  under_review: 'Em análise',
+  pending:      'Pendente',
 };
 
 export default function AdminWorkshops() {
@@ -23,13 +24,6 @@ export default function AdminWorkshops() {
       .order('created_at', { ascending: false })
       .then(({ data }) => setRows((data as unknown as Row[]) ?? []));
   }, []);
-
-  async function setStatus(profileId: string, status: StatusVal) {
-    await supabase.from('profiles').update({ status }).eq('id', profileId);
-    setRows(rs =>
-      rs.map(r => r.profile_id === profileId ? { ...r, profile: { ...r.profile, status } } : r)
-    );
-  }
 
   const filtered = rows.filter(r =>
     r.business_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -64,29 +58,19 @@ export default function AdminWorkshops() {
           </thead>
           <tbody className="divide-y divide-steel-100">
             {filtered.map(r => (
-              <tr key={r.id}>
+              <tr key={r.id} className="hover:bg-steel-50 transition">
                 <td className="py-3 pr-4 font-semibold">{r.business_name}</td>
                 <td className="pr-4 text-steel-500">{r.cnpj}</td>
                 <td className="pr-4 text-steel-500">{r.city}/{r.state}</td>
                 <td className="pr-4">{r.total_jobs}</td>
-                <td className="pr-4">
-                  <span className={
-                    r.profile.status === 'approved' ? 'badge-success' :
-                    r.profile.status === 'rejected' ? 'badge-alert' : 'badge-pending'
-                  }>
-                    {STATUS_LABEL[r.profile.status] ?? r.profile.status}
-                  </span>
-                </td>
-                <td>
-                  <select
-                    className="input !py-1 !px-2 text-xs"
-                    value={r.profile.status}
-                    onChange={e => setStatus(r.profile_id, e.target.value as StatusVal)}
+                <td className="pr-4"><StatusBadge s={r.profile.status} /></td>
+                <td className="pr-2">
+                  <Link
+                    to={`/admin/usuario/${r.profile_id}`}
+                    className="btn-ghost !py-1 !px-3 text-xs border border-steel-200"
                   >
-                    <option value="pending">Pendente</option>
-                    <option value="approved">Aprovado</option>
-                    <option value="rejected">Rejeitado</option>
-                  </select>
+                    Ver →
+                  </Link>
                 </td>
               </tr>
             ))}
@@ -97,35 +81,20 @@ export default function AdminWorkshops() {
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {filtered.map(r => (
-          <div key={r.id} className="card">
+          <Link key={r.id} to={`/admin/usuario/${r.profile_id}`} className="card block hover:shadow-md transition">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="font-bold truncate">{r.business_name}</div>
                 <div className="text-xs text-steel-500 mt-0.5">{r.cnpj}</div>
                 <div className="text-xs text-steel-400 mt-1">{r.city} / {r.state}</div>
               </div>
-              <span className={
-                r.profile.status === 'approved' ? 'badge-success' :
-                r.profile.status === 'rejected' ? 'badge-alert' : 'badge-pending'
-              }>
-                {STATUS_LABEL[r.profile.status] ?? r.profile.status}
-              </span>
+              <StatusBadge s={r.profile.status} />
             </div>
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-steel-100">
-              <div className="text-sm text-steel-500">
-                {r.total_jobs} jobs concluídos
-              </div>
-              <select
-                className="input !py-1 !px-2 text-xs !w-auto"
-                value={r.profile.status}
-                onChange={e => setStatus(r.profile_id, e.target.value as StatusVal)}
-              >
-                <option value="pending">Pendente</option>
-                <option value="approved">Aprovado</option>
-                <option value="rejected">Rejeitado</option>
-              </select>
+              <div className="text-sm text-steel-500">{r.total_jobs} jobs concluídos</div>
+              <span className="text-brand-500 text-xs font-bold">Ver detalhes →</span>
             </div>
-          </div>
+          </Link>
         ))}
         {filtered.length === 0 && (
           <div className="card text-center py-10 text-steel-500">Nenhuma oficina encontrada.</div>
@@ -133,4 +102,12 @@ export default function AdminWorkshops() {
       </div>
     </AdminLayout>
   );
+}
+
+function StatusBadge({ s }: { s: string }) {
+  const cls =
+    s === 'approved'     ? 'badge-success' :
+    s === 'rejected'     ? 'badge-alert'   :
+    s === 'under_review' ? 'badge-pending' : 'badge-pending';
+  return <span className={cls}>{STATUS_LABEL[s] ?? s}</span>;
 }
