@@ -676,7 +676,10 @@ export default function WorkshopTracking() {
               <div className="text-xs text-brand-600 uppercase tracking-widest font-bold mb-1">Valor a pagar</div>
               <div className="text-4xl font-bold font-display text-brand-700">R$ {cap.toFixed(2)}</div>
               <div className="text-xs text-brand-500 mt-1">
-                R$ {job?.price_per_hour?.toFixed(0)}/h × máx {job?.max_hours}h · cobrado pelo tempo real ao final
+                Pacote fechado · {job?.max_hours}h × R$ {job?.price_per_hour?.toFixed(0)}/h
+              </div>
+              <div className="text-[11px] text-steel-500 mt-1">
+                Valor não muda se o mecânico terminar antes ou levar mais tempo
               </div>
             </div>
 
