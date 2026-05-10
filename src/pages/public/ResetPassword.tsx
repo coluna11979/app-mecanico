@@ -1,31 +1,51 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 
 /**
- * Página acessada via link de recuperação enviado pelo Supabase Auth.
- * Quando o usuário clica no link do email, o Supabase cria uma sessão
- * temporária + redireciona pra cá com o token na URL.
- *
- * O Supabase JS detecta automaticamente o token e cria a sessão. Aqui
- * só precisamos dar o input pra trocar a senha via supabase.auth.updateUser().
+ * Página de redefinição usando sistema próprio (token via URL).
+ * O fluxo:
+ * 1. Lê ?token=xxx da URL
+ * 2. Valida o token chamando confirm-password-reset (action='verify')
+ * 3. Se válido, mostra form de nova senha
+ * 4. Submit chama confirm-password-reset (action='reset', new_password)
+ * 5. Sucesso → loga automaticamente com signInWithPassword usando o email
+ *    retornado e a nova senha → redireciona pro destino correto
  */
 export default function ResetPassword() {
   const nav = useNavigate();
-  const [password, setPassword]   = useState('');
-  const [confirm, setConfirm]     = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr]             = useState<string | null>(null);
-  const [success, setSuccess]     = useState(false);
-  const [validSession, setValidSession] = useState<boolean | null>(null);
+  const [params] = useSearchParams();
+  const token = params.get('token') ?? '';
 
-  // Verifica se chegamos com sessão válida (do link do email)
+  const [tokenStatus, setTokenStatus] = useState<'checking' | 'valid' | 'invalid'>('checking');
+  const [tokenError, setTokenError]   = useState<string | null>(null);
+
+  const [password, setPassword]     = useState('');
+  const [confirm, setConfirm]       = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr]               = useState<string | null>(null);
+  const [success, setSuccess]       = useState(false);
+
+  // Valida token ao montar
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setValidSession(!!session);
-    });
-  }, []);
+    if (!token) {
+      setTokenStatus('invalid');
+      setTokenError('Link inválido — token ausente.');
+      return;
+    }
+    (async () => {
+      const { data, error } = await supabase.functions.invoke('confirm-password-reset', {
+        body: { token, action: 'verify' },
+      });
+      if (error || data?.error) {
+        setTokenStatus('invalid');
+        setTokenError(data?.message ?? 'Link inválido ou expirado');
+      } else {
+        setTokenStatus('valid');
+      }
+    })();
+  }, [token]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -41,16 +61,27 @@ export default function ResetPassword() {
     setSubmitting(true);
     setErr(null);
 
-    const { error } = await supabase.auth.updateUser({ password });
-    setSubmitting(false);
+    const { data, error } = await supabase.functions.invoke('confirm-password-reset', {
+      body: { token, action: 'reset', new_password: password },
+    });
 
-    if (error) {
-      setErr(error.message);
+    if (error || data?.error) {
+      setErr(data?.message ?? 'Erro ao redefinir senha. Tente novamente.');
+      setSubmitting(false);
       return;
     }
 
     setSuccess(true);
-    // Após 2s, redireciona pra rota apropriada
+
+    // Tenta logar automaticamente com nova senha
+    const userEmail = data?.email;
+    if (userEmail) {
+      try {
+        await supabase.auth.signInWithPassword({ email: userEmail, password });
+      } catch { /* ignora */ }
+    }
+
+    // Redireciona após 1.5s
     setTimeout(async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { nav('/login'); return; }
@@ -64,7 +95,9 @@ export default function ResetPassword() {
           : p.role === 'workshop' ? '/oficina/dashboard'
           : '/admin/dashboard');
       }
-    }, 2000);
+    }, 1500);
+
+    setSubmitting(false);
   }
 
   return (
@@ -73,25 +106,36 @@ export default function ResetPassword() {
         <div className="flex justify-center mb-6"><Logo /></div>
 
         <div className="card space-y-5">
-          {success ? (
-            <div className="text-center space-y-3 py-4">
-              <div className="text-5xl">✅</div>
-              <h2 className="text-2xl font-bold text-signal-700">Senha alterada!</h2>
-              <p className="text-sm text-steel-600">Redirecionando você pro app…</p>
+          {tokenStatus === 'checking' && (
+            <div className="text-center py-6">
+              <div className="h-8 w-8 mx-auto rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
+              <p className="text-sm text-steel-500 mt-3">Verificando link…</p>
             </div>
-          ) : validSession === false ? (
+          )}
+
+          {tokenStatus === 'invalid' && (
             <div className="text-center space-y-4 py-4">
               <div className="text-5xl">⚠️</div>
               <h2 className="text-xl font-bold text-alert-700">Link inválido ou expirado</h2>
-              <p className="text-sm text-steel-600">
-                O link de redefinição expirou (1 hora) ou já foi usado.
-                Solicite um novo abaixo.
-              </p>
+              <p className="text-sm text-steel-600">{tokenError}</p>
               <Link to="/recuperar-senha" className="btn-primary w-full inline-block text-center">
                 Solicitar novo link
               </Link>
+              <Link to="/login" className="text-sm text-steel-500 hover:text-brand-600 block">
+                ← Voltar pro login
+              </Link>
             </div>
-          ) : (
+          )}
+
+          {tokenStatus === 'valid' && success && (
+            <div className="text-center space-y-3 py-4">
+              <div className="text-5xl">✅</div>
+              <h2 className="text-2xl font-bold text-signal-700">Senha alterada!</h2>
+              <p className="text-sm text-steel-600">Conectando você ao app…</p>
+            </div>
+          )}
+
+          {tokenStatus === 'valid' && !success && (
             <>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight">Nova senha</h1>
@@ -142,15 +186,13 @@ export default function ResetPassword() {
                   {submitting ? 'Salvando…' : 'Alterar senha'}
                 </button>
               </form>
-            </>
-          )}
 
-          {!success && (
-            <div className="pt-3 border-t border-steel-100 text-center">
-              <Link to="/login" className="text-sm text-steel-500 hover:text-brand-600">
-                ← Voltar pro login
-              </Link>
-            </div>
+              <div className="pt-3 border-t border-steel-100 text-center">
+                <Link to="/login" className="text-sm text-steel-500 hover:text-brand-600">
+                  ← Voltar pro login
+                </Link>
+              </div>
+            </>
           )}
         </div>
       </div>

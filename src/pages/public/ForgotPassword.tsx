@@ -16,16 +16,16 @@ export default function ForgotPassword() {
     setSubmitting(true);
     setErr(null);
 
-    const redirectTo = `${window.location.origin}/redefinir-senha`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo,
+    const { error } = await supabase.functions.invoke('request-password-reset', {
+      body: { email: email.trim() },
     });
 
     setSubmitting(false);
     if (error) {
-      setErr(traduzir(error.message));
+      setErr('Erro ao solicitar redefinição. Tente novamente.');
       return;
     }
+    // Sempre mostra sucesso (segurança: não vaza se o email existe ou não)
     setSent(true);
   }
 
@@ -78,8 +78,8 @@ export default function ForgotPassword() {
               <div className="text-5xl">📧</div>
               <h2 className="text-2xl font-bold text-signal-700">Email enviado!</h2>
               <p className="text-sm text-steel-600 leading-relaxed">
-                Enviamos um link de redefinição para <strong>{email}</strong>.
-                Confira sua caixa de entrada (e o spam, se for o primeiro email).
+                Se <strong>{email}</strong> estiver cadastrado, você vai receber um link de redefinição em alguns segundos.
+                Confira sua caixa de entrada (e o spam, se for o primeiro email do MecânicoApp).
               </p>
               <p className="text-xs text-steel-400">
                 O link expira em 1 hora.
@@ -99,13 +99,4 @@ export default function ForgotPassword() {
       </div>
     </div>
   );
-}
-
-function traduzir(m: string) {
-  const lower = m.toLowerCase();
-  if (lower.includes('not found') || lower.includes('user'))
-    return 'Email não encontrado. Verifique se digitou corretamente.';
-  if (lower.includes('rate') || lower.includes('limit'))
-    return 'Muitas tentativas seguidas. Aguarde alguns minutos e tente novamente.';
-  return m;
 }
