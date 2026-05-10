@@ -230,9 +230,18 @@ export default function Login() {
             <button className="btn-primary w-full btn-lg" disabled={submitting}>
               {submitting ? 'Verificando…' : 'Entrar'}
             </button>
+
+            <div className="text-center pt-1">
+              <Link
+                to={`/recuperar-senha${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+                className="text-sm text-steel-500 hover:text-brand-600 hover:underline"
+              >
+                Esqueci minha senha
+              </Link>
+            </div>
           </form>
 
-          <div className="mt-6 text-sm text-steel-500 flex justify-between">
+          <div className="mt-6 pt-6 border-t border-steel-100 text-sm text-steel-500 flex justify-between">
             <Link to="/cadastro/mecanico" className="hover:text-brand-500">Sou mecânico</Link>
             <Link to="/cadastro/oficina" className="hover:text-brand-500">Sou oficina</Link>
           </div>

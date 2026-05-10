@@ -11,6 +11,8 @@ import SignupWorkshop from './pages/public/SignupWorkshop';
 import PendingApproval from './pages/public/PendingApproval';
 import Terms from './pages/public/Terms';
 import Privacy from './pages/public/Privacy';
+import ForgotPassword from './pages/public/ForgotPassword';
+import ResetPassword from './pages/public/ResetPassword';
 
 import MechanicDashboard from './pages/mecanico/Dashboard';
 import MechanicJob from './pages/mecanico/JobDetail';
@@ -50,8 +52,10 @@ export default function App() {
       <Route path="/cadastro/mecanico" element={<SignupMechanic />} />
       <Route path="/cadastro/oficina" element={<SignupWorkshop />} />
       <Route path="/aguardando-aprovacao" element={<PendingApproval />} />
-      <Route path="/termos"       element={<Terms />} />
-      <Route path="/privacidade"  element={<Privacy />} />
+      <Route path="/termos"             element={<Terms />} />
+      <Route path="/privacidade"        element={<Privacy />} />
+      <Route path="/recuperar-senha"    element={<ForgotPassword />} />
+      <Route path="/redefinir-senha"    element={<ResetPassword />} />
 
       {/* Mecânico */}
       <Route path="/mecanico/dashboard" element={<ProtectedRoute allow={['mechanic']}><MechanicDashboard /></ProtectedRoute>} />
