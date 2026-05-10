@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
+import { recordConsent } from '@/lib/consent';
 
 const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
@@ -9,6 +10,7 @@ export default function SignupWorkshop() {
   const nav = useNavigate();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '',
     business_name: '', cnpj: '', address: '', city: '', state: 'SP', description: '',
@@ -17,10 +19,13 @@ export default function SignupWorkshop() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (!acceptedTerms) {
+      setErr('Você precisa aceitar os Termos de Uso para continuar.');
+      return;
+    }
     setLoading(true); setErr(null);
 
-    // Todos os dados vão no metadata — o trigger do banco cria profile + workshop automaticamente
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: f.email,
       password: f.password,
       options: {
@@ -38,8 +43,14 @@ export default function SignupWorkshop() {
       },
     });
 
+    if (error) { setLoading(false); setErr(error.message); return; }
+
+    // Registra aceite (não bloqueia signup se falhar)
+    if (data.user) {
+      try { await recordConsent(data.user.id, 'workshop'); } catch { /* ignora */ }
+    }
+
     setLoading(false);
-    if (error) { setErr(error.message); return; }
     nav('/aguardando-aprovacao', { replace: true });
   }
 
@@ -87,8 +98,31 @@ export default function SignupWorkshop() {
             <div><label className="label">Sobre a oficina (opcional)</label>
               <textarea className="input" rows={3} value={f.description} onChange={e => up('description', e.target.value)} /></div>
 
+            {/* Aceite dos Termos */}
+            <label className="flex items-start gap-3 bg-steel-50 border border-steel-200 rounded-xl p-3 cursor-pointer hover:bg-steel-100 transition">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={e => setAcceptedTerms(e.target.checked)}
+                className="mt-0.5 h-5 w-5 rounded border-steel-300 text-brand-500 focus:ring-brand-500 shrink-0"
+              />
+              <span className="text-sm text-steel-700 leading-relaxed">
+                Li e concordo com os{' '}
+                <Link to="/termos?tab=workshop" target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline font-semibold">
+                  Termos de Uso
+                </Link>
+                {' '}e a{' '}
+                <Link to="/privacidade" target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline font-semibold">
+                  Política de Privacidade
+                </Link>
+                , incluindo as regras de cancelamento, taxas de pagamento e responsabilidade pelos serviços contratados.
+              </span>
+            </label>
+
             {err && <div className="text-sm text-alert-600 bg-alert-500/10 px-3 py-2 rounded-lg">{err}</div>}
-            <button className="btn-primary w-full btn-lg" disabled={loading}>{loading ? 'Enviando…' : 'Enviar cadastro'}</button>
+            <button className="btn-primary w-full btn-lg" disabled={loading || !acceptedTerms}>
+              {loading ? 'Enviando…' : 'Enviar cadastro'}
+            </button>
           </form>
         </div>
       </div>

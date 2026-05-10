@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
+import { recordConsent } from '@/lib/consent';
 
 const SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
 
@@ -10,6 +11,7 @@ export default function SignupMechanic() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '', cpf: '', cnh: '',
     experience_years: 1, hourly_rate: 80, pix_key: '', skills: [] as string[],
@@ -24,10 +26,13 @@ export default function SignupMechanic() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (!acceptedTerms) {
+      setErr('Você precisa aceitar os Termos de Uso para continuar.');
+      return;
+    }
     setLoading(true); setErr(null);
 
-    // Todos os dados vão no metadata — o trigger do banco cria profile + mechanic automaticamente
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: f.email,
       password: f.password,
       options: {
@@ -45,8 +50,14 @@ export default function SignupMechanic() {
       },
     });
 
+    if (error) { setLoading(false); setErr(error.message); return; }
+
+    // Registra aceite dos termos (não bloqueia o signup se falhar)
+    if (data.user) {
+      try { await recordConsent(data.user.id, 'mechanic'); } catch { /* ignora */ }
+    }
+
     setLoading(false);
-    if (error) { setErr(error.message); return; }
     nav('/aguardando-aprovacao', { replace: true });
   }
 
@@ -107,16 +118,39 @@ export default function SignupMechanic() {
             )}
 
             {step === 3 && (
-              <div>
-                <label className="label">Suas especialidades (selecione ao menos 1)</label>
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {SKILLS.map(s => (
-                    <button type="button" key={s} onClick={() => toggleSkill(s)}
-                      className={`px-3 py-2 rounded-xl text-sm font-medium transition ${f.skills.includes(s)
-                        ? 'bg-brand-500 text-white shadow-brand'
-                        : 'bg-steel-100 text-steel-700 hover:bg-steel-200'}`}>{s}</button>
-                  ))}
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Suas especialidades (selecione ao menos 1)</label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {SKILLS.map(s => (
+                      <button type="button" key={s} onClick={() => toggleSkill(s)}
+                        className={`px-3 py-2 rounded-xl text-sm font-medium transition ${f.skills.includes(s)
+                          ? 'bg-brand-500 text-white shadow-brand'
+                          : 'bg-steel-100 text-steel-700 hover:bg-steel-200'}`}>{s}</button>
+                    ))}
+                  </div>
                 </div>
+
+                {/* Aceite dos Termos */}
+                <label className="flex items-start gap-3 bg-steel-50 border border-steel-200 rounded-xl p-3 cursor-pointer hover:bg-steel-100 transition">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={e => setAcceptedTerms(e.target.checked)}
+                    className="mt-0.5 h-5 w-5 rounded border-steel-300 text-brand-500 focus:ring-brand-500 shrink-0"
+                  />
+                  <span className="text-sm text-steel-700 leading-relaxed">
+                    Li e concordo com os{' '}
+                    <Link to="/termos?tab=mechanic" target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline font-semibold">
+                      Termos de Uso
+                    </Link>
+                    {' '}e a{' '}
+                    <Link to="/privacidade" target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline font-semibold">
+                      Política de Privacidade
+                    </Link>
+                    , incluindo as regras de cancelamento, taxas e responsabilidade.
+                  </span>
+                </label>
               </div>
             )}
 
@@ -126,7 +160,9 @@ export default function SignupMechanic() {
               {step > 1 && <button type="button" className="btn-ghost" onClick={() => setStep(step - 1)}>Voltar</button>}
               {step < 3
                 ? <button type="button" className="btn-primary flex-1" onClick={() => setStep(step + 1)}>Próximo</button>
-                : <button className="btn-primary flex-1" disabled={loading || f.skills.length === 0}>{loading ? 'Enviando…' : 'Enviar cadastro'}</button>}
+                : <button className="btn-primary flex-1" disabled={loading || f.skills.length === 0 || !acceptedTerms}>
+                    {loading ? 'Enviando…' : 'Enviar cadastro'}
+                  </button>}
             </div>
           </form>
         </div>
