@@ -4,6 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
+import { CancelJobButton } from '@/components/CancelJobButton';
 import type { Job } from '@/types/database';
 
 type NewJob = {
@@ -296,29 +297,35 @@ export default function WorkshopDashboard() {
         ) : (
           <div className="grid md:grid-cols-2 gap-3">
             {active.map(j => (
-              <div key={j.id} className="card flex justify-between items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold truncate">{j.title}</div>
-                  <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j.status)}</div>
-                  <div className="text-xs text-steel-400 mt-1">
-                    {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
-                  </div>
-                  {j.scheduled_at && (
-                    <div className="text-xs text-steel-400 mt-0.5">
-                      📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+              <div key={j.id} className="card">
+                <div className="flex justify-between items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold truncate">{j.title}</div>
+                    <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j.status)}</div>
+                    <div className="text-xs text-steel-400 mt-1">
+                      {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
                     </div>
-                  )}
+                    {j.scheduled_at && (
+                      <div className="text-xs text-steel-400 mt-0.5">
+                        📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-xs text-steel-400">valor</div>
+                    <div className="text-lg font-bold font-display">R$ {j.price.toFixed(0)}</div>
+                    {j.mechanic_id ? (
+                      <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
+                        Ver no mapa
+                      </Link>
+                    ) : (
+                      <div className="mt-1 text-xs text-pending-600 font-semibold">Aguardando mecânico…</div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="text-xs text-steel-400">valor</div>
-                  <div className="text-lg font-bold font-display">R$ {j.price.toFixed(0)}</div>
-                  {j.mechanic_id ? (
-                    <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
-                      Ver no mapa
-                    </Link>
-                  ) : (
-                    <div className="mt-1 text-xs text-pending-600 font-semibold">Aguardando mecânico…</div>
-                  )}
+                {/* Botão de cancelar — disponível em qualquer estado pré-execução */}
+                <div className="mt-3 pt-2 border-t border-steel-100 flex justify-end">
+                  <CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} />
                 </div>
               </div>
             ))}
