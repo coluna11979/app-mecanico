@@ -301,7 +301,7 @@ export default function WorkshopDashboard() {
                 <div className="flex justify-between items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate">{j.title}</div>
-                    <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j.status)}</div>
+                    <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j)}</div>
                     <div className="text-xs text-steel-400 mt-1">
                       {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
                     </div>
@@ -345,7 +345,7 @@ export default function WorkshopDashboard() {
                 <div>
                   <div className="font-semibold">{j.title}</div>
                   <div className="text-xs text-steel-500">
-                    {statusLabel(j.status)} · {j.completed_at ? new Date(j.completed_at).toLocaleDateString('pt-BR') : '—'}
+                    {statusLabel(j)} · {j.completed_at ? new Date(j.completed_at).toLocaleDateString('pt-BR') : '—'}
                   </div>
                   <div className="text-xs text-steel-400">
                     Pacote: {j.max_hours}h × R$ {j.price_per_hour}/h
@@ -519,13 +519,16 @@ function KPI({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function statusLabel(s: string) {
-  return ({
-    open:        'Aguardando mecânico',
-    assigned:    'Mecânico a caminho',
-    in_progress: 'Em serviço',
-    completed:   'Concluído',
-    disputed:    'Em disputa',
-    cancelled:   'Cancelado',
-  } as Record<string, string>)[s] ?? s;
+/** Estado real do job considerando arrived_at, pix_paid_at e started_at */
+function statusLabel(j: Job): string {
+  if (j.status === 'completed')   return 'Concluído';
+  if (j.status === 'disputed')    return 'Em disputa';
+  if (j.status === 'cancelled')   return 'Cancelado';
+  if (j.status === 'open')        return 'Aguardando mecânico';
+  if (j.status === 'in_progress') return '🔧 Em serviço';
+  // status === 'assigned'
+  if (!j.arrived_at)              return 'Mecânico a caminho';
+  if (!j.pix_paid_at)             return 'Mecânico chegou — aguarda pagamento';
+  if (!j.started_at)              return '✅ Pago — aguardando início do serviço';
+  return 'Em serviço';
 }

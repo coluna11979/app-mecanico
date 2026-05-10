@@ -460,10 +460,12 @@ export default function WorkshopTracking() {
     const s = job?.status ?? 'open';
     const arrived = !!job?.arrived_at;
     const pixPaid = !!job?.pix_paid_at;
+    const started = !!job?.started_at;
     return [
       { label: 'Contratado',          done: true,                                                    active: false },
       { label: 'A caminho',           done: arrived || ['in_progress','completed'].includes(s),       active: s === 'assigned' && !arrived },
       { label: 'Chegou — pagamento',  done: pixPaid,                                                 active: arrived && !pixPaid },
+      { label: 'Aguardando início',   done: started || s === 'completed',                            active: pixPaid && !started && s === 'assigned' },
       { label: 'Em serviço',          done: s === 'completed',                                        active: s === 'in_progress' },
       { label: 'Aguardando confirmação', done: !!job?.workshop_confirmed_at,                          active: s === 'completed' && !job?.workshop_confirmed_at },
     ];

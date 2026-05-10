@@ -315,7 +315,7 @@ export default function MechanicTracking() {
                 : arrived && !pixPaid
                   ? '⏳ Aguardando pagamento'
                   : arrived && pixPaid
-                    ? '✅ Pagamento recebido'
+                    ? '✅ Pago — toque em Iniciar quando começar o trabalho'
                     : '🧭 Indo para'}
             </div>
             <div className="flex items-start justify-between gap-3">
@@ -379,9 +379,17 @@ export default function MechanicTracking() {
         )}
 
         {job?.status === 'assigned' && arrived && pixPaid && (
-          <button onClick={startJob} disabled={busy} className="btn-primary btn-lg w-full !bg-signal-500">
-            {busy ? '…' : '✅ Iniciar serviço'}
-          </button>
+          <div className="space-y-2">
+            <div className="bg-signal-500/15 border border-signal-500/30 rounded-2xl px-4 py-3 text-center">
+              <div className="text-signal-400 font-bold text-sm">✅ Pagamento confirmado</div>
+              <div className="text-xs text-steel-400 mt-1">
+                Toque em <strong>Iniciar serviço</strong> apenas quando começar o trabalho — o tempo é contabilizado a partir desse momento.
+              </div>
+            </div>
+            <button onClick={startJob} disabled={busy} className="btn-primary btn-lg w-full !bg-signal-500 animate-pulse-soft">
+              {busy ? '…' : '▶️ Iniciar serviço agora'}
+            </button>
+          </div>
         )}
 
         {job?.status === 'in_progress' && (
