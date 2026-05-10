@@ -77,6 +77,12 @@ export default function WorkshopTracking() {
   const lastRouteFetch = useRef<{ lat: number; lng: number } | null>(null);
   const prevStatusRef  = useRef<string | null>(null);
 
+  /* Cancelamento */
+  const [cancelOpen, setCancelOpen]     = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling]     = useState(false);
+  const [cancelError, setCancelError]   = useState<string | null>(null);
+
   /* ── Chat — subscription vive aqui (fora de qualquer condicional) ── */
   const { user } = useAuth();
   const messages    = useMessages(id, user?.id);
@@ -275,6 +281,80 @@ export default function WorkshopTracking() {
   /* Calcula se o modal de pagamento deve aparecer (precisa estar acima dos useEffects que dependem dele) */
   const cap          = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
   const showPixModal = !!job?.arrived_at && !job?.pix_paid_at && job?.status === 'assigned';
+
+  /* ── Análise pré-cancelamento ── */
+  const cancellation = (() => {
+    if (!job) return null;
+    if (job.status === 'completed' || job.status === 'cancelled') {
+      return { allowed: false, reason: 'Demanda já encerrada.' };
+    }
+    if (job.status === 'in_progress') {
+      return {
+        allowed: false,
+        reason: 'Serviço em andamento. Use o cancelamento bilateral em acordo com o mecânico (em breve).',
+      };
+    }
+    const TOLERANCE_MS = 5 * 60 * 1000;
+    const FEE_PCT = 0.30;
+    const fee = Number((cap * FEE_PCT).toFixed(2));
+
+    // Sem mecânico
+    if (!job.mechanic_id || job.status === 'open') {
+      return { allowed: true, scenario: 'open' as const, fee: 0, refund: 0,
+        title: 'Cancelar demanda', message: 'Demanda ainda não foi aceita por um mecânico. Cancelamento sem custo.' };
+    }
+    // Mecânico aceitou, não chegou
+    if (job.status === 'assigned' && !job.arrived_at) {
+      const elapsed = Date.now() - new Date(job.created_at).getTime();
+      if (elapsed <= TOLERANCE_MS) {
+        return { allowed: true, scenario: 'tolerance' as const, fee: 0, refund: 0,
+          title: 'Cancelar dentro da tolerância', message: 'Mecânico aceitou há menos de 5 minutos — cancelamento sem multa.' };
+      }
+      return { allowed: true, scenario: 'after_tolerance' as const, fee, refund: 0,
+        title: `Cancelar com multa de R$ ${fee.toFixed(2)}`,
+        message: `Mecânico aceitou há mais de 5 min. Multa de 30% (R$ ${fee.toFixed(2)}) ficará registrada como pendente.` };
+    }
+    // Chegou, não pago
+    if (job.arrived_at && !job.pix_paid_at) {
+      return { allowed: true, scenario: 'arrived_unpaid' as const, fee, refund: 0,
+        title: `Cancelar com multa de R$ ${fee.toFixed(2)}`,
+        message: `Mecânico já chegou. Multa de 30% (R$ ${fee.toFixed(2)}) ficará registrada como pendente.` };
+    }
+    // Pago, não iniciado
+    if (job.pix_paid_at && job.status === 'assigned') {
+      const refund = Number((cap - fee).toFixed(2));
+      return { allowed: true, scenario: 'paid' as const, fee, refund,
+        title: `Cancelar com estorno parcial`,
+        message: `Pagamento já feito. Você receberá estorno de R$ ${refund.toFixed(2)} (70%) e a plataforma retém R$ ${fee.toFixed(2)} (30%) de multa.` };
+    }
+    return { allowed: false, reason: 'Estado inválido pra cancelamento.' };
+  })();
+
+  async function cancelJob() {
+    if (!job || !cancelReason.trim() || !cancellation?.allowed) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('cancel-job', {
+        body: {
+          job_id: job.id,
+          reason: cancelReason.trim(),
+          cancelled_by: 'workshop',
+        },
+      });
+      if (error || data?.error) {
+        setCancelError(data?.error ?? error?.message ?? 'Erro ao cancelar');
+        setCancelling(false);
+        return;
+      }
+      setCancelling(false);
+      setCancelOpen(false);
+      // Realtime + polling vão atualizar o estado
+    } catch (e: any) {
+      setCancelError(e?.message ?? 'Erro de conexão');
+      setCancelling(false);
+    }
+  }
 
   /* Monta o Stripe Card Element. O div agora está SEMPRE visível (sem display:none),
      então o Stripe consegue montar o iframe corretamente. */
@@ -639,6 +719,41 @@ export default function WorkshopTracking() {
                     {job.mechanic_rating_note && <p className="text-xs text-steel-500 mt-1 italic">"{job.mechanic_rating_note}"</p>}
                   </div>
                 )}
+
+                {/* Botão Cancelar Demanda */}
+                {cancellation?.allowed && job?.status !== 'cancelled' && job?.status !== 'completed' && (
+                  <div className="pt-3 border-t border-steel-200">
+                    <button
+                      onClick={() => { setCancelOpen(true); setCancelReason(''); setCancelError(null); }}
+                      className="w-full text-sm text-alert-600 font-semibold hover:bg-alert-500/5 rounded-xl py-2.5 border border-alert-200 hover:border-alert-300 transition"
+                    >
+                      🚫 Cancelar demanda
+                    </button>
+                  </div>
+                )}
+
+                {/* Estado: cancelado */}
+                {job?.status === 'cancelled' && (
+                  <div className="pt-3 border-t border-steel-200 bg-steel-50 rounded-xl p-3 -mx-1">
+                    <div className="flex items-center gap-2 text-sm font-bold text-alert-700">
+                      <span>🚫</span>
+                      <span>Demanda cancelada</span>
+                    </div>
+                    {job.cancellation_reason && (
+                      <p className="text-xs text-steel-600 mt-1 italic">"{job.cancellation_reason}"</p>
+                    )}
+                    {job.cancellation_fee != null && Number(job.cancellation_fee) > 0 && (
+                      <p className="text-xs text-pending-700 mt-1">
+                        Multa registrada: R$ {Number(job.cancellation_fee).toFixed(2)}
+                      </p>
+                    )}
+                    {job.cancellation_refund != null && Number(job.cancellation_refund) > 0 && (
+                      <p className="text-xs text-signal-600 mt-1">
+                        Estorno aplicado: R$ {Number(job.cancellation_refund).toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="h-64">
@@ -654,6 +769,87 @@ export default function WorkshopTracking() {
           </div>
         )}
       </div>
+
+      {/* ══════════════════════════════════════════
+          Modal de Cancelamento
+      ══════════════════════════════════════════ */}
+      {cancelOpen && cancellation?.allowed && (
+        <div
+          className="fixed inset-0 bg-steel-900/80 grid place-items-center p-4 z-[60]"
+          onClick={() => !cancelling && setCancelOpen(false)}
+        >
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="text-3xl shrink-0">🚫</span>
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-steel-900">{cancellation.title}</h3>
+                <p className="text-sm text-steel-600 mt-1 leading-relaxed">{cancellation.message}</p>
+              </div>
+            </div>
+
+            {(cancellation.fee ?? 0) > 0 && (
+              <div className="bg-pending-500/10 border border-pending-300 rounded-xl px-4 py-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-steel-700">Valor original</span>
+                  <span className="font-semibold">R$ {cap.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-alert-700 font-semibold mt-1">
+                  <span>Multa de cancelamento (30%)</span>
+                  <span>− R$ {(cancellation.fee ?? 0).toFixed(2)}</span>
+                </div>
+                {(cancellation.refund ?? 0) > 0 && (
+                  <div className="flex items-center justify-between text-signal-700 font-bold mt-2 pt-2 border-t border-pending-300">
+                    <span>Você recebe (estorno)</span>
+                    <span>R$ {(cancellation.refund ?? 0).toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-steel-500 uppercase tracking-wider mb-1 block">
+                Motivo do cancelamento *
+              </label>
+              <textarea
+                className="input text-sm resize-none"
+                rows={3}
+                placeholder="Ex.: cliente cancelou, engano na publicação, etc."
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                disabled={cancelling}
+                autoFocus
+              />
+            </div>
+
+            {cancelError && (
+              <div className="text-sm text-alert-700 bg-alert-50 rounded-lg px-3 py-2">
+                ⚠️ {cancelError}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setCancelOpen(false)}
+                disabled={cancelling}
+                className="btn-ghost flex-1"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={cancelJob}
+                disabled={cancelling || !cancelReason.trim()}
+                className="btn-ghost flex-1 border border-alert-500 text-alert-700 disabled:opacity-50"
+              >
+                {cancelling ? 'Cancelando…' : 'Confirmar cancelamento'}
+              </button>
+            </div>
+
+            <p className="text-[11px] text-steel-400 text-center pt-1">
+              Cancelamentos repetidos podem afetar a reputação da sua oficina.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════
           Modal de Pagamento (aparece quando mecânico chega)

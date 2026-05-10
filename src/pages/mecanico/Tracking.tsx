@@ -338,9 +338,37 @@ export default function MechanicTracking() {
 
         {/* Ações por estado */}
         {job?.status === 'assigned' && !arrived && (
-          <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full">
-            {busy ? '…' : '📍 Confirmar chegada'}
-          </button>
+          <div className="space-y-2">
+            <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full">
+              {busy ? '…' : '📍 Confirmar chegada'}
+            </button>
+            <button
+              onClick={() => {
+                const reason = prompt('Por que você precisa cancelar?\n(Cancelamentos repetidos afetam sua avaliação)');
+                if (!reason || !reason.trim()) return;
+                if (!confirm('Confirma o cancelamento?')) return;
+                supabase.functions.invoke('cancel-job', {
+                  body: { job_id: job.id, reason: reason.trim(), cancelled_by: 'mechanic' },
+                }).then(({ data, error }) => {
+                  if (error || data?.error) alert('Erro: ' + (data?.error ?? error?.message));
+                  else nav('/mecanico/dashboard');
+                });
+              }}
+              className="text-xs text-steel-500 hover:text-alert-600 w-full text-center py-1"
+            >
+              Não vou conseguir ir — cancelar
+            </button>
+          </div>
+        )}
+
+        {/* Estado: cancelado */}
+        {job?.status === 'cancelled' && (
+          <div className="bg-alert-500/10 border border-alert-500/30 rounded-2xl px-4 py-4 text-center space-y-1">
+            <div className="text-alert-400 font-bold text-base">🚫 Demanda cancelada</div>
+            {job.cancellation_reason && (
+              <p className="text-xs text-steel-400 italic">"{job.cancellation_reason}"</p>
+            )}
+          </div>
         )}
 
         {job?.status === 'assigned' && arrived && !pixPaid && (

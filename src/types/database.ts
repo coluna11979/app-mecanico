@@ -89,6 +89,12 @@ export interface Job {
   mechanic_rating_note: string | null;
   workshop_rating: number | null;
   workshop_rating_note: string | null;
+  cancelled_at: string | null;
+  cancelled_by: 'workshop' | 'mechanic' | 'admin' | null;
+  cancellation_reason: string | null;
+  cancellation_fee: number | null;
+  cancellation_refund: number | null;
+  stripe_refund_id: string | null;
   created_at: string;
 }
 
