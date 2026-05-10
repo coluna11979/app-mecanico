@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import type { Job } from '@/types/database';
 
 type NewJob = {
@@ -30,6 +31,7 @@ export default function WorkshopDashboard() {
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
+  const hasPendingFees = usePendingFees(currentWorkshop?.id ?? null);
 
   // Recarrega jobs quando a oficina ativa mudar (troca pelo seletor)
   useEffect(() => {
@@ -108,6 +110,12 @@ export default function WorkshopDashboard() {
     e.preventDefault();
     setFormError(null);
 
+    // Bloqueio de segurança contra multa pendente (mesmo se UI deixar passar)
+    if (hasPendingFees) {
+      setFormError('Você tem multa de cancelamento pendente. Quite antes de publicar nova demanda.');
+      return;
+    }
+
     // Validação explícita (mobile não mostra o tooltip do browser)
     if (!form.title.trim()) return setFormError('Informe o título do serviço.');
     if (!form.description.trim()) return setFormError('Informe a descrição do serviço.');
@@ -157,8 +165,15 @@ export default function WorkshopDashboard() {
           <div className="text-sm text-steel-500">Olá,</div>
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight truncate">{shop?.business_name ?? '...'}</h1>
         </div>
-        <button onClick={() => setModal(true)} disabled={shopLoading} className="btn-primary shrink-0 disabled:opacity-50">
-          {shopLoading ? '…' : (
+        <button
+          onClick={() => setModal(true)}
+          disabled={shopLoading || hasPendingFees}
+          title={hasPendingFees ? 'Quite a multa pendente para publicar nova demanda' : undefined}
+          className="btn-primary shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {shopLoading ? '…' : hasPendingFees ? (
+            <>🔒 Multa pendente</>
+          ) : (
             <>
               <span className="hidden sm:inline">+ Nova demanda</span>
               <span className="sm:hidden">+ Nova</span>
@@ -166,6 +181,10 @@ export default function WorkshopDashboard() {
           )}
         </button>
       </div>
+
+      {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
+      <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
+
 
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-3 mb-6">
