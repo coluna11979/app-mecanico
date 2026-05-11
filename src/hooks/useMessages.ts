@@ -59,13 +59,13 @@ export function useMessages(jobId: string | undefined, myId?: string): Message[]
       )
       .subscribe();
 
-    // 3. Polling fallback — fires every 4 s but only re-fetches if realtime
-    //    hasn't delivered anything in the last 3.5 s (handles WS drop / cold start)
+    // 3. Polling fallback — fires every 15 s but only re-fetches if realtime
+    //    hasn't delivered anything in the last 14 s (handles WS drop / cold start)
     const poll = setInterval(() => {
-      if (Date.now() - lastEventAt.current > 3500) {
+      if (Date.now() - lastEventAt.current > 14000) {
         fetchAll();
       }
-    }, 4000);
+    }, 15000);
 
     return () => {
       clearInterval(poll);

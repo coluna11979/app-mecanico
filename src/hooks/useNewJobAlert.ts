@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { playJobAlert } from '@/lib/alertSound';
 import type { Job } from '@/types/database';
@@ -15,6 +15,9 @@ interface Options {
  * Toca o som de alerta e chama `onNewJob` para cada novo job.
  */
 export function useNewJobAlert({ enabled, onNewJob }: Options) {
+  const onNewJobRef = useRef(onNewJob);
+  useEffect(() => { onNewJobRef.current = onNewJob; }, [onNewJob]);
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -26,7 +29,7 @@ export function useNewJobAlert({ enabled, onNewJob }: Options) {
           const job = payload.new as Job;
           if (job.status !== 'open') return;
           playJobAlert();
-          onNewJob(job);
+          onNewJobRef.current(job);
         }
       )
       .subscribe();

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { UpdatePrompt } from './components/UpdatePrompt';
@@ -16,14 +17,16 @@ import ResetPassword from './pages/public/ResetPassword';
 
 import MechanicDashboard from './pages/mecanico/Dashboard';
 import MechanicJob from './pages/mecanico/JobDetail';
-import MechanicTracking from './pages/mecanico/Tracking';
 import MechanicProfile from './pages/mecanico/Profile';
 import MechanicGanhos from './pages/mecanico/Ganhos';
-import MechanicMapa from './pages/mecanico/Mapa';
+
+// Lazy: páginas com Mapbox (~3.7MB) — carregadas sob demanda
+const MechanicTracking = lazy(() => import('./pages/mecanico/Tracking'));
+const MechanicMapa = lazy(() => import('./pages/mecanico/Mapa'));
+const WorkshopTracking = lazy(() => import('./pages/oficina/Tracking'));
 
 import WorkshopDashboard from './pages/oficina/Dashboard';
 import WorkshopSearch from './pages/oficina/Search';
-import WorkshopTracking from './pages/oficina/Tracking';
 import WorkshopProfile from './pages/oficina/Profile';
 import WorkshopServiceOrders from './pages/oficina/ServiceOrders';
 import WorkshopCustomers from './pages/oficina/Customers';
@@ -39,6 +42,17 @@ import AdminSettings from './pages/admin/Settings';
 import AdminRepasses from './pages/admin/Repasses';
 import AdminUserDetail from './pages/admin/UserDetail';
 import AdminFinancial from './pages/admin/Financial';
+
+function LazyFallback() {
+  return (
+    <div className="min-h-screen grid place-items-center bg-steel-50 dark:bg-steel-900">
+      <div className="flex items-center gap-3 text-steel-500">
+        <div className="h-3 w-3 rounded-full bg-brand-500 animate-pulse-soft" />
+        <span className="font-medium">Carregando mapa…</span>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   return (
@@ -61,17 +75,17 @@ export default function App() {
       {/* Mecânico */}
       <Route path="/mecanico/dashboard" element={<ProtectedRoute allow={['mechanic']}><MechanicDashboard /></ProtectedRoute>} />
       <Route path="/mecanico/job/:id" element={<ProtectedRoute allow={['mechanic']}><MechanicJob /></ProtectedRoute>} />
-      <Route path="/mecanico/job/:id/tracking" element={<ProtectedRoute allow={['mechanic']}><MechanicTracking /></ProtectedRoute>} />
+      <Route path="/mecanico/job/:id/tracking" element={<ProtectedRoute allow={['mechanic']}><Suspense fallback={<LazyFallback />}><MechanicTracking /></Suspense></ProtectedRoute>} />
       <Route path="/mecanico/perfil" element={<ProtectedRoute allow={['mechanic']}><MechanicProfile /></ProtectedRoute>} />
       <Route path="/mecanico/ganhos" element={<ProtectedRoute allow={['mechanic']}><MechanicGanhos /></ProtectedRoute>} />
-      <Route path="/mecanico/mapa" element={<ProtectedRoute allow={['mechanic']}><MechanicMapa /></ProtectedRoute>} />
+      <Route path="/mecanico/mapa" element={<ProtectedRoute allow={['mechanic']}><Suspense fallback={<LazyFallback />}><MechanicMapa /></Suspense></ProtectedRoute>} />
 
       {/* Oficina */}
       <Route path="/oficina/dashboard" element={<ProtectedRoute allow={['workshop']}><WorkshopDashboard /></ProtectedRoute>} />
       <Route path="/oficina/os" element={<ProtectedRoute allow={['workshop']}><WorkshopServiceOrders /></ProtectedRoute>} />
       <Route path="/oficina/clientes" element={<ProtectedRoute allow={['workshop']}><WorkshopCustomers /></ProtectedRoute>} />
       <Route path="/oficina/buscar" element={<ProtectedRoute allow={['workshop']}><WorkshopSearch /></ProtectedRoute>} />
-      <Route path="/oficina/job/:id/tracking" element={<ProtectedRoute allow={['workshop']}><WorkshopTracking /></ProtectedRoute>} />
+      <Route path="/oficina/job/:id/tracking" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopTracking /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/mensagens" element={<ProtectedRoute allow={['workshop']}><WorkshopMensagens /></ProtectedRoute>} />
       <Route path="/oficina/perfil" element={<ProtectedRoute allow={['workshop']}><WorkshopProfile /></ProtectedRoute>} />
       <Route path="/oficina/nova"   element={<ProtectedRoute allow={['workshop']}><WorkshopNovaOficina /></ProtectedRoute>} />
