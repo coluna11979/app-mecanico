@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { getAllSettings, setSetting, clearSettingsCache } from '@/lib/settings';
+import { clearStripeConfigCache } from '@/lib/stripeConfig';
 import type { AppSetting } from '@/types/database';
 
 interface FieldDef {
@@ -14,9 +15,12 @@ const FIELDS: FieldDef[] = [
   { key: 'app_public_url',         label: 'URL pública do app',        description: 'Usada nos links dos emails (ex: https://mecanicoapp.com.br).', section: 'Geral' },
   { key: 'maintenance_mode',       label: 'Modo manutenção',           description: 'Bloqueia o acesso de todos os usuários.',   type: 'toggle',   section: 'Geral' },
   { key: 'platform_fee_percent',   label: 'Taxa da plataforma (%)',    description: 'Comissão cobrada do mecânico por job.',     type: 'number',   section: 'Financeiro' },
-  { key: 'stripe_publishable_key', label: 'Chave pública',             description: 'Usada no frontend (Stripe Elements).',     type: 'key',      section: 'Stripe' },
-  { key: 'stripe_secret_key',      label: 'Chave secreta',             description: 'Usada nas Edge Functions.',                type: 'password', section: 'Stripe' },
-  { key: 'stripe_webhook_secret',  label: 'Webhook secret',            description: 'Valida eventos recebidos do Stripe.',      type: 'password', section: 'Stripe' },
+  { key: 'stripe_publishable_key', label: 'Chave pública LIVE (pk_live_…)',  description: 'Usada no frontend em modo produção.',  type: 'key',      section: 'Stripe — Produção' },
+  { key: 'stripe_secret_key',      label: 'Chave secreta LIVE (sk_live_…)',  description: 'Usada nas Edge Functions em modo produção.', type: 'password', section: 'Stripe — Produção' },
+  { key: 'stripe_webhook_secret',  label: 'Webhook secret LIVE (whsec_…)',   description: 'Valida eventos do webhook LIVE.',      type: 'password', section: 'Stripe — Produção' },
+  { key: 'stripe_publishable_key_test', label: 'Chave pública TEST (pk_test_…)', description: 'Usada no frontend em modo teste.',  type: 'key',      section: 'Stripe — Teste' },
+  { key: 'stripe_secret_key_test',      label: 'Chave secreta TEST (sk_test_…)', description: 'Usada nas Edge Functions em modo teste.', type: 'password', section: 'Stripe — Teste' },
+  { key: 'stripe_webhook_secret_test',  label: 'Webhook secret TEST (whsec_…)',  description: 'Valida eventos do webhook TEST.',  type: 'password', section: 'Stripe — Teste' },
   { key: 'mapbox_token',           label: 'Token público',             description: 'Usado nos mapas de rastreamento.',         type: 'key',      section: 'Mapas' },
   { key: 'resend_api_key',         label: 'API Key (re_...)',          description: 'Crie em resend.com/api-keys (free tier 3000 emails/mês).', type: 'password', section: 'Email (Resend)' },
   { key: 'resend_from_email',      label: 'Email remetente',           description: 'Precisa ter o domínio verificado no Resend (ex: noreply@mecanicoapp.com.br).', section: 'Email (Resend)' },
@@ -24,11 +28,12 @@ const FIELDS: FieldDef[] = [
 
 type Section = { label: string; icon: string; color: string; bg: string };
 const SECTIONS: Record<string, Section> = {
-  Geral:             { label: 'Geral',           icon: '⚙️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
-  Financeiro:        { label: 'Financeiro',      icon: '💰',  color: 'text-signal-700', bg: 'bg-signal-50'  },
-  Stripe:            { label: 'Stripe',          icon: '💳',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
-  Mapas:             { label: 'Mapas',           icon: '🗺️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
-  'Email (Resend)':  { label: 'Email (Resend)',  icon: '📧',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
+  Geral:                  { label: 'Geral',                icon: '⚙️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
+  Financeiro:             { label: 'Financeiro',           icon: '💰',  color: 'text-signal-700', bg: 'bg-signal-50'  },
+  'Stripe — Produção':    { label: 'Stripe — Produção',    icon: '💳',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
+  'Stripe — Teste':       { label: 'Stripe — Teste',       icon: '🧪',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
+  Mapas:                  { label: 'Mapas',                icon: '🗺️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
+  'Email (Resend)':       { label: 'Email (Resend)',       icon: '📧',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
 };
 
 export default function AdminSettings() {
@@ -52,10 +57,23 @@ export default function AdminSettings() {
     const def = FIELDS.find(f => f.key === key);
     const { error } = await setSetting(key, vals[key] ?? '', def?.description);
     clearSettingsCache();
+    clearStripeConfigCache();
     if (error) setErrors(e => ({ ...e, [key]: 'Erro ao salvar.' }));
     else setSavedAt(s => ({ ...s, [key]: Date.now() }));
     setSaving(null);
   }
+
+  async function setStripeMode(mode: 'test' | 'live') {
+    setSaving('stripe_mode');
+    await setSetting('stripe_mode', mode, 'Modo do Stripe: test ou live');
+    clearSettingsCache();
+    clearStripeConfigCache();
+    setVals(v => ({ ...v, stripe_mode: mode }));
+    setSavedAt(s => ({ ...s, stripe_mode: Date.now() }));
+    setSaving(null);
+  }
+
+  const stripeMode = (vals.stripe_mode || 'live') as 'test' | 'live';
 
   const isSaved = (key: string) => !!savedAt[key] && Date.now() - savedAt[key] < 3000;
 
@@ -69,6 +87,56 @@ export default function AdminSettings() {
       </div>
 
       <div className="max-w-2xl space-y-5">
+
+        {/* ── Toggle de modo Stripe (destaque) ── */}
+        <div className={`rounded-2xl border-2 overflow-hidden ${
+          stripeMode === 'test' ? 'border-pending-400 bg-pending-500/10' : 'border-signal-500 bg-signal-500/10'
+        }`}>
+          <div className="px-5 py-4">
+            <div className="flex items-start gap-3 mb-3">
+              <span className="text-2xl shrink-0">{stripeMode === 'test' ? '🧪' : '💳'}</span>
+              <div className="flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">Modo Stripe</div>
+                <div className={`text-xl font-bold ${stripeMode === 'test' ? 'text-pending-700' : 'text-signal-700'}`}>
+                  {stripeMode === 'test' ? 'MODO TESTE ATIVO' : 'PRODUÇÃO ATIVA'}
+                </div>
+                <p className="text-xs text-steel-600 mt-0.5">
+                  {stripeMode === 'test'
+                    ? '🧪 Cartões de teste e nenhum dinheiro real é movido. Use pra desenvolver/validar.'
+                    : '💰 Cobrança real ativa. Toda transação processa dinheiro de verdade.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setStripeMode('live')}
+                disabled={saving === 'stripe_mode' || stripeMode === 'live'}
+                className={`flex-1 rounded-xl py-2.5 text-sm font-bold transition ${
+                  stripeMode === 'live'
+                    ? 'bg-signal-500 text-white shadow'
+                    : 'bg-white border border-steel-200 text-steel-700 hover:bg-steel-50'
+                }`}
+              >
+                {stripeMode === 'live' ? '✓ Produção' : 'Mudar pra Produção'}
+              </button>
+              <button
+                onClick={() => setStripeMode('test')}
+                disabled={saving === 'stripe_mode' || stripeMode === 'test'}
+                className={`flex-1 rounded-xl py-2.5 text-sm font-bold transition ${
+                  stripeMode === 'test'
+                    ? 'bg-pending-500 text-white shadow'
+                    : 'bg-white border border-steel-200 text-steel-700 hover:bg-steel-50'
+                }`}
+              >
+                {stripeMode === 'test' ? '✓ Teste' : 'Mudar pra Teste'}
+              </button>
+            </div>
+            {saving === 'stripe_mode' && (
+              <p className="text-xs text-steel-500 text-center mt-2">Atualizando…</p>
+            )}
+          </div>
+        </div>
+
         {sections.map(sec => {
           const meta = SECTIONS[sec];
           const fields = FIELDS.filter(f => f.section === sec);

@@ -4,6 +4,7 @@ import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import { supabase } from '@/lib/supabase';
 import { getSetting } from '@/lib/settings';
+import { getPublicStripeConfig } from '@/lib/stripeConfig';
 import { useMechanicLive } from '@/hooks/useMechanicLive';
 import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock } from '@/lib/alertSound';
@@ -101,8 +102,9 @@ export default function WorkshopTracking() {
   /* Carrega Stripe.js — tenta env var primeiro, depois app_settings */
   useEffect(() => {
     (async () => {
+      const cfg = await getPublicStripeConfig();
       const envKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string;
-      const key = envKey || await getSetting('stripe_publishable_key', '');
+      const key = cfg.publishable_key || envKey || await getSetting('stripe_publishable_key', '');
       if (!key) return;
       const { loadStripe } = await import('@stripe/stripe-js');
       const s = await loadStripe(key);

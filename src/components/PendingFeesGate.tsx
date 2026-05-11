@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getSetting } from '@/lib/settings';
+import { getPublicStripeConfig } from '@/lib/stripeConfig';
 
 interface PendingFees {
   total: number;
@@ -117,8 +118,9 @@ function PayFeeModal({
   // Carrega Stripe.js
   useEffect(() => {
     (async () => {
+      const cfg = await getPublicStripeConfig();
       const envKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string;
-      const key = envKey || await getSetting('stripe_publishable_key', '');
+      const key = cfg.publishable_key || envKey || await getSetting('stripe_publishable_key', '');
       if (!key) return;
       const { loadStripe } = await import('@stripe/stripe-js');
       const s = await loadStripe(key);
