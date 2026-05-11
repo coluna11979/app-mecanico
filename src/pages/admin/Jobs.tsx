@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
-import type { Job } from '@/types/database';
 
 const STATUS_OPTIONS = [
   { value: '',            label: 'Todos os status' },
@@ -22,18 +21,28 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled:   'Cancelado',
 };
 
+interface JobRow {
+  id: string;
+  title: string;
+  status: string;
+  price: number;
+  created_at: string;
+  workshop: { business_name: string } | null;
+  mechanic: { profile: { full_name: string } | null } | null;
+}
+
 export default function AdminJobs() {
-  const [rows, setRows] = useState<Job[]>([]);
+  const [rows, setRows] = useState<JobRow[]>([]);
   const [filter, setFilter] = useState('');
 
   useEffect(() => {
     let q = supabase
       .from('jobs')
-      .select('*')
+      .select('id, title, status, price, created_at, workshop:workshops(business_name), mechanic:mechanics(profile:profiles(full_name))')
       .order('created_at', { ascending: false })
       .limit(200);
     if (filter) q = q.eq('status', filter);
-    q.then(({ data }) => setRows((data as Job[]) ?? []));
+    q.then(({ data }) => setRows((data as unknown as JobRow[]) ?? []));
   }, [filter]);
 
   return (
@@ -57,6 +66,8 @@ export default function AdminJobs() {
           <thead className="text-left text-xs uppercase tracking-wider text-steel-500 border-b border-steel-200">
             <tr>
               <th className="py-2 pr-4">Título</th>
+              <th className="pr-4">Oficina</th>
+              <th className="pr-4">Mecânico</th>
               <th className="pr-4">Status</th>
               <th className="pr-4">Preço</th>
               <th className="pr-4">Criado em</th>
@@ -64,8 +75,10 @@ export default function AdminJobs() {
           </thead>
           <tbody className="divide-y divide-steel-100">
             {rows.map(j => (
-              <tr key={j.id}>
+              <tr key={j.id} className="hover:bg-steel-50 transition">
                 <td className="py-3 pr-4 font-semibold">{j.title}</td>
+                <td className="pr-4 text-steel-600">{j.workshop?.business_name ?? '—'}</td>
+                <td className="pr-4 text-steel-600">{j.mechanic?.profile?.full_name ?? '—'}</td>
                 <td className="pr-4">
                   <StatusBadge s={j.status} />
                 </td>
@@ -92,7 +105,11 @@ export default function AdminJobs() {
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="font-bold truncate">{j.title}</div>
-                <div className="text-xs text-steel-500 mt-1">
+                <div className="text-xs text-steel-500 mt-0.5">{j.workshop?.business_name ?? '—'}</div>
+                {j.mechanic?.profile?.full_name && (
+                  <div className="text-xs text-steel-400">{j.mechanic.profile.full_name}</div>
+                )}
+                <div className="text-xs text-steel-400 mt-1">
                   {new Date(j.created_at).toLocaleString('pt-BR', {
                     day: '2-digit', month: 'short', year: 'numeric',
                     hour: '2-digit', minute: '2-digit',
