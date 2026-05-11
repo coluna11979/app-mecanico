@@ -3,14 +3,42 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
 
-const NAV_ITEMS = [
-  { to: '/admin/dashboard',      icon: '📊', label: 'Dashboard'   },
-  { to: '/admin/aprovacoes',     icon: '✅', label: 'Aprovações'  },
-  { to: '/admin/mecanicos',      icon: '🔧', label: 'Mecânicos'   },
-  { to: '/admin/oficinas',       icon: '🏭', label: 'Oficinas'    },
-  { to: '/admin/jobs',           icon: '📋', label: 'Jobs'        },
-  { to: '/admin/repasses',       icon: '💸', label: 'Repasses'    },
-  { to: '/admin/configuracoes',  icon: '⚙️', label: 'Config.'     },
+const NAV_GROUPS = [
+  {
+    label: 'Visão Geral',
+    items: [
+      { to: '/admin/dashboard', icon: '📊', label: 'Dashboard' },
+    ],
+  },
+  {
+    label: 'Operações',
+    items: [
+      { to: '/admin/aprovacoes', icon: '✅', label: 'Aprovações' },
+      { to: '/admin/jobs',       icon: '📋', label: 'Jobs'       },
+      { to: '/admin/mapa',       icon: '🗺️',  label: 'Mapa Ao Vivo' },
+    ],
+  },
+  {
+    label: 'Usuários',
+    items: [
+      { to: '/admin/mecanicos', icon: '🔧', label: 'Mecânicos' },
+      { to: '/admin/oficinas',  icon: '🏭', label: 'Oficinas'  },
+    ],
+  },
+  {
+    label: 'Financeiro',
+    items: [
+      { to: '/admin/repasses',   icon: '💸', label: 'Repasses'   },
+      { to: '/admin/financeiro', icon: '📈', label: 'Financeiro' },
+    ],
+  },
+  {
+    label: 'Sistema',
+    items: [
+      { to: '/admin/relatorios',    icon: '📄', label: 'Relatórios'    },
+      { to: '/admin/configuracoes', icon: '⚙️', label: 'Configurações' },
+    ],
+  },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -44,23 +72,32 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {NAV_ITEMS.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => setOpen(false)}
-              className={({ isActive }) => `
-                flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold transition-all
-                ${isActive
-                  ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
-                  : 'text-steel-300 hover:text-white hover:bg-steel-800'
-                }
-              `}
-            >
-              <span className="text-base w-5 text-center">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
+        <nav className="flex-1 overflow-y-auto py-3 px-3">
+          {NAV_GROUPS.map(group => (
+            <div key={group.label} className="mb-2">
+              <p className="px-3 mb-1 mt-3 text-[10px] font-semibold uppercase tracking-widest text-steel-500">
+                {group.label}
+              </p>
+              <div className="space-y-0.5">
+                {group.items.map(item => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setOpen(false)}
+                    className={({ isActive }) => `
+                      flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all
+                      ${isActive
+                        ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
+                        : 'text-steel-300 hover:text-white hover:bg-steel-800'
+                      }
+                    `}
+                  >
+                    <span className="text-base w-5 text-center">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
