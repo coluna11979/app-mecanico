@@ -49,21 +49,21 @@ security definer
 set search_path = public
 as $$
 begin
-  -- Mecânico: recalcula se rating do mecânico mudou, ou status virou completed
+  -- IS DISTINCT FROM já lida com NULL (NULL é distinto de qualquer valor não-nulo).
+  -- Não usar coalesce(old.status, '') pq status é enum job_status e '' quebra.
   if new.mechanic_id is not null then
     if tg_op = 'INSERT'
-       or coalesce(old.status, '') is distinct from new.status
-       or coalesce(old.mechanic_rating, -1) is distinct from coalesce(new.mechanic_rating, -1)
+       or old.status is distinct from new.status
+       or old.mechanic_rating is distinct from new.mechanic_rating
     then
       perform public.recalc_mechanic_stats(new.mechanic_id);
     end if;
   end if;
 
-  -- Oficina: recalcula se rating da oficina mudou, ou status virou completed
   if new.workshop_id is not null then
     if tg_op = 'INSERT'
-       or coalesce(old.status, '') is distinct from new.status
-       or coalesce(old.workshop_rating, -1) is distinct from coalesce(new.workshop_rating, -1)
+       or old.status is distinct from new.status
+       or old.workshop_rating is distinct from new.workshop_rating
     then
       perform public.recalc_workshop_stats(new.workshop_id);
     end if;
