@@ -1,22 +1,39 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
-import type { Job, Mechanic } from '@/types/database';
+import { distKm, formatDistance } from '@/lib/geo';
+import type { Job, Mechanic, Workshop } from '@/types/database';
 
 type Toast = { id: string; job: Job };
 
+type WorkshopBrief = Pick<Workshop, 'business_name' | 'city' | 'state' | 'lat' | 'lng'>;
+type JobWithShop = Job & { workshop: WorkshopBrief | null };
 
 type PendingRating = Job & { workshop_name?: string };
 
+type JustEarned = { gross: number; net: number; jobTitle: string };
+
 export default function MechanicDashboard() {
   const { user } = useAuth();
+  const location = useLocation();
+  const nav = useNavigate();
+  const [justEarned, setJustEarned] = useState<JustEarned | null>(null);
+
+  useEffect(() => {
+    const st = location.state as { justEarned?: JustEarned } | null;
+    if (st?.justEarned) {
+      setJustEarned(st.justEarned);
+      nav(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, nav]);
   const [me, setMe]                       = useState<Mechanic | null>(null);
-  const [openJobs, setOpenJobs]           = useState<Job[]>([]);
+  const [openJobs, setOpenJobs]           = useState<JobWithShop[]>([]);
   const [activeJobs, setActiveJobs]       = useState<Job[]>([]);
+  const [userPos, setUserPos]             = useState<[number, number] | null>(null);
   const [pendingRatings, setPendingRatings] = useState<PendingRating[]>([]);
   const [loading, setLoading]             = useState(true);
   const [accepting, setAccepting]         = useState<string | null>(null);
@@ -40,17 +57,36 @@ export default function MechanicDashboard() {
   /* ── Alerta sonoro de novo job ── */
   useNewJobAlert({
     enabled: !!me?.is_available,
-    onNewJob: (job) => {
-      // Adiciona à lista visível
-      setOpenJobs(prev => [job, ...prev.filter(j => j.id !== job.id)]);
-      // Mostra toast
+    onNewJob: async (job) => {
+      // Mostra toast imediatamente
       const tid = job.id;
       setToasts(prev => [{ id: tid, job }, ...prev.slice(0, 2)]);
       toastTimer.current[tid] = window.setTimeout(() => {
         setToasts(prev => prev.filter(t => t.id !== tid));
       }, 7000);
+      // Re-busca com workshop para já vir com cidade/coords
+      const { data: j } = await supabase
+        .from('jobs')
+        .select('*, workshop:workshops(business_name, city, state, lat, lng)')
+        .eq('id', job.id).maybeSingle();
+      const enriched = (j as JobWithShop | null) ?? { ...job, workshop: null };
+      setOpenJobs(prev => [enriched, ...prev.filter(x => x.id !== enriched.id)]);
     },
   });
+
+  /* ── Geolocalização do mecânico para distância nos cards ── */
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const gotFix = (p: GeolocationPosition) =>
+      setUserPos([p.coords.latitude, p.coords.longitude]);
+    navigator.geolocation.getCurrentPosition(gotFix, () => { /* mantém null */ }, { timeout: 6000 });
+  }, []);
+
+  /* Fallback: posição salva do mecânico (atualizada pelo useGeoBroadcast em outras telas) */
+  useEffect(() => {
+    if (userPos) return;
+    if (me?.current_lat && me?.current_lng) setUserPos([me.current_lat, me.current_lng]);
+  }, [me, userPos]);
 
   async function load() {
     setLoading(true);
@@ -62,7 +98,11 @@ export default function MechanicDashboard() {
 
   async function fetchJobs(mechId: string) {
     const [{ data: open }, { data: mine }, { data: toRate }] = await Promise.all([
-      supabase.from('jobs').select('*').eq('status', 'open').order('created_at', { ascending: false }).limit(20),
+      supabase.from('jobs')
+        .select('*, workshop:workshops(business_name, city, state, lat, lng)')
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(20),
       mechId
         ? supabase.from('jobs').select('*').eq('mechanic_id', mechId).in('status', ['assigned', 'in_progress'])
         : Promise.resolve({ data: [] }),
@@ -77,7 +117,7 @@ export default function MechanicDashboard() {
             .limit(5)
         : Promise.resolve({ data: [] }),
     ]);
-    setOpenJobs((open as Job[]) ?? []);
+    setOpenJobs((open as JobWithShop[]) ?? []);
     setActiveJobs((mine as Job[]) ?? []);
     setPendingRatings(((toRate ?? []) as any[]).map(j => ({
       ...j, workshop_name: j.workshop?.business_name,
@@ -102,6 +142,26 @@ export default function MechanicDashboard() {
     const { data } = await supabase.from('mechanics').update({ is_available: !me.is_available }).eq('id', me.id).select().single();
     setMe(data as Mechanic);
   }
+
+  /* Jobs decorados com distância (quando há posição) e ordenados por proximidade */
+  const decoratedJobs = useMemo(() => {
+    const withDist = openJobs.map(j => {
+      const ws = j.workshop;
+      const km = (userPos && ws?.lat != null && ws?.lng != null)
+        ? distKm(userPos[0], userPos[1], ws.lat, ws.lng)
+        : null;
+      return { job: j, km };
+    });
+    if (userPos) {
+      withDist.sort((a, b) => {
+        if (a.km == null && b.km == null) return 0;
+        if (a.km == null) return 1;
+        if (b.km == null) return -1;
+        return a.km - b.km;
+      });
+    }
+    return withDist;
+  }, [openJobs, userPos]);
 
   async function acceptJob(job: Job) {
     if (!me) return;
@@ -287,19 +347,37 @@ export default function MechanicDashboard() {
 
         {/* Jobs disponíveis */}
         <section>
-          <h2 className="text-sm font-bold text-steel-400 uppercase tracking-wider mb-2">Jobs disponíveis</h2>
-          {loading ? <Skeleton /> : openJobs.length === 0 ? (
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-bold text-steel-400 uppercase tracking-wider">Jobs disponíveis</h2>
+            <Link to="/mecanico/mapa" className="text-xs font-semibold text-brand-400 hover:text-brand-300 transition flex items-center gap-1">
+              🗺️ Ver no mapa
+            </Link>
+          </div>
+          {loading ? <Skeleton /> : decoratedJobs.length === 0 ? (
             <div className="card !bg-steel-800 text-center text-steel-400 py-10">Nenhum job aberto agora.</div>
           ) : (
             <div className="space-y-2">
-              {openJobs.map(j => {
+              {decoratedJobs.map(({ job: j, km }) => {
                 const cap = (j.price_per_hour ?? 0) * (j.max_hours ?? 1);
+                const ws = j.workshop;
+                const region = ws ? `${ws.city}${ws.state ? `/${ws.state}` : ''}` : null;
                 return (
                   <div key={j.id} className="card !bg-steel-800 hover:!bg-steel-700 transition">
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-bold truncate">{j.title}</div>
                         <div className="text-sm text-steel-400 line-clamp-2 mt-0.5">{j.description}</div>
+                        {region && (
+                          <div className="text-xs text-steel-500 mt-1 flex items-center gap-1.5">
+                            <span>📍 {region}</span>
+                            {km != null && (
+                              <>
+                                <span className="text-steel-700">·</span>
+                                <span className="text-brand-400 font-semibold">~{formatDistance(km)}</span>
+                              </>
+                            )}
+                          </div>
+                        )}
                         {j.scheduled_at && (
                           <div className="text-xs text-steel-500 mt-1">
                             📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
@@ -342,6 +420,34 @@ export default function MechanicDashboard() {
           <Stat n={`R$${me?.hourly_rate?.toFixed(0) ?? 0}`} l="/hora" />
         </div>
       </div>
+      {/* Modal "Você ganhou R$ X" pós-finalização */}
+      {justEarned && (
+        <div className="fixed inset-0 bg-steel-900/85 grid place-items-center p-4 z-50">
+          <div className="bg-gradient-to-b from-signal-500/20 to-steel-800 border border-signal-500/40 rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
+            <div className="text-5xl">💰</div>
+            <div>
+              <div className="text-[11px] uppercase tracking-widest text-signal-400 font-bold">Serviço concluído</div>
+              <div className="text-sm text-steel-300 mt-1 line-clamp-2">{justEarned.jobTitle}</div>
+            </div>
+            <div className="bg-steel-900/60 rounded-xl py-4 border border-steel-700/50">
+              <div className="text-[10px] uppercase tracking-wider text-steel-500 font-bold">Seu repasse</div>
+              <div className="text-4xl font-bold text-signal-400 font-display mt-1">
+                + R$ {justEarned.net.toFixed(2).replace('.', ',')}
+              </div>
+              <div className="text-xs text-steel-500 mt-1">de R$ {justEarned.gross.toFixed(0)} (82%)</div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setJustEarned(null)} className="btn-ghost flex-1 text-sm">
+                Fechar
+              </button>
+              <Link to="/mecanico/ganhos" onClick={() => setJustEarned(null)} className="btn-primary flex-1 text-sm">
+                Ver ganhos
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal avaliação oficina */}
       {ratingJob && (
         <div className="fixed inset-0 bg-steel-900/80 grid place-items-center p-4 z-50">

@@ -16,6 +16,18 @@ type JobMode = 'open' | 'direct';
 
 const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '' };
 
+const draftKey = (workshopId: string) => `draft_job_${workshopId}`;
+function loadDraft(workshopId: string): NewJob | null {
+  try {
+    const raw = localStorage.getItem(draftKey(workshopId));
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Partial<NewJob>;
+    const hasContent = !!(d.title?.trim() || d.description?.trim() || d.price_per_hour || d.scheduled_at);
+    if (!hasContent) return null;
+    return { ...EMPTY, ...d };
+  } catch { return null; }
+}
+
 export default function WorkshopDashboard() {
   const { user, currentWorkshop } = useAuth();
   const shop = currentWorkshop;
@@ -26,6 +38,7 @@ export default function WorkshopDashboard() {
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [modal, setModal]       = useState(false);
   const [form, setForm]         = useState<NewJob>(EMPTY);
+  const [draftRestored, setDraftRestored] = useState(false);
   const [mode, setMode]         = useState<JobMode>('open');
   const [pickedMechanic, setPickedMechanic] = useState<string>('');
   const [mechSearch, setMechSearch] = useState('');
@@ -105,6 +118,29 @@ export default function WorkshopDashboard() {
   function resetModal() {
     setModal(false); setForm(EMPTY);
     setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
+    setDraftRestored(false);
+  }
+
+  function openCreateModal() {
+    if (currentWorkshop?.id) {
+      const draft = loadDraft(currentWorkshop.id);
+      if (draft) { setForm(draft); setDraftRestored(true); }
+      else { setForm(EMPTY); setDraftRestored(false); }
+    }
+    setModal(true);
+  }
+
+  function persistDraft(next: NewJob) {
+    if (!currentWorkshop?.id) return;
+    const hasContent = !!(next.title.trim() || next.description.trim() || next.price_per_hour || next.scheduled_at);
+    if (hasContent) localStorage.setItem(draftKey(currentWorkshop.id), JSON.stringify(next));
+    else localStorage.removeItem(draftKey(currentWorkshop.id));
+  }
+
+  function discardDraft() {
+    if (currentWorkshop?.id) localStorage.removeItem(draftKey(currentWorkshop.id));
+    setForm(EMPTY);
+    setDraftRestored(false);
   }
 
   async function createJob(e: FormEvent) {
@@ -144,13 +180,18 @@ export default function WorkshopDashboard() {
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
     await supabase.from('jobs').insert(payload);
     setSaving(false);
+    localStorage.removeItem(draftKey(currentShop.id));
     resetModal();
     await fetchJobs(currentShop.id);
   }
 
   function set(k: keyof NewJob) {
     return (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      setForm(f => ({ ...f, [k]: e.target.value }));
+      setForm(f => {
+        const next = { ...f, [k]: e.target.value };
+        persistDraft(next);
+        return next;
+      });
   }
 
   const estimated = Number(form.price_per_hour) * Number(form.max_hours);
@@ -167,7 +208,7 @@ export default function WorkshopDashboard() {
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight truncate">{shop?.business_name ?? '...'}</h1>
         </div>
         <button
-          onClick={() => setModal(true)}
+          onClick={openCreateModal}
           disabled={shopLoading || hasPendingFees}
           title={hasPendingFees ? 'Quite a multa pendente para publicar nova demanda' : undefined}
           className="btn-primary shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -290,7 +331,7 @@ export default function WorkshopDashboard() {
         {active.length === 0 ? (
           <div className="card text-center text-steel-500 py-10">
             Nenhum job ativo.{' '}
-            <button onClick={() => setModal(true)} className="text-brand-500 font-semibold">
+            <button onClick={openCreateModal} className="text-brand-500 font-semibold">
               Criar uma demanda →
             </button>
           </div>
@@ -381,6 +422,15 @@ export default function WorkshopDashboard() {
                 <h2 className="text-xl font-bold tracking-tight">Nova demanda</h2>
                 <p className="text-sm text-steel-500 mt-0.5">Descreva o serviço e escolha como publicar.</p>
               </div>
+
+              {draftRestored && (
+                <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                  <span className="text-amber-800">📝 Rascunho restaurado do último acesso.</span>
+                  <button type="button" onClick={discardDraft} className="text-amber-700 underline font-semibold whitespace-nowrap">
+                    Descartar
+                  </button>
+                </div>
+              )}
 
               {/* Título */}
               <div>

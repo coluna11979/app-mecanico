@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getSetting } from '@/lib/settings';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { attachAutoUnlock } from '@/lib/alertSound';
+import { distKm, formatDistance } from '@/lib/geo';
 import mapboxgl from 'mapbox-gl';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
@@ -99,6 +100,7 @@ export default function MechanicMapa() {
 
   /* ── Init Mapbox map ── */
   useEffect(() => {
+    setMapReady(false);
     let alive = true;
     (async () => {
       const token = await getSetting('mapbox_token', '');
@@ -219,7 +221,6 @@ export default function MechanicMapa() {
             </div>
           )}
         </div>
-
         {/* Selected job bottom sheet */}
         {selected && (
           <div
@@ -239,6 +240,9 @@ export default function MechanicMapa() {
                 {selected.workshop && (
                   <div className="text-xs text-steel-400 mt-1">
                     🏭 {selected.workshop.business_name} · {selected.workshop.city}
+                    {userPos && selected.workshop.lat != null && selected.workshop.lng != null && (
+                      <span className="text-brand-400 font-semibold"> · ~{formatDistance(distKm(userPos[0], userPos[1], selected.workshop.lat, selected.workshop.lng))}</span>
+                    )}
                   </div>
                 )}
               </div>

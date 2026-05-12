@@ -1,11 +1,63 @@
-import { ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { ReactNode, useEffect, useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 
+const LS_KEY_MEC = 'mecanico_msgs_last_seen';
+
 export default function MechanicLayout({ children }: { children: ReactNode }) {
-  const { signOut, profile } = useAuth();
+  const { signOut, profile, user } = useAuth();
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Mecânico';
+  const location = useLocation();
+  const [unread, setUnread] = useState(0);
+
+  /* ── Conta mensagens não lidas para os jobs ativos deste mecânico ── */
+  useEffect(() => {
+    if (!user) return;
+    const lastSeen = localStorage.getItem(LS_KEY_MEC) ?? new Date(0).toISOString();
+
+    async function countUnread() {
+      const { data: meRow } = await supabase
+        .from('mechanics').select('id').eq('profile_id', user!.id).maybeSingle();
+      const mechId = meRow?.id;
+      if (!mechId) { setUnread(0); return; }
+      const { data: jobs } = await supabase
+        .from('jobs').select('id')
+        .eq('mechanic_id', mechId)
+        .in('status', ['assigned', 'in_progress']);
+      if (!jobs?.length) { setUnread(0); return; }
+      const jobIds = jobs.map(j => j.id);
+      const { count } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .in('job_id', jobIds)
+        .neq('sender_id', user!.id)
+        .gt('created_at', lastSeen);
+      setUnread(count ?? 0);
+    }
+    countUnread();
+
+    const ch = supabase.channel('mec-layout:new_msgs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+        payload => {
+          const msg = payload.new as { sender_id: string };
+          if (msg.sender_id === user!.id) return;
+          // Se estamos na tela de tracking do job, não conta
+          if (window.location.pathname.includes('/mecanico/job/') && window.location.pathname.includes('/tracking')) return;
+          setUnread(n => n + 1);
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user]);
+
+  /* Zera badge ao entrar na tela de tracking (onde o chat vive) */
+  useEffect(() => {
+    if (location.pathname.includes('/mecanico/job/') && location.pathname.includes('/tracking')) {
+      setUnread(0);
+      localStorage.setItem(LS_KEY_MEC, new Date().toISOString());
+    }
+  }, [location.pathname]);
 
   return (
     <div className="dark min-h-screen bg-steel-900 text-steel-100 flex flex-col">
@@ -31,7 +83,7 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
       {/* ── Bottom tab bar ── */}
       <nav className="fixed bottom-0 inset-x-0 bg-steel-950/98 backdrop-blur border-t border-steel-800 z-30 safe-area-inset-bottom">
         <div className="grid grid-cols-4 max-w-lg mx-auto">
-          <Tab to="/mecanico/dashboard" label="Jobs"    icon={<IconJobs />}    />
+          <Tab to="/mecanico/dashboard" label="Jobs"    icon={<IconJobs />}    badge={unread} />
           <Tab to="/mecanico/mapa"      label="Mapa"    icon={<IconMap />}     />
           <Tab to="/mecanico/perfil"    label="Perfil"  icon={<IconProfile />} />
           <Tab to="/mecanico/ganhos"    label="Ganhos"  icon={<IconGanhos />}  />
@@ -46,11 +98,13 @@ function Tab({
   label,
   icon,
   end = true,
+  badge = 0,
 }: {
   to: string;
   label: string;
   icon: ReactNode;
   end?: boolean;
+  badge?: number;
 }) {
   return (
     <NavLink
@@ -65,11 +119,16 @@ function Tab({
       {({ isActive }) => (
         <>
           <span
-            className={`h-8 w-8 flex items-center justify-center rounded-xl transition-colors ${
+            className={`relative h-8 w-8 flex items-center justify-center rounded-xl transition-colors ${
               isActive ? 'bg-brand-500/15' : ''
             }`}
           >
             {icon}
+            {badge > 0 && (
+              <span className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
+                {badge > 9 ? '9+' : badge}
+              </span>
+            )}
           </span>
           {label}
         </>

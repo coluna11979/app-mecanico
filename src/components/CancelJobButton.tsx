@@ -100,15 +100,21 @@ export function CancelJobButton({ job, onCancelled, variant = 'link', className 
     setError(null);
   }
 
+  const feeChip = cancellation.fee > 0 && (
+    <span className="ml-1 inline-flex items-center gap-1 bg-alert-500/15 text-alert-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+      ⚠️ multa R$ {cancellation.fee.toFixed(0)}
+    </span>
+  );
+
   const trigger = variant === 'button' ? (
     <button onClick={openModal}
       className={`btn-ghost text-xs border border-alert-200 text-alert-700 hover:bg-alert-500/5 ${className}`}>
-      🚫 Cancelar demanda
+      🚫 Cancelar demanda{feeChip}
     </button>
   ) : (
     <button onClick={openModal}
       className={`text-xs text-steel-400 hover:text-alert-600 underline-offset-2 hover:underline ${className}`}>
-      Cancelar demanda
+      Cancelar demanda{feeChip}
     </button>
   );
 
