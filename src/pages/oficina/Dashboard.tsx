@@ -45,6 +45,7 @@ export default function WorkshopDashboard() {
   const [pickedMechanic, setPickedMechanic] = useState<string>('');
   const [mechSearch, setMechSearch] = useState('');
   const [reviewsOpen, setReviewsOpen] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
@@ -122,14 +123,31 @@ export default function WorkshopDashboard() {
     setModal(false); setForm(EMPTY);
     setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
     setDraftRestored(false);
+    setEditingId(null);
   }
 
   function openCreateModal() {
+    setEditingId(null);
     if (currentWorkshop?.id) {
       const draft = loadDraft(currentWorkshop.id);
       if (draft) { setForm(draft); setDraftRestored(true); }
       else { setForm(EMPTY); setDraftRestored(false); }
     }
+    setMode('open'); setPickedMechanic(''); setMechSearch('');
+    setModal(true);
+  }
+
+  function openEditModal(j: Job) {
+    setEditingId(j.id);
+    setDraftRestored(false);
+    setForm({
+      title: j.title,
+      description: j.description,
+      price_per_hour: String(j.price_per_hour ?? ''),
+      max_hours: String(j.max_hours ?? '1'),
+      scheduled_at: j.scheduled_at ? new Date(j.scheduled_at).toISOString().slice(0, 16) : '',
+    });
+    setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
     setModal(true);
   }
 
@@ -169,6 +187,29 @@ export default function WorkshopDashboard() {
     const currentShop = shop;
 
     setSaving(true);
+
+    if (editingId) {
+      // Edição: só campos editáveis. Status, workshop_id e mechanic_id ficam intocados.
+      const updatePayload: Record<string, unknown> = {
+        title:          form.title.trim(),
+        description:    form.description.trim(),
+        price_per_hour: pph,
+        max_hours:      mh,
+        price:          pph * mh,
+        scheduled_at:   form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null,
+      };
+      const { error: upErr } = await supabase
+        .from('jobs')
+        .update(updatePayload)
+        .eq('id', editingId)
+        .eq('status', 'open'); // guarda dura: nunca edita job já aceito
+      setSaving(false);
+      if (upErr) { setFormError('Erro ao salvar alterações: ' + upErr.message); return; }
+      resetModal();
+      await fetchJobs(currentShop.id);
+      return;
+    }
+
     const isDirect = mode === 'direct' && !!pickedMechanic;
     const payload: Record<string, unknown> = {
       workshop_id:    currentShop.id,
@@ -398,8 +439,17 @@ export default function WorkshopDashboard() {
                     )}
                   </div>
                 </div>
-                {/* Botão de cancelar — disponível em qualquer estado pré-execução */}
-                <div className="mt-3 pt-2 border-t border-steel-100 flex justify-end">
+                {/* Ações — editar só enquanto status=open; cancelar sempre */}
+                <div className="mt-3 pt-2 border-t border-steel-100 flex justify-end items-center gap-3">
+                  {j.status === 'open' && !j.mechanic_id && (
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(j)}
+                      className="text-xs text-brand-600 hover:text-brand-700 font-semibold underline-offset-2 hover:underline"
+                    >
+                      ✏️ Editar
+                    </button>
+                  )}
                   <CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} />
                 </div>
               </div>
@@ -453,11 +503,15 @@ export default function WorkshopDashboard() {
             {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto px-5 pb-2 pt-4 space-y-4">
               <div>
-                <h2 className="text-xl font-bold tracking-tight">Nova demanda</h2>
-                <p className="text-sm text-steel-500 mt-0.5">Descreva o serviço e escolha como publicar.</p>
+                <h2 className="text-xl font-bold tracking-tight">{editingId ? 'Editar demanda' : 'Nova demanda'}</h2>
+                <p className="text-sm text-steel-500 mt-0.5">
+                  {editingId
+                    ? 'Ajuste o que precisar enquanto nenhum mecânico aceitou.'
+                    : 'Descreva o serviço e escolha como publicar.'}
+                </p>
               </div>
 
-              {draftRestored && (
+              {draftRestored && !editingId && (
                 <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
                   <span className="text-amber-800">📝 Rascunho restaurado do último acesso.</span>
                   <button type="button" onClick={discardDraft} className="text-amber-700 underline font-semibold whitespace-nowrap">
@@ -526,24 +580,26 @@ export default function WorkshopDashboard() {
                 )}
               </div>
 
-              {/* Modo de publicação */}
-              <div>
-                <label className="label">Como publicar</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
-                    className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                    <div className="text-lg mb-1">📢</div>
-                    <div className="font-semibold text-sm">Para todos</div>
-                    <div className="text-xs text-steel-500 mt-0.5">Mecânicos disponíveis verão e poderão aceitar</div>
-                  </button>
-                  <button type="button" onClick={() => setMode('direct')}
-                    className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                    <div className="text-lg mb-1">🎯</div>
-                    <div className="font-semibold text-sm">Mecânico específico</div>
-                    <div className="text-xs text-steel-500 mt-0.5">Convide diretamente e inicie o chat</div>
-                  </button>
+              {/* Modo de publicação — só na criação */}
+              {!editingId && (
+                <div>
+                  <label className="label">Como publicar</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
+                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg mb-1">📢</div>
+                      <div className="font-semibold text-sm">Para todos</div>
+                      <div className="text-xs text-steel-500 mt-0.5">Mecânicos disponíveis verão e poderão aceitar</div>
+                    </button>
+                    <button type="button" onClick={() => setMode('direct')}
+                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg mb-1">🎯</div>
+                      <div className="font-semibold text-sm">Mecânico específico</div>
+                      <div className="text-xs text-steel-500 mt-0.5">Convide diretamente e inicie o chat</div>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Picker de mecânico */}
               {mode === 'direct' && (
@@ -610,7 +666,11 @@ export default function WorkshopDashboard() {
               <div className="flex gap-3">
                 <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>
                 <button type="submit" className="btn-primary flex-1" disabled={saving}>
-                  {saving ? 'Publicando…' : mode === 'direct' ? 'Convidar mecânico' : 'Publicar demanda'}
+                  {saving
+                    ? (editingId ? 'Salvando…' : 'Publicando…')
+                    : editingId ? 'Salvar alterações'
+                    : mode === 'direct' ? 'Convidar mecânico'
+                    : 'Publicar demanda'}
                 </button>
               </div>
             </div>
