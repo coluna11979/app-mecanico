@@ -39,6 +39,7 @@ export default function WorkshopDashboard() {
   const [modal, setModal]       = useState(false);
   const [form, setForm]         = useState<NewJob>(EMPTY);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [marketRate, setMarketRate] = useState<{ low: number; high: number; count: number } | null>(null);
   const [mode, setMode]         = useState<JobMode>('open');
   const [pickedMechanic, setPickedMechanic] = useState<string>('');
   const [mechSearch, setMechSearch] = useState('');
@@ -193,6 +194,37 @@ export default function WorkshopDashboard() {
         return next;
       });
   }
+
+  /* ── Sugestão de preço de mercado baseada no título + estado ── */
+  useEffect(() => {
+    if (!modal) return;
+    const state = currentWorkshop?.state;
+    const title = form.title.trim();
+    if (!state || title.length < 4) { setMarketRate(null); return; }
+
+    const keyword = title.split(/\s+/)[0].toLowerCase();
+    if (keyword.length < 3) { setMarketRate(null); return; }
+
+    let alive = true;
+    const handle = window.setTimeout(async () => {
+      const { data } = await supabase
+        .from('jobs')
+        .select('price_per_hour, workshop:workshops!inner(state)')
+        .ilike('title', `%${keyword}%`)
+        .in('status', ['assigned', 'in_progress', 'completed'])
+        .eq('workshop.state', state)
+        .gt('price_per_hour', 0)
+        .limit(200);
+      if (!alive) return;
+      const prices = (data ?? []).map((d: any) => Number(d.price_per_hour)).filter(n => n > 0).sort((a, b) => a - b);
+      if (prices.length < 3) { setMarketRate(null); return; }
+      const p25 = prices[Math.floor(prices.length * 0.25)];
+      const p75 = prices[Math.floor(prices.length * 0.75)];
+      setMarketRate({ low: p25, high: p75, count: prices.length });
+    }, 450);
+
+    return () => { alive = false; clearTimeout(handle); };
+  }, [form.title, modal, currentWorkshop?.state]);
 
   const estimated = Number(form.price_per_hour) * Number(form.max_hours);
   const filteredMechanics = mechanics.filter(m =>
@@ -468,6 +500,19 @@ export default function WorkshopDashboard() {
                     <div className="text-xs text-steel-400 mt-1">Tempo previsto</div>
                   </div>
                 </div>
+                {marketRate && (
+                  <div className="mt-2 bg-signal-50 border border-signal-200 rounded-xl px-3 py-2 text-xs text-signal-800 flex items-start gap-2">
+                    <span className="text-sm shrink-0">📊</span>
+                    <div className="flex-1">
+                      <strong>Faixa de mercado em {currentWorkshop?.state}:</strong>{' '}
+                      R$ {Math.round(marketRate.low)}–{Math.round(marketRate.high)}/h
+                      <span className="text-signal-700/70 ml-1">({marketRate.count} {marketRate.count === 1 ? 'referência' : 'referências'})</span>
+                      <div className="text-[10px] text-signal-700/80 mt-0.5">
+                        Preços dentro dessa faixa costumam ser aceitos mais rápido.
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <p className="text-[11px] text-steel-500 mt-2 leading-relaxed">
                   💡 <strong>Valor fechado:</strong> a oficina paga o pacote (hora × tempo previsto) e o mecânico recebe esse valor mesmo se terminar antes ou levar mais tempo. O tempo real é registrado para análise.
                 </p>
