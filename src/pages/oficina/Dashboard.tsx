@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
+import { MechanicReviews } from '@/components/MechanicReviews';
 import type { Job } from '@/types/database';
 
 type NewJob = {
@@ -43,6 +44,7 @@ export default function WorkshopDashboard() {
   const [mode, setMode]         = useState<JobMode>('open');
   const [pickedMechanic, setPickedMechanic] = useState<string>('');
   const [mechSearch, setMechSearch] = useState('');
+  const [reviewsOpen, setReviewsOpen] = useState<string | null>(null);
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
@@ -555,22 +557,36 @@ export default function WorkshopDashboard() {
                         Nenhum mecânico disponível no momento
                       </div>
                     ) : filteredMechanics.map(m => (
-                      <button key={m.id} type="button"
-                        onClick={() => setPickedMechanic(m.id)}
-                        className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition active:scale-95 ${
-                          pickedMechanic === m.id ? 'border-brand-500 bg-brand-50' : 'border-steel-100'
-                        }`}>
-                        <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
-                          {m.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold truncate">{m.name}</div>
-                          <div className="text-xs text-steel-500">
-                            ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                      <div key={m.id} className={`rounded-xl border-2 transition ${
+                        pickedMechanic === m.id ? 'border-brand-500 bg-brand-50' : 'border-steel-100'
+                      }`}>
+                        <button type="button"
+                          onClick={() => setPickedMechanic(m.id)}
+                          className="w-full flex items-center gap-3 p-3 text-left active:scale-95">
+                          <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
+                            {m.name.charAt(0).toUpperCase()}
                           </div>
-                        </div>
-                        {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
-                      </button>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold truncate">{m.name}</div>
+                            <div className="text-xs text-steel-500">
+                              ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                            </div>
+                          </div>
+                          {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
+                        </button>
+                        <button type="button"
+                          onClick={() => setReviewsOpen(reviewsOpen === m.id ? null : m.id)}
+                          className="w-full text-[11px] text-brand-600 hover:text-brand-700 font-semibold border-t border-steel-100 py-1.5">
+                          {reviewsOpen === m.id ? '▲ Ocultar avaliações' : '▼ Ver avaliações'}
+                        </button>
+                        {reviewsOpen === m.id && (
+                          <div className="px-3 pb-3 bg-steel-50 border-t border-steel-100">
+                            <div className="pt-2">
+                              <MechanicReviews mechanicId={m.id} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { MechanicReviews } from '@/components/MechanicReviews';
 import type { Mechanic, Profile } from '@/types/database';
 
 const ALL_SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
@@ -14,6 +15,15 @@ export default function WorkshopSearch() {
   const [filter, setFilter] = useState({ skill: '', minRating: 0, maxRate: 500 });
   const [list, setList] = useState<MechRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openReviews, setOpenReviews] = useState<Set<string>>(new Set());
+
+  function toggleReviews(id: string) {
+    setOpenReviews(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   // hire modal
   const [target, setTarget] = useState<MechRow | null>(null);
@@ -98,6 +108,18 @@ export default function WorkshopSearch() {
                 <div><span className="text-2xl font-bold font-display">R$ {m.hourly_rate.toFixed(0)}</span><span className="text-xs text-steel-500">/h</span></div>
                 <button onClick={() => { setTarget(m); setJob({ title: '', description: '', price_per_hour: m.hourly_rate, max_hours: 1 }); }} className="btn-primary">Contratar</button>
               </div>
+              <button
+                type="button"
+                onClick={() => toggleReviews(m.id)}
+                className="mt-3 text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center justify-center gap-1 border-t border-steel-100 pt-2"
+              >
+                {openReviews.has(m.id) ? '▲ Ocultar avaliações' : '▼ Ver avaliações de outras oficinas'}
+              </button>
+              {openReviews.has(m.id) && (
+                <div className="mt-2 bg-steel-50 rounded-lg p-2 border border-steel-100">
+                  <MechanicReviews mechanicId={m.id} />
+                </div>
+              )}
             </div>
           ))}
         </div>}
