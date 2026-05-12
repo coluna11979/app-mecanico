@@ -7,6 +7,7 @@ import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import type { Job, Workshop } from '@/types/database';
 
 type ArrivalAlert = { jobId: string; title: string };
+type FinishedAlert = { jobId: string; title: string; price: number };
 
 interface NavItem  { to: string; icon: string; label: string }
 interface SoonItem { icon: string; label: string; desc: string }
@@ -104,6 +105,11 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const [arrivalAlert, setArrivalAlert] = useState<ArrivalAlert | null>(null);
   const arrivedRef = useRef<Set<string>>(new Set());
 
+  /* ── Alerta global: mecânico finalizou — precisa confirmar ── */
+  const [finishedAlert, setFinishedAlert] = useState<FinishedAlert | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const finishedRef = useRef<Set<string>>(new Set());
+
   /* Destrava áudio na primeira interação */
   useEffect(() => { attachAutoUnlock(); }, []);
 
@@ -119,6 +125,20 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         (data ?? []).forEach((j: any) => {
           if (j.arrived_at) arrivedRef.current.add(j.id);
         });
+      });
+  }, [shopId]);
+
+  /* Popula o set inicial com jobs já finalizados (evita toast retroativo no load) */
+  useEffect(() => {
+    if (!shopId) return;
+    supabase
+      .from('jobs')
+      .select('id, status, workshop_confirmed_at')
+      .eq('workshop_id', shopId)
+      .eq('status', 'completed')
+      .is('workshop_confirmed_at', null)
+      .then(({ data }) => {
+        (data ?? []).forEach((j: any) => finishedRef.current.add(j.id));
       });
   }, [shopId]);
 
@@ -152,6 +172,45 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [shopId]);
+
+  /* Realtime — alerta quando mecânico finaliza (status → completed, ainda não confirmado) */
+  useEffect(() => {
+    if (!shopId) return;
+    const ch = supabase.channel(`layout:completions:${shopId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'jobs',
+        filter: `workshop_id=eq.${shopId}`,
+      }, (payload) => {
+        const newRow = payload.new as Job;
+        const oldRow = payload.old as Job | undefined;
+
+        // Só dispara na transição para 'completed' sem confirmação prévia
+        if (newRow.status !== 'completed') return;
+        if (newRow.workshop_confirmed_at) return;
+        if (oldRow?.status === 'completed') return;
+        if (finishedRef.current.has(newRow.id)) return;
+
+        finishedRef.current.add(newRow.id);
+        playJobAlert();
+        setFinishedAlert({
+          jobId: newRow.id,
+          title: newRow.title,
+          price: (newRow.price_per_hour ?? 0) * (newRow.max_hours ?? 1),
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [shopId]);
+
+  async function confirmFinished() {
+    if (!finishedAlert) return;
+    setConfirming(true);
+    await supabase.from('jobs')
+      .update({ workshop_confirmed_at: new Date().toISOString() })
+      .eq('id', finishedAlert.jobId);
+    setConfirming(false);
+    setFinishedAlert(null);
+  }
 
   /* ── Conta mensagens não lidas ── */
   useEffect(() => {
@@ -209,6 +268,39 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex bg-steel-50">
+
+      {/* ✅ Modal global: mecânico FINALIZOU — confirme p/ liberar pagamento */}
+      {finishedAlert && (
+        <div className="fixed inset-0 z-[100] bg-steel-900/80 backdrop-blur grid place-items-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl border-4 border-signal-500 shadow-2xl max-w-md w-full p-6 sm:p-8 text-center space-y-4">
+            <div className="text-6xl animate-bounce">✅</div>
+            <h2 className="text-2xl font-bold text-steel-900">Mecânico finalizou o serviço!</h2>
+            <p className="text-steel-600">
+              Confirme para liberar o pagamento ao mecânico — ele está esperando pra ir embora.
+            </p>
+            <div className="bg-steel-50 rounded-xl px-4 py-3 text-sm space-y-1">
+              <div className="font-semibold text-steel-700 truncate">📋 {finishedAlert.title}</div>
+              <div className="text-xl font-bold text-signal-600 font-display">R$ {finishedAlert.price.toFixed(2)}</div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFinishedAlert(null)}
+                disabled={confirming}
+                className="btn-ghost flex-1 text-sm disabled:opacity-50"
+              >
+                Depois
+              </button>
+              <button
+                onClick={confirmFinished}
+                disabled={confirming}
+                className="btn-primary flex-[2] btn-lg !bg-signal-500 disabled:opacity-50"
+              >
+                {confirming ? 'Liberando…' : '✅ Confirmar e liberar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 🔔 Modal global: mecânico chegou — alerta sonoro + visual */}
       {arrivalAlert && (

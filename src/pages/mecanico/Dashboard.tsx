@@ -394,17 +394,20 @@ export default function MechanicDashboard() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex gap-2 mt-3">
-                      <Link to={`/mecanico/job/${j.id}`} className="btn-ghost flex-1 text-center text-sm py-2">
-                        Ver detalhes
-                      </Link>
+                    <div className="mt-3 flex flex-col gap-2">
                       <button
                         onClick={() => acceptJob(j)}
                         disabled={accepting === j.id || !me?.is_available}
-                        className="btn-primary flex-1 text-sm py-2 disabled:opacity-50"
+                        className="btn-primary w-full text-sm py-2.5 disabled:opacity-50"
                       >
-                        {accepting === j.id ? 'Aceitando…' : !me?.is_available ? 'Fique online' : 'Aceitar job'}
+                        {accepting === j.id ? 'Aceitando…' : !me?.is_available ? 'Fique online para aceitar' : '✓ Aceitar job'}
                       </button>
+                      <Link
+                        to={`/mecanico/job/${j.id}`}
+                        className="text-xs text-steel-400 hover:text-steel-200 text-center underline-offset-2 hover:underline"
+                      >
+                        Ver detalhes
+                      </Link>
                     </div>
                   </div>
                 );

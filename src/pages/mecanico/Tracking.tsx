@@ -7,7 +7,7 @@ import { getSetting } from '@/lib/settings';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import { useMessages } from '@/hooks/useMessages';
-import { attachAutoUnlock } from '@/lib/alertSound';
+import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { distKm, etaLabel } from '@/lib/geo';
 import type { Job, Workshop } from '@/types/database';
 
@@ -34,6 +34,8 @@ export default function MechanicTracking() {
   const [toast, setToast]           = useState<string | null>(null);
   const prevStatusRef               = useRef<string | null>(null);
   const prevPixPaidRef              = useRef<boolean>(false);
+  const prevConfirmedRef            = useRef<boolean>(false);
+  const [waitSecs, setWaitSecs]     = useState(0);
 
   /* ── Posição GPS do mecânico ── */
   const [mechPos, setMechPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -120,6 +122,29 @@ export default function MechanicTracking() {
     }
   }, [job?.status, job?.pix_paid_at]);
 
+  /* ── Detecta confirmação da oficina (workshop_confirmed_at) e toca som ── */
+  useEffect(() => {
+    const wasConfirmed = prevConfirmedRef.current;
+    const isConfirmed  = !!job?.workshop_confirmed_at;
+    prevConfirmedRef.current = isConfirmed;
+    if (!wasConfirmed && isConfirmed && job?.status === 'completed') {
+      playJobAlert();
+    }
+  }, [job?.workshop_confirmed_at, job?.status]);
+
+  /* ── Cronômetro da espera pós-finalização ── */
+  useEffect(() => {
+    if (job?.status !== 'completed' || job.workshop_confirmed_at) {
+      setWaitSecs(0);
+      return;
+    }
+    const start = job.completed_at ? new Date(job.completed_at).getTime() : Date.now();
+    const tick = () => setWaitSecs(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [job?.status, job?.completed_at, job?.workshop_confirmed_at]);
+
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 5000);
@@ -197,10 +222,16 @@ export default function MechanicTracking() {
       actual_hours: actualHours,
     }).eq('id', job.id);
     setBusy(false);
+    // NÃO navega — fica na tela de espera até a oficina confirmar (realtime atualiza job)
+  }
+
+  function goBackToDashboard() {
+    if (!job) { nav('/mecanico/dashboard'); return; }
     const gross = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
-    nav('/mecanico/dashboard', {
-      state: { justEarned: { gross, net: gross * 0.82, jobTitle: job.title } },
-    });
+    const state = job.workshop_confirmed_at
+      ? { justEarned: { gross, net: gross * 0.82, jobTitle: job.title } }
+      : undefined;
+    nav('/mecanico/dashboard', state ? { state } : undefined);
   }
 
   const arrived = !!job?.arrived_at;
@@ -378,6 +409,54 @@ export default function MechanicTracking() {
           <button onClick={completeJob} disabled={busy} className="btn-primary btn-lg w-full !bg-signal-500">
             {busy ? '…' : '✅ Finalizar serviço'}
           </button>
+        )}
+
+        {/* Estado: finalizado, aguardando confirmação da oficina */}
+        {job?.status === 'completed' && !job.workshop_confirmed_at && (
+          <div className="bg-pending-500/10 border border-pending-500/40 rounded-2xl p-4 space-y-3">
+            <div className="text-center">
+              <div className="text-3xl mb-1">⏳</div>
+              <div className="text-pending-300 font-bold text-base">Aguardando confirmação da oficina</div>
+              <div className="text-xs text-steel-400 mt-1">
+                Notificação enviada — assim que confirmarem, seu repasse de <strong>R$ {(cap * 0.82).toFixed(2)}</strong> é liberado.
+              </div>
+            </div>
+            <div className="bg-steel-900/60 rounded-xl py-2 text-center">
+              <div className="text-[10px] uppercase tracking-wider text-steel-500 font-bold">aguardando há</div>
+              <div className="font-display text-2xl text-pending-300 font-bold">
+                {Math.floor(waitSecs / 60)}:{String(waitSecs % 60).padStart(2, '0')}
+              </div>
+            </div>
+            <p className="text-[11px] text-steel-500 text-center px-2">
+              💡 Aguarde aqui antes de sair da oficina — assim você confirma o pagamento na hora.
+            </p>
+            <button
+              onClick={goBackToDashboard}
+              className="btn-ghost w-full text-xs !text-steel-400 !border-steel-700"
+            >
+              Voltar ao dashboard mesmo assim
+            </button>
+          </div>
+        )}
+
+        {/* Estado: confirmado — repasse liberado */}
+        {job?.status === 'completed' && job.workshop_confirmed_at && (
+          <div className="bg-gradient-to-b from-signal-500/20 to-signal-500/5 border-2 border-signal-500/50 rounded-2xl p-5 space-y-3 animate-fade-in">
+            <div className="text-center space-y-1">
+              <div className="text-5xl">✅</div>
+              <div className="text-signal-400 font-bold text-lg">Confirmado! Pode ir embora.</div>
+              <div className="text-xs text-steel-300">Seu repasse foi liberado no PIX cadastrado.</div>
+            </div>
+            <div className="bg-steel-900/70 rounded-xl py-3 text-center border border-signal-500/30">
+              <div className="text-[10px] uppercase tracking-wider text-steel-500 font-bold">Liberado</div>
+              <div className="font-display text-3xl text-signal-400 font-bold">
+                + R$ {(cap * 0.82).toFixed(2).replace('.', ',')}
+              </div>
+            </div>
+            <button onClick={goBackToDashboard} className="btn-primary btn-lg w-full !bg-signal-500">
+              Voltar ao dashboard
+            </button>
+          </div>
         )}
       </div>
 
