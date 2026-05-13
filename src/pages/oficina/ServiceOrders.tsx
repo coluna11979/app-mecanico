@@ -6,6 +6,12 @@ import type {
   ServiceOrder, Customer, Vehicle,
   OsStatus, WorkshopMechanic,
 } from '@/types/database';
+import OsCardNew from '@/components/os/OsCard';
+import LicensePlate from '@/components/os/LicensePlate';
+import StatusChips from '@/components/os/StatusChips';
+import EmptyState from '@/components/os/EmptyState';
+import OsSkeleton from '@/components/os/OsSkeleton';
+import { toast } from '@/components/ui/Toast';
 
 /* ─── tipos locais ──────────────────────────────────────────── */
 type OsRow = ServiceOrder & {
@@ -16,6 +22,7 @@ type OsRow = ServiceOrder & {
 
 type MainTab   = 'os' | 'agendados' | 'mecanicos';
 type MechType  = 'internal' | 'marketplace';
+type PeriodFilter = 'all' | 'today' | 'week' | 'month';
 
 /* ─── constantes ────────────────────────────────────────────── */
 const STATUSES: OsStatus[] = ['open', 'in_progress', 'completed', 'cancelled'];
@@ -103,9 +110,11 @@ export default function ServiceOrders() {
   const [vehicles, setVehicles]           = useState<Vehicle[]>([]);
   const [internalMechs, setInternalMechs] = useState<WorkshopMechanic[]>([]);
 
+  const [loading, setLoading]             = useState(true);
   const [tab, setTab]                     = useState<MainTab>('os');
   const [filterStatus, setFilterStatus]   = useState<OsStatus|'all'>('all');
   const [filterMech, setFilterMech]       = useState('all');
+  const [filterPeriod, setFilterPeriod]   = useState<PeriodFilter>('all');
   const [search, setSearch]               = useState('');
   const [detail, setDetail]               = useState<OsRow | null>(null);
   const [modalOS, setModalOS]             = useState(false);
@@ -142,13 +151,38 @@ export default function ServiceOrders() {
   const [newSkill, setNewSkill]   = useState('');
   const [saving, setSaving]       = useState(false);
 
+  /* ── persistência de filtros (localStorage por oficina) ── */
+  const prefsKey = currentWorkshop ? `os-prefs:${currentWorkshop.id}` : null;
+  useEffect(() => {
+    if (!prefsKey) return;
+    try {
+      const raw = localStorage.getItem(prefsKey);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p.filterStatus) setFilterStatus(p.filterStatus);
+        if (p.filterMech)   setFilterMech(p.filterMech);
+        if (p.filterPeriod) setFilterPeriod(p.filterPeriod);
+      }
+    } catch { /* ignore */ }
+    // só ao carregar a oficina
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefsKey]);
+
+  useEffect(() => {
+    if (!prefsKey) return;
+    try {
+      localStorage.setItem(prefsKey, JSON.stringify({ filterStatus, filterMech, filterPeriod }));
+    } catch { /* ignore */ }
+  }, [prefsKey, filterStatus, filterMech, filterPeriod]);
+
   useEffect(() => {
     if (!user || !currentWorkshop) return;
+    setLoading(true);
     Promise.all([
       fetchOS(currentWorkshop.id),
       fetchCustomers(currentWorkshop.id),
       fetchMechs(currentWorkshop.id),
-    ]);
+    ]).finally(() => setLoading(false));
   }, [user, currentWorkshop?.id]);
 
   async function fetchOS(wid: string) {
@@ -254,17 +288,34 @@ export default function ServiceOrders() {
 
   async function saveMech(e: FormEvent) {
     e.preventDefault();
-    if (!shop) return;
+    if (!shop) { toast.error('Oficina não carregada'); return; }
+    const name = formMech.name.trim();
+    if (!name) { toast.error('Informe o nome do mecânico'); return; }
     setSaving(true);
-    const payload = { workshop_id: shop.id, name: formMech.name.trim(), specialty: formMech.specialty || null, skills: formMech.skills };
-    if (editMech) await supabase.from('workshop_mechanics').update(payload).eq('id', editMech.id);
-    else          await supabase.from('workshop_mechanics').insert(payload);
-    await fetchMechs(shop.id); setModalMech(false); setSaving(false);
+    const payload = { workshop_id: shop.id, name, specialty: formMech.specialty || null, skills: formMech.skills };
+    const { error } = editMech
+      ? await supabase.from('workshop_mechanics').update(payload).eq('id', editMech.id)
+      : await supabase.from('workshop_mechanics').insert(payload);
+    setSaving(false);
+    if (error) {
+      console.error('[saveMech] erro:', error);
+      toast.error(error.message || 'Não foi possível salvar o mecânico');
+      return;
+    }
+    toast.success(editMech ? 'Mecânico atualizado ✓' : 'Mecânico cadastrado ✓');
+    await fetchMechs(shop.id);
+    setModalMech(false);
   }
   async function deactivateMech(id: string) {
     if (!confirm('Remover mecânico da lista?')) return;
-    await supabase.from('workshop_mechanics').update({ active: false }).eq('id', id);
+    const { error } = await supabase.from('workshop_mechanics').update({ active: false }).eq('id', id);
+    if (error) {
+      console.error('[deactivateMech] erro:', error);
+      toast.error(error.message || 'Não foi possível remover o mecânico');
+      return;
+    }
     setInternalMechs(prev => prev.filter(m => m.id !== id));
+    toast.success('Mecânico removido');
   }
 
   /* ── abrir modal OS ── */
@@ -298,7 +349,7 @@ export default function ServiceOrders() {
 
     if (mechType === 'marketplace') {
       /* publica como job no marketplace */
-      await supabase.from('jobs').insert({
+      const { error } = await supabase.from('jobs').insert({
         workshop_id:    shop.id,
         title:          formOS.title.trim(),
         description:    formOS.description.trim() || null,
@@ -308,6 +359,8 @@ export default function ServiceOrders() {
         status:         'open',
         scheduled_at:   schedIso,
       });
+      if (error) toast.error('Erro ao publicar no marketplace');
+      else       toast.success('Demanda publicada no marketplace 🌐');
     } else {
       /* OS interna */
       const partsVal  = formOS.parts_cost ? parseFloat(formOS.parts_cost) : null;
@@ -315,7 +368,7 @@ export default function ServiceOrders() {
       const computed  = (partsVal ?? 0) + (laborVal ?? 0);
       const finalPrice = isCheckup ? 0 : (computed > 0 ? computed : priceCents / 100);
 
-      await supabase.from('service_orders').insert({
+      const { error } = await supabase.from('service_orders').insert({
         workshop_id:          shop.id,
         title:                formOS.title.trim(),
         description:          formOS.description.trim() || null,
@@ -332,6 +385,11 @@ export default function ServiceOrders() {
         parts_cost:           partsVal,
         labor_cost:           laborVal,
       });
+      if (error) {
+        toast.error('Erro ao criar OS');
+      } else {
+        toast.success(isCheckup ? 'Check-up gratuito criado 🎁' : 'OS criada ✓');
+      }
       await fetchOS(shop.id);
     }
 
@@ -340,13 +398,37 @@ export default function ServiceOrders() {
 
   /* ── status ── */
   async function updateStatus(os: OsRow, status: OsStatus) {
+    if (status === 'cancelled' && !confirm('Cancelar esta OS?')) return;
     const extra: Record<string, unknown> = {};
     if (status === 'in_progress' && !os.started_at)  extra.started_at  = new Date().toISOString();
     if (status === 'completed')                        extra.completed_at = new Date().toISOString();
-    await supabase.from('service_orders').update({ status, ...extra }).eq('id', os.id);
+    const { error } = await supabase.from('service_orders').update({ status, ...extra }).eq('id', os.id);
+    if (error) {
+      toast.error('Erro ao atualizar status');
+      return;
+    }
     const updated = { ...os, status, ...extra } as OsRow;
     setList(prev => prev.map(o => o.id === os.id ? updated : o));
     if (detail?.id === os.id) setDetail(updated);
+    const msgMap: Record<OsStatus, string> = {
+      open:        'OS reaberta',
+      in_progress: 'OS iniciada ▶',
+      completed:   'OS concluída ✓',
+      cancelled:   'OS cancelada',
+    };
+    toast.success(msgMap[status]);
+  }
+
+  /* ── copiar link da OS ── */
+  function copyOsLink(os: OsRow) {
+    const url = `${window.location.origin}/oficina/os?os=${os.id}`;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url)
+        .then(() => toast.success('Link copiado para a área de transferência'))
+        .catch(() => toast.error('Não foi possível copiar o link'));
+    } else {
+      toast.info(url);
+    }
   }
 
   /* ─── analytics ──────────────────────────────────────────── */
@@ -385,9 +467,19 @@ export default function ServiceOrders() {
   const avgDur  = allDurs.length ? Math.round(allDurs.reduce((a,b) => a+b,0) / allDurs.length) : null;
 
   /* ─── listas filtradas ───────────────────────────────────── */
+  const periodCutoff = (() => {
+    if (filterPeriod === 'all') return null;
+    const d = new Date();
+    if (filterPeriod === 'today') { d.setHours(0, 0, 0, 0); return d.getTime(); }
+    if (filterPeriod === 'week')  { d.setDate(d.getDate() - 7);   return d.getTime(); }
+    if (filterPeriod === 'month') { d.setMonth(d.getMonth() - 1); return d.getTime(); }
+    return null;
+  })();
+
   const filtered = list.filter(o => {
     if (filterStatus !== 'all' && o.status !== filterStatus) return false;
     if (filterMech !== 'all' && (o.workshop_mechanic_id ?? 'none') !== filterMech) return false;
+    if (periodCutoff !== null && new Date(o.created_at).getTime() < periodCutoff) return false;
     if (search) {
       const q = search.toLowerCase();
       return (
@@ -503,33 +595,94 @@ export default function ServiceOrders() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 items-center">
-            <input className="input max-w-xs text-sm" placeholder="Buscar OS, cliente, placa, mecânico…"
-              value={search} onChange={e => setSearch(e.target.value)} />
-            <select className="input max-w-[160px] text-sm" value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value as OsStatus|'all')}>
-              <option value="all">Todos status</option>
-              {STATUSES.map(s => <option key={s} value={s}>{osLabel(s)} ({counts[s] ?? 0})</option>)}
-            </select>
-            {internalMechs.length > 0 && (
-              <select className="input max-w-[180px] text-sm" value={filterMech}
-                onChange={e => setFilterMech(e.target.value)}>
-                <option value="all">Todos mecânicos</option>
-                <option value="none">Sem mecânico</option>
-                {internalMechs.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          <div className="space-y-3">
+            <StatusChips
+              value={filterStatus}
+              counts={counts}
+              total={list.length}
+              onChange={setFilterStatus}
+            />
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">🔍</span>
+                <input
+                  className="input pl-9 text-sm"
+                  placeholder="Buscar OS, cliente, placa, mecânico…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
+              <select
+                className="input max-w-[140px] text-sm"
+                value={filterPeriod}
+                onChange={e => setFilterPeriod(e.target.value as PeriodFilter)}
+              >
+                <option value="all">Todo período</option>
+                <option value="today">Hoje</option>
+                <option value="week">Última semana</option>
+                <option value="month">Último mês</option>
               </select>
-            )}
+              {internalMechs.length > 0 && (
+                <select className="input max-w-[180px] text-sm" value={filterMech}
+                  onChange={e => setFilterMech(e.target.value)}>
+                  <option value="all">Todos mecânicos</option>
+                  <option value="none">Sem mecânico</option>
+                  {internalMechs.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              )}
+              {(filterStatus !== 'all' || filterMech !== 'all' || filterPeriod !== 'all' || search) && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterStatus('all'); setFilterMech('all'); setFilterPeriod('all'); setSearch(''); }}
+                  className="text-xs font-semibold text-steel-500 hover:text-steel-800 underline"
+                >
+                  Limpar filtros
+                </button>
+              )}
+            </div>
           </div>
 
-          {filtered.length === 0 ? (
-            <div className="card text-center text-steel-500 py-14">
-              {list.length === 0
-                ? <><p className="text-lg font-semibold">Nenhuma OS ainda</p><p className="text-sm mt-1">Crie a primeira ordem de serviço.</p></>
-                : 'Nenhuma OS com esses filtros.'}
-            </div>
+          {loading ? (
+            <OsSkeleton count={3} />
+          ) : filtered.length === 0 ? (
+            list.length === 0 ? (
+              <EmptyState
+                icon="📋"
+                title="Nenhuma OS ainda"
+                description="Crie a sua primeira ordem de serviço ou ofereça um check-up gratuito para captar clientes."
+                actions={
+                  <>
+                    <button onClick={() => openModalOS()} className="btn-primary text-sm !py-2">+ Nova OS</button>
+                    <button onClick={() => openModalOS({ checkup: true })} className="btn-ghost text-sm !py-2 border border-steel-200">🎁 Check-up gratuito</button>
+                  </>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon="🔎"
+                title="Nenhuma OS com esses filtros"
+                description="Ajuste a busca ou limpe os filtros para ver mais resultados."
+                actions={
+                  <button
+                    onClick={() => { setFilterStatus('all'); setFilterMech('all'); setFilterPeriod('all'); setSearch(''); }}
+                    className="btn-ghost text-sm !py-2 border border-steel-200"
+                  >
+                    Limpar filtros
+                  </button>
+                }
+              />
+            )
           ) : (
             <div className="space-y-2">
-              {filtered.map(os => <OsCard key={os.id} os={os} onClick={() => setDetail(os)} />)}
+              {filtered.map(os => (
+                <OsCardNew
+                  key={os.id}
+                  os={os}
+                  onClick={() => setDetail(os)}
+                  onChangeStatus={(status) => updateStatus(os, status)}
+                  onCopyLink={() => copyOsLink(os)}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -578,9 +731,10 @@ export default function ServiceOrders() {
                             {isToday && !isPast && <span className="badge bg-brand-100 text-brand-700 text-xs">Hoje</span>}
                             <span className="font-bold truncate">{os.title}</span>
                           </div>
-                          <div className="text-xs text-steel-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                          <div className="text-xs text-steel-500 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            {os.vehicle && <LicensePlate plate={os.vehicle.plate} size="sm" />}
                             {os.customer  && <span>👤 {os.customer.full_name}</span>}
-                            {os.vehicle   && <span>🚗 {os.vehicle.plate} · {os.vehicle.make} {os.vehicle.model}</span>}
+                            {os.vehicle   && <span>🚗 {os.vehicle.make} {os.vehicle.model}</span>}
                             {os.mechanic  && <span>🔧 {os.mechanic.name}</span>}
                             {os.estimated_hours && <span>⏱ {os.estimated_hours}h estimadas</span>}
                           </div>
@@ -1211,39 +1365,6 @@ export default function ServiceOrders() {
 }
 
 /* ─── sub-componentes ─────────────────────────────────────── */
-function OsCard({ os, onClick }: { os: OsRow; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="card w-full text-left hover:shadow-md transition hover:-translate-y-0.5 active:scale-[0.99]">
-      <div className="flex items-start gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`badge text-xs ${osColor(os.status)}`}>{osLabel(os.status)}</span>
-            {os.category && <span className="badge bg-steel-100 text-steel-600 text-xs">{os.category}</span>}
-            {os.scheduled_at && os.status === 'open' && (
-              <span className="badge bg-brand-50 text-brand-700 text-xs border border-brand-200">
-                📅 {new Date(os.scheduled_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}
-              </span>
-            )}
-            <span className="font-bold truncate">{os.title}</span>
-          </div>
-          <div className="text-xs text-steel-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-            {os.customer && <span>👤 {os.customer.full_name}</span>}
-            {os.vehicle  && <span>🚗 {os.vehicle.plate} · {os.vehicle.make} {os.vehicle.model}</span>}
-            {os.mechanic && <span>🔧 {os.mechanic.name}</span>}
-          </div>
-          <div className="text-xs text-steel-400 mt-1">
-            <span>{fmtDate(os.created_at)}</span>
-            {os.completed_at && durationMin(os) !== null && <span className="ml-3">⏱ {fmtDur(durationMin(os)!)}</span>}
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="text-lg font-bold font-display">R$ {os.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
-        </div>
-      </div>
-    </button>
-  );
-}
-
 function KPI({ label, value, sub, color }: { label: string; value: string|number; sub?: string; color?: string }) {
   return (
     <div className="card">
