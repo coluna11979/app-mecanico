@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { UpdatePrompt } from './components/UpdatePrompt';
+import { Toaster } from './components/ui/Toast';
 
 import Landing from './pages/public/Landing';
 import LandingMecanico from './pages/public/LandingMecanico';
@@ -58,6 +59,7 @@ export default function App() {
   return (
     <>
     <UpdatePrompt />
+    <Toaster />
     <Routes>
       {/* Público */}
       <Route path="/" element={<Landing />} />
