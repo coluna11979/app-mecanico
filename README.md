@@ -18,6 +18,8 @@ React 18 · Vite · TypeScript · Tailwind · Supabase (Auth + DB + Realtime) ·
 - Fonte display: **Space Grotesk**; corpo: **Inter**
 - Dois temas: **dark** (mecânico mobile) e **light** (oficina desktop)
 
+📖 **Brandbook completo**: [mecanicoapp.com.br/brandbook](https://mecanicoapp.com.br/brandbook) (fonte: [`public/brandbook/`](public/brandbook/))
+
 ## Setup local
 
 ```bash
