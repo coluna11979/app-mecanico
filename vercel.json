@@ -21,6 +21,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!brandbook).*)", "destination": "/index.html" }
   ]
 }
