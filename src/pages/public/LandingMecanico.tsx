@@ -1,11 +1,21 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
+
+// Faixa de hora média no estado (atualizar quando tivermos dados ao vivo)
+const AVG_HOURLY_BRL = 80;
 
 /**
  * Landing de captura — APENAS para mecânico.
  * Estilo claro, alto contraste, gatilhos pesados.
  */
 export default function LandingMecanico() {
+  const [hoursPerWeek, setHoursPerWeek] = useState(30);
+  // Cálculo do líquido — taxa da plataforma aplicada nos bastidores, sem exibir
+  const weeklyNet  = Math.round(hoursPerWeek * AVG_HOURLY_BRL * 0.82);
+  const monthlyNet = weeklyNet * 4;
+  const showOverwork = hoursPerWeek > 40;
+
   return (
     <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden">
 
@@ -41,16 +51,17 @@ export default function LandingMecanico() {
                 🔧 Para mecânicos autônomos
               </div>
 
-              <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] text-steel-900">
-                <span className="text-brand-500">82%</span> pra você.<br />
-                Sempre.
+              <h1 className="mt-6 text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight leading-[1.02] text-steel-900">
+                Sua hora.<br />
+                Sua agenda.<br />
+                <span className="text-brand-500">Seu dinheiro.</span>
               </h1>
 
               <p className="mt-6 text-lg text-steel-600 leading-relaxed">
-                Pare de dividir <strong className="text-steel-900">50/50</strong> com a oficina.
-                Pare de cobrar cliente que some.
-                Pare de aceitar trabalho desvalorizado.<br />
-                <strong className="text-steel-900">Sua hora vale mais — e aqui ela é paga direito.</strong>
+                Aceite jobs de oficinas verificadas. Defina o valor da sua hora.
+                Trabalhe quantas horas quiser, quando quiser.
+                Receba via PIX em até 24h.<br />
+                <strong className="text-steel-900">Sem patrão, sem CLT, sem cliente que some.</strong>
               </p>
 
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
@@ -72,44 +83,92 @@ export default function LandingMecanico() {
               </div>
             </div>
 
-            {/* Coluna direita — mock visual (dark p/ contraste) */}
+            {/* Coluna direita — ilustração full no estilo Uber */}
             <div className="relative">
-              <div className="bg-gradient-to-br from-steel-900 to-steel-800 rounded-3xl p-6 shadow-2xl">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-[10px] font-bold text-brand-400 uppercase tracking-widest">Job disponível</span>
-                  <span className="text-[10px] text-steel-400">há 2 min</span>
-                </div>
-                <h3 className="text-2xl font-bold leading-tight text-white">Troca de pastilha de freio + sangria</h3>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-white/10 rounded-xl py-2">
-                    <div className="text-[9px] text-steel-300 uppercase tracking-wider">R$/h</div>
-                    <div className="text-lg font-bold text-brand-400 mt-0.5">R$ 90</div>
-                  </div>
-                  <div className="bg-white/10 rounded-xl py-2">
-                    <div className="text-[9px] text-steel-300 uppercase tracking-wider">Máx</div>
-                    <div className="text-lg font-bold text-white mt-0.5">2h</div>
-                  </div>
-                  <div className="bg-signal-500/30 border border-signal-500/40 rounded-xl py-2">
-                    <div className="text-[9px] text-signal-300 uppercase tracking-wider">Você</div>
-                    <div className="text-lg font-bold text-signal-300 mt-0.5">R$ 148</div>
-                  </div>
-                </div>
-                <div className="mt-4 text-xs text-steel-300">
-                  🏭 Auto Centro Veloz · Itaim Bibi
-                </div>
-                <button className="mt-4 w-full bg-brand-500 text-white font-bold rounded-xl py-3 text-sm">
-                  Aceitar job
-                </button>
+              <HeroIllustration />
+
+              {/* Cards flutuantes — sobrepondo a ilustração */}
+              <div className="absolute top-4 -left-2 bg-white/95 backdrop-blur rounded-2xl px-4 py-3 shadow-2xl rotate-[-2deg] border border-steel-100 max-w-[200px]">
+                <div className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">Novo job</div>
+                <div className="text-sm font-bold text-steel-900 mt-0.5 leading-tight">Pastilha de freio</div>
+                <div className="text-[11px] text-steel-500 mt-1">2h · Itaim Bibi · ~3,2 km</div>
               </div>
 
-              {/* Floating PIX card */}
-              <div className="absolute -bottom-4 -left-4 bg-signal-500 text-white rounded-2xl px-4 py-3 shadow-xl rotate-[-3deg]">
+              <div className="absolute -bottom-3 -right-2 bg-signal-500 text-white rounded-2xl px-4 py-3 shadow-2xl rotate-[3deg]">
                 <div className="text-[10px] font-bold uppercase tracking-widest opacity-90">PIX recebido</div>
-                <div className="text-2xl font-bold">R$ 148,00</div>
+                <div className="text-2xl font-bold font-display">R$ 164,00</div>
                 <div className="text-[10px] opacity-90">há 23h</div>
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── CALCULADORA DE GANHOS ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10 max-w-3xl mx-auto">
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Calcule sua renda</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
+              Quanto você quer <span className="text-brand-500">ganhar</span>?
+            </h2>
+            <p className="mt-4 text-base text-steel-600">
+              Defina as horas que cabem na sua semana. Sem 44h obrigatórias, sem patrão fixando o horário.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 items-center bg-white rounded-3xl p-6 lg:p-8 shadow-xl border border-steel-100">
+            {/* Slider */}
+            <div>
+              <div className="flex items-baseline justify-between mb-2">
+                <span className="text-xs font-bold text-steel-500 uppercase tracking-wider">Horas por semana</span>
+                <span className="text-3xl font-bold text-brand-500 font-display">{hoursPerWeek}h</span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={48}
+                step={1}
+                value={hoursPerWeek}
+                onChange={e => setHoursPerWeek(Number(e.target.value))}
+                className="w-full accent-brand-500 cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-steel-500 font-semibold uppercase tracking-wider mt-1">
+                <button type="button" onClick={() => setHoursPerWeek(15)} className="hover:text-brand-600">15h<br /><span className="font-normal normal-case tracking-normal text-steel-400">Complementar</span></button>
+                <button type="button" onClick={() => setHoursPerWeek(30)} className="hover:text-brand-600 font-bold text-brand-600">30h<br /><span className="font-normal normal-case tracking-normal text-steel-400">Renda principal</span></button>
+                <button type="button" onClick={() => setHoursPerWeek(40)} className="hover:text-brand-600">40h<br /><span className="font-normal normal-case tracking-normal text-steel-400">Foco máximo</span></button>
+              </div>
+
+              {showOverwork && (
+                <div className="mt-5 bg-pending-50 border border-pending-200 rounded-xl px-3 py-2 text-xs text-pending-800 leading-relaxed">
+                  ⚠️ A gente não recomenda passar de 40h. Liberdade também é trabalhar menos quando precisa.
+                </div>
+              )}
+            </div>
+
+            {/* Resultado */}
+            <div className="bg-gradient-to-br from-brand-500 to-brand-600 rounded-2xl p-6 text-white shadow-xl shadow-brand-500/30">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-white/80">Sua renda estimada</div>
+              <div className="mt-1 text-4xl lg:text-5xl font-bold font-display leading-none">
+                R$ {weeklyNet.toLocaleString('pt-BR')}
+              </div>
+              <div className="text-sm text-white/80 mt-1">por semana</div>
+              <div className="mt-4 pt-4 border-t border-white/20 flex items-baseline justify-between">
+                <span className="text-sm text-white/80">≈ por mês</span>
+                <span className="text-xl font-bold font-display">R$ {monthlyNet.toLocaleString('pt-BR')}</span>
+              </div>
+              <p className="mt-4 text-[11px] text-white/70 leading-relaxed">
+                📅 Aproximadamente {(hoursPerWeek / 6).toFixed(1)}h por dia, segunda a sábado.
+                Oficina fecha domingo — sua folga é garantida, sem negociar.
+              </p>
+            </div>
+          </div>
+
+          <p className="mt-5 text-center text-xs text-steel-500 max-w-2xl mx-auto leading-relaxed">
+            ℹ️ Estimativa baseada na faixa média de R$ {AVG_HOURLY_BRL}/h dos jobs ativos em SP.
+            O seu valor depende dos jobs que aceitar e da sua produtividade.
+            Sem mensalidade, sem fidelidade, sem multa pra entrar ou sair.
+          </p>
         </div>
       </section>
 
@@ -217,8 +276,8 @@ export default function LandingMecanico() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Win emoji="💰" title="82% pra você. Não 50%."
-              desc="A plataforma cobra 18%. O resto é seu. Sempre. Sem pegadinha, sem desconto extra." />
+            <Win emoji="💰" title="Você define sua hora"
+              desc="Coloca o R$/h que cobra. Aceita só jobs no seu valor. Sem dividir 50/50 com ninguém, sem cobrar cliente." />
             <Win emoji="⚡" title="PIX em até 24h"
               desc="Oficina confirma o serviço, dinheiro cai na sua conta. Sem espera, sem cobrança." />
             <Win emoji="🛡️" title="Pagamento garantido"
@@ -260,9 +319,9 @@ export default function LandingMecanico() {
       <section className="py-20 lg:py-28 px-5 lg:px-8">
         <div className="max-w-5xl mx-auto">
           <div className="grid md:grid-cols-3 gap-4">
-            <StatCard n="82%" label="do valor pra você" />
+            <StatCard n="100%" label="das demandas pré-pagas (escrow)" />
             <StatCard n="24h" label="prazo máximo do PIX" />
-            <StatCard n="Zero" label="mensalidade ou taxa fixa" />
+            <StatCard n="Sem" label="mensalidade · sem multa pra sair" />
           </div>
         </div>
       </section>
@@ -297,7 +356,6 @@ export default function LandingMecanico() {
           <Link to="/"><Logo /></Link>
           <div className="flex items-center gap-6">
             <Link to="/" className="hover:text-steel-900 transition">Início</Link>
-            <Link to="/oficina" className="hover:text-steel-900 transition">Sou oficina</Link>
             <Link to="/login" state={{ fresh: true }} className="hover:text-steel-900 transition">Entrar</Link>
           </div>
           <div className="text-xs">© MecânicoApp {new Date().getFullYear()}</div>
@@ -371,5 +429,155 @@ function ItemCheckLight({ children }: { children: React.ReactNode }) {
       <span className="text-white shrink-0 mt-0.5 font-bold">✓</span>
       <span>{children}</span>
     </li>
+  );
+}
+
+/* ─── Ilustração do hero — cena estilizada com cidade ao entardecer,
+   celular montado mostrando rota até a oficina ─── */
+function HeroIllustration() {
+  return (
+    <svg
+      viewBox="0 0 600 560"
+      className="w-full h-auto rounded-3xl shadow-2xl"
+      style={{ background: 'linear-gradient(180deg,#FF8042 0%,#E04E07 22%,#3A1A1F 60%,#0B1117 100%)' }}
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="windowGlow" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#FFC890" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#FF5C0A" stopOpacity="0.6" />
+        </linearGradient>
+        <linearGradient id="phoneScreen" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#1A2530" />
+          <stop offset="100%" stopColor="#0B1117" />
+        </linearGradient>
+        <radialGradient id="sunGlow" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0%" stopColor="#FFE6CC" stopOpacity="1" />
+          <stop offset="50%" stopColor="#FF8042" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="#FF5C0A" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      {/* Sol no horizonte */}
+      <circle cx="430" cy="200" r="130" fill="url(#sunGlow)" />
+      <circle cx="430" cy="200" r="42" fill="#FFE6CC" opacity="0.95" />
+
+      {/* Skyline distante (mais claro/desfocado) */}
+      <g fill="#2A1820" opacity="0.85">
+        <rect x="0"   y="220" width="50" height="110" />
+        <rect x="48"  y="200" width="36" height="130" />
+        <rect x="80"  y="180" width="48" height="150" />
+        <rect x="124" y="210" width="32" height="120" />
+        <rect x="152" y="170" width="58" height="160" />
+        <rect x="206" y="200" width="40" height="130" />
+        <rect x="244" y="190" width="44" height="140" />
+        <rect x="286" y="220" width="34" height="110" />
+        <rect x="318" y="200" width="46" height="130" />
+        <rect x="500" y="200" width="38" height="130" />
+        <rect x="534" y="180" width="44" height="150" />
+        <rect x="572" y="210" width="28" height="120" />
+      </g>
+
+      {/* Skyline próximo (mais escuro) */}
+      <g fill="#0B1117">
+        <rect x="0"   y="280" width="70" height="100" rx="1" />
+        <rect x="66"  y="250" width="56" height="130" rx="1" />
+        <rect x="118" y="270" width="42" height="110" rx="1" />
+        <rect x="158" y="240" width="62" height="140" rx="1" />
+        <rect x="216" y="260" width="48" height="120" rx="1" />
+        <rect x="260" y="230" width="68" height="150" rx="1" />
+        <rect x="324" y="270" width="40" height="110" rx="1" />
+        <rect x="500" y="260" width="50" height="120" rx="1" />
+        <rect x="546" y="240" width="54" height="140" rx="1" />
+      </g>
+
+      {/* Janelas acesas — pontinhos quentes */}
+      <g fill="url(#windowGlow)">
+        {[
+          [12,300],[18,320],[12,340],[24,300],[24,340],
+          [80,270],[88,290],[80,310],[88,330],[80,350],
+          [130,290],[138,310],[130,330],[138,350],
+          [170,270],[178,290],[186,290],[170,310],[186,330],[178,350],
+          [232,280],[240,300],[232,320],[248,300],[240,340],
+          [276,250],[284,270],[292,270],[276,290],[300,290],[284,310],[300,330],[276,350],
+          [510,280],[518,300],[510,320],[518,340],
+          [556,260],[564,280],[572,280],[556,300],[572,320],[564,340],
+        ].map(([x, y], i) => (
+          <rect key={i} x={x} y={y} width="3.5" height="3.5" rx="0.5" />
+        ))}
+      </g>
+
+      {/* Marcador da oficina (à direita, brilhando) */}
+      <g transform="translate(388, 280)">
+        <circle r="22" fill="#FF5C0A" opacity="0.25" />
+        <circle r="14" fill="#FF5C0A" opacity="0.55" />
+        <circle r="8" fill="#FFE6CC" />
+        <text y="-26" textAnchor="middle" fontSize="9" fontWeight="700"
+          fill="#FFE6CC" style={{ letterSpacing: '0.15em' }}>OFICINA</text>
+      </g>
+
+      {/* Estrada (visão em perspectiva — base larga, topo estreito) */}
+      <polygon points="0,560 600,560 410,360 190,360" fill="#1A1F26" />
+      <polygon points="0,560 600,560 410,360 190,360" fill="#0B1117" opacity="0.3" />
+
+      {/* Faixas centrais da estrada (rota até a oficina) */}
+      <g stroke="#FF5C0A" strokeWidth="4" strokeLinecap="round" fill="none">
+        <line x1="300" y1="360" x2="305" y2="380" opacity="0.4" />
+        <line x1="306" y1="395" x2="312" y2="420" opacity="0.55" />
+        <line x1="313" y1="438" x2="320" y2="465" opacity="0.7" />
+        <line x1="321" y1="485" x2="329" y2="515" opacity="0.85" />
+        <line x1="330" y1="535" x2="338" y2="560" opacity="1" />
+      </g>
+
+      {/* Dashboard / painel do veículo na parte de baixo */}
+      <path d="M 0 440 Q 300 460 600 440 L 600 560 L 0 560 Z" fill="#0B1117" />
+      <path d="M 0 440 Q 300 470 600 440" stroke="#FF5C0A" strokeWidth="1" opacity="0.3" fill="none" />
+
+      {/* Suporte do celular (haste curta saindo do dashboard) */}
+      <rect x="146" y="430" width="6" height="22" fill="#0B1117" />
+      <rect x="138" y="448" width="22" height="6" rx="2" fill="#0B1117" />
+
+      {/* CELULAR montado no dashboard — protagonista da cena */}
+      <g transform="translate(80, 280)">
+        {/* moldura externa */}
+        <rect x="0" y="0" width="200" height="170" rx="22" fill="#0B1117" stroke="#1F2A33" strokeWidth="1.5" />
+        {/* tela */}
+        <rect x="6" y="8" width="188" height="154" rx="16" fill="url(#phoneScreen)" />
+
+        {/* status bar */}
+        <rect x="14" y="14" width="40" height="3" rx="1.5" fill="#3A4452" />
+        <circle cx="180" cy="16" r="2" fill="#16C784" />
+
+        {/* "mapa" — área verde claro com rota */}
+        <rect x="12" y="24" width="176" height="100" rx="8" fill="#1F2A33" />
+        {/* "ruas" do mapa — linhas finas */}
+        <g stroke="#2D3848" strokeWidth="1" fill="none">
+          <line x1="12" y1="44" x2="188" y2="44" />
+          <line x1="12" y1="74" x2="188" y2="74" />
+          <line x1="12" y1="104" x2="188" y2="104" />
+          <line x1="46" y1="24" x2="46" y2="124" />
+          <line x1="100" y1="24" x2="100" y2="124" />
+          <line x1="150" y1="24" x2="150" y2="124" />
+        </g>
+        {/* rota laranja desenhada no mapa */}
+        <path d="M 30 110 Q 60 90, 80 80 T 130 60 T 170 40"
+          stroke="#FF5C0A" strokeWidth="3" fill="none" strokeLinecap="round" />
+        {/* ponto de origem (mecânico) */}
+        <circle cx="30" cy="110" r="5" fill="#16C784" stroke="#fff" strokeWidth="1.5" />
+        {/* ponto de destino (oficina) */}
+        <circle cx="170" cy="40" r="6" fill="#FF5C0A" stroke="#fff" strokeWidth="1.5" />
+
+        {/* card de detalhe abaixo do mapa */}
+        <rect x="12" y="132" width="176" height="26" rx="6" fill="#1F2A33" />
+        <circle cx="22" cy="145" r="5" fill="#FF5C0A" />
+        <rect x="33" y="139" width="76" height="4" rx="1" fill="#E1E7EE" />
+        <rect x="33" y="148" width="50" height="3" rx="1" fill="#6B7480" />
+        <rect x="148" y="138" width="34" height="14" rx="3" fill="#FF5C0A" />
+        <text x="165" y="148" textAnchor="middle" fontSize="7" fontWeight="700" fill="#fff">ACEITAR</text>
+      </g>
+
+      {/* leve brilho do farol no chão à frente */}
+      <ellipse cx="300" cy="540" rx="170" ry="14" fill="#FF5C0A" opacity="0.08" />
+    </svg>
   );
 }

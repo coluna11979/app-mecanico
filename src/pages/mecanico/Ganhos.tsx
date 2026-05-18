@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { mechanicNet } from '@/lib/payment';
 import type { Job } from '@/types/database';
 
 type Period = 'week' | 'month' | 'all';
@@ -40,16 +41,19 @@ export default function MechanicGanhos() {
     return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
   }
 
-  const MECH_PCT = 0.82; // 100% - 18% taxa plataforma
   const filtered = jobs.filter(filter);
-  const gross    = filtered.reduce((a, j) => a + (j.price ?? 0), 0);
-  const net      = gross * MECH_PCT;
-  const fee      = gross * (1 - MECH_PCT);
+  // Tudo em líquido — o que o mecânico recebe / vai receber
+  const received = filtered
+    .filter(j => j.workshop_confirmed_at)
+    .reduce((a, j) => a + mechanicNet(j.price ?? 0), 0);
+  const pending = filtered
+    .filter(j => !j.workshop_confirmed_at)
+    .reduce((a, j) => a + mechanicNet(j.price ?? 0), 0);
 
   const byMonth: Record<string, number> = {};
   jobs.forEach(j => {
     const key = new Date(j.completed_at!).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    byMonth[key] = (byMonth[key] ?? 0) + (j.price ?? 0) * MECH_PCT;
+    byMonth[key] = (byMonth[key] ?? 0) + mechanicNet(j.price ?? 0);
   });
   const months = Object.entries(byMonth).slice(0, 6);
 
@@ -74,21 +78,25 @@ export default function MechanicGanhos() {
           ))}
         </div>
 
-        {/* Summary cards */}
+        {/* Summary cards — só o que vai pro PIX */}
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
-            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Seus ganhos (82%)</div>
+            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Recebido no PIX</div>
             <div className="text-2xl font-bold text-signal-400 font-display mt-1">
-              {loading ? '…' : `R$ ${net.toFixed(0)}`}
+              {loading ? '…' : `R$ ${received.toFixed(0)}`}
             </div>
-            <div className="text-[11px] text-steel-500 mt-0.5">{filtered.length} jobs</div>
+            <div className="text-[11px] text-steel-500 mt-0.5">
+              {filtered.filter(j => j.workshop_confirmed_at).length} jobs confirmados
+            </div>
           </div>
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
-            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Bruto faturado</div>
-            <div className="text-2xl font-bold text-white font-display mt-1">
-              {loading ? '…' : `R$ ${gross.toFixed(0)}`}
+            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Aguardando</div>
+            <div className="text-2xl font-bold text-pending-400 font-display mt-1">
+              {loading ? '…' : `R$ ${pending.toFixed(0)}`}
             </div>
-            <div className="text-[11px] text-steel-500 mt-0.5">plataforma R$ {fee.toFixed(0)}</div>
+            <div className="text-[11px] text-steel-500 mt-0.5">
+              {filtered.filter(j => !j.workshop_confirmed_at).length} jobs pendentes
+            </div>
           </div>
         </div>
 
@@ -145,9 +153,11 @@ export default function MechanicGanhos() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-signal-400 font-bold font-display">
-                      {(j.price ?? 0) > 0 ? `R$ ${((j.price ?? 0) * MECH_PCT).toFixed(0)}` : '—'}
+                      {(j.price ?? 0) > 0 ? `R$ ${mechanicNet(j.price ?? 0).toFixed(0)}` : '—'}
                     </div>
-                    <div className="text-[10px] text-steel-600">seus 82%</div>
+                    <div className="text-[10px] text-steel-600">
+                      {j.workshop_confirmed_at ? 'no PIX' : 'aguardando'}
+                    </div>
                   </div>
                 </div>
               ))}

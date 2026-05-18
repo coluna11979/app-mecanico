@@ -9,6 +9,7 @@ import { ChatBox } from '@/components/chat/ChatBox';
 import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { distKm, etaLabel } from '@/lib/geo';
+import { mechanicNet } from '@/lib/payment';
 import type { Job, Workshop } from '@/types/database';
 
 export default function MechanicTracking() {
@@ -227,16 +228,17 @@ export default function MechanicTracking() {
 
   function goBackToDashboard() {
     if (!job) { nav('/mecanico/dashboard'); return; }
-    const gross = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
+    const net = mechanicNet((job.price_per_hour ?? 0) * (job.max_hours ?? 1));
     const state = job.workshop_confirmed_at
-      ? { justEarned: { gross, net: gross * 0.82, jobTitle: job.title } }
+      ? { justEarned: { net, jobTitle: job.title } }
       : undefined;
     nav('/mecanico/dashboard', state ? { state } : undefined);
   }
 
   const arrived = !!job?.arrived_at;
   const pixPaid = !!job?.pix_paid_at;
-  const cap     = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
+  const grossCap = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
+  const netCap   = mechanicNet(grossCap);
 
   const km = mechPos && shop?.lat && shop?.lng
     ? distKm(mechPos.lat, mechPos.lng, shop.lat, shop.lng)
@@ -344,7 +346,7 @@ export default function MechanicTracking() {
               )}
             </div>
             <div className="text-xs text-steel-500 mt-1">
-              Pacote: {job?.max_hours ?? '—'}h × R$ {job?.price_per_hour?.toFixed(0) ?? '—'}/h · <span className="text-signal-400 font-bold">R$ {cap.toFixed(0)} fechado</span>
+              Pacote: {job?.max_hours ?? '—'}h previstas · <span className="text-signal-400 font-bold">você recebe R$ {netCap.toFixed(0)}</span>
             </div>
           </div>
         )}
@@ -418,7 +420,7 @@ export default function MechanicTracking() {
               <div className="text-3xl mb-1">⏳</div>
               <div className="text-pending-300 font-bold text-base">Aguardando confirmação da oficina</div>
               <div className="text-xs text-steel-400 mt-1">
-                Notificação enviada — assim que confirmarem, seu repasse de <strong>R$ {(cap * 0.82).toFixed(2)}</strong> é liberado.
+                Notificação enviada — assim que confirmarem, seu PIX de <strong>R$ {netCap.toFixed(2)}</strong> é liberado.
               </div>
             </div>
             <div className="bg-steel-900/60 rounded-xl py-2 text-center">
@@ -450,7 +452,7 @@ export default function MechanicTracking() {
             <div className="bg-steel-900/70 rounded-xl py-3 text-center border border-signal-500/30">
               <div className="text-[10px] uppercase tracking-wider text-steel-500 font-bold">Liberado</div>
               <div className="font-display text-3xl text-signal-400 font-bold">
-                + R$ {(cap * 0.82).toFixed(2).replace('.', ',')}
+                + R$ {netCap.toFixed(2).replace('.', ',')}
               </div>
             </div>
             <button onClick={goBackToDashboard} className="btn-primary btn-lg w-full !bg-signal-500">
