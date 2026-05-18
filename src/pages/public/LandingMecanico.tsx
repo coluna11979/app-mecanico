@@ -83,36 +83,20 @@ export default function LandingMecanico() {
               </div>
             </div>
 
-            {/* Coluna direita — mock visual (dark p/ contraste) */}
+            {/* Coluna direita — ilustração full no estilo Uber */}
             <div className="relative">
-              <div className="bg-gradient-to-br from-steel-900 to-steel-800 rounded-3xl p-6 shadow-2xl">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-[10px] font-bold text-brand-400 uppercase tracking-widest">Job disponível</span>
-                  <span className="text-[10px] text-steel-400">há 2 min</span>
-                </div>
-                <h3 className="text-2xl font-bold leading-tight text-white">Troca de pastilha de freio + sangria</h3>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-center">
-                  <div className="bg-white/10 rounded-xl py-2">
-                    <div className="text-[9px] text-steel-300 uppercase tracking-wider">Horas previstas</div>
-                    <div className="text-lg font-bold text-white mt-0.5">2h</div>
-                  </div>
-                  <div className="bg-signal-500/30 border border-signal-500/40 rounded-xl py-2">
-                    <div className="text-[9px] text-signal-300 uppercase tracking-wider">Estimativa</div>
-                    <div className="text-lg font-bold text-signal-300 mt-0.5">R$ 164</div>
-                  </div>
-                </div>
-                <div className="mt-4 text-xs text-steel-300">
-                  🏭 Auto Centro Veloz · Itaim Bibi · ~3,2 km
-                </div>
-                <button className="mt-4 w-full bg-brand-500 text-white font-bold rounded-xl py-3 text-sm">
-                  Aceitar job
-                </button>
+              <HeroIllustration />
+
+              {/* Cards flutuantes — sobrepondo a ilustração */}
+              <div className="absolute top-4 -left-2 bg-white/95 backdrop-blur rounded-2xl px-4 py-3 shadow-2xl rotate-[-2deg] border border-steel-100 max-w-[200px]">
+                <div className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">Novo job</div>
+                <div className="text-sm font-bold text-steel-900 mt-0.5 leading-tight">Pastilha de freio</div>
+                <div className="text-[11px] text-steel-500 mt-1">2h · Itaim Bibi · ~3,2 km</div>
               </div>
 
-              {/* Floating PIX card */}
-              <div className="absolute -bottom-4 -left-4 bg-signal-500 text-white rounded-2xl px-4 py-3 shadow-xl rotate-[-3deg]">
+              <div className="absolute -bottom-3 -right-2 bg-signal-500 text-white rounded-2xl px-4 py-3 shadow-2xl rotate-[3deg]">
                 <div className="text-[10px] font-bold uppercase tracking-widest opacity-90">PIX recebido</div>
-                <div className="text-2xl font-bold">R$ 164,00</div>
+                <div className="text-2xl font-bold font-display">R$ 164,00</div>
                 <div className="text-[10px] opacity-90">há 23h</div>
               </div>
             </div>
@@ -372,7 +356,6 @@ export default function LandingMecanico() {
           <Link to="/"><Logo /></Link>
           <div className="flex items-center gap-6">
             <Link to="/" className="hover:text-steel-900 transition">Início</Link>
-            <Link to="/oficina" className="hover:text-steel-900 transition">Sou oficina</Link>
             <Link to="/login" state={{ fresh: true }} className="hover:text-steel-900 transition">Entrar</Link>
           </div>
           <div className="text-xs">© MecânicoApp {new Date().getFullYear()}</div>
@@ -446,5 +429,155 @@ function ItemCheckLight({ children }: { children: React.ReactNode }) {
       <span className="text-white shrink-0 mt-0.5 font-bold">✓</span>
       <span>{children}</span>
     </li>
+  );
+}
+
+/* ─── Ilustração do hero — cena estilizada com cidade ao entardecer,
+   celular montado mostrando rota até a oficina ─── */
+function HeroIllustration() {
+  return (
+    <svg
+      viewBox="0 0 600 560"
+      className="w-full h-auto rounded-3xl shadow-2xl"
+      style={{ background: 'linear-gradient(180deg,#FF8042 0%,#E04E07 22%,#3A1A1F 60%,#0B1117 100%)' }}
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="windowGlow" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#FFC890" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#FF5C0A" stopOpacity="0.6" />
+        </linearGradient>
+        <linearGradient id="phoneScreen" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#1A2530" />
+          <stop offset="100%" stopColor="#0B1117" />
+        </linearGradient>
+        <radialGradient id="sunGlow" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0%" stopColor="#FFE6CC" stopOpacity="1" />
+          <stop offset="50%" stopColor="#FF8042" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="#FF5C0A" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      {/* Sol no horizonte */}
+      <circle cx="430" cy="200" r="130" fill="url(#sunGlow)" />
+      <circle cx="430" cy="200" r="42" fill="#FFE6CC" opacity="0.95" />
+
+      {/* Skyline distante (mais claro/desfocado) */}
+      <g fill="#2A1820" opacity="0.85">
+        <rect x="0"   y="220" width="50" height="110" />
+        <rect x="48"  y="200" width="36" height="130" />
+        <rect x="80"  y="180" width="48" height="150" />
+        <rect x="124" y="210" width="32" height="120" />
+        <rect x="152" y="170" width="58" height="160" />
+        <rect x="206" y="200" width="40" height="130" />
+        <rect x="244" y="190" width="44" height="140" />
+        <rect x="286" y="220" width="34" height="110" />
+        <rect x="318" y="200" width="46" height="130" />
+        <rect x="500" y="200" width="38" height="130" />
+        <rect x="534" y="180" width="44" height="150" />
+        <rect x="572" y="210" width="28" height="120" />
+      </g>
+
+      {/* Skyline próximo (mais escuro) */}
+      <g fill="#0B1117">
+        <rect x="0"   y="280" width="70" height="100" rx="1" />
+        <rect x="66"  y="250" width="56" height="130" rx="1" />
+        <rect x="118" y="270" width="42" height="110" rx="1" />
+        <rect x="158" y="240" width="62" height="140" rx="1" />
+        <rect x="216" y="260" width="48" height="120" rx="1" />
+        <rect x="260" y="230" width="68" height="150" rx="1" />
+        <rect x="324" y="270" width="40" height="110" rx="1" />
+        <rect x="500" y="260" width="50" height="120" rx="1" />
+        <rect x="546" y="240" width="54" height="140" rx="1" />
+      </g>
+
+      {/* Janelas acesas — pontinhos quentes */}
+      <g fill="url(#windowGlow)">
+        {[
+          [12,300],[18,320],[12,340],[24,300],[24,340],
+          [80,270],[88,290],[80,310],[88,330],[80,350],
+          [130,290],[138,310],[130,330],[138,350],
+          [170,270],[178,290],[186,290],[170,310],[186,330],[178,350],
+          [232,280],[240,300],[232,320],[248,300],[240,340],
+          [276,250],[284,270],[292,270],[276,290],[300,290],[284,310],[300,330],[276,350],
+          [510,280],[518,300],[510,320],[518,340],
+          [556,260],[564,280],[572,280],[556,300],[572,320],[564,340],
+        ].map(([x, y], i) => (
+          <rect key={i} x={x} y={y} width="3.5" height="3.5" rx="0.5" />
+        ))}
+      </g>
+
+      {/* Marcador da oficina (à direita, brilhando) */}
+      <g transform="translate(388, 280)">
+        <circle r="22" fill="#FF5C0A" opacity="0.25" />
+        <circle r="14" fill="#FF5C0A" opacity="0.55" />
+        <circle r="8" fill="#FFE6CC" />
+        <text y="-26" textAnchor="middle" fontSize="9" fontWeight="700"
+          fill="#FFE6CC" style={{ letterSpacing: '0.15em' }}>OFICINA</text>
+      </g>
+
+      {/* Estrada (visão em perspectiva — base larga, topo estreito) */}
+      <polygon points="0,560 600,560 410,360 190,360" fill="#1A1F26" />
+      <polygon points="0,560 600,560 410,360 190,360" fill="#0B1117" opacity="0.3" />
+
+      {/* Faixas centrais da estrada (rota até a oficina) */}
+      <g stroke="#FF5C0A" strokeWidth="4" strokeLinecap="round" fill="none">
+        <line x1="300" y1="360" x2="305" y2="380" opacity="0.4" />
+        <line x1="306" y1="395" x2="312" y2="420" opacity="0.55" />
+        <line x1="313" y1="438" x2="320" y2="465" opacity="0.7" />
+        <line x1="321" y1="485" x2="329" y2="515" opacity="0.85" />
+        <line x1="330" y1="535" x2="338" y2="560" opacity="1" />
+      </g>
+
+      {/* Dashboard / painel do veículo na parte de baixo */}
+      <path d="M 0 440 Q 300 460 600 440 L 600 560 L 0 560 Z" fill="#0B1117" />
+      <path d="M 0 440 Q 300 470 600 440" stroke="#FF5C0A" strokeWidth="1" opacity="0.3" fill="none" />
+
+      {/* Suporte do celular (haste curta saindo do dashboard) */}
+      <rect x="146" y="430" width="6" height="22" fill="#0B1117" />
+      <rect x="138" y="448" width="22" height="6" rx="2" fill="#0B1117" />
+
+      {/* CELULAR montado no dashboard — protagonista da cena */}
+      <g transform="translate(80, 280)">
+        {/* moldura externa */}
+        <rect x="0" y="0" width="200" height="170" rx="22" fill="#0B1117" stroke="#1F2A33" strokeWidth="1.5" />
+        {/* tela */}
+        <rect x="6" y="8" width="188" height="154" rx="16" fill="url(#phoneScreen)" />
+
+        {/* status bar */}
+        <rect x="14" y="14" width="40" height="3" rx="1.5" fill="#3A4452" />
+        <circle cx="180" cy="16" r="2" fill="#16C784" />
+
+        {/* "mapa" — área verde claro com rota */}
+        <rect x="12" y="24" width="176" height="100" rx="8" fill="#1F2A33" />
+        {/* "ruas" do mapa — linhas finas */}
+        <g stroke="#2D3848" strokeWidth="1" fill="none">
+          <line x1="12" y1="44" x2="188" y2="44" />
+          <line x1="12" y1="74" x2="188" y2="74" />
+          <line x1="12" y1="104" x2="188" y2="104" />
+          <line x1="46" y1="24" x2="46" y2="124" />
+          <line x1="100" y1="24" x2="100" y2="124" />
+          <line x1="150" y1="24" x2="150" y2="124" />
+        </g>
+        {/* rota laranja desenhada no mapa */}
+        <path d="M 30 110 Q 60 90, 80 80 T 130 60 T 170 40"
+          stroke="#FF5C0A" strokeWidth="3" fill="none" strokeLinecap="round" />
+        {/* ponto de origem (mecânico) */}
+        <circle cx="30" cy="110" r="5" fill="#16C784" stroke="#fff" strokeWidth="1.5" />
+        {/* ponto de destino (oficina) */}
+        <circle cx="170" cy="40" r="6" fill="#FF5C0A" stroke="#fff" strokeWidth="1.5" />
+
+        {/* card de detalhe abaixo do mapa */}
+        <rect x="12" y="132" width="176" height="26" rx="6" fill="#1F2A33" />
+        <circle cx="22" cy="145" r="5" fill="#FF5C0A" />
+        <rect x="33" y="139" width="76" height="4" rx="1" fill="#E1E7EE" />
+        <rect x="33" y="148" width="50" height="3" rx="1" fill="#6B7480" />
+        <rect x="148" y="138" width="34" height="14" rx="3" fill="#FF5C0A" />
+        <text x="165" y="148" textAnchor="middle" fontSize="7" fontWeight="700" fill="#fff">ACEITAR</text>
+      </g>
+
+      {/* leve brilho do farol no chão à frente */}
+      <ellipse cx="300" cy="540" rx="170" ry="14" fill="#FF5C0A" opacity="0.08" />
+    </svg>
   );
 }
