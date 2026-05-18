@@ -238,7 +238,7 @@ export default function Landing() {
             <Step n={3} title="Aceite e execução"
               desc="Mecânico aceita, vai até o local, executa. Tudo rastreado em tempo real, com chat integrado." />
             <Step n={4} title="Confirmação e repasse"
-              desc="Oficina confirma o serviço, mecânico recebe via PIX em até 24h. Direto, sem cobrança." />
+              desc="Oficina confirma o serviço. Mecânico recebe via PIX em até 24h, direto na conta." />
           </div>
         </div>
       </section>
