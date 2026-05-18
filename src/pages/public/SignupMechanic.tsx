@@ -1,8 +1,23 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
+
+/** Lê (e consome) o pré-preenchimento de lead capturado na home. */
+function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
+  try {
+    const raw = sessionStorage.getItem('lead_prefill');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    sessionStorage.removeItem('lead_prefill');
+    return {
+      name:  typeof parsed.name  === 'string' ? parsed.name  : undefined,
+      email: typeof parsed.email === 'string' ? parsed.email : undefined,
+      phone: typeof parsed.phone === 'string' ? parsed.phone : undefined,
+    };
+  } catch { return {}; }
+}
 
 const SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
 
@@ -16,6 +31,18 @@ export default function SignupMechanic() {
     full_name: '', email: '', password: '', phone: '', cpf: '', cnh: '',
     experience_years: 1, hourly_rate: 80, pix_key: '', skills: [] as string[],
   });
+
+  // Pré-preenche com os dados capturados no gate da home (se houver)
+  useEffect(() => {
+    const lead = consumeLeadPrefill();
+    if (!lead.name && !lead.email && !lead.phone) return;
+    setF(prev => ({
+      ...prev,
+      full_name: prev.full_name || lead.name  || '',
+      email:     prev.email     || lead.email || '',
+      phone:     prev.phone     || lead.phone || '',
+    }));
+  }, []);
 
   function update<K extends keyof typeof f>(k: K, v: typeof f[K]) {
     setF(prev => ({ ...prev, [k]: v }));

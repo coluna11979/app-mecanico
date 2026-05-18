@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
+import { useAuth } from '@/contexts/AuthContext';
+import { LeadCaptureModal, isLeadCaptured } from '@/components/LeadCaptureModal';
+
+type Intent = 'mechanic' | 'workshop';
 
 /**
  * Home institucional — segmenta visitante (mecânico ou oficina) com
@@ -10,12 +14,25 @@ import { Logo } from '@/components/Logo';
  */
 export default function Landing() {
   const [scrolled, setScrolled] = useState(false);
+  const [gateIntent, setGateIntent] = useState<Intent | null>(null);
+  const { user } = useAuth();
+  const nav = useNavigate();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  /** Acessar /mecanico ou /oficina passando pelo gate (a menos que já capturado ou logado). */
+  function go(intent: Intent) {
+    const target = intent === 'mechanic' ? '/mecanico' : '/oficina';
+    if (user || isLeadCaptured(intent)) {
+      nav(target);
+      return;
+    }
+    setGateIntent(intent);
+  }
 
   return (
     <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden">
@@ -36,9 +53,12 @@ export default function Landing() {
             <Link to="/login" state={{ fresh: true }} className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-3 py-2 transition">
               Entrar
             </Link>
-            <Link to="/mecanico" className="hidden sm:inline-flex bg-brand-500 text-white text-sm font-bold rounded-xl px-4 py-2 hover:bg-brand-600 transition shadow-sm">
+            <button
+              type="button"
+              onClick={() => go('mechanic')}
+              className="hidden sm:inline-flex bg-brand-500 text-white text-sm font-bold rounded-xl px-4 py-2 hover:bg-brand-600 transition shadow-sm">
               Começar
-            </Link>
+            </button>
           </div>
         </div>
       </header>
@@ -71,8 +91,10 @@ export default function Landing() {
 
           {/* Cards de segmentação — cada persona tem visual próprio */}
           <div className="mt-14 grid md:grid-cols-2 gap-5 max-w-5xl mx-auto">
-            <Link to="/mecanico"
-              className="group relative bg-steel-900 text-white rounded-3xl p-6 lg:p-8 overflow-hidden shadow-xl hover:shadow-2xl transition-all hover:-translate-y-1 hover:scale-[1.01]">
+            <button
+              type="button"
+              onClick={() => go('mechanic')}
+              className="group relative bg-steel-900 text-white rounded-3xl p-6 lg:p-8 overflow-hidden shadow-xl hover:shadow-2xl transition-all hover:-translate-y-1 hover:scale-[1.01] text-left w-full">
               {/* Mini cena */}
               <div className="absolute -right-6 -bottom-8 w-56 h-56 opacity-90 pointer-events-none">
                 <MiniMechanic />
@@ -91,10 +113,12 @@ export default function Landing() {
                   Sou mecânico <span className="text-lg">→</span>
                 </div>
               </div>
-            </Link>
+            </button>
 
-            <Link to="/oficina"
-              className="group relative bg-gradient-to-br from-brand-500 to-brand-600 text-white rounded-3xl p-6 lg:p-8 overflow-hidden shadow-xl shadow-brand-500/30 hover:shadow-2xl transition-all hover:-translate-y-1 hover:scale-[1.01]">
+            <button
+              type="button"
+              onClick={() => go('workshop')}
+              className="group relative bg-gradient-to-br from-brand-500 to-brand-600 text-white rounded-3xl p-6 lg:p-8 overflow-hidden shadow-xl shadow-brand-500/30 hover:shadow-2xl transition-all hover:-translate-y-1 hover:scale-[1.01] text-left w-full">
               <div className="absolute -right-6 -bottom-8 w-56 h-56 opacity-90 pointer-events-none">
                 <MiniWorkshop />
               </div>
@@ -112,7 +136,7 @@ export default function Landing() {
                   Sou oficina <span className="text-lg">→</span>
                 </div>
               </div>
-            </Link>
+            </button>
           </div>
 
           <p className="mt-8 text-center text-xs text-steel-500">
@@ -150,10 +174,12 @@ export default function Landing() {
               <Bullet>Sem CLT, sem patrão fixo, sem cliente que some</Bullet>
               <Bullet>Reputação digital pública — seu trabalho vira nota</Bullet>
             </ul>
-            <Link to="/mecanico"
+            <button
+              type="button"
+              onClick={() => go('mechanic')}
               className="mt-8 inline-flex items-center gap-2 bg-steel-900 text-white font-bold rounded-2xl px-6 py-4 hover:bg-steel-800 transition shadow-lg shadow-steel-900/10">
               Quero ser mecânico <span>→</span>
-            </Link>
+            </button>
           </div>
           <div className="order-1 lg:order-2 relative">
             <SceneMechanic />
@@ -184,10 +210,12 @@ export default function Landing() {
               <Bullet>Você aprova o serviço antes do repasse ser liberado</Bullet>
               <Bullet>OS, clientes, veículos e agendamento no mesmo painel</Bullet>
             </ul>
-            <Link to="/oficina"
+            <button
+              type="button"
+              onClick={() => go('workshop')}
               className="mt-8 inline-flex items-center gap-2 bg-brand-500 text-white font-bold rounded-2xl px-6 py-4 hover:bg-brand-600 transition shadow-lg shadow-brand-500/30">
               Quero ser oficina <span>→</span>
-            </Link>
+            </button>
           </div>
         </div>
       </section>
@@ -255,17 +283,34 @@ export default function Landing() {
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 max-w-lg mx-auto">
-            <Link to="/mecanico"
+            <button
+              type="button"
+              onClick={() => go('mechanic')}
               className="flex-1 bg-steel-900 text-white font-bold rounded-2xl px-6 py-4 hover:bg-steel-800 transition flex items-center justify-center gap-2 shadow-lg shadow-steel-900/10">
               <span className="text-2xl">🔧</span> Sou mecânico
-            </Link>
-            <Link to="/oficina"
+            </button>
+            <button
+              type="button"
+              onClick={() => go('workshop')}
               className="flex-1 bg-brand-500 text-white font-bold rounded-2xl px-6 py-4 hover:bg-brand-600 transition flex items-center justify-center gap-2 shadow-lg shadow-brand-500/30">
               <span className="text-2xl">🏪</span> Sou oficina
-            </Link>
+            </button>
           </div>
         </div>
       </section>
+
+      {/* ── Modal de captura de lead ── */}
+      {gateIntent && (
+        <LeadCaptureModal
+          intent={gateIntent}
+          onClose={() => setGateIntent(null)}
+          onComplete={data => {
+            const target = gateIntent === 'mechanic' ? '/mecanico' : '/oficina';
+            setGateIntent(null);
+            nav(target, data ? { state: { leadData: data } } : undefined);
+          }}
+        />
+      )}
 
       {/* ── FOOTER ── */}
       <footer className="border-t border-steel-100 py-14 px-5 lg:px-8 bg-white">
@@ -279,8 +324,8 @@ export default function Landing() {
             </div>
 
             <FooterColumn title="Produto" items={[
-              { label: 'Para mecânicos', to: '/mecanico' },
-              { label: 'Para oficinas',  to: '/oficina'  },
+              { label: 'Para mecânicos', onClick: () => go('mechanic') },
+              { label: 'Para oficinas',  onClick: () => go('workshop') },
               { label: 'Entrar',         to: '/login', state: { fresh: true } },
             ]} />
 
@@ -355,7 +400,7 @@ function Bullet({ children }: { children: React.ReactNode }) {
   );
 }
 
-type FooterItem = { label: string; to?: string; href?: string; state?: any };
+type FooterItem = { label: string; to?: string; href?: string; state?: any; onClick?: () => void };
 function FooterColumn({ title, items }: { title: string; items: FooterItem[] }) {
   return (
     <div>
@@ -363,7 +408,9 @@ function FooterColumn({ title, items }: { title: string; items: FooterItem[] }) 
       <ul className="space-y-2 text-sm text-steel-600">
         {items.map((item, i) => (
           <li key={i}>
-            {item.to ? (
+            {item.onClick ? (
+              <button type="button" onClick={item.onClick} className="hover:text-brand-600 transition text-left">{item.label}</button>
+            ) : item.to ? (
               <Link to={item.to} state={item.state} className="hover:text-brand-600 transition">{item.label}</Link>
             ) : item.href ? (
               <a href={item.href} className="hover:text-brand-600 transition">{item.label}</a>
