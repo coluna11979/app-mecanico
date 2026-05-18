@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 
 // Faixa de hora média no estado (atualizar quando tivermos dados ao vivo)
-const AVG_HOURLY_BRL = 80;
+const AVG_HOURLY_BRL = 60;
 
 /**
  * Landing de captura — APENAS para mecânico.

@@ -1,11 +1,21 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
+
+// Multiplicador médio de encargos CLT no Brasil (INSS patronal + FGTS + provisão de
+// férias/13o + verbas rescisórias). Conservador.
+const CLT_LOAD_FACTOR = 1.7;
 
 /**
  * Landing de captura — APENAS para oficina.
  * Estilo claro, alto contraste, gatilhos pesados.
  */
 export default function LandingOficina() {
+  const [mechanicsCount, setMechanicsCount] = useState(3);
+  const [avgSalary, setAvgSalary]           = useState(3000);
+  const monthlyCLT = mechanicsCount * avgSalary * CLT_LOAD_FACTOR;
+  const yearlyCLT  = monthlyCLT * 12;
+
   return (
     <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden">
 
@@ -165,6 +175,103 @@ export default function LandingOficina() {
         </div>
       </section>
 
+      {/* ── CALCULADORA DE ECONOMIA ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10 max-w-3xl mx-auto">
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Calcule sua folha CLT</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
+              Quanto sua oficina paga<br />
+              <span className="text-brand-500">só em mão de obra fixa?</span>
+            </h2>
+            <p className="mt-4 text-base text-steel-600">
+              Salário é só a ponta. Encargos, férias, 13º, FGTS e provisões pesam ~70% em cima.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 items-center bg-white rounded-3xl p-6 lg:p-8 shadow-xl border border-steel-100">
+            {/* Inputs */}
+            <div className="space-y-6">
+              <div>
+                <div className="flex items-baseline justify-between mb-2">
+                  <span className="text-xs font-bold text-steel-500 uppercase tracking-wider">Mecânicos CLT hoje</span>
+                  <span className="text-3xl font-bold text-brand-500 font-display">{mechanicsCount}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={mechanicsCount}
+                  onChange={e => setMechanicsCount(Number(e.target.value))}
+                  className="w-full accent-brand-500 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-steel-400 font-semibold mt-1">
+                  <span>1</span><span>5</span><span>10+</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-baseline justify-between mb-2">
+                  <span className="text-xs font-bold text-steel-500 uppercase tracking-wider">Salário médio mensal</span>
+                  <span className="text-3xl font-bold text-brand-500 font-display">R$ {avgSalary.toLocaleString('pt-BR')}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1500}
+                  max={6000}
+                  step={100}
+                  value={avgSalary}
+                  onChange={e => setAvgSalary(Number(e.target.value))}
+                  className="w-full accent-brand-500 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-steel-400 font-semibold mt-1">
+                  <span>R$ 1.500</span><span>R$ 3.500</span><span>R$ 6.000</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Resultado */}
+            <div className="bg-gradient-to-br from-steel-900 to-steel-800 rounded-2xl p-6 text-white shadow-xl">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">Sua folha CLT estimada</div>
+              <div className="mt-1 text-4xl lg:text-5xl font-bold font-display leading-none text-white">
+                R$ {monthlyCLT.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              </div>
+              <div className="text-sm text-steel-300 mt-1">por mês — fixo, vence todo dia 5</div>
+
+              <div className="mt-5 pt-5 border-t border-white/10 space-y-1">
+                <div className="flex items-baseline justify-between text-sm text-steel-300">
+                  <span>≈ por ano</span>
+                  <span className="font-bold text-white">R$ {yearlyCLT.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
+                  <span>Salário bruto</span>
+                  <span>R$ {(mechanicsCount * avgSalary).toLocaleString('pt-BR')}</span>
+                </div>
+                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
+                  <span>+ Encargos (~70%)</span>
+                  <span>R$ {(monthlyCLT - mechanicsCount * avgSalary).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-5 border-t border-white/10">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-300">No app</div>
+                <p className="text-sm text-white/90 mt-1 leading-relaxed">
+                  Paga só pela hora trabalhada quando precisar.
+                  <strong className="text-brand-300"> Zero custo fixo.</strong>
+                  Sem férias, sem 13º, sem FGTS.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-5 text-center text-xs text-steel-500 max-w-2xl mx-auto">
+            ℹ️ Cálculo conservador (multiplicador de 1,7 sobre o salário, incluindo INSS patronal,
+            FGTS, provisão de férias/13º e rescisão). Não substitui consultoria contábil.
+          </p>
+        </div>
+      </section>
+
       {/* ── SOLUÇÃO ── */}
       <section className="py-20 lg:py-28 px-5 lg:px-8">
         <div className="max-w-5xl mx-auto">
@@ -260,13 +367,53 @@ export default function LandingOficina() {
         </div>
       </section>
 
-      {/* ── NÚMEROS ── */}
+      {/* ── OBJEÇÕES / FAQ ── */}
       <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">"Mas e se..."</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
+              Toda objeção que você está pensando agora.
+            </h2>
+          </div>
+
+          <div className="space-y-3">
+            <Faq
+              q="E se o mecânico não chegar ou for ruim?"
+              a="CPF e CNH são validados manualmente antes da aprovação. Cada mecânico tem nota pública e histórico de jobs visíveis. Você acompanha a chegada no mapa em tempo real e só libera o pagamento depois de confirmar que o serviço ficou bom — se algo der errado, não paga."
+            />
+            <Faq
+              q="E se o cliente não pagar?"
+              a="O cliente paga via cartão ou PIX direto na plataforma ANTES do serviço começar. O valor fica em escrow e só é liberado quando você confirma a conclusão. Não tem como o serviço ser feito sem o dinheiro estar garantido."
+            />
+            <Faq
+              q="Tem mensalidade ou taxa de cadastro?"
+              a="Não. Zero. O cadastro da oficina é gratuito, o sistema de OS/clientes/veículos é gratuito, multi-loja é gratuito. Você só desembolsa quando precisa contratar mão de obra sob demanda — e nesse caso, paga o valor que combinou com o mecânico."
+            />
+            <Faq
+              q="Posso continuar com meus mecânicos CLT?"
+              a="Pode. O app é complementar — você usa quando precisar de reforço, quando alguém faltar, quando a demanda subir, ou quando quiser testar antes de contratar. Não exige exclusividade."
+            />
+            <Faq
+              q="O que muda na minha rotina hoje?"
+              a="Quase nada no começo. Você cadastra a oficina (2 min), aprova em 24h, e usa o painel quando precisar de mecânico extra. O sistema de gestão de OS você adota no seu ritmo — pode começar só com o marketplace."
+            />
+            <Faq
+              q="Como sei que o mecânico é qualificado?"
+              a="Toda aprovação é manual: validamos CPF, CNH, especialidades declaradas e checamos o histórico. Mecânicos novos começam com nota 0 e ganham reputação serviço a serviço. Você vê o ranking, as avaliações, e escolhe quem chamar."
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── NÚMEROS ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8">
         <div className="max-w-5xl mx-auto">
-          <div className="grid md:grid-cols-3 gap-4">
-            <StatCard n="0" label="encargos trabalhistas" />
-            <StatCard n="24h" label="prazo de aprovação do cadastro" />
-            <StatCard n="∞" label="oficinas na mesma conta" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard n="Sem CLT" label="zero encargos trabalhistas" />
+            <StatCard n="24h" label="aprovação do cadastro" />
+            <StatCard n="100%" label="pagamentos pré-pagos (escrow)" />
+            <StatCard n="Grátis" label="OS, clientes e veículos no painel" />
           </div>
         </div>
       </section>
@@ -297,15 +444,54 @@ export default function LandingOficina() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer className="border-t border-steel-100 py-10 px-5 lg:px-8 bg-white">
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-steel-500">
-          <Link to="/"><Logo /></Link>
-          <div className="flex items-center gap-6">
-            <Link to="/" className="hover:text-steel-900 transition">Início</Link>
-            <Link to="/mecanico" className="hover:text-steel-900 transition">Sou mecânico</Link>
-            <Link to="/login" state={{ fresh: true }} className="hover:text-steel-900 transition">Entrar</Link>
+      <footer className="border-t border-steel-100 py-14 px-5 lg:px-8 bg-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-8 mb-10">
+            <div>
+              <Logo />
+              <p className="mt-3 text-xs text-steel-500 leading-relaxed max-w-[220px]">
+                Mão de obra sob demanda + gestão de oficina, num único painel.
+              </p>
+            </div>
+
+            <div>
+              <div className="text-xs font-bold text-steel-900 uppercase tracking-widest mb-3">Para Oficinas</div>
+              <ul className="space-y-2 text-sm text-steel-600">
+                <li><Link to="/cadastro/oficina" className="hover:text-brand-600 transition">Cadastrar oficina</Link></li>
+                <li><Link to="/login" state={{ fresh: true }} className="hover:text-brand-600 transition">Entrar</Link></li>
+                <li><Link to="/" className="hover:text-brand-600 transition">Voltar para home</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <div className="text-xs font-bold text-steel-900 uppercase tracking-widest mb-3">Plataforma</div>
+              <ul className="space-y-2 text-sm text-steel-600">
+                <li><Link to="/mecanico" className="hover:text-brand-600 transition">Para mecânicos</Link></li>
+                <li><Link to="/brandbook" className="hover:text-brand-600 transition">Brandbook</Link></li>
+                <li><Link to="/termos" className="hover:text-brand-600 transition">Termos de uso</Link></li>
+                <li><Link to="/privacidade" className="hover:text-brand-600 transition">Privacidade</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <div className="text-xs font-bold text-steel-900 uppercase tracking-widest mb-3">Confiança</div>
+              <ul className="space-y-2 text-sm text-steel-600">
+                <li>CPF e CNH verificados</li>
+                <li>Pagamento em escrow</li>
+                <li>Avaliações públicas</li>
+                <li>Suporte por chat</li>
+              </ul>
+            </div>
           </div>
-          <div className="text-xs">© MecânicoApp {new Date().getFullYear()}</div>
+
+          <div className="pt-6 border-t border-steel-100 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-steel-500">
+            <div>© MecânicoApp {new Date().getFullYear()} · Todos os direitos reservados</div>
+            <div className="flex items-center gap-5">
+              <span>CNPJ em validação</span>
+              <span className="text-steel-300">·</span>
+              <span>Feito no Brasil 🇧🇷</span>
+            </div>
+          </div>
         </div>
       </footer>
     </div>
@@ -354,9 +540,9 @@ function FlowStep({ n, title, desc }: { n: number; title: string; desc: string }
 
 function StatCard({ n, label }: { n: string; label: string }) {
   return (
-    <div className="bg-gradient-to-br from-brand-50 to-white border-2 border-brand-100 rounded-2xl p-6 text-center shadow-sm">
-      <div className="text-5xl font-bold text-brand-500 leading-none">{n}</div>
-      <div className="mt-2 text-sm text-steel-600 font-medium">{label}</div>
+    <div className="bg-gradient-to-br from-brand-50 to-white border-2 border-brand-100 rounded-2xl p-5 text-center shadow-sm">
+      <div className="text-3xl lg:text-4xl font-bold text-brand-500 font-display leading-none">{n}</div>
+      <div className="mt-2 text-xs text-steel-600 font-medium leading-snug">{label}</div>
     </div>
   );
 }
@@ -376,5 +562,19 @@ function ItemX({ children }: { children: React.ReactNode }) {
       <span className="text-steel-400 shrink-0 mt-0.5">✗</span>
       <span>{children}</span>
     </li>
+  );
+}
+
+function Faq({ q, a }: { q: string; a: string }) {
+  return (
+    <details className="group bg-white border border-steel-200 rounded-2xl px-5 py-4 shadow-sm hover:shadow-md hover:border-brand-200 transition open:border-brand-300 open:shadow-md">
+      <summary className="flex items-center justify-between cursor-pointer list-none">
+        <span className="font-bold text-base text-steel-900 leading-tight pr-4">{q}</span>
+        <span className="shrink-0 h-7 w-7 rounded-full bg-brand-50 grid place-items-center text-brand-600 font-bold text-sm transition-transform group-open:rotate-45">
+          +
+        </span>
+      </summary>
+      <p className="mt-3 text-sm text-steel-600 leading-relaxed">{a}</p>
+    </details>
   );
 }
