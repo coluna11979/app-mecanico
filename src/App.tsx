@@ -42,6 +42,7 @@ import AdminSettings from './pages/admin/Settings';
 import AdminRepasses from './pages/admin/Repasses';
 import AdminUserDetail from './pages/admin/UserDetail';
 import AdminFinancial from './pages/admin/Financial';
+import AdminLeads from './pages/admin/Leads';
 
 function LazyFallback() {
   return (
@@ -99,6 +100,7 @@ export default function App() {
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
       <Route path="/admin/financeiro"    element={<ProtectedRoute allow={['admin']}><AdminFinancial /></ProtectedRoute>} />
+      <Route path="/admin/leads"         element={<ProtectedRoute allow={['admin']}><AdminLeads /></ProtectedRoute>} />
       <Route path="/admin/configuracoes" element={<ProtectedRoute allow={['admin']}><AdminSettings /></ProtectedRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
