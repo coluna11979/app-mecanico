@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { distKm, formatDistance } from '@/lib/geo';
+import { mechanicNet } from '@/lib/payment';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
 type Toast = { id: string; job: Job };
@@ -15,7 +16,7 @@ type JobWithShop = Job & { workshop: WorkshopBrief | null };
 
 type PendingRating = Job & { workshop_name?: string };
 
-type JustEarned = { gross: number; net: number; jobTitle: string };
+type JustEarned = { net: number; jobTitle: string };
 
 export default function MechanicDashboard() {
   const { user } = useAuth();
@@ -244,7 +245,7 @@ export default function MechanicDashboard() {
           </div>
         </div>
 
-        {/* ── Card: Como funciona seu ganho (aparece 1 vez, dismissível) ── */}
+        {/* ── Card: Como você recebe (aparece 1 vez, dismissível) ── */}
         {showEarnings && (
           <div className="card !bg-gradient-to-br from-brand-600 to-brand-700 border border-brand-500/40 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-10 translate-x-10 pointer-events-none" />
@@ -254,17 +255,17 @@ export default function MechanicDashboard() {
               aria-label="Fechar"
             >✕</button>
             <div className="relative">
-              <div className="text-xs font-bold uppercase tracking-widest text-brand-200 mb-2">💰 Como funciona seu ganho</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-200 mb-2">💰 Como você recebe</div>
               <p className="text-white text-sm leading-relaxed mb-4">
-                Você define seu valor por hora. A plataforma cobra{' '}
-                <span className="font-bold text-white bg-white/20 px-1.5 py-0.5 rounded">18%</span>{' '}
-                apenas quando o serviço é concluído e aprovado. Sem mensalidade, sem taxa de cadastro, sem custo fixo.
+                Cada job mostra o valor que cai no <strong>seu PIX</strong> — sem matemática,
+                sem letra miúda. A oficina paga antes do serviço começar; quando ela confirma a conclusão,
+                seu PIX é liberado em até 24h.
               </p>
               <div className="grid grid-cols-3 gap-2 text-center">
                 {[
-                  ['R$ 100/h', '2h de serviço', 'R$ 200 bruto'],
-                  ['18%', 'Taxa plataforma', '– R$ 36'],
-                  ['R$ 164', 'Você recebe', 'via PIX'],
+                  ['1', 'Aceita o job', 'no valor que aparece'],
+                  ['2', 'Faz o serviço', 'pagamento garantido em escrow'],
+                  ['3', 'Recebe no PIX', 'em até 24h'],
                 ].map(([n, l, s]) => (
                   <div key={l} className="bg-white/10 rounded-xl py-2 px-1">
                     <div className="text-white font-bold text-base leading-none">{n}</div>
@@ -274,7 +275,7 @@ export default function MechanicDashboard() {
                 ))}
               </div>
               <p className="text-brand-200 text-xs mt-3">
-                ✓ Sem surpresa · ✓ Só paga se trabalhar · ✓ PIX liberado rápido
+                ✓ Sem mensalidade · ✓ Sem multa · ✓ PIX rápido
               </p>
             </div>
           </div>
@@ -358,7 +359,8 @@ export default function MechanicDashboard() {
           ) : (
             <div className="space-y-2">
               {decoratedJobs.map(({ job: j, km }) => {
-                const cap = (j.price_per_hour ?? 0) * (j.max_hours ?? 1);
+                const gross = (j.price_per_hour ?? 0) * (j.max_hours ?? 1);
+                const net = mechanicNet(gross);
                 const ws = j.workshop;
                 const region = ws ? `${ws.city}${ws.state ? `/${ws.state}` : ''}` : null;
                 return (
@@ -386,11 +388,11 @@ export default function MechanicDashboard() {
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-signal-400 font-bold font-display text-2xl">
-                          R$ {cap.toFixed(0)}
+                          R$ {net.toFixed(0)}
                         </div>
-                        <div className="text-[10px] text-steel-500 uppercase tracking-wider">fechado</div>
+                        <div className="text-[10px] text-steel-500 uppercase tracking-wider">no seu PIX</div>
                         <div className="text-xs text-steel-400 mt-0.5">
-                          {j.max_hours ?? 1}h × R$ {(j.price_per_hour ?? 0).toFixed(0)}/h
+                          {j.max_hours ?? 1}h previstas
                         </div>
                       </div>
                     </div>
@@ -437,7 +439,7 @@ export default function MechanicDashboard() {
               <div className="text-4xl font-bold text-signal-400 font-display mt-1">
                 + R$ {justEarned.net.toFixed(2).replace('.', ',')}
               </div>
-              <div className="text-xs text-steel-500 mt-1">de R$ {justEarned.gross.toFixed(0)} (82%)</div>
+              <div className="text-xs text-steel-500 mt-1">crédito disponível no app</div>
             </div>
             <div className="flex gap-2">
               <button onClick={() => setJustEarned(null)} className="btn-ghost flex-1 text-sm">

@@ -3,6 +3,7 @@ import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AvatarUpload } from '@/components/AvatarUpload';
+import { mechanicNet } from '@/lib/payment';
 import type { Mechanic, Job } from '@/types/database';
 
 const SKILL_SUGGESTIONS = [
@@ -84,11 +85,10 @@ export default function MechanicProfile() {
     setTimeout(() => setMsg(null), 3000);
   }
 
-  const MECH_PCT = 0.82; // 100% - 18% taxa plataforma
-  const totalEarnings = history.reduce((a, j) => a + (j.price ?? 0) * MECH_PCT, 0);
+  const totalEarnings = history.reduce((a, j) => a + mechanicNet(j.price ?? 0), 0);
   const monthEarnings = history
     .filter(j => new Date(j.completed_at!).getMonth() === new Date().getMonth())
-    .reduce((a, j) => a + (j.price ?? 0) * MECH_PCT, 0);
+    .reduce((a, j) => a + mechanicNet(j.price ?? 0), 0);
   const initials = (profile?.full_name ?? 'M').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
   if (loading) return (
@@ -139,15 +139,15 @@ export default function MechanicProfile() {
           </div>
         </div>
 
-        {/* ── Ganhos ── */}
+        {/* ── Ganhos — valores líquidos (PIX) ── */}
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
             <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Este mês</div>
             <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {monthEarnings.toFixed(0)}</div>
-            <div className="text-[11px] text-steel-500 mt-0.5">seus 82%</div>
+            <div className="text-[11px] text-steel-500 mt-0.5">no seu PIX</div>
           </div>
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
-            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Total ganho</div>
+            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Total recebido</div>
             <div className="text-2xl font-bold text-white font-display mt-1">R$ {totalEarnings.toFixed(0)}</div>
             <div className="text-[11px] text-steel-500 mt-0.5">{history.length} jobs</div>
           </div>
@@ -195,9 +195,9 @@ export default function MechanicProfile() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-signal-400 font-bold font-display">
-                      {(j.price ?? 0) > 0 ? `R$ ${((j.price ?? 0) * MECH_PCT).toFixed(0)}` : '—'}
+                      {(j.price ?? 0) > 0 ? `R$ ${mechanicNet(j.price ?? 0).toFixed(0)}` : '—'}
                     </div>
-                    <div className="text-[10px] text-steel-600">seus 82%</div>
+                    <div className="text-[10px] text-steel-600">no PIX</div>
                   </div>
                 </div>
               ))}

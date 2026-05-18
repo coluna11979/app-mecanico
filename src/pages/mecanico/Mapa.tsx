@@ -7,6 +7,7 @@ import { getSetting } from '@/lib/settings';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { distKm, formatDistance } from '@/lib/geo';
+import { mechanicNet } from '@/lib/payment';
 import mapboxgl from 'mapbox-gl';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
@@ -157,13 +158,14 @@ export default function MechanicMapa() {
     jobs.forEach(job => {
       const ws = job.workshop;
       if (!ws?.lat || !ws?.lng) return;
-      const pph = (job.price_per_hour ?? 0).toFixed(0);
+      const gross = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
+      const net = mechanicNet(gross).toFixed(0);
 
       const el = document.createElement('div');
       el.style.cssText = 'cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px;';
       el.innerHTML = `
         <div style="width:40px;height:40px;border-radius:50%;background:#FF5C0A;border:2px solid #fff;display:grid;place-items-center;color:#fff;font-size:18px;box-shadow:0 2px 10px rgba(0,0,0,.5);transition:transform .15s;">🔧</div>
-        <div style="background:rgba(11,17,23,.92);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;letter-spacing:0.02em;">R$ ${pph}/h</div>
+        <div style="background:rgba(11,17,23,.92);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;letter-spacing:0.02em;">R$ ${net}</div>
       `;
       el.addEventListener('mouseenter', () => {
         const inner = el.querySelector('div')!;
@@ -199,7 +201,9 @@ export default function MechanicMapa() {
   }
 
   const jobsWithLocation = jobs.filter(j => j.workshop?.lat && j.workshop?.lng);
-  const cap = selected ? (selected.price_per_hour ?? 0) * (selected.max_hours ?? 1) : 0;
+  const selectedNet = selected
+    ? mechanicNet((selected.price_per_hour ?? 0) * (selected.max_hours ?? 1))
+    : 0;
 
   return (
     <MechanicLayout>
@@ -254,19 +258,19 @@ export default function MechanicMapa() {
               </button>
             </div>
 
-            {/* Price strip — valor fechado */}
+            {/* Price strip — só o líquido que vai pro PIX */}
             <div className="flex items-center justify-between bg-steel-800 rounded-2xl px-4 py-3 border border-steel-700/50">
               <div>
-                <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Pacote</div>
+                <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Pacote fechado</div>
                 <div className="text-sm text-steel-300 font-semibold mt-0.5">
-                  {selected.max_hours}h × R$ {selected.price_per_hour?.toFixed(0)}/h
+                  {selected.max_hours}h previstas
                 </div>
               </div>
               <div className="w-px h-10 bg-steel-700" />
               <div className="text-right">
-                <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Valor fechado</div>
-                <div className="text-2xl font-bold text-signal-400 font-display leading-none mt-0.5">R$ {cap.toFixed(0)}</div>
-                <div className="text-xs text-steel-600 mt-1">seus R$ {(cap * 0.82).toFixed(0)}</div>
+                <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Você recebe</div>
+                <div className="text-2xl font-bold text-signal-400 font-display leading-none mt-0.5">R$ {selectedNet.toFixed(0)}</div>
+                <div className="text-xs text-steel-600 mt-1">no PIX em até 24h</div>
               </div>
             </div>
 

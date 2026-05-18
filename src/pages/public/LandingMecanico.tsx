@@ -321,7 +321,7 @@ export default function LandingMecanico() {
           <div className="grid md:grid-cols-3 gap-4">
             <StatCard n="100%" label="das demandas pré-pagas (escrow)" />
             <StatCard n="24h" label="prazo máximo do PIX" />
-            <StatCard n="Zero" label="mensalidade ou taxa fixa" />
+            <StatCard n="Sem" label="mensalidade · sem multa pra sair" />
           </div>
         </div>
       </section>
