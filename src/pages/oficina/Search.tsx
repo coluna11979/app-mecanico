@@ -16,6 +16,7 @@ export default function WorkshopSearch() {
   const [list, setList] = useState<MechRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [openReviews, setOpenReviews] = useState<Set<string>>(new Set());
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
   function toggleReviews(id: string) {
     setOpenReviews(prev => {
@@ -24,6 +25,41 @@ export default function WorkshopSearch() {
       return next;
     });
   }
+
+  async function loadFavorites() {
+    if (!shop) return;
+    const { data } = await supabase
+      .from('workshop_favorite_mechanics')
+      .select('mechanic_id')
+      .eq('workshop_id', shop.id);
+    setFavorites(new Set((data ?? []).map(d => d.mechanic_id)));
+  }
+
+  async function toggleFavorite(mechanicId: string) {
+    if (!shop) return;
+    const isFav = favorites.has(mechanicId);
+    // Atualização otimista
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(mechanicId); else next.add(mechanicId);
+      return next;
+    });
+    if (isFav) {
+      const { error } = await supabase
+        .from('workshop_favorite_mechanics')
+        .delete()
+        .eq('workshop_id', shop.id)
+        .eq('mechanic_id', mechanicId);
+      if (error) loadFavorites(); // reverte em caso de erro
+    } else {
+      const { error } = await supabase
+        .from('workshop_favorite_mechanics')
+        .insert({ workshop_id: shop.id, mechanic_id: mechanicId });
+      if (error) loadFavorites();
+    }
+  }
+
+  useEffect(() => { loadFavorites(); }, [shop?.id]);
 
   // hire modal
   const [target, setTarget] = useState<MechRow | null>(null);
@@ -99,7 +135,18 @@ export default function WorkshopSearch() {
                   <div className="font-bold">{m.profile.full_name}</div>
                   <div className="text-xs text-steel-500">★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · {m.experience_years}a</div>
                 </div>
-                <span className="badge-success">●</span>
+                <button
+                  type="button"
+                  onClick={() => toggleFavorite(m.id)}
+                  title={favorites.has(m.id) ? 'Remover dos preferidos' : 'Adicionar aos preferidos'}
+                  className={`h-9 w-9 rounded-full grid place-items-center transition active:scale-90 ${
+                    favorites.has(m.id)
+                      ? 'bg-brand-500/10 text-brand-600 hover:bg-brand-500/20'
+                      : 'bg-steel-100 text-steel-400 hover:text-brand-500 hover:bg-brand-50'
+                  }`}
+                >
+                  {favorites.has(m.id) ? '★' : '☆'}
+                </button>
               </div>
               <div className="mt-3 flex flex-wrap gap-1">
                 {m.skills.slice(0, 4).map(s => <span key={s} className="badge bg-steel-100 text-steel-700">{s}</span>)}

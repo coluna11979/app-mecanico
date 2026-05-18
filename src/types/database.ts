@@ -95,7 +95,14 @@ export interface Job {
   cancellation_fee: number | null;
   cancellation_refund: number | null;
   stripe_refund_id: string | null;
+  audience: 'public' | 'favorites';
   created_at: string;
+}
+
+export interface WorkshopFavoriteMechanic {
+  workshop_id: string;
+  mechanic_id: string;
+  added_at: string;
 }
 
 export interface JobLocation {

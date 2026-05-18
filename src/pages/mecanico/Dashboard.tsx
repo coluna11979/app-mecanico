@@ -365,6 +365,11 @@ export default function MechanicDashboard() {
                 const region = ws ? `${ws.city}${ws.state ? `/${ws.state}` : ''}` : null;
                 return (
                   <div key={j.id} className="card !bg-steel-800 hover:!bg-steel-700 transition">
+                    {j.audience === 'favorites' && (
+                      <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        ⭐ Convite preferido
+                      </div>
+                    )}
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-bold truncate">{j.title}</div>
