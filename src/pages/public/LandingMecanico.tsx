@@ -1,11 +1,21 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
+
+// Faixa de hora média no estado (atualizar quando tivermos dados ao vivo)
+const AVG_HOURLY_BRL = 80;
 
 /**
  * Landing de captura — APENAS para mecânico.
  * Estilo claro, alto contraste, gatilhos pesados.
  */
 export default function LandingMecanico() {
+  const [hoursPerWeek, setHoursPerWeek] = useState(30);
+  // Cálculo do líquido — taxa da plataforma aplicada nos bastidores, sem exibir
+  const weeklyNet  = Math.round(hoursPerWeek * AVG_HOURLY_BRL * 0.82);
+  const monthlyNet = weeklyNet * 4;
+  const showOverwork = hoursPerWeek > 40;
+
   return (
     <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden">
 
@@ -41,16 +51,17 @@ export default function LandingMecanico() {
                 🔧 Para mecânicos autônomos
               </div>
 
-              <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] text-steel-900">
-                <span className="text-brand-500">82%</span> pra você.<br />
-                Sempre.
+              <h1 className="mt-6 text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight leading-[1.02] text-steel-900">
+                Sua hora.<br />
+                Sua agenda.<br />
+                <span className="text-brand-500">Seu dinheiro.</span>
               </h1>
 
               <p className="mt-6 text-lg text-steel-600 leading-relaxed">
-                Pare de dividir <strong className="text-steel-900">50/50</strong> com a oficina.
-                Pare de cobrar cliente que some.
-                Pare de aceitar trabalho desvalorizado.<br />
-                <strong className="text-steel-900">Sua hora vale mais — e aqui ela é paga direito.</strong>
+                Aceite jobs de oficinas verificadas. Defina o valor da sua hora.
+                Trabalhe quantas horas quiser, quando quiser.
+                Receba via PIX em até 24h.<br />
+                <strong className="text-steel-900">Sem patrão, sem CLT, sem cliente que some.</strong>
               </p>
 
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
@@ -80,22 +91,18 @@ export default function LandingMecanico() {
                   <span className="text-[10px] text-steel-400">há 2 min</span>
                 </div>
                 <h3 className="text-2xl font-bold leading-tight text-white">Troca de pastilha de freio + sangria</h3>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="mt-4 grid grid-cols-2 gap-2 text-center">
                   <div className="bg-white/10 rounded-xl py-2">
-                    <div className="text-[9px] text-steel-300 uppercase tracking-wider">R$/h</div>
-                    <div className="text-lg font-bold text-brand-400 mt-0.5">R$ 90</div>
-                  </div>
-                  <div className="bg-white/10 rounded-xl py-2">
-                    <div className="text-[9px] text-steel-300 uppercase tracking-wider">Máx</div>
+                    <div className="text-[9px] text-steel-300 uppercase tracking-wider">Horas previstas</div>
                     <div className="text-lg font-bold text-white mt-0.5">2h</div>
                   </div>
                   <div className="bg-signal-500/30 border border-signal-500/40 rounded-xl py-2">
-                    <div className="text-[9px] text-signal-300 uppercase tracking-wider">Você</div>
-                    <div className="text-lg font-bold text-signal-300 mt-0.5">R$ 148</div>
+                    <div className="text-[9px] text-signal-300 uppercase tracking-wider">Estimativa</div>
+                    <div className="text-lg font-bold text-signal-300 mt-0.5">R$ 164</div>
                   </div>
                 </div>
                 <div className="mt-4 text-xs text-steel-300">
-                  🏭 Auto Centro Veloz · Itaim Bibi
+                  🏭 Auto Centro Veloz · Itaim Bibi · ~3,2 km
                 </div>
                 <button className="mt-4 w-full bg-brand-500 text-white font-bold rounded-xl py-3 text-sm">
                   Aceitar job
@@ -105,11 +112,79 @@ export default function LandingMecanico() {
               {/* Floating PIX card */}
               <div className="absolute -bottom-4 -left-4 bg-signal-500 text-white rounded-2xl px-4 py-3 shadow-xl rotate-[-3deg]">
                 <div className="text-[10px] font-bold uppercase tracking-widest opacity-90">PIX recebido</div>
-                <div className="text-2xl font-bold">R$ 148,00</div>
+                <div className="text-2xl font-bold">R$ 164,00</div>
                 <div className="text-[10px] opacity-90">há 23h</div>
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── CALCULADORA DE GANHOS ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10 max-w-3xl mx-auto">
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Calcule sua renda</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
+              Quanto você quer <span className="text-brand-500">ganhar</span>?
+            </h2>
+            <p className="mt-4 text-base text-steel-600">
+              Defina as horas que cabem na sua semana. Sem 44h obrigatórias, sem patrão fixando o horário.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 items-center bg-white rounded-3xl p-6 lg:p-8 shadow-xl border border-steel-100">
+            {/* Slider */}
+            <div>
+              <div className="flex items-baseline justify-between mb-2">
+                <span className="text-xs font-bold text-steel-500 uppercase tracking-wider">Horas por semana</span>
+                <span className="text-3xl font-bold text-brand-500 font-display">{hoursPerWeek}h</span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={48}
+                step={1}
+                value={hoursPerWeek}
+                onChange={e => setHoursPerWeek(Number(e.target.value))}
+                className="w-full accent-brand-500 cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-steel-500 font-semibold uppercase tracking-wider mt-1">
+                <button type="button" onClick={() => setHoursPerWeek(15)} className="hover:text-brand-600">15h<br /><span className="font-normal normal-case tracking-normal text-steel-400">Complementar</span></button>
+                <button type="button" onClick={() => setHoursPerWeek(30)} className="hover:text-brand-600 font-bold text-brand-600">30h<br /><span className="font-normal normal-case tracking-normal text-steel-400">Renda principal</span></button>
+                <button type="button" onClick={() => setHoursPerWeek(40)} className="hover:text-brand-600">40h<br /><span className="font-normal normal-case tracking-normal text-steel-400">Foco máximo</span></button>
+              </div>
+
+              {showOverwork && (
+                <div className="mt-5 bg-pending-50 border border-pending-200 rounded-xl px-3 py-2 text-xs text-pending-800 leading-relaxed">
+                  ⚠️ A gente não recomenda passar de 40h. Liberdade também é trabalhar menos quando precisa.
+                </div>
+              )}
+            </div>
+
+            {/* Resultado */}
+            <div className="bg-gradient-to-br from-brand-500 to-brand-600 rounded-2xl p-6 text-white shadow-xl shadow-brand-500/30">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-white/80">Sua renda estimada</div>
+              <div className="mt-1 text-4xl lg:text-5xl font-bold font-display leading-none">
+                R$ {weeklyNet.toLocaleString('pt-BR')}
+              </div>
+              <div className="text-sm text-white/80 mt-1">por semana</div>
+              <div className="mt-4 pt-4 border-t border-white/20 flex items-baseline justify-between">
+                <span className="text-sm text-white/80">≈ por mês</span>
+                <span className="text-xl font-bold font-display">R$ {monthlyNet.toLocaleString('pt-BR')}</span>
+              </div>
+              <p className="mt-4 text-[11px] text-white/70 leading-relaxed">
+                📅 Aproximadamente {(hoursPerWeek / 6).toFixed(1)}h por dia, segunda a sábado.
+                Oficina fecha domingo — sua folga é garantida, sem negociar.
+              </p>
+            </div>
+          </div>
+
+          <p className="mt-5 text-center text-xs text-steel-500 max-w-2xl mx-auto leading-relaxed">
+            ℹ️ Estimativa baseada na faixa média de R$ {AVG_HOURLY_BRL}/h dos jobs ativos em SP.
+            O seu valor depende dos jobs que aceitar e da sua produtividade.
+            Sem mensalidade, sem fidelidade, sem multa pra entrar ou sair.
+          </p>
         </div>
       </section>
 
@@ -217,8 +292,8 @@ export default function LandingMecanico() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Win emoji="💰" title="82% pra você. Não 50%."
-              desc="A plataforma cobra 18%. O resto é seu. Sempre. Sem pegadinha, sem desconto extra." />
+            <Win emoji="💰" title="Você define sua hora"
+              desc="Coloca o R$/h que cobra. Aceita só jobs no seu valor. Sem dividir 50/50 com ninguém, sem cobrar cliente." />
             <Win emoji="⚡" title="PIX em até 24h"
               desc="Oficina confirma o serviço, dinheiro cai na sua conta. Sem espera, sem cobrança." />
             <Win emoji="🛡️" title="Pagamento garantido"
@@ -260,7 +335,7 @@ export default function LandingMecanico() {
       <section className="py-20 lg:py-28 px-5 lg:px-8">
         <div className="max-w-5xl mx-auto">
           <div className="grid md:grid-cols-3 gap-4">
-            <StatCard n="82%" label="do valor pra você" />
+            <StatCard n="100%" label="das demandas pré-pagas (escrow)" />
             <StatCard n="24h" label="prazo máximo do PIX" />
             <StatCard n="Zero" label="mensalidade ou taxa fixa" />
           </div>
