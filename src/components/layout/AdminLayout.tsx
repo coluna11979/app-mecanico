@@ -33,6 +33,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Marketing',
+    items: [
+      { to: '/admin/leads', icon: '🎯', label: 'Leads' },
+    ],
+  },
+  {
     label: 'Sistema',
     items: [
       { to: '/admin/relatorios',    icon: '📄', label: 'Relatórios'    },

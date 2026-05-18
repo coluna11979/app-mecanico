@@ -13,7 +13,7 @@ type NewJob = {
   price_per_hour: string; max_hours: string; scheduled_at: string;
 };
 type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
-type JobMode = 'open' | 'direct';
+type JobMode = 'open' | 'favorites' | 'direct';
 
 const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '' };
 
@@ -45,6 +45,7 @@ export default function WorkshopDashboard() {
   const [pickedMechanic, setPickedMechanic] = useState<string>('');
   const [mechSearch, setMechSearch] = useState('');
   const [reviewsOpen, setReviewsOpen] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -56,7 +57,37 @@ export default function WorkshopDashboard() {
     if (!user || !currentWorkshop) return;
     fetchJobs(currentWorkshop.id);
     fetchMechanics();
+    fetchFavorites(currentWorkshop.id);
   }, [user, currentWorkshop?.id]);
+
+  async function fetchFavorites(workshopId: string) {
+    const { data } = await supabase
+      .from('workshop_favorite_mechanics')
+      .select('mechanic_id')
+      .eq('workshop_id', workshopId);
+    setFavorites(new Set((data ?? []).map(d => d.mechanic_id)));
+  }
+
+  async function toggleFavorite(mechanicId: string) {
+    if (!currentWorkshop?.id) return;
+    const isFav = favorites.has(mechanicId);
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(mechanicId); else next.add(mechanicId);
+      return next;
+    });
+    if (isFav) {
+      const { error } = await supabase
+        .from('workshop_favorite_mechanics').delete()
+        .eq('workshop_id', currentWorkshop.id).eq('mechanic_id', mechanicId);
+      if (error) fetchFavorites(currentWorkshop.id);
+    } else {
+      const { error } = await supabase
+        .from('workshop_favorite_mechanics')
+        .insert({ workshop_id: currentWorkshop.id, mechanic_id: mechanicId });
+      if (error) fetchFavorites(currentWorkshop.id);
+    }
+  }
 
   /* ── Realtime — atualiza listas em tempo real (status, chegada, etc) ── */
   useEffect(() => {
@@ -210,7 +241,12 @@ export default function WorkshopDashboard() {
       return;
     }
 
-    const isDirect = mode === 'direct' && !!pickedMechanic;
+    const isDirect    = mode === 'direct' && !!pickedMechanic;
+    const isFavorites = mode === 'favorites' && favorites.size > 0;
+    if (mode === 'favorites' && favorites.size === 0) {
+      setSaving(false);
+      return setFormError('Você ainda não tem mecânicos preferidos. Adicione pelo menos um antes de usar esse modo.');
+    }
     const payload: Record<string, unknown> = {
       workshop_id:    currentShop.id,
       title:          form.title.trim(),
@@ -220,6 +256,7 @@ export default function WorkshopDashboard() {
       price:          pph * mh,
       status:         isDirect ? 'assigned' : 'open',
       mechanic_id:    isDirect ? pickedMechanic : null,
+      audience:       isFavorites ? 'favorites' : 'public',
     };
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
     await supabase.from('jobs').insert(payload);
@@ -584,12 +621,25 @@ export default function WorkshopDashboard() {
               {!editingId && (
                 <div>
                   <label className="label">Como publicar</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
                       className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
                       <div className="text-lg mb-1">📢</div>
                       <div className="font-semibold text-sm">Para todos</div>
-                      <div className="text-xs text-steel-500 mt-0.5">Mecânicos disponíveis verão e poderão aceitar</div>
+                      <div className="text-xs text-steel-500 mt-0.5">Todos os mecânicos disponíveis verão</div>
+                    </button>
+                    <button type="button"
+                      onClick={() => { setMode('favorites'); setPickedMechanic(''); }}
+                      disabled={favorites.size === 0}
+                      title={favorites.size === 0 ? 'Adicione preferidos em "Buscar mecânicos" ou no picker abaixo' : undefined}
+                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${mode === 'favorites' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg mb-1">⭐</div>
+                      <div className="font-semibold text-sm">Meus preferidos</div>
+                      <div className="text-xs text-steel-500 mt-0.5">
+                        {favorites.size === 0
+                          ? 'Sem preferidos ainda'
+                          : `${favorites.size} ${favorites.size === 1 ? 'mecânico' : 'mecânicos'} na sua lista`}
+                      </div>
                     </button>
                     <button type="button" onClick={() => setMode('direct')}
                       className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
@@ -616,20 +666,34 @@ export default function WorkshopDashboard() {
                       <div key={m.id} className={`rounded-xl border-2 transition ${
                         pickedMechanic === m.id ? 'border-brand-500 bg-brand-50' : 'border-steel-100'
                       }`}>
-                        <button type="button"
-                          onClick={() => setPickedMechanic(m.id)}
-                          className="w-full flex items-center gap-3 p-3 text-left active:scale-95">
-                          <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
-                            {m.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold truncate">{m.name}</div>
-                            <div className="text-xs text-steel-500">
-                              ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                        <div className="w-full flex items-center gap-2 p-3">
+                          <button type="button"
+                            onClick={() => setPickedMechanic(m.id)}
+                            className="flex-1 flex items-center gap-3 text-left active:scale-95">
+                            <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
+                              {m.name.charAt(0).toUpperCase()}
                             </div>
-                          </div>
-                          {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
-                        </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold truncate">{m.name}</div>
+                              <div className="text-xs text-steel-500">
+                                ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                              </div>
+                            </div>
+                            {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
+                            title={favorites.has(m.id) ? 'Remover dos preferidos' : 'Adicionar aos preferidos'}
+                            className={`h-9 w-9 rounded-full grid place-items-center shrink-0 transition active:scale-90 ${
+                              favorites.has(m.id)
+                                ? 'bg-brand-500/15 text-brand-600 hover:bg-brand-500/25'
+                                : 'bg-steel-100 text-steel-400 hover:text-brand-500 hover:bg-brand-50'
+                            }`}
+                          >
+                            {favorites.has(m.id) ? '★' : '☆'}
+                          </button>
+                        </div>
                         <button type="button"
                           onClick={() => setReviewsOpen(reviewsOpen === m.id ? null : m.id)}
                           className="w-full text-[11px] text-brand-600 hover:text-brand-700 font-semibold border-t border-steel-100 py-1.5">

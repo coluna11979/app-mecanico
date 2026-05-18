@@ -1,8 +1,22 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
+
+function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
+  try {
+    const raw = sessionStorage.getItem('lead_prefill');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    sessionStorage.removeItem('lead_prefill');
+    return {
+      name:  typeof parsed.name  === 'string' ? parsed.name  : undefined,
+      email: typeof parsed.email === 'string' ? parsed.email : undefined,
+      phone: typeof parsed.phone === 'string' ? parsed.phone : undefined,
+    };
+  } catch { return {}; }
+}
 
 const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
@@ -16,6 +30,18 @@ export default function SignupWorkshop() {
     business_name: '', cnpj: '', address: '', city: '', state: 'SP', description: '',
   });
   function up<K extends keyof typeof f>(k: K, v: typeof f[K]) { setF(p => ({ ...p, [k]: v })); }
+
+  // Pré-preenche com os dados capturados no gate da home (se houver)
+  useEffect(() => {
+    const lead = consumeLeadPrefill();
+    if (!lead.name && !lead.email && !lead.phone) return;
+    setF(prev => ({
+      ...prev,
+      full_name: prev.full_name || lead.name  || '',
+      email:     prev.email     || lead.email || '',
+      phone:     prev.phone     || lead.phone || '',
+    }));
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
