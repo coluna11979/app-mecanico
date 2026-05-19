@@ -11,7 +11,7 @@ import type { Job, Mechanic, Workshop } from '@/types/database';
 
 type Toast = { id: string; job: Job };
 
-type WorkshopBrief = Pick<Workshop, 'business_name' | 'city' | 'state' | 'lat' | 'lng'>;
+type WorkshopBrief = Pick<Workshop, 'business_name' | 'city' | 'state' | 'lat' | 'lng' | 'rating' | 'total_jobs'>;
 type JobWithShop = Job & { workshop: WorkshopBrief | null };
 
 type PendingRating = Job & { workshop_name?: string };
@@ -68,7 +68,7 @@ export default function MechanicDashboard() {
       // Re-busca com workshop para já vir com cidade/coords
       const { data: j } = await supabase
         .from('jobs')
-        .select('*, workshop:workshops(business_name, city, state, lat, lng)')
+        .select('*, workshop:workshops(business_name, city, state, lat, lng, rating, total_jobs)')
         .eq('id', job.id).maybeSingle();
       const enriched = (j as JobWithShop | null) ?? { ...job, workshop: null };
       setOpenJobs(prev => [enriched, ...prev.filter(x => x.id !== enriched.id)]);
@@ -100,7 +100,7 @@ export default function MechanicDashboard() {
   async function fetchJobs(mechId: string) {
     const [{ data: open }, { data: mine }, { data: toRate }] = await Promise.all([
       supabase.from('jobs')
-        .select('*, workshop:workshops(business_name, city, state, lat, lng)')
+        .select('*, workshop:workshops(business_name, city, state, lat, lng, rating, total_jobs)')
         .eq('status', 'open')
         .order('created_at', { ascending: false })
         .limit(20),
@@ -383,6 +383,13 @@ export default function MechanicDashboard() {
                                 <span className="text-brand-400 font-semibold">~{formatDistance(km)}</span>
                               </>
                             )}
+                          </div>
+                        )}
+                        {ws && (ws.rating > 0 || ws.total_jobs > 0) && (
+                          <div className="text-xs text-steel-500 mt-1 flex items-center gap-1.5">
+                            <span className="text-pending-400">★ {ws.rating.toFixed(1)}</span>
+                            <span className="text-steel-700">·</span>
+                            <span>{ws.total_jobs} {ws.total_jobs === 1 ? 'serviço concluído' : 'serviços concluídos'}</span>
                           </div>
                         )}
                         {j.scheduled_at && (

@@ -4,6 +4,7 @@ import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { mechanicNet } from '@/lib/payment';
+import { WorkshopReviews } from '@/components/WorkshopReviews';
 import type { Job, Workshop } from '@/types/database';
 
 export default function MechanicJobDetail() {
@@ -13,6 +14,7 @@ export default function MechanicJobDetail() {
   const [job, setJob] = useState<Job | null>(null);
   const [shop, setShop] = useState<Workshop | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showReviews, setShowReviews] = useState(false);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -73,6 +75,18 @@ export default function MechanicJobDetail() {
                 <div className="text-xs text-steel-500 mt-0.5">★ {shop.rating.toFixed(1)} · {shop.total_jobs} jobs concluídos</div>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowReviews(v => !v)}
+              className="mt-3 w-full text-xs text-brand-400 hover:text-brand-300 font-semibold border-t border-steel-700 pt-2 transition"
+            >
+              {showReviews ? '▲ Ocultar avaliações' : '▼ Ver o que outros mecânicos falaram dessa oficina'}
+            </button>
+            {showReviews && (
+              <div className="mt-2 pt-2 border-t border-steel-700">
+                <WorkshopReviews workshopId={shop.id} />
+              </div>
+            )}
           </div>
         )}
 

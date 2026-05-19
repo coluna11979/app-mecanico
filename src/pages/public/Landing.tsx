@@ -44,8 +44,8 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-5 lg:px-8 h-16 flex items-center justify-between">
           <Logo />
           <nav className="hidden md:flex items-center gap-7 text-sm font-semibold text-steel-700">
-            <a href="#mecanico" className="hover:text-brand-600 transition">Mecânico</a>
-            <a href="#oficina" className="hover:text-brand-600 transition">Oficina</a>
+            <button type="button" onClick={() => go('mechanic')} className="hover:text-brand-600 transition">Mecânico</button>
+            <button type="button" onClick={() => go('workshop')} className="hover:text-brand-600 transition">Oficina</button>
             <a href="#como-funciona" className="hover:text-brand-600 transition">Como funciona</a>
             <a href="#manifesto" className="hover:text-brand-600 transition">Manifesto</a>
           </nav>
@@ -95,8 +95,8 @@ export default function Landing() {
               type="button"
               onClick={() => go('mechanic')}
               className="group relative bg-steel-900 text-white rounded-3xl p-6 lg:p-8 overflow-hidden shadow-xl hover:shadow-2xl transition-all hover:-translate-y-1 hover:scale-[1.01] text-left w-full">
-              {/* Mini cena */}
-              <div className="absolute -right-6 -bottom-8 w-56 h-56 opacity-90 pointer-events-none">
+              {/* Mini cena — escondida no mobile pra não tampar a copy */}
+              <div className="hidden sm:block absolute -right-6 -bottom-8 w-56 h-56 opacity-90 pointer-events-none">
                 <MiniMechanic />
               </div>
               <div className="relative">
@@ -119,7 +119,7 @@ export default function Landing() {
               type="button"
               onClick={() => go('workshop')}
               className="group relative bg-gradient-to-br from-brand-500 to-brand-600 text-white rounded-3xl p-6 lg:p-8 overflow-hidden shadow-xl shadow-brand-500/30 hover:shadow-2xl transition-all hover:-translate-y-1 hover:scale-[1.01] text-left w-full">
-              <div className="absolute -right-6 -bottom-8 w-56 h-56 opacity-90 pointer-events-none">
+              <div className="hidden sm:block absolute -right-6 -bottom-8 w-56 h-56 opacity-90 pointer-events-none">
                 <MiniWorkshop />
               </div>
               <div className="relative">

@@ -288,15 +288,15 @@ export default function LandingOficina() {
             <Win emoji="💰" title="Pague só pela hora trabalhada"
               desc="Sem CLT, sem encargos, sem mensalidade. Cobrou 2h? Você paga 2h. Cobrou 0? Não paga nada." />
             <Win emoji="🛡️" title="Pagamento intermediado"
-              desc="Cliente paga por cartão ou PIX direto na plataforma. Você só libera depois do serviço aprovado." />
+              desc="Você paga via cartão ou PIX antes do mecânico começar. Fica retido em escrow e só vai pro mecânico depois que você confirma a conclusão." />
             <Win emoji="📋" title="OS digital grátis"
               desc="Cadastro de cliente, veículo, histórico, agendamento, mecânico interno. Adeus caderninho." />
             <Win emoji="🏪" title="Multi-loja na mesma conta"
               desc="Tem 2, 3, 5 oficinas? Gerencia tudo no mesmo login, troca entre lojas com 1 clique." />
             <Win emoji="📍" title="Rastreamento ao vivo"
-              desc="Vê o mecânico chegando no mapa. Cliente vê também (transparência vira satisfação)." />
-            <Win emoji="⭐" title="Reputação que vende sozinha"
-              desc="Cada serviço bem feito vira nota pública. Sua oficina aparece pra cliente novo na cidade toda." />
+              desc="Acompanha o mecânico no mapa em tempo real. ETA preciso, confirmação automática de chegada — sem ligar pra perguntar 'onde tá'." />
+            <Win emoji="⭐" title="Reputação atrai os melhores"
+              desc="Cada serviço bem feito vira nota da sua oficina dentro da plataforma. Quanto melhor sua reputação, mais mecânicos top aceitam trabalhar pra você." />
             <Win emoji="📊" title="Gestão visível"
               desc="OS por status, faturamento, mecânicos ativos, clientes recorrentes. Tudo no painel, em tempo real." />
           </div>
@@ -319,7 +319,7 @@ export default function LandingOficina() {
             <FlowStep n={2} title="Publica demanda quando faltar gente"
               desc="Define o serviço, valor por hora, teto de horas. Marketplace dispara alerta pra mecânicos da região." />
             <FlowStep n={3} title="Mecânico aceita e executa"
-              desc="Você acompanha tudo no mapa. Cliente paga via app. Mecânico chega, faz o serviço, registra horas." />
+              desc="Você acompanha o trajeto no mapa. Quando ele chega, você paga via app (cartão ou PIX). Aí o serviço começa." />
             <FlowStep n={4} title="Avalia e libera"
               desc="Confirma o serviço, dá nota. Plataforma libera o pagamento. Tudo registrado no histórico." />
           </div>
@@ -383,8 +383,8 @@ export default function LandingOficina() {
               a="CPF e CNH são validados manualmente antes da aprovação. Cada mecânico tem nota pública e histórico de jobs visíveis. Você acompanha a chegada no mapa em tempo real e só libera o pagamento depois de confirmar que o serviço ficou bom — se algo der errado, não paga."
             />
             <Faq
-              q="E se o cliente não pagar?"
-              a="O cliente paga via cartão ou PIX direto na plataforma ANTES do serviço começar. O valor fica em escrow e só é liberado quando você confirma a conclusão. Não tem como o serviço ser feito sem o dinheiro estar garantido."
+              q="Como o pagamento ao mecânico funciona?"
+              a="Você paga via cartão ou PIX direto na plataforma quando o mecânico chega — antes do serviço começar. O valor fica retido em escrow e só é liberado pra ele depois que você confirma a conclusão do serviço. Você protege seu dinheiro; ele tem garantia de que vai receber."
             />
             <Faq
               q="Tem mensalidade ou taxa de cadastro?"
