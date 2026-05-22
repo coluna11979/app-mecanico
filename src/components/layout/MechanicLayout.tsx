@@ -11,6 +11,31 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Mecânico';
   const location = useLocation();
   const [unread, setUnread] = useState(0);
+  const [agendaCount, setAgendaCount] = useState(0);
+
+  /* ── Conta agendamentos aceitos aguardando deslocamento ── */
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    async function countAgenda() {
+      const { data: meRow } = await supabase
+        .from('mechanics').select('id').eq('profile_id', user!.id).maybeSingle();
+      if (!meRow?.id || !alive) { setAgendaCount(0); return; }
+      const { count } = await supabase
+        .from('jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('mechanic_id', meRow.id)
+        .eq('status', 'assigned')
+        .is('en_route_at', null);
+      if (alive) setAgendaCount(count ?? 0);
+    }
+    countAgenda();
+    const ch = supabase.channel('mec-layout:agenda')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jobs' }, () => countAgenda())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'jobs' }, () => countAgenda())
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(ch); };
+  }, [user, location.pathname]);
 
   /* ── Conta mensagens não lidas para os jobs ativos deste mecânico ── */
   useEffect(() => {
@@ -82,11 +107,12 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
 
       {/* ── Bottom tab bar ── */}
       <nav className="fixed bottom-0 inset-x-0 bg-steel-950/98 backdrop-blur border-t border-steel-800 z-30 safe-area-inset-bottom">
-        <div className="grid grid-cols-4 max-w-lg mx-auto">
+        <div className="grid grid-cols-5 max-w-lg mx-auto">
           <Tab to="/mecanico/dashboard" label="Jobs"    icon={<IconJobs />}    badge={unread} />
+          <Tab to="/mecanico/agenda"    label="Agenda"  icon={<IconAgenda />}  badge={agendaCount} />
           <Tab to="/mecanico/mapa"      label="Mapa"    icon={<IconMap />}     />
-          <Tab to="/mecanico/perfil"    label="Perfil"  icon={<IconProfile />} />
           <Tab to="/mecanico/ganhos"    label="Ganhos"  icon={<IconGanhos />}  />
+          <Tab to="/mecanico/perfil"    label="Perfil"  icon={<IconProfile />} />
         </div>
       </nav>
     </div>
@@ -141,6 +167,17 @@ function IconJobs() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
       <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </svg>
+  );
+}
+
+function IconAgenda() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
   );
 }

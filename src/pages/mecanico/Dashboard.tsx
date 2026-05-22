@@ -7,6 +7,7 @@ import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { distKm, formatDistance } from '@/lib/geo';
 import { mechanicNet } from '@/lib/payment';
+import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
 type Toast = { id: string; job: Job };
@@ -119,7 +120,11 @@ export default function MechanicDashboard() {
         : Promise.resolve({ data: [] }),
     ]);
     setOpenJobs((open as JobWithShop[]) ?? []);
-    setActiveJobs((mine as Job[]) ?? []);
+    // "Em andamento" = só os que já estão a caminho ou em execução.
+    // Agendados aceitos (assigned + en_route_at null) ficam na aba Agenda.
+    setActiveJobs(((mine as Job[]) ?? []).filter(
+      j => j.status === 'in_progress' || (j.status === 'assigned' && !!j.en_route_at)
+    ));
     setPendingRatings(((toRate ?? []) as any[]).map(j => ({
       ...j, workshop_name: j.workshop?.business_name,
     })));
@@ -167,10 +172,19 @@ export default function MechanicDashboard() {
   async function acceptJob(job: Job) {
     if (!me) return;
     setAccepting(job.id);
-    const { error } = await supabase.from('jobs').update({ mechanic_id: me.id, status: 'assigned' }).eq('id', job.id).eq('status', 'open');
+    const scheduled = isScheduled(job);
+    const enRoute = scheduled ? null : new Date().toISOString();
+    const { error } = await supabase
+      .from('jobs')
+      .update({ mechanic_id: me.id, status: 'assigned', en_route_at: enRoute })
+      .eq('id', job.id).eq('status', 'open');
     if (!error) {
       setOpenJobs(prev => prev.filter(j => j.id !== job.id));
-      setActiveJobs(prev => [{ ...job, mechanic_id: me.id, status: 'assigned' }, ...prev]);
+      if (scheduled) {
+        nav('/mecanico/agenda');
+      } else {
+        setActiveJobs(prev => [{ ...job, mechanic_id: me.id, status: 'assigned', en_route_at: enRoute }, ...prev]);
+      }
     }
     setAccepting(null);
   }
@@ -293,12 +307,12 @@ export default function MechanicDashboard() {
                       <div className="text-sm opacity-80">{j.status === 'assigned' ? 'A caminho' : 'Em serviço'}</div>
                       <div className="font-bold text-lg truncate">{j.title}</div>
                       <div className="text-xs opacity-70 mt-0.5">
-                        Pacote: {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
+                        {j.max_hours ?? 1}h previstas
                       </div>
                     </div>
                     <div className="text-right shrink-0 ml-3">
-                      <div className="text-xs opacity-70">valor</div>
-                      <span className="text-2xl font-bold font-display">R$ {j.price.toFixed(0)}</span>
+                      <div className="text-xs opacity-70">você recebe</div>
+                      <span className="text-2xl font-bold font-display">R$ {mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1)).toFixed(0)}</span>
                     </div>
                   </div>
                   <div className="mt-2 text-xs opacity-80">Toque para ver mapa →</div>
@@ -393,9 +407,15 @@ export default function MechanicDashboard() {
                           </div>
                         )}
                         {j.scheduled_at && (
-                          <div className="text-xs text-steel-500 mt-1">
-                            📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
-                          </div>
+                          isScheduled(j) ? (
+                            <div className="text-xs mt-1 inline-flex items-center gap-1 bg-pending-500/15 text-pending-300 font-semibold px-2 py-0.5 rounded-full">
+                              📅 Agendado: {formatScheduled(j.scheduled_at)}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-steel-500 mt-1">
+                              📅 {formatScheduled(j.scheduled_at)}
+                            </div>
+                          )
                         )}
                       </div>
                       <div className="text-right shrink-0">

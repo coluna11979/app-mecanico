@@ -4,6 +4,7 @@ import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { mechanicNet } from '@/lib/payment';
+import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { WorkshopReviews } from '@/components/WorkshopReviews';
 import type { Job, Workshop } from '@/types/database';
 
@@ -32,8 +33,15 @@ export default function MechanicJobDetail() {
     setBusy(true);
     const { data: m } = await supabase.from('mechanics').select('id').eq('profile_id', user.id).maybeSingle();
     if (!m) { setBusy(false); return; }
-    await supabase.from('jobs').update({ status: 'assigned', mechanic_id: m.id }).eq('id', job.id);
-    nav(`/mecanico/job/${job.id}/tracking`);
+    const scheduled = isScheduled(job);
+    await supabase.from('jobs').update({
+      status: 'assigned',
+      mechanic_id: m.id,
+      // Imediato já sai a caminho; agendado fica na Agenda (en_route_at null)
+      en_route_at: scheduled ? null : new Date().toISOString(),
+    }).eq('id', job.id);
+    // Agendado: vai pra Agenda. Imediato: abre o tracking direto.
+    nav(scheduled ? '/mecanico/agenda' : `/mecanico/job/${job.id}/tracking`);
   }
 
   if (!job) return <MechanicLayout><div className="p-6 text-steel-400">Carregando…</div></MechanicLayout>;
@@ -49,10 +57,20 @@ export default function MechanicJobDetail() {
           <h1 className="text-2xl font-bold mt-1">{job.title}</h1>
           <p className="mt-3 text-steel-300 leading-relaxed">{job.description}</p>
           {job.scheduled_at && (
-            <div className="mt-3 flex items-center gap-2 text-sm text-steel-400">
-              <span>📅</span>
-              <span>{new Date(job.scheduled_at).toLocaleString('pt-BR', { weekday:'short', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</span>
-            </div>
+            isScheduled(job) ? (
+              <div className="mt-3 bg-pending-500/15 border border-pending-500/40 rounded-xl px-3 py-2 flex items-center gap-2 text-sm">
+                <span className="text-lg">📅</span>
+                <div>
+                  <div className="text-pending-300 font-bold">Serviço agendado</div>
+                  <div className="text-xs text-steel-400">{formatScheduled(job.scheduled_at)} · não é pra agora</div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 flex items-center gap-2 text-sm text-steel-400">
+                <span>📅</span>
+                <span>{formatScheduled(job.scheduled_at)}</span>
+              </div>
+            )
           )}
         </div>
 
@@ -111,7 +129,9 @@ export default function MechanicJobDetail() {
 
         <div className="grid grid-cols-2 gap-2">
           <Link to="/mecanico/dashboard" className="btn-ghost btn-lg">Recusar</Link>
-          <button onClick={accept} disabled={busy} className="btn-primary btn-lg">{busy ? '…' : 'Aceitar job'}</button>
+          <button onClick={accept} disabled={busy} className="btn-primary btn-lg">
+            {busy ? '…' : isScheduled(job) ? 'Aceitar agendamento' : 'Aceitar job'}
+          </button>
         </div>
       </div>
     </MechanicLayout>

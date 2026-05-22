@@ -78,6 +78,7 @@ export interface Job {
   max_hours: number;
   actual_hours: number | null;
   scheduled_at: string | null;
+  en_route_at: string | null;
   started_at: string | null;
   completed_at: string | null;
   arrived_at: string | null;

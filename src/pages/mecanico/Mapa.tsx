@@ -8,6 +8,7 @@ import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { distKm, formatDistance } from '@/lib/geo';
 import { mechanicNet } from '@/lib/payment';
+import { isScheduled } from '@/lib/scheduling';
 import mapboxgl from 'mapbox-gl';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
@@ -191,13 +192,18 @@ export default function MechanicMapa() {
   async function acceptJob() {
     if (!me || !selected) return;
     setAccepting(true);
+    const scheduled = isScheduled(selected);
     const { error } = await supabase
       .from('jobs')
-      .update({ mechanic_id: me.id, status: 'assigned' })
+      .update({
+        mechanic_id: me.id,
+        status: 'assigned',
+        en_route_at: scheduled ? null : new Date().toISOString(),
+      })
       .eq('id', selected.id)
       .eq('status', 'open');
     setAccepting(false);
-    if (!error) nav(`/mecanico/job/${selected.id}/tracking`);
+    if (!error) nav(scheduled ? '/mecanico/agenda' : `/mecanico/job/${selected.id}/tracking`);
   }
 
   const jobsWithLocation = jobs.filter(j => j.workshop?.lat && j.workshop?.lng);

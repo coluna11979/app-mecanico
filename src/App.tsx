@@ -19,6 +19,7 @@ import MechanicDashboard from './pages/mecanico/Dashboard';
 import MechanicJob from './pages/mecanico/JobDetail';
 import MechanicProfile from './pages/mecanico/Profile';
 import MechanicGanhos from './pages/mecanico/Ganhos';
+import MechanicAgenda from './pages/mecanico/Agenda';
 
 // Lazy: páginas com Mapbox (~3.7MB) — carregadas sob demanda
 const MechanicTracking = lazy(() => import('./pages/mecanico/Tracking'));
@@ -79,6 +80,7 @@ export default function App() {
       <Route path="/mecanico/job/:id/tracking" element={<ProtectedRoute allow={['mechanic']}><Suspense fallback={<LazyFallback />}><MechanicTracking /></Suspense></ProtectedRoute>} />
       <Route path="/mecanico/perfil" element={<ProtectedRoute allow={['mechanic']}><MechanicProfile /></ProtectedRoute>} />
       <Route path="/mecanico/ganhos" element={<ProtectedRoute allow={['mechanic']}><MechanicGanhos /></ProtectedRoute>} />
+      <Route path="/mecanico/agenda" element={<ProtectedRoute allow={['mechanic']}><MechanicAgenda /></ProtectedRoute>} />
       <Route path="/mecanico/mapa" element={<ProtectedRoute allow={['mechanic']}><Suspense fallback={<LazyFallback />}><MechanicMapa /></Suspense></ProtectedRoute>} />
 
       {/* Oficina */}

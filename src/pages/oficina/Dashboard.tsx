@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
 import { MechanicReviews } from '@/components/MechanicReviews';
+import { formatScheduled } from '@/lib/scheduling';
 import type { Job } from '@/types/database';
 
 type NewJob = {
@@ -762,6 +763,10 @@ function statusLabel(j: Job): string {
   if (j.status === 'open')        return 'Aguardando mecânico';
   if (j.status === 'in_progress') return '🔧 Em serviço';
   // status === 'assigned'
+  // Agendado aceito mas mecânico ainda não saiu (en_route_at null)
+  if (!j.en_route_at && j.scheduled_at) {
+    return `📅 Agendado · ${formatScheduled(j.scheduled_at)}`;
+  }
   if (!j.arrived_at)              return 'Mecânico a caminho';
   if (!j.pix_paid_at)             return 'Mecânico chegou — aguarda pagamento';
   if (!j.started_at)              return '✅ Pago — aguardando início do serviço';
