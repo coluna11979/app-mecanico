@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
 import { MechanicReviews } from '@/components/MechanicReviews';
-import { formatScheduled } from '@/lib/scheduling';
+import { formatScheduled, isScheduled } from '@/lib/scheduling';
 import type { Job } from '@/types/database';
 
 type NewJob = {
@@ -438,63 +438,111 @@ export default function WorkshopDashboard() {
         </section>
       )}
 
-      {/* Jobs em andamento */}
-      <section className="mb-8">
-        <h2 className="text-lg font-bold mb-3">Em andamento</h2>
-        {active.length === 0 ? (
-          <div className="card text-center text-steel-500 py-10">
-            Nenhum job ativo.{' '}
-            <button onClick={openCreateModal} className="text-brand-500 font-semibold">
-              Criar uma demanda →
-            </button>
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-2 gap-3">
-            {active.map(j => (
-              <div key={j.id} className="card">
-                <div className="flex justify-between items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold truncate">{j.title}</div>
-                    <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j)}</div>
-                    <div className="text-xs text-steel-400 mt-1">
-                      {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
-                    </div>
-                    {j.scheduled_at && (
-                      <div className="text-xs text-steel-400 mt-0.5">
-                        📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs text-steel-400">valor</div>
-                    <div className="text-lg font-bold font-display">R$ {j.price.toFixed(0)}</div>
-                    {j.mechanic_id ? (
-                      <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
-                        Ver no mapa
-                      </Link>
-                    ) : (
-                      <div className="mt-1 text-xs text-pending-600 font-semibold">Aguardando mecânico…</div>
-                    )}
-                  </div>
+      {/* Jobs em andamento — agrupados: agora / agendados / aguardando mecânico */}
+      {(() => {
+        const bucketOf = (j: Job): 'now' | 'scheduled' | 'waiting' => {
+          if (j.status === 'in_progress' || !!j.en_route_at || !!j.arrived_at) return 'now';
+          if (isScheduled(j)) return 'scheduled';
+          return 'waiting';
+        };
+        const now       = active.filter(j => bucketOf(j) === 'now');
+        const scheduled = active.filter(j => bucketOf(j) === 'scheduled')
+          .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
+        const waiting   = active.filter(j => bucketOf(j) === 'waiting');
+
+        const renderCard = (j: Job) => (
+          <div key={j.id} className="card">
+            <div className="flex justify-between items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="font-bold truncate">{j.title}</div>
+                <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j)}</div>
+                <div className="text-xs text-steel-400 mt-1">
+                  {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
                 </div>
-                {/* Ações — editar só enquanto status=open; cancelar sempre */}
-                <div className="mt-3 pt-2 border-t border-steel-100 flex justify-end items-center gap-3">
-                  {j.status === 'open' && !j.mechanic_id && (
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(j)}
-                      className="text-xs text-brand-600 hover:text-brand-700 font-semibold underline-offset-2 hover:underline"
-                    >
-                      ✏️ Editar
-                    </button>
-                  )}
-                  <CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} />
-                </div>
+                {j.scheduled_at && (
+                  <div className="text-xs text-steel-400 mt-0.5">
+                    📅 {formatScheduled(j.scheduled_at)}
+                  </div>
+                )}
               </div>
-            ))}
+              <div className="text-right shrink-0">
+                <div className="text-xs text-steel-400">valor</div>
+                <div className="text-lg font-bold font-display">R$ {j.price.toFixed(0)}</div>
+                {j.mechanic_id && j.en_route_at ? (
+                  <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
+                    Ver no mapa
+                  </Link>
+                ) : j.mechanic_id ? (
+                  <div className="mt-1 text-xs text-signal-600 font-semibold">Aceito ✓</div>
+                ) : (
+                  <div className="mt-1 text-xs text-pending-600 font-semibold">Aguardando…</div>
+                )}
+              </div>
+            </div>
+            {/* Ações — editar só enquanto status=open; cancelar sempre */}
+            <div className="mt-3 pt-2 border-t border-steel-100 flex justify-end items-center gap-3">
+              {j.status === 'open' && !j.mechanic_id && (
+                <button
+                  type="button"
+                  onClick={() => openEditModal(j)}
+                  className="text-xs text-brand-600 hover:text-brand-700 font-semibold underline-offset-2 hover:underline"
+                >
+                  ✏️ Editar
+                </button>
+              )}
+              <CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} />
+            </div>
           </div>
-        )}
-      </section>
+        );
+
+        if (active.length === 0) {
+          return (
+            <section className="mb-8">
+              <h2 className="text-lg font-bold mb-3">Demandas ativas</h2>
+              <div className="card text-center text-steel-500 py-10">
+                Nenhuma demanda ativa.{' '}
+                <button onClick={openCreateModal} className="text-brand-500 font-semibold">
+                  Criar uma demanda →
+                </button>
+              </div>
+            </section>
+          );
+        }
+
+        return (
+          <>
+            {now.length > 0 && (
+              <section className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-lg font-bold">🔧 Acontecendo agora</h2>
+                  <span className="text-xs font-bold bg-signal-500/15 text-signal-700 px-2 py-0.5 rounded-full">{now.length}</span>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">{now.map(renderCard)}</div>
+              </section>
+            )}
+
+            {scheduled.length > 0 && (
+              <section className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-lg font-bold">📅 Agendados</h2>
+                  <span className="text-xs font-bold bg-pending-500/15 text-pending-700 px-2 py-0.5 rounded-full">{scheduled.length}</span>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">{scheduled.map(renderCard)}</div>
+              </section>
+            )}
+
+            {waiting.length > 0 && (
+              <section className="mb-8">
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-lg font-bold">📢 Aguardando mecânico</h2>
+                  <span className="text-xs font-bold bg-steel-200 text-steel-700 px-2 py-0.5 rounded-full">{waiting.length}</span>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">{waiting.map(renderCard)}</div>
+              </section>
+            )}
+          </>
+        );
+      })()}
 
       {/* Histórico */}
       <section>
