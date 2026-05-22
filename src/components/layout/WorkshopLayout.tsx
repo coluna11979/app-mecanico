@@ -8,6 +8,7 @@ import type { Job, Workshop } from '@/types/database';
 
 type ArrivalAlert = { jobId: string; title: string };
 type FinishedAlert = { jobId: string; title: string; price: number };
+type EnRouteAlert = { jobId: string; title: string };
 
 interface NavItem  { to: string; icon: string; label: string }
 interface SoonItem { icon: string; label: string; desc: string }
@@ -110,6 +111,10 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const [confirming, setConfirming] = useState(false);
   const finishedRef = useRef<Set<string>>(new Set());
 
+  /* ── Alerta global: mecânico saiu pro agendamento (en_route_at setado) ── */
+  const [enRouteAlert, setEnRouteAlert] = useState<EnRouteAlert | null>(null);
+  const enRouteRef = useRef<Set<string>>(new Set());
+
   /* Destrava áudio na primeira interação */
   useEffect(() => { attachAutoUnlock(); }, []);
 
@@ -140,6 +145,49 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       .then(({ data }) => {
         (data ?? []).forEach((j: any) => finishedRef.current.add(j.id));
       });
+  }, [shopId]);
+
+  /* Popula set inicial de jobs já a caminho (não alerta retroativo) */
+  useEffect(() => {
+    if (!shopId) return;
+    supabase
+      .from('jobs')
+      .select('id, en_route_at')
+      .eq('workshop_id', shopId)
+      .not('en_route_at', 'is', null)
+      .then(({ data }) => {
+        (data ?? []).forEach((j: any) => enRouteRef.current.add(j.id));
+      });
+  }, [shopId]);
+
+  /* Realtime — alerta quando o mecânico SAI para o agendamento (en_route_at setado) */
+  useEffect(() => {
+    if (!shopId) return;
+    const ch = supabase.channel(`layout:enroute:${shopId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'jobs',
+        filter: `workshop_id=eq.${shopId}`,
+      }, (payload) => {
+        const newRow = payload.new as Job;
+        const oldRow = payload.old as Job | undefined;
+        // Só na transição en_route_at null → setado, e ainda não chegou
+        if (!newRow.en_route_at) return;
+        if (oldRow?.en_route_at) return;
+        if (newRow.arrived_at) return;
+        if (enRouteRef.current.has(newRow.id)) return;
+        // Só faz sentido alertar pra agendamento (job que tinha data marcada)
+        if (!newRow.scheduled_at) { enRouteRef.current.add(newRow.id); return; }
+
+        if (window.location.pathname === `/oficina/job/${newRow.id}/tracking`) {
+          enRouteRef.current.add(newRow.id);
+          return;
+        }
+        enRouteRef.current.add(newRow.id);
+        playJobAlert();
+        setEnRouteAlert({ jobId: newRow.id, title: newRow.title });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, [shopId]);
 
   /* Realtime — alerta quando arrived_at é setado pela primeira vez */
@@ -268,6 +316,35 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex bg-steel-50">
+
+      {/* 🚗 Modal global: mecânico SAIU pro agendamento */}
+      {enRouteAlert && (
+        <div className="fixed inset-0 z-[100] bg-steel-900/70 backdrop-blur grid place-items-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl border-4 border-pending-500 shadow-2xl max-w-md w-full p-6 sm:p-8 text-center space-y-4">
+            <div className="text-6xl animate-bounce">🚗</div>
+            <h2 className="text-2xl font-bold text-steel-900">Mecânico a caminho!</h2>
+            <p className="text-steel-600">
+              O mecânico saiu para o serviço agendado. Acompanhe a chegada pelo mapa.
+            </p>
+            <div className="bg-steel-50 rounded-xl px-4 py-3 text-sm font-semibold text-steel-700 truncate">
+              📋 {enRouteAlert.title}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setEnRouteAlert(null)} className="btn-ghost flex-1">Depois</button>
+              <button
+                onClick={() => {
+                  const target = `/oficina/job/${enRouteAlert.jobId}/tracking`;
+                  setEnRouteAlert(null);
+                  nav(target);
+                }}
+                className="btn-primary flex-[2] btn-lg"
+              >
+                Ver no mapa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ✅ Modal global: mecânico FINALIZOU — confirme p/ liberar pagamento */}
       {finishedAlert && (
