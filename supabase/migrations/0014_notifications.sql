@@ -39,11 +39,12 @@ begin
     raise exception 'invalid target';
   end if;
 
+  -- role e status são enums; cast pra text pra comparar com os parâmetros
   insert into public.notifications (user_id, title, body, type, icon, link, read)
   select p.id, p_title, p_body, 'broadcast', p_icon, p_link, false
   from public.profiles p
-  where p.status = 'approved'
-    and (p_target = 'all' or p.role = p_target);
+  where p.status::text = 'approved'
+    and (p_target = 'all' or p.role::text = p_target);
 
   get diagnostics inserted = row_count;
   return inserted;
