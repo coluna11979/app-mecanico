@@ -16,16 +16,48 @@ export default function MechanicJobDetail() {
   const [shop, setShop] = useState<Workshop | null>(null);
   const [busy, setBusy] = useState(false);
   const [showReviews, setShowReviews] = useState(false);
+  const [myMechanicId, setMyMechanicId] = useState<string | null>(null);
 
   useEffect(() => { if (id) load(); }, [id]);
 
   async function load() {
     const { data: j } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
     setJob(j as Job);
+    if (user) {
+      const { data: m } = await supabase.from('mechanics').select('id').eq('profile_id', user.id).maybeSingle();
+      setMyMechanicId(m?.id ?? null);
+    }
     if (j) {
       const { data: w } = await supabase.from('workshops').select('*').eq('id', j.workshop_id).maybeSingle();
       setShop(w as Workshop);
     }
+  }
+
+  // Já aceitei esse job? (agendamento aceito aguardando o dia)
+  const isMine = !!job?.mechanic_id && job.mechanic_id === myMechanicId;
+
+  async function startDeparture() {
+    if (!job) return;
+    setBusy(true);
+    await supabase.from('jobs').update({ en_route_at: new Date().toISOString() }).eq('id', job.id);
+    setBusy(false);
+    nav(`/mecanico/job/${job.id}/tracking`);
+  }
+
+  async function dropJob() {
+    if (!job) return;
+    const reason = prompt('Por que você quer desistir desse agendamento?\n(Desistências repetidas afetam sua reputação)');
+    if (!reason || !reason.trim()) return;
+    setBusy(true);
+    const { data, error } = await supabase.functions.invoke('cancel-job', {
+      body: { job_id: job.id, reason: reason.trim(), cancelled_by: 'mechanic' },
+    });
+    setBusy(false);
+    if (error || (data as any)?.error) {
+      alert('Erro ao desistir: ' + ((data as any)?.error ?? error?.message ?? 'tente novamente'));
+      return;
+    }
+    nav('/mecanico/agenda');
   }
 
   async function accept() {
@@ -53,7 +85,9 @@ export default function MechanicJobDetail() {
 
         {/* Job header */}
         <div className="card !bg-steel-800">
-          <div className="text-xs text-brand-400 uppercase tracking-wider font-bold">Job disponível</div>
+          <div className="text-xs text-brand-400 uppercase tracking-wider font-bold">
+            {isMine ? (job.en_route_at ? 'Job em andamento' : 'Agendamento aceito') : 'Job disponível'}
+          </div>
           <h1 className="text-2xl font-bold mt-1">{job.title}</h1>
           <p className="mt-3 text-steel-300 leading-relaxed">{job.description}</p>
           {job.scheduled_at && (
@@ -127,12 +161,34 @@ export default function MechanicJobDetail() {
           );
         })()}
 
-        <div className="grid grid-cols-2 gap-2">
-          <Link to="/mecanico/dashboard" className="btn-ghost btn-lg">Recusar</Link>
-          <button onClick={accept} disabled={busy} className="btn-primary btn-lg">
-            {busy ? '…' : isScheduled(job) ? 'Aceitar agendamento' : 'Aceitar job'}
-          </button>
-        </div>
+        {isMine ? (
+          // Já aceitei. Se ainda não saí (agendado), posso ir agora ou desistir.
+          job.en_route_at ? (
+            <Link to={`/mecanico/job/${job.id}/tracking`} className="btn-primary btn-lg w-full text-center">
+              Abrir acompanhamento →
+            </Link>
+          ) : (
+            <div className="space-y-2">
+              <button onClick={startDeparture} disabled={busy} className="btn-primary btn-lg w-full !bg-signal-500 disabled:opacity-50">
+                {busy ? '…' : '🚗 Estou indo agora'}
+              </button>
+              <button
+                onClick={dropJob}
+                disabled={busy}
+                className="btn-ghost btn-lg w-full !border-alert-500/40 !text-alert-400 disabled:opacity-50"
+              >
+                {busy ? '…' : 'Desistir do agendamento'}
+              </button>
+            </div>
+          )
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/mecanico/dashboard" className="btn-ghost btn-lg">Recusar</Link>
+            <button onClick={accept} disabled={busy} className="btn-primary btn-lg">
+              {busy ? '…' : isScheduled(job) ? 'Aceitar agendamento' : 'Aceitar job'}
+            </button>
+          </div>
+        )}
       </div>
     </MechanicLayout>
   );
