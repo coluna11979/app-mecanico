@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
 import { supabase } from '@/lib/supabase';
 import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
+import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import type { Job, Workshop } from '@/types/database';
 
 type ArrivalAlert = { jobId: string; title: string };
@@ -18,6 +19,7 @@ const PLATAFORMA: NavItem[] = [
   { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'         },
   { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar mecânicos' },
   { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens'        },
+  { to: '/oficina/avisos',     icon: '🔔', label: 'Avisos'           },
 ];
 
 const GESTAO: NavItem[] = [
@@ -95,6 +97,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [open, setOpen]         = useState(false);
   const [unread, setUnread]     = useState(0);
+  const unreadNotif = useUnreadNotifications();
 
   const shopId = currentWorkshop?.id ?? null;
 
@@ -454,7 +457,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 <SideItem
                   key={item.to}
                   {...item}
-                  badge={item.to === '/oficina/mensagens' ? unread : 0}
+                  badge={item.to === '/oficina/mensagens' ? unread : item.to === '/oficina/avisos' ? unreadNotif : 0}
                   onClick={() => setOpen(false)}
                 />
               ))}
@@ -526,6 +529,20 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           ) : (
             <div className="flex-1"><Logo /></div>
           )}
+
+          {/* Sino de avisos (mobile) */}
+          <button
+            onClick={() => nav('/oficina/avisos')}
+            aria-label="Avisos"
+            className="relative shrink-0 h-9 w-9 grid place-items-center rounded-xl text-steel-600 hover:bg-steel-100 transition"
+          >
+            <span className="text-lg">🔔</span>
+            {unreadNotif > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
+                {unreadNotif > 9 ? '9+' : unreadNotif}
+              </span>
+            )}
+          </button>
 
           {/* Avatar + badge mobile no topo */}
           <div className="relative shrink-0">

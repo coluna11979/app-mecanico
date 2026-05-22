@@ -1,8 +1,9 @@
 import { ReactNode, useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
+import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 
 const LS_KEY_MEC = 'mecanico_msgs_last_seen';
 
@@ -12,6 +13,7 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [unread, setUnread] = useState(0);
   const [agendaCount, setAgendaCount] = useState(0);
+  const unreadNotif = useUnreadNotifications();
 
   /* ── Conta agendamentos aceitos aguardando deslocamento ── */
   useEffect(() => {
@@ -90,8 +92,20 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-30 bg-steel-900/95 backdrop-blur border-b border-steel-800 shrink-0">
         <div className="px-4 h-14 flex items-center justify-between">
           <Logo size={28} light />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-steel-400 hidden sm:block">{firstName}</span>
+            <Link
+              to="/mecanico/avisos"
+              aria-label="Avisos"
+              className="relative h-9 w-9 grid place-items-center rounded-xl text-steel-400 hover:text-brand-400 hover:bg-steel-800 transition"
+            >
+              <IconBell />
+              {unreadNotif > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
+                  {unreadNotif > 9 ? '9+' : unreadNotif}
+                </span>
+              )}
+            </Link>
             <button
               onClick={signOut}
               className="text-xs text-steel-500 hover:text-brand-400 transition px-3 py-2 rounded-xl hover:bg-steel-800 active:scale-95"
@@ -167,6 +181,15 @@ function IconJobs() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
       <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </svg>
+  );
+}
+
+function IconBell() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
   );
 }
