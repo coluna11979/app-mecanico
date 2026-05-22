@@ -345,8 +345,6 @@ export default function Landing() {
           <div className="pt-6 border-t border-steel-100 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-steel-500">
             <div>© MecânicoApp {new Date().getFullYear()} · Todos os direitos reservados</div>
             <div className="flex items-center gap-5">
-              <span>CNPJ em validação</span>
-              <span className="text-steel-300">·</span>
               <span>Feito no Brasil 🇧🇷</span>
             </div>
           </div>
