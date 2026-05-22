@@ -11,6 +11,8 @@ export interface Profile {
   avatar_url: string | null;
   status: ProfileStatus;
   admin_notes: string | null;
+  last_seen_at: string | null;
+  access_count: number;
   created_at: string;
   updated_at: string;
 }

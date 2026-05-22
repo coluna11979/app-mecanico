@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
+import { timeAgo, isRecent } from '@/lib/relativeTime';
 import type { Mechanic, Profile } from '@/types/database';
 
 type Row = Mechanic & { profile: Profile };
@@ -52,6 +53,7 @@ export default function AdminMechanics() {
               <th className="pr-4">Skills</th>
               <th className="pr-4">R$/h</th>
               <th className="pr-4">★</th>
+              <th className="pr-4">Último acesso</th>
               <th className="pr-4">Status</th>
               <th></th>
             </tr>
@@ -64,6 +66,7 @@ export default function AdminMechanics() {
                 <td className="pr-4 text-steel-500">{r.skills.slice(0, 3).join(', ')}</td>
                 <td className="pr-4">R$ {r.hourly_rate.toFixed(0)}</td>
                 <td className="pr-4">{r.rating.toFixed(1)}</td>
+                <td className="pr-4"><LastSeen iso={r.profile.last_seen_at} /></td>
                 <td className="pr-4"><StatusBadge s={r.profile.status} /></td>
                 <td className="pr-2">
                   <Link
@@ -100,7 +103,7 @@ export default function AdminMechanics() {
                 <span className="font-semibold">R$ {r.hourly_rate.toFixed(0)}/h</span>
                 <span className="text-steel-400 ml-2">★ {r.rating.toFixed(1)}</span>
               </div>
-              <span className="text-brand-500 text-xs font-bold">Ver detalhes →</span>
+              <LastSeen iso={r.profile.last_seen_at} />
             </div>
           </Link>
         ))}
@@ -118,4 +121,14 @@ function StatusBadge({ s }: { s: string }) {
     s === 'rejected'     ? 'badge-alert'   :
     s === 'under_review' ? 'badge-pending' : 'badge-pending';
   return <span className={cls}>{STATUS_LABEL[s] ?? s}</span>;
+}
+
+function LastSeen({ iso }: { iso: string | null }) {
+  const recent = isRecent(iso);
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs ${recent ? 'text-green-600 font-medium' : 'text-steel-400'}`}>
+      {recent && <span className="h-1.5 w-1.5 rounded-full bg-green-500" />}
+      {timeAgo(iso)}
+    </span>
+  );
 }

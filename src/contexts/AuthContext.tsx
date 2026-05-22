@@ -26,6 +26,22 @@ const Ctx = createContext<AuthCtx>({
 });
 
 const LS_CURRENT_WORKSHOP = 'mec-app-current-workshop';
+const LS_LAST_TOUCH = 'mec-app-last-touch';
+const TOUCH_THROTTLE_MS = 5 * 60 * 1000; // 5 min
+
+/** Registra o acesso do usuário (último acesso + contador) de forma assíncrona.
+ *  Faz throttle via localStorage para não bater no banco a cada reload. */
+function touchLastSeen() {
+  try {
+    const last = Number(localStorage.getItem(LS_LAST_TOUCH) ?? 0);
+    if (Date.now() - last < TOUCH_THROTTLE_MS) return;
+    localStorage.setItem(LS_LAST_TOUCH, String(Date.now()));
+  } catch { /* localStorage indisponível — segue sem throttle */ }
+  // fire-and-forget: não bloqueia o login
+  supabase.rpc('touch_last_seen').then(({ error }) => {
+    if (error) console.warn('[auth] touch_last_seen error:', error.message);
+  });
+}
 
 /** Promise.race com timeout — evita que await trave infinito */
 function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -159,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       wasSignedIn.current = true;
       const p = await fetchProfile(s.user.id);
       setProfile(p);
+      touchLastSeen();
       if (p?.role === 'workshop') {
         const list = await fetchWorkshops(s.user.id);
         applyWorkshops(list);
@@ -275,6 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setWorkshops([]);
         setCurrentWorkshopState(null);
         try { localStorage.removeItem(LS_CURRENT_WORKSHOP); } catch {}
+        try { localStorage.removeItem(LS_LAST_TOUCH); } catch {}
         await supabase.auth.signOut();
       },
       refreshProfile: async () => {
