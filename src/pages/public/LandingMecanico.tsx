@@ -48,7 +48,7 @@ export default function LandingMecanico() {
             {/* Coluna esquerda — texto */}
             <div>
               <div className="inline-flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-3 py-1 text-xs font-bold text-brand-700 tracking-wider uppercase">
-                🔧 Para mecânicos autônomos
+                Para mecânicos autônomos
               </div>
 
               <h1 className="mt-6 text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight leading-[1.02] text-steel-900">
@@ -172,69 +172,18 @@ export default function LandingMecanico() {
         </div>
       </section>
 
-      {/* ── DIFERENCIAL: ZERO INVESTIMENTO ── */}
+      {/* ── DIFERENCIAL: ZERO INVESTIMENTO (versão enxuta) ── */}
       <section className="py-20 lg:py-28 px-5 lg:px-8">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12 max-w-3xl mx-auto">
-            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">O grande diferencial</div>
-            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
-              Você só leva o que <span className="text-brand-500">ninguém pode replicar</span>:<br />
-              seu talento.
-            </h2>
-            <p className="mt-6 text-lg text-steel-600 leading-relaxed">
-              Diferente de Uber, iFood ou atender cliente particular —
-              aqui você <strong className="text-steel-900">não investe nada</strong>.
-              Quem dá a estrutura é a oficina.
-            </p>
-          </div>
-
-          {/* Comparativo 3 colunas */}
-          <div className="grid md:grid-cols-3 gap-4">
-            {/* Uber/iFood */}
-            <div className="bg-white border border-steel-200 rounded-2xl p-5 shadow-sm">
-              <div className="text-xs font-bold text-steel-500 uppercase tracking-widest">No Uber / iFood</div>
-              <h3 className="mt-2 text-lg font-bold text-steel-700">Você é o capital</h3>
-              <ul className="mt-4 space-y-2 text-sm text-steel-600">
-                <ItemX>Carro/moto próprio</ItemX>
-                <ItemX>Gasolina, IPVA, seguro</ItemX>
-                <ItemX>Manutenção do veículo</ItemX>
-                <ItemX>Depreciação</ItemX>
-                <ItemX>Você assume todo o risco</ItemX>
-              </ul>
-            </div>
-
-            {/* Atendimento particular */}
-            <div className="bg-white border border-steel-200 rounded-2xl p-5 shadow-sm">
-              <div className="text-xs font-bold text-steel-500 uppercase tracking-widest">Atendendo particular</div>
-              <h3 className="mt-2 text-lg font-bold text-steel-700">Investimento alto</h3>
-              <ul className="mt-4 space-y-2 text-sm text-steel-600">
-                <ItemX>Caixa de ferramenta completa</ItemX>
-                <ItemX>Carro pra ir até o cliente</ItemX>
-                <ItemX>Comprar peça do bolso</ItemX>
-                <ItemX>Achar cliente sozinho</ItemX>
-                <ItemX>Cobrar e correr atrás</ItemX>
-              </ul>
-            </div>
-
-            {/* MecânicoApp */}
-            <div className="bg-gradient-to-br from-brand-500 to-brand-600 rounded-2xl p-5 shadow-xl shadow-brand-500/30 text-white">
-              <div className="text-xs font-bold text-white/90 uppercase tracking-widest">No MecânicoApp</div>
-              <h3 className="mt-2 text-lg font-bold">Só seu talento</h3>
-              <ul className="mt-4 space-y-2 text-sm">
-                <ItemCheckLight>Oficina dá ferramenta e elevador</ItemCheckLight>
-                <ItemCheckLight>Peça já tá lá, é da oficina</ItemCheckLight>
-                <ItemCheckLight>Você vai ao local indicado</ItemCheckLight>
-                <ItemCheckLight>Cliente já pagou — sem cobrar</ItemCheckLight>
-                <ItemCheckLight>Zero investimento. Zero risco.</ItemCheckLight>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-8 text-center">
-            <p className="text-sm text-steel-500 max-w-2xl mx-auto">
-              💡 <strong>Você é o profissional. Não o investidor.</strong> Sua mão e sua experiência valem ouro — não faz sentido você ainda comprar ferramenta, carro e correr atrás de cliente.
-            </p>
-          </div>
+        <div className="max-w-3xl mx-auto text-center">
+          <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Zero investimento</div>
+          <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
+            Você só leva o que <span className="text-brand-500">ninguém pode replicar</span>:<br />
+            seu talento.
+          </h2>
+          <p className="mt-6 text-lg text-steel-600 leading-relaxed">
+            Ferramenta, elevador, peça — tudo da oficina. Você não compra nada, não financia nada,
+            não corre atrás de cliente. Coloca a mão de obra, recebe pelo trabalho. Ponto.
+          </p>
         </div>
       </section>
 
@@ -249,17 +198,17 @@ export default function LandingMecanico() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Pain emoji="💸" title='"Te pago semana que vem"'
+            <Pain title='"Te pago semana que vem"'
               desc="Cliente leva o carro, some. Você fica no prejuízo. De novo." />
-            <Pain emoji="📉" title="Mês cheio, mês vazio"
+            <Pain title="Mês cheio, mês vazio"
               desc="Em janeiro sobra serviço. Em fevereiro, ninguém liga. Sem previsibilidade nenhuma." />
-            <Pain emoji="✂️" title="Oficina fica com metade"
+            <Pain title="Oficina fica com metade"
               desc="50/50 é o padrão. Você faz o serviço inteiro e só vê metade. Faz sentido?" />
-            <Pain emoji="🤐" title="Sem reputação digital"
+            <Pain title="Sem reputação digital"
               desc="Faz 15 anos que mecânico de qualidade você é. Só que nenhum cliente novo sabe disso." />
-            <Pain emoji="📵" title="Indicação ou nada"
+            <Pain title="Indicação ou nada"
               desc="Trabalho só vem por boca a boca. Quando seca a fonte, seca o caixa." />
-            <Pain emoji="🚫" title="CLT te aprisiona"
+            <Pain title="CLT te aprisiona"
               desc="Patrão fixo, hora fixa, salário fixo abaixo do que você produz. Não dá pra crescer assim." />
           </div>
         </div>
@@ -276,17 +225,17 @@ export default function LandingMecanico() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Win emoji="💰" title="Você define sua hora"
+            <Win title="Você define sua hora"
               desc="Coloca o R$/h que cobra. Aceita só jobs no seu valor. Sem dividir 50/50 com ninguém, sem cobrar cliente." />
-            <Win emoji="⚡" title="PIX em até 24h"
+            <Win title="PIX em até 24h"
               desc="Oficina confirma o serviço, dinheiro cai na sua conta. Sem espera, sem cobrança." />
-            <Win emoji="🛡️" title="Pagamento garantido"
-              desc="O cliente paga ANTES do serviço começar — direto na plataforma. Você nunca mais corre atrás." />
-            <Win emoji="📲" title="Job no celular"
+            <Win title="Pagamento garantido"
+              desc="A oficina paga antes do serviço começar — direto na plataforma. Você nunca mais corre atrás." />
+            <Win title="Job no celular"
               desc="Alerta sonoro toda vez que abre demanda na sua região. Aceita o que quiser. Recusa o que não quiser." />
-            <Win emoji="⭐" title="Sua reputação digital"
+            <Win title="Sua reputação digital"
               desc="Cada serviço bem feito vira nota. Ranking público. Você sobe na fila e ganha mais jobs." />
-            <Win emoji="🗽" title="Liberdade total"
+            <Win title="Liberdade total"
               desc="Sem patrão fixo. Sem CLT. Trabalha quando quer, com quem quer, do jeito que sabe fazer." />
           </div>
         </div>
@@ -367,26 +316,22 @@ export default function LandingMecanico() {
 
 /* ─── Componentes auxiliares ─── */
 
-function Pain({ emoji, title, desc }: { emoji: string; title: string; desc: string }) {
+function Pain({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="bg-white border border-steel-200 rounded-2xl p-5 flex gap-4 shadow-sm hover:shadow-md transition">
-      <div className="text-3xl shrink-0">{emoji}</div>
-      <div>
-        <h3 className="font-bold text-base leading-tight text-steel-900">{title}</h3>
-        <p className="mt-1.5 text-sm text-steel-600 leading-relaxed">{desc}</p>
-      </div>
+    <div className="relative bg-white border border-steel-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition">
+      <div className="absolute left-0 top-5 bottom-5 w-0.5 bg-alert-300 rounded-r" />
+      <h3 className="font-bold text-base leading-tight text-steel-900 pl-3">{title}</h3>
+      <p className="mt-1.5 text-sm text-steel-600 leading-relaxed pl-3">{desc}</p>
     </div>
   );
 }
 
-function Win({ emoji, title, desc }: { emoji: string; title: string; desc: string }) {
+function Win({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="bg-white border-2 border-brand-100 rounded-2xl p-5 flex gap-4 shadow-sm hover:shadow-lg hover:border-brand-300 transition">
-      <div className="text-3xl shrink-0">{emoji}</div>
-      <div>
-        <h3 className="font-bold text-base leading-tight text-brand-700">{title}</h3>
-        <p className="mt-1.5 text-sm text-steel-700 leading-relaxed">{desc}</p>
-      </div>
+    <div className="relative bg-white border border-steel-200 rounded-2xl p-5 shadow-sm hover:shadow-lg hover:border-brand-300 transition">
+      <div className="absolute left-0 top-5 bottom-5 w-0.5 bg-brand-500 rounded-r" />
+      <h3 className="font-bold text-base leading-tight text-steel-900 pl-3">{title}</h3>
+      <p className="mt-1.5 text-sm text-steel-600 leading-relaxed pl-3">{desc}</p>
     </div>
   );
 }
@@ -411,24 +356,6 @@ function StatCard({ n, label }: { n: string; label: string }) {
       <div className="text-5xl font-bold text-brand-500 leading-none">{n}</div>
       <div className="mt-2 text-sm text-steel-600 font-medium">{label}</div>
     </div>
-  );
-}
-
-function ItemX({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2">
-      <span className="text-steel-400 shrink-0 mt-0.5">✗</span>
-      <span>{children}</span>
-    </li>
-  );
-}
-
-function ItemCheckLight({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2">
-      <span className="text-white shrink-0 mt-0.5 font-bold">✓</span>
-      <span>{children}</span>
-    </li>
   );
 }
 
