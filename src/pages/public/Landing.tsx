@@ -101,7 +101,7 @@ export default function Landing() {
               </div>
               <div className="relative">
                 <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur rounded-full px-3 py-1 text-[10px] font-bold tracking-widest uppercase text-brand-300">
-                  🔧 Para Mecânicos
+                  Para Mecânicos
                 </div>
                 <h2 className="mt-4 text-2xl lg:text-3xl font-bold leading-tight">
                   Trabalhe pra você.<br />Receba como profissional.
@@ -124,7 +124,7 @@ export default function Landing() {
               </div>
               <div className="relative">
                 <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur rounded-full px-3 py-1 text-[10px] font-bold tracking-widest uppercase">
-                  🏪 Para Oficinas
+                  Para Oficinas
                 </div>
                 <h2 className="mt-4 text-2xl lg:text-3xl font-bold leading-tight">
                   Mão de obra<br />sob demanda.
@@ -261,11 +261,11 @@ export default function Landing() {
           </p>
 
           <div className="mt-14 grid md:grid-cols-3 gap-4">
-            <Pillar icon="🔗" title="Conexão direta"
+            <Pillar n="01" title="Conexão direta"
               desc="Quem demanda e quem executa se encontram sem intermediário e sem fricção." />
-            <Pillar icon="🛡️" title="Confiança verificável"
+            <Pillar n="02" title="Confiança verificável"
               desc="CNPJ, CPF, CNH conferidos. Avaliações públicas. Histórico de cada serviço." />
-            <Pillar icon="⚡" title="Tempo real"
+            <Pillar n="03" title="Tempo real"
               desc="Aceite, deslocamento, chegada, execução, conclusão — tudo acompanhado ao vivo." />
           </div>
         </div>
@@ -287,13 +287,13 @@ export default function Landing() {
               type="button"
               onClick={() => go('mechanic')}
               className="flex-1 bg-steel-900 text-white font-bold rounded-2xl px-6 py-4 hover:bg-steel-800 transition flex items-center justify-center gap-2 shadow-lg shadow-steel-900/10">
-              <span className="text-2xl">🔧</span> Sou mecânico
+              Sou mecânico
             </button>
             <button
               type="button"
               onClick={() => go('workshop')}
               className="flex-1 bg-brand-500 text-white font-bold rounded-2xl px-6 py-4 hover:bg-brand-600 transition flex items-center justify-center gap-2 shadow-lg shadow-brand-500/30">
-              <span className="text-2xl">🏪</span> Sou oficina
+              Sou oficina
             </button>
           </div>
         </div>
@@ -356,10 +356,10 @@ export default function Landing() {
 
 /* ─── Componentes auxiliares ─── */
 
-function Pillar({ icon, title, desc }: { icon: string; title: string; desc: string }) {
+function Pillar({ n, title, desc }: { n: string; title: string; desc: string }) {
   return (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur">
-      <div className="text-3xl">{icon}</div>
+      <div className="text-xs font-bold text-brand-400 tracking-widest">{n}</div>
       <h3 className="mt-3 text-lg font-bold text-white">{title}</h3>
       <p className="mt-2 text-sm text-steel-400 leading-relaxed">{desc}</p>
     </div>
@@ -647,9 +647,8 @@ function SceneWorkshop() {
       {/* card flutuante "mecânico chegou" */}
       <g transform="translate(290, 360) rotate(3)">
         <rect x="0" y="0" width="180" height="62" rx="12" fill="#FF5C0A" />
-        <text x="14" y="20" fontSize="8" fontWeight="700" fill="#fff" letterSpacing="0.1em">🔔 MECÂNICO CHEGOU</text>
-        <text x="14" y="40" fontSize="13" fontWeight="800" fill="#fff">João S.</text>
-        <text x="14" y="54" fontSize="9" fill="#fff" opacity="0.9">Pastilha · há 1 min</text>
+        <text x="14" y="22" fontSize="8" fontWeight="700" fill="#fff" letterSpacing="0.1em">MECÂNICO CHEGOU</text>
+        <text x="14" y="46" fontSize="15" fontWeight="800" fill="#fff">há 1 minuto</text>
       </g>
     </svg>
   );

@@ -48,7 +48,7 @@ export default function LandingOficina() {
             {/* Coluna esquerda — texto */}
             <div>
               <div className="inline-flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-3 py-1 text-xs font-bold text-brand-700 tracking-wider uppercase">
-                🏪 Para donos de oficina
+                Para donos de oficina
               </div>
 
               <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] text-steel-900">
@@ -87,35 +87,35 @@ export default function LandingOficina() {
                 {/* mini topbar */}
                 <div className="flex items-center justify-between pb-3 border-b border-steel-100">
                   <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-brand-500 grid place-items-center text-white font-bold text-sm">A</div>
+                    <div className="h-8 w-8 rounded-lg bg-brand-500 grid place-items-center text-white font-bold text-sm">★</div>
                     <div>
-                      <div className="text-xs font-bold text-steel-900 leading-tight">Auto Centro Veloz</div>
+                      <div className="text-xs font-bold text-steel-900 leading-tight">Sua Oficina</div>
                       <div className="text-[9px] text-steel-500">São Paulo/SP</div>
                     </div>
                   </div>
-                  <div className="text-[9px] text-steel-400">Oficina</div>
+                  <div className="text-[9px] text-steel-400">Painel</div>
                 </div>
 
                 {/* OS card */}
                 <div className="mt-3 p-3 bg-steel-50 rounded-xl">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">⚡ Em andamento</span>
+                    <span className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">Em andamento</span>
                     <span className="text-[10px] text-steel-400">há 12 min</span>
                   </div>
                   <div className="mt-1 font-bold text-steel-900 text-sm">Troca de embreagem</div>
-                  <div className="text-[11px] text-steel-500 mt-0.5">🔧 Carlos Souza · ★ 4.9</div>
+                  <div className="text-[11px] text-steel-500 mt-0.5">Mecânico aceito · 4.9</div>
                 </div>
 
                 {/* Active mechanic card */}
                 <div className="mt-2 p-3 bg-brand-50 border border-brand-200 rounded-xl">
                   <div className="flex items-center gap-2">
                     <div className="relative">
-                      <div className="h-8 w-8 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-xs">RJ</div>
+                      <div className="h-8 w-8 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-xs">●</div>
                       <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-signal-500 border-2 border-white animate-pulse" />
                     </div>
                     <div className="flex-1">
-                      <div className="text-xs font-bold text-steel-900">Roberto J. a caminho</div>
-                      <div className="text-[10px] text-steel-500">📍 Chega em ~14 min</div>
+                      <div className="text-xs font-bold text-steel-900">Mecânico a caminho</div>
+                      <div className="text-[10px] text-steel-500">Chega em ~14 min</div>
                     </div>
                     <div className="text-[10px] font-bold text-brand-600">2.3 km</div>
                   </div>
@@ -159,17 +159,17 @@ export default function LandingOficina() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Pain emoji="🔧" title="Mecânico bom é raro — e some"
+            <Pain title="Mecânico bom é raro — e some"
               desc="Você treina, ensina, dá oportunidade. Quando ele fica bom mesmo, pede demissão e abre concorrência." />
-            <Pain emoji="💸" title="CLT pesa toda hora"
+            <Pain title="CLT pesa toda hora"
               desc="Salário, INSS, FGTS, férias, 13º. Mesmo no mês mais fraco, a folha vence. E não tem como cortar." />
-            <Pain emoji="📅" title="Falta gente, perde cliente"
+            <Pain title="Falta gente, perde cliente"
               desc='"Posso deixar amanhã?" — "Vou ter que ver, mestre". Cliente vai embora pra concorrência mais ágil.' />
-            <Pain emoji="📓" title="OS no caderninho"
+            <Pain title="OS no caderninho"
               desc="Anotação no papel, perde história, perde garantia, perde cliente que não volta. Receita escapa." />
-            <Pain emoji="🤷" title="Sem controle real"
+            <Pain title="Sem controle real"
               desc="Quanto cada serviço dá de margem? Quem é seu melhor cliente? Quanto fatura por mecânico? Não sabe." />
-            <Pain emoji="📵" title="Marketing? Esquece"
+            <Pain title="Marketing? Esquece"
               desc="Você sabe consertar carro. Mas não sabe achar cliente novo. E ninguém na oficina sabe também." />
           </div>
         </div>
@@ -283,21 +283,21 @@ export default function LandingOficina() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Win emoji="⚡" title="Mecânico sob demanda"
+            <Win title="Mecânico sob demanda"
               desc="Publica a demanda, mecânico aceita em minutos. Pronto, qualificado, com CPF e CNH validados." />
-            <Win emoji="💰" title="Pague só pela hora trabalhada"
+            <Win title="Pague só pela hora trabalhada"
               desc="Sem CLT, sem encargos, sem mensalidade. Cobrou 2h? Você paga 2h. Cobrou 0? Não paga nada." />
-            <Win emoji="🛡️" title="Pagamento intermediado"
+            <Win title="Pagamento intermediado"
               desc="Você paga via cartão ou PIX antes do mecânico começar. Fica retido em escrow e só vai pro mecânico depois que você confirma a conclusão." />
-            <Win emoji="📋" title="OS digital grátis"
+            <Win title="OS digital grátis"
               desc="Cadastro de cliente, veículo, histórico, agendamento, mecânico interno. Adeus caderninho." />
-            <Win emoji="🏪" title="Multi-loja na mesma conta"
+            <Win title="Multi-loja na mesma conta"
               desc="Tem 2, 3, 5 oficinas? Gerencia tudo no mesmo login, troca entre lojas com 1 clique." />
-            <Win emoji="📍" title="Rastreamento ao vivo"
+            <Win title="Rastreamento ao vivo"
               desc="Acompanha o mecânico no mapa em tempo real. ETA preciso, confirmação automática de chegada — sem ligar pra perguntar 'onde tá'." />
-            <Win emoji="⭐" title="Reputação atrai os melhores"
+            <Win title="Reputação atrai os melhores"
               desc="Cada serviço bem feito vira nota da sua oficina dentro da plataforma. Quanto melhor sua reputação, mais mecânicos top aceitam trabalhar pra você." />
-            <Win emoji="📊" title="Gestão visível"
+            <Win title="Gestão visível"
               desc="OS por status, faturamento, mecânicos ativos, clientes recorrentes. Tudo no painel, em tempo real." />
           </div>
         </div>
@@ -322,47 +322,6 @@ export default function LandingOficina() {
               desc="Você acompanha o trajeto no mapa. Quando ele chega, você paga via app (cartão ou PIX). Aí o serviço começa." />
             <FlowStep n={4} title="Avalia e libera"
               desc="Confirma o serviço, dá nota. Plataforma libera o pagamento. Tudo registrado no histórico." />
-          </div>
-        </div>
-      </section>
-
-      {/* ── COMPARATIVO ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
-              Compare por conta própria.
-            </h2>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            {/* Modelo antigo */}
-            <div className="bg-white border border-steel-200 rounded-2xl p-6 shadow-sm">
-              <div className="text-xs font-bold text-steel-500 uppercase tracking-widest">Modelo tradicional</div>
-              <h3 className="mt-2 text-xl font-bold text-steel-700">Mecânico CLT</h3>
-              <ul className="mt-4 space-y-2.5 text-sm text-steel-600">
-                <ItemX>Folha fixa todo mês, mesmo sem serviço</ItemX>
-                <ItemX>Encargos: ~75% sobre o salário</ItemX>
-                <ItemX>Férias, 13º, FGTS, INSS</ItemX>
-                <ItemX>Difícil contratar bom profissional</ItemX>
-                <ItemX>Difícil dispensar quando não cabe mais</ItemX>
-                <ItemX>OS no papel, sem histórico digital</ItemX>
-              </ul>
-            </div>
-
-            {/* Com o app */}
-            <div className="bg-gradient-to-br from-brand-50 to-white border-2 border-brand-200 rounded-2xl p-6 shadow-lg shadow-brand-500/10">
-              <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Com o app</div>
-              <h3 className="mt-2 text-xl font-bold text-steel-900">Mecânico sob demanda</h3>
-              <ul className="mt-4 space-y-2.5 text-sm text-steel-700">
-                <ItemCheck>Paga só pela hora efetivamente trabalhada</ItemCheck>
-                <ItemCheck>Zero encargos. Zero CLT.</ItemCheck>
-                <ItemCheck>Acessa profissionais qualificados em minutos</ItemCheck>
-                <ItemCheck>Cresce ou contrai conforme a demanda</ItemCheck>
-                <ItemCheck>Sistema de OS, clientes e veículos grátis</ItemCheck>
-                <ItemCheck>Multi-loja na mesma conta</ItemCheck>
-              </ul>
-            </div>
           </div>
         </div>
       </section>
@@ -498,26 +457,22 @@ export default function LandingOficina() {
 
 /* ─── Componentes auxiliares ─── */
 
-function Pain({ emoji, title, desc }: { emoji: string; title: string; desc: string }) {
+function Pain({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="bg-white border border-steel-200 rounded-2xl p-5 flex gap-4 shadow-sm hover:shadow-md transition">
-      <div className="text-3xl shrink-0">{emoji}</div>
-      <div>
-        <h3 className="font-bold text-base leading-tight text-steel-900">{title}</h3>
-        <p className="mt-1.5 text-sm text-steel-600 leading-relaxed">{desc}</p>
-      </div>
+    <div className="relative bg-white border border-steel-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition">
+      <div className="absolute left-0 top-5 bottom-5 w-0.5 bg-alert-300 rounded-r" />
+      <h3 className="font-bold text-base leading-tight text-steel-900 pl-3">{title}</h3>
+      <p className="mt-1.5 text-sm text-steel-600 leading-relaxed pl-3">{desc}</p>
     </div>
   );
 }
 
-function Win({ emoji, title, desc }: { emoji: string; title: string; desc: string }) {
+function Win({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="bg-white border-2 border-brand-100 rounded-2xl p-5 flex gap-4 shadow-sm hover:shadow-lg hover:border-brand-300 transition">
-      <div className="text-3xl shrink-0">{emoji}</div>
-      <div>
-        <h3 className="font-bold text-base leading-tight text-brand-700">{title}</h3>
-        <p className="mt-1.5 text-sm text-steel-700 leading-relaxed">{desc}</p>
-      </div>
+    <div className="relative bg-white border border-steel-200 rounded-2xl p-5 shadow-sm hover:shadow-lg hover:border-brand-300 transition">
+      <div className="absolute left-0 top-5 bottom-5 w-0.5 bg-brand-500 rounded-r" />
+      <h3 className="font-bold text-base leading-tight text-steel-900 pl-3">{title}</h3>
+      <p className="mt-1.5 text-sm text-steel-600 leading-relaxed pl-3">{desc}</p>
     </div>
   );
 }
@@ -542,24 +497,6 @@ function StatCard({ n, label }: { n: string; label: string }) {
       <div className="text-3xl lg:text-4xl font-bold text-brand-500 font-display leading-none">{n}</div>
       <div className="mt-2 text-xs text-steel-600 font-medium leading-snug">{label}</div>
     </div>
-  );
-}
-
-function ItemCheck({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2">
-      <span className="text-signal-500 shrink-0 mt-0.5 font-bold">✓</span>
-      <span>{children}</span>
-    </li>
-  );
-}
-
-function ItemX({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2">
-      <span className="text-steel-400 shrink-0 mt-0.5">✗</span>
-      <span>{children}</span>
-    </li>
   );
 }
 
