@@ -425,7 +425,6 @@ export default function LandingOficina() {
             <div>
               <div className="text-xs font-bold text-steel-900 uppercase tracking-widest mb-3">Plataforma</div>
               <ul className="space-y-2 text-sm text-steel-600">
-                <li><Link to="/mecanico" className="hover:text-brand-600 transition">Para mecânicos</Link></li>
                 <li><Link to="/brandbook" className="hover:text-brand-600 transition">Brandbook</Link></li>
                 <li><Link to="/termos" className="hover:text-brand-600 transition">Termos de uso</Link></li>
                 <li><Link to="/privacidade" className="hover:text-brand-600 transition">Privacidade</Link></li>
