@@ -132,6 +132,26 @@ export default function MechanicMapa() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userPos]);
 
+  /* ── Fix: mapa some quando celular volta do background (visibility/pageshow) ── */
+  useEffect(() => {
+    function forceRedraw() {
+      const m = mapInst.current;
+      if (!m) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try { m.resize(); m.triggerRepaint(); } catch { /* ignore */ }
+        });
+      });
+    }
+    function onVisibility() { if (document.visibilityState === 'visible') forceRedraw(); }
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', forceRedraw);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', forceRedraw);
+    };
+  }, []);
+
   /* ── "Você está aqui" marker ── */
   useEffect(() => {
     const m = mapInst.current;
