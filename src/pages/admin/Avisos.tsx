@@ -6,6 +6,7 @@ type Target = 'all' | 'mechanic' | 'workshop';
 const EMOJIS = ['🔔', '🎉', '⚠️', '💡', '🛠️', '📋', '💰', '🚀', '📢', '✅'];
 
 interface SentLog {
+  broadcastId: string | null;
   title: string;
   body: string;
   icon: string | null;
@@ -24,25 +25,46 @@ export default function AdminAvisos() {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError]   = useState<string | null>(null);
   const [recent, setRecent] = useState<SentLog[]>([]);
+  const [cancelling, setCancelling] = useState<string | null>(null);
 
   useEffect(() => { loadRecent(); }, []);
 
   async function loadRecent() {
-    // Agrupa broadcasts recentes por (title, created_at truncado) só pra histórico visual
+    // Agrupa por broadcast_id (cada envio é um id único)
     const { data } = await supabase
       .from('notifications')
-      .select('title, body, icon, type, created_at')
+      .select('broadcast_id, title, body, icon, type, created_at')
       .eq('type', 'broadcast')
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(400);
     const map = new Map<string, SentLog>();
     (data ?? []).forEach((n: any) => {
-      const bucket = `${n.title}|${n.created_at.slice(0, 16)}`;
+      // fallback pra envios antigos sem broadcast_id (não deve mais existir após backfill)
+      const bucket = n.broadcast_id ?? `${n.title}|${n.created_at.slice(0, 16)}`;
       const ex = map.get(bucket);
       if (ex) ex.count += 1;
-      else map.set(bucket, { title: n.title, body: n.body, icon: n.icon, type: n.type, created_at: n.created_at, count: 1 });
+      else map.set(bucket, {
+        broadcastId: n.broadcast_id ?? null,
+        title: n.title, body: n.body, icon: n.icon, type: n.type, created_at: n.created_at, count: 1,
+      });
     });
     setRecent([...map.values()].slice(0, 10));
+  }
+
+  async function cancelAviso(r: SentLog) {
+    if (!r.broadcastId) {
+      setError('Esse aviso é antigo e não pode ser cancelado automaticamente.');
+      return;
+    }
+    if (!confirm(`Cancelar o aviso "${r.title}"?\nEle será removido do mural de todos os ${r.count} usuários que receberam.`)) return;
+    setCancelling(r.broadcastId);
+    setError(null); setResult(null);
+    const { data, error: err } = await supabase.rpc('cancel_broadcast', { p_broadcast_id: r.broadcastId });
+    setCancelling(null);
+    if (err) { setError(err.message); return; }
+    const n = (data as number) ?? 0;
+    setResult(`Aviso cancelado — removido de ${n} ${n === 1 ? 'usuário' : 'usuários'}.`);
+    loadRecent();
   }
 
   async function send() {
@@ -162,18 +184,25 @@ export default function AdminAvisos() {
             <h2 className="text-sm font-bold text-steel-500 uppercase tracking-widest mb-3">Enviados recentemente</h2>
             <div className="space-y-2">
               {recent.map((r, i) => (
-                <div key={i} className="bg-white border border-steel-200 rounded-xl p-3 flex gap-3">
+                <div key={r.broadcastId ?? i} className="bg-white border border-steel-200 rounded-xl p-3 flex gap-3 items-start">
                   <div className="text-xl">{r.icon || '🔔'}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-sm text-steel-900">{r.title}</div>
                     <div className="text-xs text-steel-500 truncate">{r.body}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs font-bold text-steel-700">{r.count} {r.count === 1 ? 'envio' : 'envios'}</div>
-                    <div className="text-[10px] text-steel-400">
+                    <div className="text-[10px] text-steel-400 mt-1">
+                      {r.count} {r.count === 1 ? 'destinatário' : 'destinatários'} ·{' '}
                       {new Date(r.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => cancelAviso(r)}
+                    disabled={cancelling === r.broadcastId || !r.broadcastId}
+                    className="shrink-0 text-xs font-semibold text-alert-600 hover:text-alert-700 hover:underline underline-offset-2 disabled:opacity-40 disabled:no-underline"
+                    title={r.broadcastId ? 'Remover esse aviso do mural de todos' : 'Aviso antigo — não cancelável'}
+                  >
+                    {cancelling === r.broadcastId ? 'Cancelando…' : 'Cancelar'}
+                  </button>
                 </div>
               ))}
             </div>
