@@ -5,6 +5,10 @@ import { Logo } from '@/components/Logo';
 // Multiplicador médio de encargos CLT no Brasil (INSS patronal + FGTS + provisão de
 // férias/13o + verbas rescisórias). Conservador.
 const CLT_LOAD_FACTOR = 1.7;
+// Horas contratadas no mês: 44h/semana × 4,33 semanas/mês (jornada legal CLT)
+const HOURS_PAID_PER_MONTH = 190;
+// Valor de referência da hora do mecânico no app (faixa SP 80–150, base conservadora)
+const APP_HOURLY_BRL = 80;
 
 /**
  * Landing de captura — APENAS para oficina.
@@ -13,8 +17,22 @@ const CLT_LOAD_FACTOR = 1.7;
 export default function LandingOficina() {
   const [mechanicsCount, setMechanicsCount] = useState(3);
   const [avgSalary, setAvgSalary]           = useState(3000);
+  // Tempo do mecânico que efetivamente vira faturamento ("wrench time" / utilização).
+  // Mercado brasileiro de pequenas oficinas costuma rodar entre 30–60%.
+  const [productivity, setProductivity]     = useState(0.50);
+
   const monthlyCLT = mechanicsCount * avgSalary * CLT_LOAD_FACTOR;
   const yearlyCLT  = monthlyCLT * 12;
+  // Horas pagas no total (todos os mecânicos)
+  const totalPaidHours       = mechanicsCount * HOURS_PAID_PER_MONTH;
+  // Horas que realmente geram faturamento (após ociosidade)
+  const totalProductiveHours = Math.round(totalPaidHours * productivity);
+  // Custo real por hora produtiva — o número que o dono não enxergava
+  const costPerProductiveHour = totalProductiveHours > 0 ? monthlyCLT / totalProductiveHours : 0;
+  // Quanto custaria comprar essas mesmas horas produtivas no app
+  const appEquivalentCost = totalProductiveHours * APP_HOURLY_BRL;
+  // Economia mensal (negativa = app fica mais caro nesse cenário)
+  const monthlySavings = monthlyCLT - appEquivalentCost;
 
   return (
     <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden">
@@ -229,6 +247,39 @@ export default function LandingOficina() {
                   <span>R$ 1.500</span><span>R$ 3.500</span><span>R$ 6.000</span>
                 </div>
               </div>
+
+              <div>
+                <div className="flex items-baseline justify-between mb-2">
+                  <span className="text-xs font-bold text-steel-500 uppercase tracking-wider">
+                    Tempo realmente produtivo
+                  </span>
+                  <span className="text-3xl font-bold text-brand-500 font-display">{Math.round(productivity * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={80}
+                  step={5}
+                  value={Math.round(productivity * 100)}
+                  onChange={e => setProductivity(Number(e.target.value) / 100)}
+                  className="w-full accent-brand-500 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-steel-500 font-semibold uppercase tracking-wider mt-1">
+                  <button type="button" onClick={() => setProductivity(0.30)} className="hover:text-brand-600 text-left">
+                    30%<br /><span className="font-normal normal-case tracking-normal text-steel-400">Oficina lenta</span>
+                  </button>
+                  <button type="button" onClick={() => setProductivity(0.50)} className="hover:text-brand-600 font-bold text-brand-600">
+                    50%<br /><span className="font-normal normal-case tracking-normal text-steel-400">Média do setor</span>
+                  </button>
+                  <button type="button" onClick={() => setProductivity(0.70)} className="hover:text-brand-600 text-right">
+                    70%<br /><span className="font-normal normal-case tracking-normal text-steel-400">Bem gerida</span>
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] text-steel-500 leading-snug">
+                  Mecânico CLT trabalha 44h/sem (~190h/mês), mas raramente produz tudo isso —
+                  espera de peça, falta de cliente, diagnóstico não cobrado, etc.
+                </p>
+              </div>
             </div>
 
             {/* Resultado */}
@@ -239,10 +290,35 @@ export default function LandingOficina() {
               </div>
               <div className="text-sm text-steel-300 mt-1">por mês — fixo, vence todo dia 5</div>
 
-              <div className="mt-5 pt-5 border-t border-white/10 space-y-1">
-                <div className="flex items-baseline justify-between text-sm text-steel-300">
+              {/* Quebra: horas pagas vs. horas produtivas */}
+              <div className="mt-5 pt-5 border-t border-white/10 space-y-1.5">
+                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
+                  <span>Horas pagas / mês</span>
+                  <span className="font-semibold text-steel-200">{totalPaidHours.toLocaleString('pt-BR')}h</span>
+                </div>
+                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
+                  <span>Horas realmente produtivas</span>
+                  <span className="font-semibold text-steel-200">{totalProductiveHours.toLocaleString('pt-BR')}h</span>
+                </div>
+              </div>
+
+              {/* Destaque: o custo REAL por hora produtiva */}
+              <div className="mt-3 p-3 rounded-xl bg-brand-500/15 border border-brand-400/30">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-300">
+                  Sua hora produtiva custa
+                </div>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-3xl font-bold font-display text-brand-300">
+                    R$ {costPerProductiveHour.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[11px] text-steel-300">/ hora real</span>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-white/10 space-y-1">
+                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
                   <span>≈ por ano</span>
-                  <span className="font-bold text-white">R$ {yearlyCLT.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
+                  <span className="font-semibold text-white">R$ {yearlyCLT.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
                 </div>
                 <div className="flex items-baseline justify-between text-[11px] text-steel-400">
                   <span>Salário bruto</span>
@@ -254,20 +330,37 @@ export default function LandingOficina() {
                 </div>
               </div>
 
+              {/* Comparação direta com o app */}
               <div className="mt-5 pt-5 border-t border-white/10">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-300">No app</div>
-                <p className="text-sm text-white/90 mt-1 leading-relaxed">
-                  Paga só pela hora trabalhada quando precisar.
-                  <strong className="text-brand-300"> Zero custo fixo.</strong>
-                  Sem férias, sem 13º, sem FGTS.
+                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-300">No app, esse mesmo trabalho</div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="text-sm text-white/80">{totalProductiveHours}h × R$ {APP_HOURLY_BRL}/h</span>
+                  <span className="text-2xl font-bold font-display text-white">
+                    R$ {appEquivalentCost.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+                {monthlySavings > 0 ? (
+                  <div className="mt-2 inline-flex items-center gap-1.5 bg-signal-500/20 border border-signal-400/30 text-signal-300 rounded-lg px-2.5 py-1 text-xs font-bold">
+                    ↓ Economia de R$ {monthlySavings.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} / mês
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[11px] text-steel-400 leading-relaxed">
+                    Nesse cenário o CLT compensa — mas só se a oficina tem demanda cheia o ano inteiro
+                    pra justificar o custo fixo. No mês fraco, a folha vence igual.
+                  </p>
+                )}
+                <p className="mt-2 text-[11px] text-white/70 leading-relaxed">
+                  <strong className="text-brand-300">Zero custo fixo.</strong> Sem férias, sem 13º, sem FGTS,
+                  sem rescisão. Mês sem demanda = R$ 0 de mão de obra.
                 </p>
               </div>
             </div>
           </div>
 
-          <p className="mt-5 text-center text-xs text-steel-500 max-w-2xl mx-auto">
-            ℹ️ Cálculo conservador (multiplicador de 1,7 sobre o salário, incluindo INSS patronal,
-            FGTS, provisão de férias/13º e rescisão). Não substitui consultoria contábil.
+          <p className="mt-5 text-center text-xs text-steel-500 max-w-2xl mx-auto leading-relaxed">
+            ℹ️ Cálculo conservador: encargos = salário × 1,7 (INSS patronal, FGTS, férias/13º, rescisão).
+            Horas pagas = 44h × 4,33 sem/mês. Produtividade real ajustável — pequenas oficinas costumam
+            rodar entre 30–60%. Comparação no app usa R$ {APP_HOURLY_BRL}/h (faixa média SP). Não substitui consultoria contábil.
           </p>
         </div>
       </section>
