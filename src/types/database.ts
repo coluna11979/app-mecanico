@@ -66,6 +66,11 @@ export interface Mechanic {
   current_lng: number | null;
   last_location_update: string | null;
   pix_key: string | null;
+  cep: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
+  work_reference: string | null;
 }
 
 export interface Job {
