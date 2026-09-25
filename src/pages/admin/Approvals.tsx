@@ -344,12 +344,38 @@ function ApprovalDrawer({
             </Section>
           )}
 
+          {row.mechanic && (row.mechanic.city || row.mechanic.neighborhood || row.mechanic.cep) && (
+            <Section title="📍 Localização (decide se atendemos a região)">
+              <Field label="CEP">{row.mechanic.cep || '—'}</Field>
+              <Field label="Bairro">{row.mechanic.neighborhood || '—'}</Field>
+              <Field label="Cidade / UF">
+                {row.mechanic.city || '—'}{row.mechanic.state ? ` / ${row.mechanic.state}` : ''}
+              </Field>
+            </Section>
+          )}
+
+          {row.mechanic?.work_reference && (
+            <Section title="Referência de trabalho">
+              <p className="text-sm text-steel-700 whitespace-pre-wrap">{row.mechanic.work_reference}</p>
+            </Section>
+          )}
+
           {row.workshop && (
             <Section title="Dados da oficina">
               <Field label="Razão social">{row.workshop.business_name}</Field>
               <Field label="CNPJ">{row.workshop.cnpj}</Field>
-              <Field label="Endereço">{row.workshop.address}, {row.workshop.city}/{row.workshop.state}</Field>
               <Field label="Sobre">{row.workshop.description || '—'}</Field>
+            </Section>
+          )}
+
+          {row.workshop && (
+            <Section title="📍 Endereço da oficina (decide se atendemos a região)">
+              <Field label="CEP">{row.workshop.cep || '—'}</Field>
+              <Field label="Rua / Nº">
+                {row.workshop.address}{row.workshop.number ? `, ${row.workshop.number}` : ''}
+              </Field>
+              <Field label="Bairro">{row.workshop.neighborhood || '—'}</Field>
+              <Field label="Cidade / UF">{row.workshop.city} / {row.workshop.state}</Field>
             </Section>
           )}
 
