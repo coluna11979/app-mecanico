@@ -37,7 +37,11 @@ export default function AdminUserDetail() {
   const [edit, setEdit] = useState({
     full_name: '', phone: '',
     cpf: '', cnh: '', experience_years: 0, hourly_rate: 0, pix_key: '',
-    business_name: '', cnpj: '', address: '', city: '', state: '', description: '',
+    // Localização do mecânico + referência opcional
+    mech_cep: '', mech_neighborhood: '', mech_city: '', mech_state: '', mech_work_reference: '',
+    business_name: '', cnpj: '',
+    address: '', number: '', neighborhood: '', cep: '',
+    city: '', state: '', description: '',
     lat: null as number | null, lng: null as number | null,
     admin_notes: '',
   });
@@ -72,6 +76,11 @@ export default function AdminUserDetail() {
         experience_years: m?.experience_years ?? 0,
         hourly_rate: m?.hourly_rate ?? 0,
         pix_key: (m as any)?.pix_key ?? '',
+        mech_cep: m?.cep ?? '',
+        mech_neighborhood: m?.neighborhood ?? '',
+        mech_city: m?.city ?? '',
+        mech_state: m?.state ?? '',
+        mech_work_reference: m?.work_reference ?? '',
         admin_notes: p.admin_notes ?? '',
       }));
     } else if (p.role === 'workshop') {
@@ -81,7 +90,11 @@ export default function AdminUserDetail() {
         ...e,
         full_name: p.full_name, phone: p.phone ?? '',
         business_name: w?.business_name ?? '', cnpj: w?.cnpj ?? '',
-        address: w?.address ?? '', city: w?.city ?? '', state: w?.state ?? '',
+        address: w?.address ?? '',
+        number: w?.number ?? '',
+        neighborhood: w?.neighborhood ?? '',
+        cep: w?.cep ?? '',
+        city: w?.city ?? '', state: w?.state ?? '',
         description: w?.description ?? '',
         lat: w?.lat ?? null, lng: w?.lng ?? null,
         admin_notes: p.admin_notes ?? '',
@@ -115,6 +128,11 @@ export default function AdminUserDetail() {
         experience_years: Number(edit.experience_years) || 0,
         hourly_rate: Number(edit.hourly_rate) || 0,
         pix_key: edit.pix_key.trim() || null,
+        cep: edit.mech_cep.trim() || null,
+        neighborhood: edit.mech_neighborhood.trim() || null,
+        city: edit.mech_city.trim() || null,
+        state: edit.mech_state.trim().toUpperCase() || null,
+        work_reference: edit.mech_work_reference.trim() || null,
       }).eq('id', mechanic.id);
     }
 
@@ -123,6 +141,9 @@ export default function AdminUserDetail() {
         business_name: edit.business_name.trim(),
         cnpj:    edit.cnpj.trim(),
         address: edit.address.trim(),
+        number:  edit.number.trim() || null,
+        neighborhood: edit.neighborhood.trim() || null,
+        cep:     edit.cep.trim() || null,
         city:    edit.city.trim(),
         state:   edit.state.trim().toUpperCase(),
         description: edit.description.trim() || null,
@@ -360,17 +381,64 @@ export default function AdminUserDetail() {
             </div>
           )}
 
+          {isMechanic && (
+            <div className="card space-y-4">
+              <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">📍 Localização e referência</h3>
+              <Field label="CEP">
+                <input className="input" value={edit.mech_cep}
+                  placeholder="00000-000"
+                  onChange={e => setEdit(s => ({ ...s, mech_cep: e.target.value }))} />
+              </Field>
+              <Field label="Bairro">
+                <input className="input" value={edit.mech_neighborhood}
+                  onChange={e => setEdit(s => ({ ...s, mech_neighborhood: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <Field label="Cidade">
+                    <input className="input" value={edit.mech_city}
+                      onChange={e => setEdit(s => ({ ...s, mech_city: e.target.value }))} />
+                  </Field>
+                </div>
+                <Field label="UF">
+                  <input className="input uppercase" maxLength={2} value={edit.mech_state}
+                    onChange={e => setEdit(s => ({ ...s, mech_state: e.target.value.toUpperCase() }))} />
+                </Field>
+              </div>
+              <Field label="Referência de trabalho (opcional)">
+                <textarea className="input" rows={3} value={edit.mech_work_reference}
+                  placeholder="Ex.: Oficina do Zé (11) 99999-9999 · trabalhei 3 anos com injeção eletrônica"
+                  onChange={e => setEdit(s => ({ ...s, mech_work_reference: e.target.value }))} />
+              </Field>
+            </div>
+          )}
+
           {!isMechanic && (
             <div className="card space-y-4">
               <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">Dados da oficina</h3>
               <Field label="Razão social">
                 <input className="input" value={edit.business_name} onChange={e => setEdit(s => ({ ...s, business_name: e.target.value }))} />
               </Field>
-              <Field label="CNPJ">
-                <input className="input" value={edit.cnpj} onChange={e => setEdit(s => ({ ...s, cnpj: e.target.value }))} />
-              </Field>
-              <Field label="Endereço">
-                <input className="input" value={edit.address} onChange={e => setEdit(s => ({ ...s, address: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="CNPJ">
+                  <input className="input" value={edit.cnpj} onChange={e => setEdit(s => ({ ...s, cnpj: e.target.value }))} />
+                </Field>
+                <Field label="CEP">
+                  <input className="input" value={edit.cep}
+                    placeholder="00000-000"
+                    onChange={e => setEdit(s => ({ ...s, cep: e.target.value }))} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-[1fr_120px] gap-3">
+                <Field label="Rua / Avenida">
+                  <input className="input" value={edit.address} onChange={e => setEdit(s => ({ ...s, address: e.target.value }))} />
+                </Field>
+                <Field label="Número">
+                  <input className="input" value={edit.number} onChange={e => setEdit(s => ({ ...s, number: e.target.value }))} />
+                </Field>
+              </div>
+              <Field label="Bairro">
+                <input className="input" value={edit.neighborhood} onChange={e => setEdit(s => ({ ...s, neighborhood: e.target.value }))} />
               </Field>
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
