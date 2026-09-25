@@ -3,6 +3,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
+import { NewUserModal } from '@/components/admin/NewUserModal';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 type Row = Profile & { mechanic?: Mechanic; workshop?: Workshop };
@@ -22,6 +23,7 @@ export default function AdminApprovals() {
   const [tab, setTab] = useState<TabKey>('pending');
   const [loading, setLoading] = useState(true);
   const [opened, setOpened] = useState<Row | null>(null);
+  const [newUserOpen, setNewUserOpen] = useState(false);
 
   useEffect(() => { load(); }, [tab]);
 
@@ -64,7 +66,12 @@ export default function AdminApprovals() {
 
   return (
     <AdminLayout>
-      <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mb-2">Cadastros</h1>
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Cadastros</h1>
+        <button onClick={() => setNewUserOpen(true)} className="btn-primary text-sm whitespace-nowrap">
+          ➕ Novo cadastro
+        </button>
+      </div>
       <p className="text-steel-500 text-sm mb-6">Analise, solicite documentos e aprove os cadastros de mecânicos e oficinas.</p>
 
       {/* Tabs */}
@@ -114,6 +121,14 @@ export default function AdminApprovals() {
           adminId={user.id}
           onClose={() => setOpened(null)}
           onChanged={() => { setOpened(null); load(); }}
+        />
+      )}
+
+      {/* Modal de novo cadastro (trabalho de campo) */}
+      {newUserOpen && (
+        <NewUserModal
+          onClose={() => setNewUserOpen(false)}
+          onCreated={() => { setNewUserOpen(false); load(); }}
         />
       )}
     </AdminLayout>

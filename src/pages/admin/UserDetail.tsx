@@ -28,6 +28,9 @@ export default function AdminUserDetail() {
   const [loading, setLoading]   = useState(true);
   const [busy, setBusy]         = useState(false);
   const [saved, setSaved]       = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
   const [emailDraft, setEmailDraft] = useState('');
   const [emailEditing, setEmailEditing] = useState(false);
@@ -208,6 +211,22 @@ export default function AdminUserDetail() {
     await supabase.from('profiles').update({ status }).eq('id', profile.id);
     setBusy(false);
     load();
+  }
+
+  async function deleteUser() {
+    if (!profile) return;
+    setBusy(true);
+    setDeleteErr(null);
+    const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+      body: { profile_id: profile.id },
+    });
+    setBusy(false);
+    if (error || data?.error) {
+      setDeleteErr(data?.error ?? error?.message ?? 'Erro ao excluir cadastro');
+      return;
+    }
+    // Volta pra listagem — o cadastro deixou de existir
+    nav('/admin/aprovacoes', { replace: true });
   }
 
   if (loading) {
@@ -535,6 +554,25 @@ export default function AdminUserDetail() {
           {saved && (
             <p className="text-center text-signal-600 text-sm font-semibold">✓ Alterações salvas com sucesso</p>
           )}
+
+          {/* Zona de perigo */}
+          <div className="card border-2 border-alert-200 space-y-3 mt-6">
+            <div>
+              <h3 className="text-sm font-bold text-alert-700 uppercase tracking-wider">⚠️ Zona de perigo</h3>
+              <p className="text-xs text-steel-500 mt-1">
+                Excluir apaga o cadastro para sempre — sem opção de restaurar.
+                Só use se for realmente pra sumir com essa conta.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setDeleteOpen(true); setDeleteConfirm(''); setDeleteErr(null); }}
+              disabled={busy}
+              className="btn-ghost w-full border border-alert-300 text-alert-700 hover:bg-alert-500/10 disabled:opacity-50"
+            >
+              🗑️ Excluir cadastro definitivamente
+            </button>
+          </div>
         </div>
 
         {/* ── Coluna 2: histórico ── */}
@@ -574,6 +612,45 @@ export default function AdminUserDetail() {
           </div>
         </div>
       </div>
+
+      {/* Modal de confirmação de exclusão */}
+      {deleteOpen && profile && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setDeleteOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-alert-700">🗑️ Excluir cadastro definitivamente</h3>
+              <p className="text-sm text-steel-600 mt-2 leading-relaxed">
+                Você vai apagar o cadastro de <strong>{profile.full_name}</strong> pra sempre.
+                Isso remove login, dados, histórico de mensagens e tudo o mais.
+                <strong className="text-alert-700"> Não tem como restaurar depois.</strong>
+              </p>
+            </div>
+            <div>
+              <label className="label">Pra confirmar, digite <span className="font-mono bg-alert-500/10 text-alert-700 px-1.5 py-0.5 rounded">EXCLUIR</span> abaixo:</label>
+              <input
+                className="input"
+                value={deleteConfirm}
+                onChange={e => setDeleteConfirm(e.target.value)}
+                placeholder="EXCLUIR"
+                autoFocus
+              />
+            </div>
+            {deleteErr && <div className="text-sm text-alert-600 bg-alert-500/10 px-3 py-2 rounded-lg">{deleteErr}</div>}
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteOpen(false)} disabled={busy} className="btn-ghost flex-1">
+                Cancelar
+              </button>
+              <button
+                onClick={deleteUser}
+                disabled={busy || deleteConfirm !== 'EXCLUIR'}
+                className="btn-ghost flex-1 border border-alert-500 text-alert-700 hover:bg-alert-500/10 disabled:opacity-40"
+              >
+                {busy ? 'Excluindo…' : 'Excluir pra sempre'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }
