@@ -233,8 +233,12 @@ function ApprovalDrawer({
       content,
     });
 
-    // Dispara email (silencioso — não bloqueia se falhar/skipped)
-    void sendApprovalEmail(row.id, content, kind);
+    // Só notifica o cadastrado quando a decisão é final (aprovado/rejeitado).
+    // "Em análise" e "reaberto" sao movimentos internos da fila do admin —
+    // enviar email nesses estados vira ruido e cria expectativa falsa de resposta.
+    if (status === 'approved' || status === 'rejected') {
+      void sendApprovalEmail(row.id, content, kind);
+    }
 
     setBusy(null);
     onChanged();
