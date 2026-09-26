@@ -24,6 +24,10 @@ const FIELDS: FieldDef[] = [
   { key: 'mapbox_token',           label: 'Token público',             description: 'Usado nos mapas de rastreamento.',         type: 'key',      section: 'Mapas' },
   { key: 'resend_api_key',         label: 'API Key (re_...)',          description: 'Crie em resend.com/api-keys (free tier 3000 emails/mês).', type: 'password', section: 'Email (Resend)' },
   { key: 'resend_from_email',      label: 'Email remetente',           description: 'Precisa ter o domínio verificado no Resend (ex: noreply@mecanicoapp.com.br).', section: 'Email (Resend)' },
+  { key: 'anthropic_api_key',      label: 'API Key Anthropic (sk-ant-…)', description: 'Lê as fotos de orçamentos em papel. Crie em console.anthropic.com → API Keys.', type: 'password', section: 'Inteligência Artificial' },
+  { key: 'ai_vision_model',        label: 'Modelo da IA',              description: 'Modelo usado na leitura das fotos (ex.: claude-opus-5 — mais preciso; claude-sonnet-5 — mais barato).', section: 'Inteligência Artificial' },
+  { key: 'ai_vision_effort',       label: 'Esforço da IA',             description: 'low, medium ou high. Mais esforço = leitura mais cuidadosa de letra difícil, custo maior.', section: 'Inteligência Artificial' },
+  { key: 'ai_refusal_fallback',    label: 'Fallback em recusa',        description: '"default" = se o modelo recusar a imagem, outro modelo tenta automaticamente. Deixe vazio para desligar (necessário em modelos sem suporte).', section: 'Inteligência Artificial' },
 ];
 
 type Section = { label: string; icon: string; color: string; bg: string };
@@ -34,6 +38,7 @@ const SECTIONS: Record<string, Section> = {
   'Stripe — Teste':       { label: 'Stripe — Teste',       icon: '🧪',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
   Mapas:                  { label: 'Mapas',                icon: '🗺️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
   'Email (Resend)':       { label: 'Email (Resend)',       icon: '📧',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
+  'Inteligência Artificial': { label: 'Inteligência Artificial', icon: '🤖', color: 'text-brand-700', bg: 'bg-brand-50' },
 };
 
 export default function AdminSettings() {

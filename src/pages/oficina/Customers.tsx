@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Customer, Vehicle, ServiceOrder } from '@/types/database';
 import { toast } from '@/components/ui/Toast';
 import { formatBRL } from '@/lib/payment';
+import ReactivationList from '@/components/customers/ReactivationList';
 
 type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
 
@@ -22,6 +23,7 @@ export default function Customers() {
   const [formC, setFormC]       = useState(EMPTY_C);
   const [formV, setFormV]       = useState(EMPTY_V);
   const [saving, setSaving]     = useState(false);
+  const [view, setView]         = useState<'all' | 'reactivate'>('all');
 
   useEffect(() => {
     if (!user || !currentWorkshop) return;
@@ -122,6 +124,23 @@ export default function Customers() {
         <button onClick={() => setModalC(true)} className="btn-primary btn-lg">+ Novo cliente</button>
       </div>
 
+      {/* Visões */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        <button onClick={() => setView('all')}
+          className={`text-sm font-semibold px-3.5 py-2 rounded-full border transition ${view === 'all' ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200'}`}>
+          👥 Todos os clientes
+        </button>
+        <button onClick={() => setView('reactivate')}
+          className={`text-sm font-semibold px-3.5 py-2 rounded-full border transition ${view === 'reactivate' ? 'bg-signal-500 text-white border-signal-500' : 'bg-white text-steel-600 border-steel-200'}`}>
+          💬 Reativar clientes
+        </button>
+      </div>
+
+      {view === 'reactivate' && shop && (
+        <ReactivationList workshopId={shop.id} workshopName={shop.business_name} />
+      )}
+
+      {view === 'all' && (<>
       {/* Busca */}
       <input className="input mb-6 max-w-sm" placeholder="Buscar por nome, telefone ou placa…"
         value={search} onChange={e => setSearch(e.target.value)} />
@@ -162,6 +181,7 @@ export default function Customers() {
           ))}
         </div>
       )}
+      </>)}
 
       {/* Drawer do cliente */}
       {selected && (

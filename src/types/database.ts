@@ -176,6 +176,9 @@ export interface Customer {
   city: string | null;
   birth_date: string | null;
   created_at: string;
+  /** LGPD: cliente pediu para não receber contato */
+  contact_opt_out?: boolean;
+  last_contacted_at?: string | null;
 }
 
 export interface Vehicle {
@@ -230,6 +233,41 @@ export interface ServiceOrderItem {
   unit_price: number;
   position: number;
   created_at: string;
+}
+
+/** Dados lidos pela IA na foto de um orçamento em papel (formato da Edge Function read-paper-quote) */
+export interface PaperQuoteExtracted {
+  legivel: boolean;
+  cliente: { nome: string | null; telefone: string | null; cpf: string | null; endereco: string | null };
+  veiculo: { marca: string | null; modelo: string | null; placa: string | null; ano: number | null; cor: string | null; km: number | null };
+  data: string | null;
+  numero_documento: string | null;
+  servico_resumo: string | null;
+  observacoes: string | null;
+  itens: { tipo: OsItemKind; descricao: string; quantidade: number; valor_unitario: number | null }[];
+  desconto: number | null;
+  total: number | null;
+  campos_incertos: string[];
+}
+
+export type PaperImportStatus = 'pending' | 'processing' | 'extracted' | 'confirmed' | 'failed' | 'discarded';
+
+export interface PaperImport {
+  id: string;
+  workshop_id: string;
+  image_path: string;
+  status: PaperImportStatus;
+  extracted: PaperQuoteExtracted | null;
+  error: string | null;
+  service_order_id: string | null;
+  customer_id: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_by: string | null;
+  created_at: string;
+  processed_at: string | null;
+  confirmed_at: string | null;
 }
 
 export interface WorkshopMechanic {

@@ -27,6 +27,7 @@ const PLATAFORMA: NavItem[] = [
 const GESTAO: NavItem[] = [
   { to: '/oficina/os',       icon: '📋', label: 'Ordens de Serviço' },
   { to: '/oficina/clientes', icon: '👥', label: 'Clientes'           },
+  { to: '/oficina/importar', icon: '📷', label: 'Importar orçamentos' },
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
 ];
 

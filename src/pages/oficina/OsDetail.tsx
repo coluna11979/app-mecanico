@@ -22,6 +22,19 @@ export default function OsDetail() {
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy]     = useState(false);
+  const [paperUrl, setPaperUrl] = useState<string | null>(null);
+
+  // OS importada de orçamento em papel → mostra a foto original
+  useEffect(() => {
+    if (!id) return;
+    (async () => {
+      const { data } = await supabase.from('paper_imports').select('image_path')
+        .eq('service_order_id', id).limit(1).maybeSingle();
+      if (!data) { setPaperUrl(null); return; }
+      const { data: s } = await supabase.storage.from('os-attachments').createSignedUrl(data.image_path, 60 * 60);
+      setPaperUrl(s?.signedUrl ?? null);
+    })();
+  }, [id]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -256,6 +269,15 @@ export default function OsDetail() {
                 <div className="text-xs text-steel-500 mt-2">⏱ Tempo estimado: {String(os.estimated_hours).replace('.', ',')}h</div>
               )}
             </div>
+
+            {/* Orçamento original (importado do papel) */}
+            {paperUrl && (
+              <a href={paperUrl} target="_blank" rel="noopener noreferrer" className="card block hover:shadow-md transition">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-2">📷 Orçamento original</div>
+                <img src={paperUrl} alt="Orçamento em papel" className="w-full max-h-48 object-cover rounded-lg" />
+                <div className="text-xs text-brand-600 font-semibold mt-2">Abrir foto →</div>
+              </a>
+            )}
 
             {/* Linha do tempo */}
             <div className="card">
