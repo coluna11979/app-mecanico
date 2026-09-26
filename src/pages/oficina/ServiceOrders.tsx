@@ -12,6 +12,8 @@ import StatusChips from '@/components/os/StatusChips';
 import EmptyState from '@/components/os/EmptyState';
 import OsSkeleton from '@/components/os/OsSkeleton';
 import { toast } from '@/components/ui/Toast';
+import { usePendingFees } from '@/components/PendingFeesGate';
+import { useSearchParams } from 'react-router-dom';
 
 /* ─── tipos locais ──────────────────────────────────────────── */
 type OsRow = ServiceOrder & {
@@ -151,6 +153,19 @@ export default function ServiceOrders() {
   const [newSkill, setNewSkill]   = useState('');
   const [saving, setSaving]       = useState(false);
 
+  const hasPendingFees = usePendingFees(currentWorkshop?.id ?? null);
+
+  /* ── abre a OS indicada no link (?os=<id>) ── */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedOsId = searchParams.get('os');
+  useEffect(() => {
+    if (!linkedOsId || loading) return;
+    const found = list.find(o => o.id === linkedOsId);
+    if (found) setDetail(found);
+    else toast.error('OS do link não encontrada nesta oficina');
+    setSearchParams(prev => { prev.delete('os'); return prev; }, { replace: true });
+  }, [linkedOsId, loading, list, setSearchParams]);
+
   /* ── persistência de filtros (localStorage por oficina) ── */
   const prefsKey = currentWorkshop ? `os-prefs:${currentWorkshop.id}` : null;
   useEffect(() => {
@@ -212,13 +227,19 @@ export default function ServiceOrders() {
   async function createCustomerInline() {
     if (!shop || !inlineCust.full_name.trim()) return;
     setSavingCust(true);
-    const { data } = await supabase.from('customers').insert({
+    const { data, error } = await supabase.from('customers').insert({
       workshop_id: shop.id,
       full_name:   inlineCust.full_name.trim(),
       phone:       inlineCust.phone.trim()  || null,
       cpf:         inlineCust.cpf.trim()    || null,
       email:       inlineCust.email.trim()  || null,
     }).select('*').single();
+    if (error) {
+      console.error('[createCustomerInline] erro:', error);
+      toast.error(error.message || 'Não foi possível cadastrar o cliente');
+      setSavingCust(false);
+      return;
+    }
     if (data) {
       const c = data as Customer;
       setCustomers(prev => [...prev, c].sort((a,b) => a.full_name.localeCompare(b.full_name)));
@@ -226,13 +247,18 @@ export default function ServiceOrders() {
 
       // Se preencheu veículo, já cria e seleciona
       if (inlineCust.veh_make.trim() && inlineCust.veh_model.trim()) {
-        const { data: vData } = await supabase.from('vehicles').insert({
+        const { data: vData, error: vErr } = await supabase.from('vehicles').insert({
           customer_id: c.id,
           workshop_id: shop.id,
           plate: inlineCust.veh_plate.toUpperCase().trim() || 'S/P',
           make:  inlineCust.veh_make.trim(),
           model: inlineCust.veh_model.trim(),
         }).select('*').single();
+        if (vErr) {
+          console.error('[createCustomerInline] erro veículo:', vErr);
+          toast.error('Cliente salvo, mas o veículo não: ' + vErr.message);
+          setVehicles([]);
+        }
         if (vData) {
           const v = vData as Vehicle;
           setVehicles([v]);
@@ -251,7 +277,7 @@ export default function ServiceOrders() {
   async function createVehicleInline() {
     if (!shop || !formOS.customer_id || !inlineVeh.plate.trim() || !inlineVeh.make.trim() || !inlineVeh.model.trim()) return;
     setSavingVeh(true);
-    const { data } = await supabase.from('vehicles').insert({
+    const { data, error } = await supabase.from('vehicles').insert({
       customer_id: formOS.customer_id,
       workshop_id: shop.id,
       plate:  inlineVeh.plate.toUpperCase().trim(),
@@ -260,6 +286,12 @@ export default function ServiceOrders() {
       year:   inlineVeh.year ? parseInt(inlineVeh.year) : null,
       color:  inlineVeh.color.trim() || null,
     }).select('*').single();
+    if (error) {
+      console.error('[createVehicleInline] erro:', error);
+      toast.error(error.message || 'Não foi possível cadastrar o veículo');
+      setSavingVeh(false);
+      return;
+    }
     if (data) {
       const v = data as Vehicle;
       setVehicles(prev => [...prev, v]);
@@ -342,6 +374,10 @@ export default function ServiceOrders() {
   async function saveOS(e: FormEvent) {
     e.preventDefault();
     if (!shop) return;
+    if (mechType === 'marketplace' && hasPendingFees) {
+      toast.error('Você tem multa de cancelamento pendente. Quite no painel de Demandas antes de publicar no marketplace.');
+      return;
+    }
     setSaving(true);
 
     const schedIso = scheduleMode === 'later' && scheduledAt
@@ -359,8 +395,13 @@ export default function ServiceOrders() {
         status:         'open',
         scheduled_at:   schedIso,
       });
-      if (error) toast.error('Erro ao publicar no marketplace');
-      else       toast.success('Demanda publicada no marketplace 🌐');
+      if (error) {
+        console.error('[saveOS] erro marketplace:', error);
+        toast.error('Erro ao publicar no marketplace: ' + error.message);
+        setSaving(false);
+        return; // mantém o modal aberto com os dados
+      }
+      toast.success('Demanda publicada no marketplace 🌐');
     } else {
       /* OS interna */
       const partsVal  = formOS.parts_cost ? parseFloat(formOS.parts_cost) : null;
@@ -386,10 +427,12 @@ export default function ServiceOrders() {
         labor_cost:           laborVal,
       });
       if (error) {
-        toast.error('Erro ao criar OS');
-      } else {
-        toast.success(isCheckup ? 'Check-up gratuito criado 🎁' : 'OS criada ✓');
+        console.error('[saveOS] erro OS:', error);
+        toast.error('Erro ao criar OS: ' + error.message);
+        setSaving(false);
+        return; // mantém o modal aberto com os dados
       }
+      toast.success(isCheckup ? 'Check-up gratuito criado 🎁' : 'OS criada ✓');
       await fetchOS(shop.id);
     }
 
@@ -424,7 +467,7 @@ export default function ServiceOrders() {
     const url = `${window.location.origin}/oficina/os?os=${os.id}`;
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(url)
-        .then(() => toast.success('Link copiado para a área de transferência'))
+        .then(() => toast.success('Link copiado — abre esta OS para quem estiver logado na oficina'))
         .catch(() => toast.error('Não foi possível copiar o link'));
     } else {
       toast.info(url);

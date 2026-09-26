@@ -9,6 +9,9 @@ interface PendingFees {
   job_ids: string[];
 }
 
+/** Evento global disparado quando as multas pendentes mudam (ex.: foram pagas) */
+const PENDING_FEES_CHANGED = 'pending-fees-changed';
+
 interface Props {
   workshopId: string | null;
   /** Disparado quando o usuário efetivamente paga as multas pendentes */
@@ -70,6 +73,7 @@ export function PendingFeesBanner({ workshopId, onPaid }: Props) {
             setPending(null);
             onPaid?.();
             loadPending();
+            window.dispatchEvent(new Event(PENDING_FEES_CHANGED));
           }}
         />
       )}
@@ -86,11 +90,18 @@ export function usePendingFees(workshopId: string | null) {
 
   useEffect(() => {
     if (!workshopId) { setHasPending(false); return; }
-    supabase.functions.invoke('pay-cancellation-fees', {
-      body: { workshop_id: workshopId, action: 'check' },
-    }).then(({ data }) => {
-      setHasPending(!!data && data.total > 0);
-    });
+    let alive = true;
+    const check = () => {
+      supabase.functions.invoke('pay-cancellation-fees', {
+        body: { workshop_id: workshopId, action: 'check' },
+      }).then(({ data }) => {
+        if (alive) setHasPending(!!data && data.total > 0);
+      });
+    };
+    check();
+    // Reconsulta quando a multa é paga pelo banner (sem precisar recarregar a página)
+    window.addEventListener(PENDING_FEES_CHANGED, check);
+    return () => { alive = false; window.removeEventListener(PENDING_FEES_CHANGED, check); };
   }, [workshopId]);
 
   return hasPending;

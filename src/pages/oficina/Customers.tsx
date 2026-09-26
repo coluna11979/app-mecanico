@@ -3,6 +3,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Customer, Vehicle, ServiceOrder } from '@/types/database';
+import { toast } from '@/components/ui/Toast';
 
 type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
 
@@ -26,18 +27,21 @@ export default function Customers() {
     fetchCustomers(currentWorkshop.id);
   }, [user, currentWorkshop?.id]);
 
-  async function fetchCustomers(wid: string) {
+  async function fetchCustomers(wid: string): Promise<CustomerFull[]> {
     const { data } = await supabase
       .from('customers')
       .select('*, vehicles(*, service_orders(*))')
       .eq('workshop_id', wid)
       .order('created_at', { ascending: false });
-    setList((data as CustomerFull[]) ?? []);
+    const rows = (data as CustomerFull[]) ?? [];
+    setList(rows);
+    return rows;
   }
 
   async function saveCustomer(e: FormEvent) {
     e.preventDefault();
     if (!shop) return;
+    if (!formC.full_name.trim()) { toast.error('Informe o nome do cliente'); return; }
     setSaving(true);
     const payload = {
       workshop_id: shop.id,
@@ -49,9 +53,16 @@ export default function Customers() {
       city:        formC.city.trim()       || null,
       birth_date:  formC.birth_date        || null,
     };
-    const { data: custData } = await supabase.from('customers').insert(payload).select('*').single();
-    if (custData && formC.veh_make.trim() && formC.veh_model.trim()) {
-      await supabase.from('vehicles').insert({
+    const { data: custData, error } = await supabase.from('customers').insert(payload).select('*').single();
+    if (error || !custData) {
+      console.error('[saveCustomer] erro:', error);
+      toast.error(error?.message || 'Não foi possível salvar o cliente');
+      setSaving(false);
+      return; // mantém o modal aberto com os dados
+    }
+    let vehicleFailed = false;
+    if (formC.veh_make.trim() && formC.veh_model.trim()) {
+      const { error: vErr } = await supabase.from('vehicles').insert({
         customer_id: custData.id,
         workshop_id: shop.id,
         plate: formC.veh_plate.toUpperCase().trim() || 'S/P',
@@ -59,7 +70,13 @@ export default function Customers() {
         model: formC.veh_model.trim(),
         year:  formC.veh_year ? parseInt(formC.veh_year) : null,
       });
+      if (vErr) {
+        console.error('[saveCustomer] erro veículo:', vErr);
+        vehicleFailed = true;
+        toast.error('Cliente salvo, mas o veículo não: ' + vErr.message);
+      }
     }
+    if (!vehicleFailed) toast.success('Cliente cadastrado ✓');
     await fetchCustomers(shop.id);
     setModalC(false); setFormC(EMPTY_C);
     setSaving(false);
@@ -69,13 +86,21 @@ export default function Customers() {
     e.preventDefault();
     if (!shop || !selected) return;
     setSaving(true);
-    await supabase.from('vehicles').insert({
+    const { error } = await supabase.from('vehicles').insert({
       ...formV, year: formV.year ? Number(formV.year) : null,
       customer_id: selected.id, workshop_id: shop.id
     });
-    await fetchCustomers(shop.id);
-    const updated = list.find(c => c.id === selected.id);
+    if (error) {
+      console.error('[saveVehicle] erro:', error);
+      toast.error(error.message || 'Não foi possível salvar o veículo');
+      setSaving(false);
+      return; // mantém o modal aberto com os dados
+    }
+    // Usa a lista recém-buscada (a variável `list` ainda é a antiga neste ponto)
+    const fresh = await fetchCustomers(shop.id);
+    const updated = fresh.find(c => c.id === selected.id);
     if (updated) setSelected(updated);
+    toast.success('Veículo cadastrado ✓');
     setModalV(false); setFormV(EMPTY_V);
     setSaving(false);
   }

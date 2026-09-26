@@ -3,6 +3,8 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { MechanicReviews } from '@/components/MechanicReviews';
+import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
+import { toast } from '@/components/ui/Toast';
 import type { Mechanic, Profile } from '@/types/database';
 
 const ALL_SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
@@ -17,6 +19,7 @@ export default function WorkshopSearch() {
   const [loading, setLoading] = useState(true);
   const [openReviews, setOpenReviews] = useState<Set<string>>(new Set());
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const hasPendingFees = usePendingFees(shop?.id ?? null);
 
   function toggleReviews(id: string) {
     setOpenReviews(prev => {
@@ -81,10 +84,14 @@ export default function WorkshopSearch() {
   async function hire(e: FormEvent) {
     e.preventDefault();
     if (!shop || !target) return;
+    if (hasPendingFees) {
+      toast.error('Você tem multa de cancelamento pendente. Quite no painel de Demandas antes de contratar.');
+      return;
+    }
     setHiring(true);
     const pph = Number(job.price_per_hour) || target.hourly_rate;
     const mh  = Number(job.max_hours) || 1;
-    await supabase.from('jobs').insert({
+    const { error } = await supabase.from('jobs').insert({
       workshop_id:    shop.id,
       mechanic_id:    target.id,
       title:          job.title,
@@ -94,13 +101,22 @@ export default function WorkshopSearch() {
       price:          pph * mh,
       status:         'assigned',
     });
-    setHiring(false); setTarget(null);
-    alert('Mecânico contratado! Acompanhe pelo dashboard.');
+    setHiring(false);
+    if (error) {
+      console.error('[hire] erro:', error);
+      toast.error('Não foi possível contratar: ' + error.message);
+      return; // mantém o modal aberto com os dados
+    }
+    setTarget(null);
+    toast.success('Mecânico contratado! Acompanhe pelo painel de Demandas.');
   }
 
   return (
     <WorkshopLayout>
       <h1 className="text-3xl font-bold tracking-tight mb-6">Buscar mecânicos disponíveis</h1>
+
+      {/* Multa pendente bloqueia contratação (mesma regra do painel de Demandas) */}
+      <PendingFeesBanner workshopId={shop?.id ?? null} />
 
       <div className="card mb-6 grid md:grid-cols-3 gap-4">
         <div>

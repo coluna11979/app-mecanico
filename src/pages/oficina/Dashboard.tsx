@@ -103,12 +103,15 @@ export default function WorkshopDashboard() {
     return () => { supabase.removeChannel(ch); };
   }, [currentWorkshop?.id]);
 
-  /* Polling fallback (8s) — caso realtime caia */
+  /* Polling de segurança (30s) caso o realtime caia. Pausa com a aba em segundo plano
+     e atualiza na hora quando a oficina volta pra aba — economiza consultas no Supabase. */
   useEffect(() => {
     if (!currentWorkshop?.id) return;
     const wid = currentWorkshop.id;
-    const t = setInterval(() => fetchJobs(wid), 8000);
-    return () => clearInterval(t);
+    const t = setInterval(() => { if (!document.hidden) fetchJobs(wid); }, 30000);
+    const onVisible = () => { if (!document.hidden) fetchJobs(wid); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
   }, [currentWorkshop?.id]);
 
   async function fetchJobs(workshopId: string) {
@@ -260,8 +263,13 @@ export default function WorkshopDashboard() {
       audience:       isFavorites ? 'favorites' : 'public',
     };
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
-    await supabase.from('jobs').insert(payload);
+    const { error: insErr } = await supabase.from('jobs').insert(payload);
     setSaving(false);
+    if (insErr) {
+      console.error('[createJob] erro:', insErr);
+      setFormError('Erro ao publicar demanda: ' + insErr.message);
+      return; // mantém o modal aberto e o rascunho salvo
+    }
     localStorage.removeItem(draftKey(currentShop.id));
     resetModal();
     await fetchJobs(currentShop.id);

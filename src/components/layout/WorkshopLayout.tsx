@@ -5,6 +5,7 @@ import { Logo } from '@/components/Logo';
 import { supabase } from '@/lib/supabase';
 import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
+import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
 
 type ArrivalAlert = { jobId: string; title: string };
@@ -256,10 +257,16 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   async function confirmFinished() {
     if (!finishedAlert) return;
     setConfirming(true);
-    await supabase.from('jobs')
+    const { error } = await supabase.from('jobs')
       .update({ workshop_confirmed_at: new Date().toISOString() })
       .eq('id', finishedAlert.jobId);
     setConfirming(false);
+    if (error) {
+      console.error('[confirmFinished] erro:', error);
+      toast.error('Não foi possível confirmar: ' + error.message);
+      return; // mantém o alerta aberto para tentar de novo
+    }
+    toast.success('Serviço confirmado — pagamento liberado ✓');
     setFinishedAlert(null);
   }
 
