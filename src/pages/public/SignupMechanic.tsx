@@ -20,6 +20,9 @@ function consumeLeadPrefill(): { name?: string; email?: string; phone?: string }
 }
 
 const SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
+const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+
+const TOTAL_STEPS = 4;
 
 /** Lê ?ref=CODIGO da URL (também aceita ?ref via sessionStorage caso venha da landing). */
 function useRefCode(): string | null {
@@ -50,6 +53,7 @@ export default function SignupMechanic() {
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '', cpf: '', cnh: '',
     experience_years: 1, hourly_rate: 80, pix_key: '', skills: [] as string[],
+    cep: '', neighborhood: '', city: '', state: 'SP', work_reference: '',
   });
 
   // Pré-preenche com os dados capturados no gate da home (se houver)
@@ -113,6 +117,11 @@ export default function SignupMechanic() {
           experience_years: Number(f.experience_years),
           hourly_rate: Number(f.hourly_rate),
           pix_key: f.pix_key.trim() || null,
+          cep: f.cep.trim(),
+          neighborhood: f.neighborhood.trim(),
+          city: f.city.trim(),
+          state: f.state,
+          work_reference: f.work_reference.trim(),
           // Passa o código de indicação, se válido. handle_new_user resolve
           // pra mechanic_id e grava em mechanics.indicado_por.
           indicado_por_codigo: refInfo?.valid ? refCode : null,
@@ -128,6 +137,10 @@ export default function SignupMechanic() {
     // Registra aceite dos termos (não bloqueia o signup se falhar)
     if (data.user) {
       try { await recordConsent(data.user.id, 'mechanic'); } catch { /* ignora */ }
+      // Email de boas-vindas (silencioso — se Resend não configurado ou der erro, ignora)
+      void supabase.functions.invoke('send-welcome-email', {
+        body: { profile_id: data.user.id },
+      }).catch(() => { /* fire-and-forget */ });
     }
 
     setLoading(false);
@@ -154,13 +167,13 @@ export default function SignupMechanic() {
           )}
 
           <div className="flex gap-1 mb-6">
-            {[1,2,3].map(n => (
+            {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map(n => (
               <div key={n} className={`h-1.5 flex-1 rounded-full transition ${n <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />
             ))}
           </div>
 
           <h1 className="text-2xl font-bold">Cadastro de Mecânico</h1>
-          <p className="text-steel-500 text-sm mt-1">Etapa {step} de 3 · Cadastro sujeito a aprovação</p>
+          <p className="text-steel-500 text-sm mt-1">Etapa {step} de {TOTAL_STEPS} · Cadastro sujeito a aprovação</p>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
             {step === 1 && (
@@ -201,6 +214,42 @@ export default function SignupMechanic() {
             )}
 
             {step === 3 && (
+              <>
+                <div>
+                  <label className="label">CEP</label>
+                  <input className="input" required value={f.cep}
+                    onChange={e => update('cep', e.target.value)}
+                    placeholder="00000-000" />
+                </div>
+                <div><label className="label">Bairro</label>
+                  <input className="input" required value={f.neighborhood}
+                    onChange={e => update('neighborhood', e.target.value)}
+                    placeholder="Ex.: Vila Mariana" /></div>
+                <div className="grid grid-cols-[1fr_100px] gap-3">
+                  <div><label className="label">Cidade</label>
+                    <input className="input" required value={f.city}
+                      onChange={e => update('city', e.target.value)}
+                      placeholder="Ex.: São Paulo" /></div>
+                  <div><label className="label">UF</label>
+                    <select className="input" value={f.state}
+                      onChange={e => update('state', e.target.value)}>
+                      {UFS.map(uf => <option key={uf}>{uf}</option>)}
+                    </select></div>
+                </div>
+                <div>
+                  <label className="label">Referência de trabalho (opcional)</label>
+                  <textarea className="input" rows={3} value={f.work_reference}
+                    onChange={e => update('work_reference', e.target.value)}
+                    placeholder="Ex.: Oficina do Zé (11) 99999-9999 · trabalhei 3 anos com injeção eletrônica" />
+                  <p className="text-xs text-steel-500 mt-1">
+                    Uma oficina, cliente ou colega que já trabalhou contigo e pode dar referência.
+                    Ajuda muito na aprovação, mas não é obrigatório.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {step === 4 && (
               <div className="space-y-4">
                 <div>
                   <label className="label">Suas especialidades (selecione ao menos 1)</label>
@@ -241,7 +290,7 @@ export default function SignupMechanic() {
 
             <div className="flex gap-2 pt-2">
               {step > 1 && <button type="button" className="btn-ghost" onClick={() => setStep(step - 1)}>Voltar</button>}
-              {step < 3
+              {step < TOTAL_STEPS
                 ? <button type="button" className="btn-primary flex-1" onClick={() => setStep(step + 1)}>Próximo</button>
                 : <button className="btn-primary flex-1" disabled={loading || f.skills.length === 0 || !acceptedTerms}>
                     {loading ? 'Enviando…' : 'Enviar cadastro'}

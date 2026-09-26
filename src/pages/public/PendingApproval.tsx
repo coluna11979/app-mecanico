@@ -37,8 +37,22 @@ const STATUS_META = {
   },
 } as const;
 
-const ACCEPTED_MIMES = 'image/jpeg,image/png,image/webp,image/heic,application/pdf';
+// Formatos aceitos — cobre casos reais de celulares BR:
+// - iPhone iOS 15+ manda image/heif (não image/heic)
+// - Android + WhatsApp pode mandar mime vazio ou image/jpg (sem 'e')
+// - Fotos exportadas de apps podem vir como image/gif ou tiff
+// Aceitamos por MIME OU por extensão do arquivo — o que passar primeiro vale.
+const ACCEPTED_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'pdf'];
+// Atributo `accept` do <input> — usar image/* + application/pdf é mais permissivo
+// no picker do celular do que listar mime-por-mime (Android/iPhone respeitam melhor).
+const ACCEPT_ATTR = 'image/*,application/pdf';
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+
+/** Extrai a extensão do nome do arquivo em lowercase (sem ponto). */
+function fileExt(name: string): string {
+  const parts = name.split('.');
+  return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+}
 
 export default function PendingApproval() {
   const { user, profile, signOut } = useAuth();
@@ -117,13 +131,19 @@ export default function PendingApproval() {
     if (!picked.length) return;
     setError(null);
 
-    const accepted = ACCEPTED_MIMES.split(',');
     for (const f of picked) {
       if (f.size > MAX_SIZE) {
         setError(`"${f.name}" é muito grande (máx ${fmtFileSize(MAX_SIZE)}).`);
         return;
       }
-      if (!accepted.includes(f.type)) {
+      // Aceita se o MIME for image/* ou pdf, OU se a extensão for de foto/pdf.
+      // Alguns celulares (especialmente Android + galeria) mandam mime vazio —
+      // nesses casos, cair na checagem por extensão evita falso-negativo silencioso.
+      const mime = (f.type || '').toLowerCase();
+      const ext = fileExt(f.name);
+      const mimeOk = mime.startsWith('image/') || mime === 'application/pdf';
+      const extOk = ACCEPTED_EXTS.includes(ext);
+      if (!mimeOk && !extOk) {
         setError(`"${f.name}" tem formato não aceito. Use JPG, PNG, WEBP, HEIC ou PDF.`);
         return;
       }
@@ -315,7 +335,7 @@ export default function PendingApproval() {
                   <input
                     ref={fileRef}
                     type="file"
-                    accept={ACCEPTED_MIMES}
+                    accept={ACCEPT_ATTR}
                     multiple
                     onChange={pickFile}
                     className="hidden"

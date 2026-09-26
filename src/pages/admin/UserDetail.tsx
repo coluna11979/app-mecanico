@@ -28,6 +28,9 @@ export default function AdminUserDetail() {
   const [loading, setLoading]   = useState(true);
   const [busy, setBusy]         = useState(false);
   const [saved, setSaved]       = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
   const [emailDraft, setEmailDraft] = useState('');
   const [emailEditing, setEmailEditing] = useState(false);
@@ -39,7 +42,11 @@ export default function AdminUserDetail() {
   const [edit, setEdit] = useState({
     full_name: '', phone: '',
     cpf: '', cnh: '', experience_years: 0, hourly_rate: 0, pix_key: '',
-    business_name: '', cnpj: '', address: '', city: '', state: '', description: '',
+    // Localização do mecânico + referência opcional
+    mech_cep: '', mech_neighborhood: '', mech_city: '', mech_state: '', mech_work_reference: '',
+    business_name: '', cnpj: '',
+    address: '', number: '', neighborhood: '', cep: '',
+    city: '', state: '', description: '',
     lat: null as number | null, lng: null as number | null,
     admin_notes: '',
   });
@@ -74,6 +81,11 @@ export default function AdminUserDetail() {
         experience_years: m?.experience_years ?? 0,
         hourly_rate: m?.hourly_rate ?? 0,
         pix_key: (m as any)?.pix_key ?? '',
+        mech_cep: m?.cep ?? '',
+        mech_neighborhood: m?.neighborhood ?? '',
+        mech_city: m?.city ?? '',
+        mech_state: m?.state ?? '',
+        mech_work_reference: m?.work_reference ?? '',
         admin_notes: p.admin_notes ?? '',
       }));
     } else if (p.role === 'workshop') {
@@ -83,7 +95,11 @@ export default function AdminUserDetail() {
         ...e,
         full_name: p.full_name, phone: p.phone ?? '',
         business_name: w?.business_name ?? '', cnpj: w?.cnpj ?? '',
-        address: w?.address ?? '', city: w?.city ?? '', state: w?.state ?? '',
+        address: w?.address ?? '',
+        number: w?.number ?? '',
+        neighborhood: w?.neighborhood ?? '',
+        cep: w?.cep ?? '',
+        city: w?.city ?? '', state: w?.state ?? '',
         description: w?.description ?? '',
         lat: w?.lat ?? null, lng: w?.lng ?? null,
         admin_notes: p.admin_notes ?? '',
@@ -117,6 +133,11 @@ export default function AdminUserDetail() {
         experience_years: Number(edit.experience_years) || 0,
         hourly_rate: Number(edit.hourly_rate) || 0,
         pix_key: edit.pix_key.trim() || null,
+        cep: edit.mech_cep.trim() || null,
+        neighborhood: edit.mech_neighborhood.trim() || null,
+        city: edit.mech_city.trim() || null,
+        state: edit.mech_state.trim().toUpperCase() || null,
+        work_reference: edit.mech_work_reference.trim() || null,
       }).eq('id', mechanic.id);
     }
 
@@ -125,6 +146,9 @@ export default function AdminUserDetail() {
         business_name: edit.business_name.trim(),
         cnpj:    edit.cnpj.trim(),
         address: edit.address.trim(),
+        number:  edit.number.trim() || null,
+        neighborhood: edit.neighborhood.trim() || null,
+        cep:     edit.cep.trim() || null,
         city:    edit.city.trim(),
         state:   edit.state.trim().toUpperCase(),
         description: edit.description.trim() || null,
@@ -220,6 +244,22 @@ export default function AdminUserDetail() {
     } catch {
       prompt('Copie o link:', url);
     }
+  }
+
+  async function deleteUser() {
+    if (!profile) return;
+    setBusy(true);
+    setDeleteErr(null);
+    const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+      body: { profile_id: profile.id },
+    });
+    setBusy(false);
+    if (error || data?.error) {
+      setDeleteErr(data?.error ?? error?.message ?? 'Erro ao excluir cadastro');
+      return;
+    }
+    // Volta pra listagem — o cadastro deixou de existir
+    nav('/admin/aprovacoes', { replace: true });
   }
 
   if (loading) {
@@ -393,6 +433,38 @@ export default function AdminUserDetail() {
             </div>
           )}
 
+          {isMechanic && (
+            <div className="card space-y-4">
+              <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">📍 Localização e referência</h3>
+              <Field label="CEP">
+                <input className="input" value={edit.mech_cep}
+                  placeholder="00000-000"
+                  onChange={e => setEdit(s => ({ ...s, mech_cep: e.target.value }))} />
+              </Field>
+              <Field label="Bairro">
+                <input className="input" value={edit.mech_neighborhood}
+                  onChange={e => setEdit(s => ({ ...s, mech_neighborhood: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <Field label="Cidade">
+                    <input className="input" value={edit.mech_city}
+                      onChange={e => setEdit(s => ({ ...s, mech_city: e.target.value }))} />
+                  </Field>
+                </div>
+                <Field label="UF">
+                  <input className="input uppercase" maxLength={2} value={edit.mech_state}
+                    onChange={e => setEdit(s => ({ ...s, mech_state: e.target.value.toUpperCase() }))} />
+                </Field>
+              </div>
+              <Field label="Referência de trabalho (opcional)">
+                <textarea className="input" rows={3} value={edit.mech_work_reference}
+                  placeholder="Ex.: Oficina do Zé (11) 99999-9999 · trabalhei 3 anos com injeção eletrônica"
+                  onChange={e => setEdit(s => ({ ...s, mech_work_reference: e.target.value }))} />
+              </Field>
+            </div>
+          )}
+
           {isMechanic && mechanic && (
             <EmbaixadorCard
               mechanic={mechanic as any}
@@ -410,11 +482,26 @@ export default function AdminUserDetail() {
               <Field label="Razão social">
                 <input className="input" value={edit.business_name} onChange={e => setEdit(s => ({ ...s, business_name: e.target.value }))} />
               </Field>
-              <Field label="CNPJ">
-                <input className="input" value={edit.cnpj} onChange={e => setEdit(s => ({ ...s, cnpj: e.target.value }))} />
-              </Field>
-              <Field label="Endereço">
-                <input className="input" value={edit.address} onChange={e => setEdit(s => ({ ...s, address: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="CNPJ">
+                  <input className="input" value={edit.cnpj} onChange={e => setEdit(s => ({ ...s, cnpj: e.target.value }))} />
+                </Field>
+                <Field label="CEP">
+                  <input className="input" value={edit.cep}
+                    placeholder="00000-000"
+                    onChange={e => setEdit(s => ({ ...s, cep: e.target.value }))} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-[1fr_120px] gap-3">
+                <Field label="Rua / Avenida">
+                  <input className="input" value={edit.address} onChange={e => setEdit(s => ({ ...s, address: e.target.value }))} />
+                </Field>
+                <Field label="Número">
+                  <input className="input" value={edit.number} onChange={e => setEdit(s => ({ ...s, number: e.target.value }))} />
+                </Field>
+              </div>
+              <Field label="Bairro">
+                <input className="input" value={edit.neighborhood} onChange={e => setEdit(s => ({ ...s, neighborhood: e.target.value }))} />
               </Field>
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
@@ -511,6 +598,25 @@ export default function AdminUserDetail() {
           {saved && (
             <p className="text-center text-signal-600 text-sm font-semibold">✓ Alterações salvas com sucesso</p>
           )}
+
+          {/* Zona de perigo */}
+          <div className="card border-2 border-alert-200 space-y-3 mt-6">
+            <div>
+              <h3 className="text-sm font-bold text-alert-700 uppercase tracking-wider">⚠️ Zona de perigo</h3>
+              <p className="text-xs text-steel-500 mt-1">
+                Excluir apaga o cadastro para sempre — sem opção de restaurar.
+                Só use se for realmente pra sumir com essa conta.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setDeleteOpen(true); setDeleteConfirm(''); setDeleteErr(null); }}
+              disabled={busy}
+              className="btn-ghost w-full border border-alert-300 text-alert-700 hover:bg-alert-500/10 disabled:opacity-50"
+            >
+              🗑️ Excluir cadastro definitivamente
+            </button>
+          </div>
         </div>
 
         {/* ── Coluna 2: histórico ── */}
@@ -550,6 +656,45 @@ export default function AdminUserDetail() {
           </div>
         </div>
       </div>
+
+      {/* Modal de confirmação de exclusão */}
+      {deleteOpen && profile && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setDeleteOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-alert-700">🗑️ Excluir cadastro definitivamente</h3>
+              <p className="text-sm text-steel-600 mt-2 leading-relaxed">
+                Você vai apagar o cadastro de <strong>{profile.full_name}</strong> pra sempre.
+                Isso remove login, dados, histórico de mensagens e tudo o mais.
+                <strong className="text-alert-700"> Não tem como restaurar depois.</strong>
+              </p>
+            </div>
+            <div>
+              <label className="label">Pra confirmar, digite <span className="font-mono bg-alert-500/10 text-alert-700 px-1.5 py-0.5 rounded">EXCLUIR</span> abaixo:</label>
+              <input
+                className="input"
+                value={deleteConfirm}
+                onChange={e => setDeleteConfirm(e.target.value)}
+                placeholder="EXCLUIR"
+                autoFocus
+              />
+            </div>
+            {deleteErr && <div className="text-sm text-alert-600 bg-alert-500/10 px-3 py-2 rounded-lg">{deleteErr}</div>}
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteOpen(false)} disabled={busy} className="btn-ghost flex-1">
+                Cancelar
+              </button>
+              <button
+                onClick={deleteUser}
+                disabled={busy || deleteConfirm !== 'EXCLUIR'}
+                className="btn-ghost flex-1 border border-alert-500 text-alert-700 hover:bg-alert-500/10 disabled:opacity-40"
+              >
+                {busy ? 'Excluindo…' : 'Excluir pra sempre'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }

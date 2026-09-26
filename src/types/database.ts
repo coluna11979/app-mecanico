@@ -66,11 +66,11 @@ export interface Mechanic {
   current_lng: number | null;
   last_location_update: string | null;
   pix_key: string | null;
-  cep?: string | null;
-  neighborhood?: string | null;
-  city?: string | null;
-  state?: string | null;
-  work_reference?: string | null;
+  cep: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
+  work_reference: string | null;
   // Programa de embaixador
   is_embaixador: boolean;
   codigo_indicacao: string | null;
