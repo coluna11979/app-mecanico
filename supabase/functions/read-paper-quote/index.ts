@@ -16,8 +16,10 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+// A API aceita no máximo 16 campos com união/nullable no schema. Por isso textos
+// ausentes vêm como "" (string simples) e só os números usam nullable.
 const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: 'null' }] });
-const str = nullable({ type: 'string' });
+const str = { type: 'string' };
 
 /** Formato exato que a IA precisa devolver (structured outputs) */
 const SCHEMA = {
@@ -76,7 +78,7 @@ const PROMPT = `Esta é a foto de um orçamento ou nota de serviço de uma ofici
 Extraia os dados exatamente como estão escritos:
 - O cabeçalho impresso (nome, CNPJ, endereço e telefone no topo) é da PRÓPRIA OFICINA que emitiu o talão. Nunca use esses dados como dados do cliente. O cliente é quem aparece nos campos preenchidos (Cliente, Telefone, Veículo…).
 - numero_documento: o número do talão/orçamento (ex.: "Nº 0192" → "0192").
-- Não invente nada. Campo que não aparece ou que você não consegue ler → null.
+- Não invente nada. Campo de texto que não aparece ou que você não consegue ler → "" (texto vazio); campo numérico → null.
 - Telefone: só dígitos, com DDD se houver (ex.: "11987654321").
 - Placa: maiúsculas, sem hífen ou espaço (ex.: "ABC1D23" ou "ABC1234").
 - Valores em reais como número: "R$ 1.250,00" → 1250; "85,50" → 85.5.
@@ -180,7 +182,11 @@ Deno.serve(async (req) => {
     let msg = e instanceof Error ? e.message : String(e);
     if (e instanceof Anthropic.AuthenticationError) msg = 'chave da IA inválida';
     else if (e instanceof Anthropic.RateLimitError) msg = 'limite da IA atingido, tente de novo em instantes';
-    else if (e instanceof Anthropic.APIError) msg = `erro da IA (${e.status})`;
+    else if (e instanceof Anthropic.APIError) {
+      // Motivo real da API (ex.: crédito insuficiente, pedido inválido) — ajuda o diagnóstico
+      const detail = (e.error as any)?.error?.message ?? '';
+      msg = `erro da IA (${e.status})${detail ? `: ${String(detail).slice(0, 300)}` : ''}`;
+    }
     console.error('[read-paper-quote]', e);
     if (importId) {
       await admin.from('paper_imports').update({ status: 'failed', error: msg }).eq('id', importId);

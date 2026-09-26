@@ -69,7 +69,12 @@ export default function ImportarOrcamentos() {
   async function readImport(id: string) {
     const { data, error } = await supabase.functions.invoke('read-paper-quote', { body: { import_id: id } });
     if (error || (data as any)?.error) {
-      const msg = (data as any)?.error ?? error?.message ?? 'erro';
+      // Em resposta de erro o corpo vem em error.context — é lá que está o motivo real
+      let msg: string = (data as any)?.error ?? '';
+      if (!msg && error && 'context' in error) {
+        try { msg = (await (error as any).context.json())?.error ?? ''; } catch { /* corpo não-JSON */ }
+      }
+      msg = msg || error?.message || 'erro';
       console.warn('[importar] leitura falhou:', msg);
       return msg as string;
     }
