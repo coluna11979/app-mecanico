@@ -4,7 +4,7 @@ import LicensePlate from './LicensePlate';
 import {
   osStatusLabel, osStatusColor, osBorder,
   durationMin, fmtDur, fmtDate, fmtBRL,
-  osNumber, waNumber,
+  osNumber, waNumber, fmtPhone,
 } from './osHelpers';
 
 export type OsRow = ServiceOrder & {
@@ -80,7 +80,7 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
                   className="inline-flex items-center gap-1 text-steel-600 hover:text-brand-600 hover:underline"
                   title="Ligar"
                 >
-                  📞 {os.customer?.phone}
+                  📞 {fmtPhone(os.customer?.phone)}
                 </a>
               )}
               {wa && (

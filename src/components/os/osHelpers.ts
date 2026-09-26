@@ -64,6 +64,16 @@ export function fmtBRL(v: number | null | undefined) {
   return `R$ ${(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 }
 
+/** "11997341182" → "(11) 99734-1182"; "1134567890" → "(11) 3456-7890". Outros formatos ficam como estão. */
+export function fmtPhone(phone: string | null | undefined): string {
+  if (!phone) return '';
+  let d = phone.replace(/\D/g, '');
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return phone;
+}
+
 /**
  * Limpa um telefone para "55DDDNNNNNNNN" — usado para abrir wa.me.
  * Retorna null se ficar inválido.

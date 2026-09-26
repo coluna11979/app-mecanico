@@ -231,10 +231,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               {readOnly ? (
                 <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{KIND_LABEL[r.kind]}</span>
               ) : (
-                <select className="input !py-2 text-sm" value={r.kind}
+                <select className="input !py-2 !px-2 text-sm" value={r.kind}
                   onChange={e => update(r.key, { kind: e.target.value as OsItemKind })}>
-                  <option value="part">🔩 Peça</option>
-                  <option value="labor">🔧 Serviço</option>
+                  <option value="part">Peça</option>
+                  <option value="labor">Serviço</option>
                 </select>
               )}
             </div>

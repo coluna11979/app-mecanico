@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { fmtBRL, osNumber, osStatusLabel } from '@/components/os/osHelpers';
+import { fmtBRL, fmtPhone, osNumber, osStatusLabel } from '@/components/os/osHelpers';
 import type { OsRow } from '@/components/os/OsCard';
 import type { ServiceOrderItem, Workshop } from '@/types/database';
 
@@ -113,7 +113,7 @@ export default function OsPrint() {
               <>
                 <div className="font-semibold">{c.full_name}</div>
                 {c.cpf && <div>CPF: {c.cpf}</div>}
-                {c.phone && <div>Telefone: {c.phone}</div>}
+                {c.phone && <div>Telefone: {fmtPhone(c.phone)}</div>}
                 {c.email && <div>E-mail: {c.email}</div>}
                 {(c.address || c.city) && <div>{[c.address, c.city].filter(Boolean).join(' · ')}</div>}
               </>

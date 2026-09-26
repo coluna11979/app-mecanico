@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
-import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
+import { fmtBRL, fmtPhone, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle } from '@/types/database';
 
 type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string };
@@ -266,7 +266,7 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
                 <label className="flex items-start gap-2 text-sm bg-signal-50 border border-signal-200 rounded-xl px-3 py-2 cursor-pointer">
                   <input type="checkbox" className="mt-0.5" checked={useExisting} onChange={e => setUseExisting(e.target.checked)} />
                   <span>
-                    <strong>Já cadastrado:</strong> {matchCustomer.full_name}{matchCustomer.phone ? ` · ${matchCustomer.phone}` : ''}
+                    <strong>Já cadastrado:</strong> {matchCustomer.full_name}{matchCustomer.phone ? ` · ${fmtPhone(matchCustomer.phone)}` : ''}
                     <span className="block text-xs text-steel-500">Usar este cadastro (reconhecido pela {matchVehicle ? 'placa' : 'telefone'}). Desmarque para criar outro.</span>
                   </span>
                 </label>

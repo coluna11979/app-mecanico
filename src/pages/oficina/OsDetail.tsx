@@ -7,8 +7,9 @@ import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
+import Recommendations from '@/components/os/Recommendations';
 import {
-  durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber,
+  durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber, fmtPhone,
 } from '@/components/os/osHelpers';
 import type { OsRow } from '@/components/os/OsCard';
 import type { OsStatus, ServiceOrderItem } from '@/types/database';
@@ -129,7 +130,8 @@ export default function OsDetail() {
   const wa = waNumber(os.customer?.phone);
   const tel = os.customer?.phone?.replace(/\D/g, '');
   const dur = durationMin(os.started_at, os.completed_at);
-  const closed = os.status === 'cancelled';
+  // Concluída ou cancelada fica travada: para mudar, é preciso reabrir (protege o histórico)
+  const closed = os.status === 'cancelled' || os.status === 'completed';
 
   return (
     <WorkshopLayout>
@@ -171,6 +173,9 @@ export default function OsDetail() {
             )}
             {!closed && (
               <button onClick={() => setEditing(true)} className="btn-ghost text-sm !py-2 border border-steel-200">✏️ Editar dados</button>
+            )}
+            {os.status === 'completed' && (
+              <span className="self-center text-xs text-steel-400">🔒 OS concluída — reabra para editar</span>
             )}
             <div className="flex gap-2 sm:ml-auto">
               {(os.status === 'completed' || os.status === 'cancelled') && (
@@ -227,7 +232,7 @@ export default function OsDetail() {
                 <>
                   <div className="font-bold text-steel-900">{os.customer.full_name}</div>
                   <div className="mt-2 space-y-1 text-sm">
-                    {tel && <a href={`tel:${tel}`} className="block text-steel-600 hover:text-brand-600">📞 {os.customer.phone}</a>}
+                    {tel && <a href={`tel:${tel}`} className="block text-steel-600 hover:text-brand-600">📞 {fmtPhone(os.customer.phone)}</a>}
                     {wa && <a href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" className="block text-signal-700 hover:underline">💬 WhatsApp</a>}
                     {os.customer.email && <div className="text-steel-600 truncate">✉️ {os.customer.email}</div>}
                     {os.customer.cpf && <div className="text-steel-500">🪪 {os.customer.cpf}</div>}
@@ -246,9 +251,9 @@ export default function OsDetail() {
                   <LicensePlate plate={os.vehicle.plate} size="sm" />
                   <div className="min-w-0 text-sm">
                     <div className="font-semibold text-steel-900 truncate">{os.vehicle.make} {os.vehicle.model}</div>
-                    <div className="text-steel-500">
-                      {[os.vehicle.year, os.vehicle.color].filter(Boolean).join(' · ') || '—'}
-                    </div>
+                    {(os.vehicle.year || os.vehicle.color) && (
+                      <div className="text-steel-500">{[os.vehicle.year, os.vehicle.color].filter(Boolean).join(' · ')}</div>
+                    )}
                     {os.km_reading != null && <div className="text-steel-500">{os.km_reading.toLocaleString('pt-BR')} km</div>}
                   </div>
                 </div>
@@ -256,6 +261,12 @@ export default function OsDetail() {
                 <EmptyLink text="Sem veículo vinculado" onClick={closed ? undefined : () => setEditing(true)} />
               )}
             </div>
+
+            {/* Recomendado para o futuro (base da reativação de clientes) */}
+            {os.customer_id && (
+              <Recommendations workshopId={os.workshop_id} customerId={os.customer_id}
+                vehicleId={os.vehicle_id} osId={os.id} />
+            )}
 
             {/* Responsável */}
             <div className="card">

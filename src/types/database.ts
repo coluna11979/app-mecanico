@@ -276,6 +276,20 @@ export interface PaperImport {
   confirmed_at: string | null;
 }
 
+/** Serviço recomendado para o futuro ("avaliar bieletas na próxima revisão") */
+export interface ServiceRecommendation {
+  id: string;
+  workshop_id: string;
+  customer_id: string | null;
+  vehicle_id: string | null;
+  service_order_id: string | null;
+  description: string;
+  status: 'pending' | 'done' | 'dismissed';
+  source: string;
+  recommended_at: string;
+  created_at: string;
+}
+
 export interface WorkshopMechanic {
   id: string;
   workshop_id: string;

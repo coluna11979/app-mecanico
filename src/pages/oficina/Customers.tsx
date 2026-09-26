@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Customer, Vehicle, ServiceOrder } from '@/types/database';
 import { toast } from '@/components/ui/Toast';
 import { formatBRL } from '@/lib/payment';
+import { fmtPhone } from '@/components/os/osHelpers';
 import ReactivationList from '@/components/customers/ReactivationList';
 
 type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
@@ -163,7 +164,7 @@ export default function Customers() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-bold truncate">{c.full_name}</div>
-                  <div className="text-xs text-steel-500">{c.phone ?? '—'}</div>
+                  <div className="text-xs text-steel-500">{c.phone ? fmtPhone(c.phone) : '—'}</div>
                 </div>
                 <div className="text-xs text-steel-400 shrink-0">
                   {c.vehicles.length} veículo{c.vehicles.length !== 1 ? 's' : ''}
@@ -195,7 +196,7 @@ export default function Customers() {
                 </div>
                 <h2 className="text-2xl font-bold">{selected.full_name}</h2>
                 <div className="text-sm text-steel-500 mt-1 space-y-0.5">
-                  {selected.phone      && <div>📞 {selected.phone}</div>}
+                  {selected.phone      && <div>📞 {fmtPhone(selected.phone)}</div>}
                   {selected.email      && <div>✉️ {selected.email}</div>}
                   {selected.cpf        && <div>🪪 {selected.cpf}</div>}
                   {selected.birth_date && <div>🎂 {new Date(selected.birth_date + 'T00:00:00').toLocaleDateString('pt-BR')}</div>}
