@@ -51,7 +51,23 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   ]);
 }
 
-async function fetchProfile(uid: string): Promise<Profile | null> {
+/** Resultado de uma busca: `ok: false` = falhou (rede/timeout) — NÃO significa "não existe".
+ *  Falha transitória nunca deve apagar dados já carregados (isso deslogava o usuário). */
+type Fetched<T> = { ok: true; data: T } | { ok: false };
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/** Tenta de novo em falha transitória (rede oscilando, aba acabando de acordar). */
+async function withRetry<T>(fn: () => Promise<Fetched<T>>, tries = 3): Promise<Fetched<T>> {
+  for (let i = 0; i < tries; i++) {
+    const r = await fn();
+    if (r.ok) return r;
+    if (i < tries - 1) await sleep(800 * (i + 1));
+  }
+  return { ok: false };
+}
+
+async function fetchProfileOnce(uid: string): Promise<Fetched<Profile | null>> {
   try {
     const query = supabase
       .from('profiles').select('*').eq('id', uid).maybeSingle();
@@ -62,18 +78,22 @@ async function fetchProfile(uid: string): Promise<Profile | null> {
     );
     if (result.error) {
       console.warn('[auth] fetchProfile error:', result.error.message);
-      return null;
+      return { ok: false };
     }
-    return (result.data as Profile) ?? null;
+    return { ok: true, data: (result.data as Profile) ?? null };
   } catch (e) {
     console.warn('[auth] fetchProfile exception:', e);
-    return null;
+    return { ok: false };
   }
 }
 
-/** Carrega TODAS as oficinas que o usuário é membro.
- *  Faz em 2 queries (mais confiável que JOIN aninhado) com timeouts independentes. */
-async function fetchWorkshops(uid: string): Promise<Workshop[]> {
+const fetchProfile = (uid: string) => withRetry(() => fetchProfileOnce(uid));
+
+/** Carrega TODAS as oficinas que o usuário é membro. */
+const fetchWorkshops = (uid: string) => withRetry(() => fetchWorkshopsOnce(uid));
+
+/** Uma tentativa — 2 queries (mais confiável que JOIN aninhado) com timeouts independentes. */
+async function fetchWorkshopsOnce(uid: string): Promise<Fetched<Workshop[]>> {
   try {
     // 1. Pega todos os workshop_id em que o usuário é membro
     const memQuery = supabase
@@ -85,10 +105,11 @@ async function fetchWorkshops(uid: string): Promise<Workshop[]> {
       6000,
       { data: null, error: { message: 'timeout' } },
     );
-    if (memRes.error || !memRes.data || memRes.data.length === 0) {
+    if (memRes.error || !memRes.data) {
       if (memRes.error) console.warn('[auth] fetchWorkshops members error:', memRes.error.message);
-      return [];
+      return { ok: false };
     }
+    if (memRes.data.length === 0) return { ok: true, data: [] };
     const ids = memRes.data.map(m => m.workshop_id);
 
     // 2. Busca os dados das oficinas
@@ -103,13 +124,13 @@ async function fetchWorkshops(uid: string): Promise<Workshop[]> {
     );
     if (wsRes.error || !wsRes.data) {
       if (wsRes.error) console.warn('[auth] fetchWorkshops shops error:', wsRes.error.message);
-      return [];
+      return { ok: false };
     }
     // Ordena pelo nome
-    return wsRes.data.sort((a, b) => a.business_name.localeCompare(b.business_name));
+    return { ok: true, data: wsRes.data.sort((a, b) => a.business_name.localeCompare(b.business_name)) };
   } catch (e) {
     console.warn('[auth] fetchWorkshops exception:', e);
-    return [];
+    return { ok: false };
   }
 }
 
@@ -147,9 +168,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshWorkshops = useCallback(async () => {
     if (!session?.user) return;
-    const list = await fetchWorkshops(session.user.id);
-    applyWorkshops(list);
+    const r = await fetchWorkshops(session.user.id);
+    if (r.ok) applyWorkshops(r.data); // falha transitória: mantém a lista atual
   }, [session?.user, applyWorkshops]);
+
+  /** Usuário cujos dados (perfil/oficinas) já estão carregados */
+  const loadedUid  = useRef<string | null>(null);
+  const profileRef = useRef<Profile | null>(null);
+  useEffect(() => { profileRef.current = profile; }, [profile]);
+
+  /** Carrega perfil + oficinas. Só SUBSTITUI dados quando a busca dá certo:
+   *  uma falha de rede nunca apaga o que já está carregado (isso deslogava). */
+  const loadUserData = useCallback(async (uid: string) => {
+    const sameUser = loadedUid.current === uid;
+    const pr = await fetchProfile(uid);
+    if (pr.ok) {
+      setProfile(pr.data);
+      loadedUid.current = uid;
+    } else if (!sameUser) {
+      setProfile(null); // 1º carregamento falhou — ProtectedRoute tenta de novo
+    }
+    const role = pr.ok ? pr.data?.role : profileRef.current?.role;
+    if (role === 'workshop') {
+      const wr = await fetchWorkshops(uid);
+      if (wr.ok) applyWorkshops(wr.data);
+    } else if (role) {
+      setWorkshops([]);
+      setCurrentWorkshopState(null);
+    }
+    if (!sameUser && pr.ok) touchLastSeen();
+  }, [applyWorkshops]);
 
   const handleSession = useCallback(async (s: Session | null) => {
     /** Recovery: se a sessão sumiu sem o usuário pedir signout,
@@ -173,44 +221,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(s);
     if (s?.user) {
       wasSignedIn.current = true;
-      const p = await fetchProfile(s.user.id);
-      setProfile(p);
-      touchLastSeen();
-      if (p?.role === 'workshop') {
-        const list = await fetchWorkshops(s.user.id);
-        applyWorkshops(list);
-      } else {
-        setWorkshops([]);
-        setCurrentWorkshopState(null);
-      }
+      await loadUserData(s.user.id);
     } else {
       wasSignedIn.current = false;
       intentionalSignOut.current = false;
+      loadedUid.current = null;
       setProfile(null);
       setWorkshops([]);
       setCurrentWorkshopState(null);
     }
-  }, [applyWorkshops]);
+  }, [loadUserData]);
 
   useEffect(() => {
     let mounted = true;
 
-    /* Kill switch: garante loading=false em no máximo 8s */
+    /* Kill switch: garante loading=false em no máximo 15s */
     const killSwitch = setTimeout(() => {
       if (mounted) {
         console.warn('[auth] kill switch acionado — forçando loading=false');
         setLoading(false);
       }
-    }, 8000);
+    }, 15000);
 
     (async () => {
       try {
         let session: Session | null = null;
-        const sessionRes = await withTimeout(
-          supabase.auth.getSession(),
-          5000,
-          { data: { session: null }, error: null } as any,
-        );
+        // Timeout ≠ "sem sessão": se o getSession demorar (trava entre abas), tenta de novo
+        // antes de concluir que o usuário não está logado.
+        const TIMED_OUT = { data: { session: null }, error: null, timedOut: true } as any;
+        let sessionRes = await withTimeout(supabase.auth.getSession(), 5000, TIMED_OUT);
+        if (sessionRes?.timedOut) {
+          console.warn('[auth] getSession demorou — tentando de novo');
+          sessionRes = await withTimeout(supabase.auth.getSession(), 7000, TIMED_OUT);
+        }
         session = sessionRes.data?.session ?? null;
 
         if (!session) {
@@ -235,21 +278,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, s) => {
+      (event, s) => {
         if (event === 'INITIAL_SESSION') return;
         if (!mounted) return;
-        // TOKEN_REFRESHED: só atualiza sessão sem refazer profile
-        if (event === 'TOKEN_REFRESHED' && s) { setSession(s); return; }
-        // USER_UPDATED com sessão válida: também só atualiza
-        if (event === 'USER_UPDATED' && s) { setSession(s); return; }
-        // SIGNED_OUT explícito: limpa direto, sem tentar recuperar
-        if (event === 'SIGNED_OUT') {
-          intentionalSignOut.current = true;
-          await handleSession(null);
-          return;
-        }
-        // SIGNED_IN, PASSWORD_RECOVERY, ou demais — passa pelo handleSession (com recovery)
-        await handleSession(s);
+        // TOKEN_REFRESHED / USER_UPDATED: só atualiza a sessão
+        if ((event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && s) { setSession(s); return; }
+        // SIGNED_IN do MESMO usuário: o Supabase dispara isso toda vez que a aba volta a ficar
+        // visível. Não é login novo — só atualiza a sessão (antes, isso deslogava o usuário).
+        if (event === 'SIGNED_IN' && s?.user && s.user.id === loadedUid.current) { setSession(s); return; }
+
+        // IMPORTANTE: este callback roda com uma trava interna do Supabase. Consultar o
+        // banco aqui dentro (await supabase.from…) trava até o timeout. Por isso o trabalho
+        // é adiado com setTimeout — padrão recomendado pela documentação do supabase-js.
+        setTimeout(() => {
+          if (!mounted) return;
+          if (event === 'SIGNED_OUT') {
+            intentionalSignOut.current = true;
+            handleSession(null);
+            return;
+          }
+          // SIGNED_IN (login novo), PASSWORD_RECOVERY etc.
+          handleSession(s);
+        }, 0);
       }
     );
 
@@ -291,12 +341,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setWorkshops([]);
         setCurrentWorkshopState(null);
+        loadedUid.current = null;
         try { localStorage.removeItem(LS_CURRENT_WORKSHOP); } catch {}
         try { localStorage.removeItem(LS_LAST_TOUCH); } catch {}
         await supabase.auth.signOut();
       },
       refreshProfile: async () => {
-        if (session?.user) setProfile(await fetchProfile(session.user.id));
+        if (session?.user) await loadUserData(session.user.id);
       },
     }}>
       {children}
