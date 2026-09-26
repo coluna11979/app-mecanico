@@ -22,6 +22,7 @@ import MechanicProfile from './pages/mecanico/Profile';
 import MechanicGanhos from './pages/mecanico/Ganhos';
 import MechanicAgenda from './pages/mecanico/Agenda';
 import MechanicAvisos from './pages/mecanico/Avisos';
+import MechanicEmbaixador from './pages/mecanico/Embaixador';
 
 // Lazy: páginas com Mapbox (~3.7MB) — carregadas sob demanda
 const MechanicTracking = lazy(() => import('./pages/mecanico/Tracking'));
@@ -48,6 +49,7 @@ import AdminUserDetail from './pages/admin/UserDetail';
 import AdminFinancial from './pages/admin/Financial';
 import AdminLeads from './pages/admin/Leads';
 import AdminAvisos from './pages/admin/Avisos';
+import AdminEmbaixadores from './pages/admin/Embaixadores';
 
 function LazyFallback() {
   return (
@@ -88,6 +90,7 @@ export default function App() {
       <Route path="/mecanico/agenda" element={<ProtectedRoute allow={['mechanic']}><MechanicAgenda /></ProtectedRoute>} />
       <Route path="/mecanico/avisos" element={<ProtectedRoute allow={['mechanic']}><MechanicAvisos /></ProtectedRoute>} />
       <Route path="/mecanico/mapa" element={<ProtectedRoute allow={['mechanic']}><Suspense fallback={<LazyFallback />}><MechanicMapa /></Suspense></ProtectedRoute>} />
+      <Route path="/mecanico/embaixador" element={<ProtectedRoute allow={['mechanic']}><MechanicEmbaixador /></ProtectedRoute>} />
 
       {/* Oficina */}
       <Route path="/oficina/dashboard" element={<ProtectedRoute allow={['workshop']}><WorkshopDashboard /></ProtectedRoute>} />
@@ -111,6 +114,7 @@ export default function App() {
       <Route path="/admin/financeiro"    element={<ProtectedRoute allow={['admin']}><AdminFinancial /></ProtectedRoute>} />
       <Route path="/admin/leads"         element={<ProtectedRoute allow={['admin']}><AdminLeads /></ProtectedRoute>} />
       <Route path="/admin/avisos"        element={<ProtectedRoute allow={['admin']}><AdminAvisos /></ProtectedRoute>} />
+      <Route path="/admin/embaixadores"  element={<ProtectedRoute allow={['admin']}><AdminEmbaixadores /></ProtectedRoute>} />
       <Route path="/admin/configuracoes" element={<ProtectedRoute allow={['admin']}><AdminSettings /></ProtectedRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
