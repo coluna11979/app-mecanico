@@ -71,6 +71,25 @@ export interface Mechanic {
   city: string | null;
   state: string | null;
   work_reference: string | null;
+  // Programa de embaixador
+  is_embaixador: boolean;
+  codigo_indicacao: string | null;
+  embaixador_desde: string | null;
+  embaixador_ate: string | null;
+  indicado_por: string | null;
+}
+
+export interface ComissaoEmbaixador {
+  id: string;
+  embaixador_id: string;
+  indicado_id: string;
+  job_id: string;
+  bruto: number;
+  platform_fee: number;
+  comissao: number;
+  criado_em: string;
+  pago_em: string | null;
+  pago_valor: number | null;
 }
 
 export interface Job {

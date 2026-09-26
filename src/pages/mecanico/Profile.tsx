@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -138,6 +139,26 @@ export default function MechanicProfile() {
             </button>
           </div>
         </div>
+
+        {/* ── Embaixador — só aparece se for embaixador ── */}
+        {(me as any)?.is_embaixador && (
+          <Link
+            to="/mecanico/embaixador"
+            className="block relative rounded-2xl overflow-hidden bg-gradient-to-r from-brand-600 to-brand-700 border border-brand-500/40 p-4 hover:from-brand-500 hover:to-brand-600 transition group"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-8 translate-x-8 pointer-events-none" />
+            <div className="relative flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-200 flex items-center gap-1.5">
+                  🌟 Programa embaixador
+                </div>
+                <div className="font-bold text-white text-lg leading-tight mt-1">Minhas Indicações</div>
+                <div className="text-xs text-brand-100 mt-0.5">Veja seus indicados e comissões</div>
+              </div>
+              <span className="text-white text-2xl shrink-0 group-hover:translate-x-1 transition">→</span>
+            </div>
+          </Link>
+        )}
 
         {/* ── Ganhos — valores líquidos (PIX) ── */}
         <div className="grid grid-cols-2 gap-3">

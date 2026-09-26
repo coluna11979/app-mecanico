@@ -35,6 +35,8 @@ export default function AdminUserDetail() {
   const [emailDraft, setEmailDraft] = useState('');
   const [emailEditing, setEmailEditing] = useState(false);
   const [emailMsg, setEmailMsg]   = useState<{ text: string; ok: boolean } | null>(null);
+  const [ambBusy, setAmbBusy]     = useState(false);
+  const [copied, setCopied]       = useState(false);
 
   // Form state
   const [edit, setEdit] = useState({
@@ -211,6 +213,37 @@ export default function AdminUserDetail() {
     await supabase.from('profiles').update({ status }).eq('id', profile.id);
     setBusy(false);
     load();
+  }
+
+  async function tornarEmbaixador() {
+    if (!mechanic) return;
+    setAmbBusy(true);
+    const { error } = await supabase.rpc('tornar_embaixador', { p_mechanic_id: mechanic.id });
+    setAmbBusy(false);
+    if (error) { alert('Erro ao tornar embaixador: ' + error.message); return; }
+    load();
+  }
+
+  async function revogarEmbaixador() {
+    if (!mechanic) return;
+    if (!confirm('Revogar o status de embaixador? Comissões já registradas continuam valendo.')) return;
+    setAmbBusy(true);
+    const { error } = await supabase.rpc('revogar_embaixador', { p_mechanic_id: mechanic.id });
+    setAmbBusy(false);
+    if (error) { alert('Erro: ' + error.message); return; }
+    load();
+  }
+
+  async function copiarLink() {
+    if (!(mechanic as any)?.codigo_indicacao) return;
+    const url = `${window.location.origin}/cadastro/mecanico?ref=${(mechanic as any).codigo_indicacao}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      prompt('Copie o link:', url);
+    }
   }
 
   async function deleteUser() {
@@ -430,6 +463,17 @@ export default function AdminUserDetail() {
                   onChange={e => setEdit(s => ({ ...s, mech_work_reference: e.target.value }))} />
               </Field>
             </div>
+          )}
+
+          {isMechanic && mechanic && (
+            <EmbaixadorCard
+              mechanic={mechanic as any}
+              busy={ambBusy}
+              copied={copied}
+              onTornar={tornarEmbaixador}
+              onRevogar={revogarEmbaixador}
+              onCopiar={copiarLink}
+            />
           )}
 
           {!isMechanic && (
@@ -660,6 +704,101 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label className="text-xs font-semibold text-steel-500 uppercase tracking-wider mb-1 block">{label}</label>
       {children}
+    </div>
+  );
+}
+
+/* ──────────────── Card de Embaixador ──────────────── */
+
+function EmbaixadorCard({
+  mechanic, busy, copied, onTornar, onRevogar, onCopiar,
+}: {
+  mechanic: Mechanic & { is_embaixador?: boolean; codigo_indicacao?: string | null; embaixador_desde?: string | null; embaixador_ate?: string | null };
+  busy: boolean;
+  copied: boolean;
+  onTornar: () => void;
+  onRevogar: () => void;
+  onCopiar: () => void;
+}) {
+  const isEmb = !!mechanic.is_embaixador;
+  const link  = mechanic.codigo_indicacao
+    ? `${window.location.origin}/cadastro/mecanico?ref=${mechanic.codigo_indicacao}`
+    : '';
+
+  if (!isEmb) {
+    return (
+      <div className="card space-y-3">
+        <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">🌟 Programa de Embaixador</h3>
+        <p className="text-sm text-steel-600 leading-relaxed">
+          Torne este mecânico embaixador pra ele ganhar 20% do take da plataforma sobre todo serviço dos mecânicos que ele indicar.
+          Programa dura 12 meses e o indicado nunca sabe que existe comissão.
+        </p>
+        <button
+          onClick={onTornar}
+          disabled={busy}
+          className="btn-primary w-full disabled:opacity-50"
+        >
+          {busy ? 'Gerando…' : '🌟 Tornar embaixador'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card space-y-4 border-2 border-brand-500/40 bg-brand-50/40">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-brand-700 uppercase tracking-wider">🌟 Embaixador ativo</h3>
+        <span className="badge badge-brand text-[10px]">Programa de indicação</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <div className="text-[11px] text-steel-500 uppercase tracking-wider mb-0.5">Código</div>
+          <div className="font-mono font-bold text-brand-700">{mechanic.codigo_indicacao}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-steel-500 uppercase tracking-wider mb-0.5">Programa até</div>
+          <div className="font-semibold">
+            {mechanic.embaixador_ate
+              ? new Date(mechanic.embaixador_ate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+              : '—'}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="text-[11px] text-steel-500 uppercase tracking-wider mb-1">Link de indicação</div>
+        <div className="flex gap-2">
+          <input
+            className="input text-xs font-mono flex-1"
+            readOnly
+            value={link}
+            onFocus={e => e.currentTarget.select()}
+          />
+          <button
+            onClick={onCopiar}
+            className="btn-primary text-xs !py-2 !px-3 shrink-0"
+          >
+            {copied ? '✓ Copiado' : 'Copiar'}
+          </button>
+        </div>
+        <p className="text-[11px] text-steel-500 mt-1.5">
+          Mande esse link no WhatsApp dele. Todo mecânico que se cadastrar por aqui fica amarrado a ele.
+        </p>
+      </div>
+
+      <div className="flex gap-2 pt-2 border-t border-brand-500/20">
+        <Link to="/admin/embaixadores" className="btn-ghost text-xs flex-1 border border-brand-300 text-brand-700">
+          📊 Ver painel completo
+        </Link>
+        <button
+          onClick={onRevogar}
+          disabled={busy}
+          className="btn-ghost text-xs border border-alert-300 text-alert-700 disabled:opacity-50"
+        >
+          Revogar
+        </button>
+      </div>
     </div>
   );
 }

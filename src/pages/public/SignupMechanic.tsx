@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
@@ -24,12 +24,32 @@ const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','P
 
 const TOTAL_STEPS = 4;
 
+/** Lê ?ref=CODIGO da URL (também aceita ?ref via sessionStorage caso venha da landing). */
+function useRefCode(): string | null {
+  const [params] = useSearchParams();
+  const fromQuery = params.get('ref');
+  // Se veio na URL, guarda em sessionStorage — assim sobrevive a etapas do form.
+  useEffect(() => {
+    if (fromQuery) {
+      try { sessionStorage.setItem('signup_ref_code', fromQuery.trim().toUpperCase()); } catch { /* ignore */ }
+    }
+  }, [fromQuery]);
+  if (fromQuery) return fromQuery.trim().toUpperCase();
+  try {
+    return sessionStorage.getItem('signup_ref_code');
+  } catch {
+    return null;
+  }
+}
+
 export default function SignupMechanic() {
   const nav = useNavigate();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const refCode = useRefCode();
+  const [refInfo, setRefInfo] = useState<{ valid: boolean; name?: string } | null>(null);
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '', cpf: '', cnh: '',
     experience_years: 1, hourly_rate: 80, pix_key: '', skills: [] as string[],
@@ -47,6 +67,26 @@ export default function SignupMechanic() {
       phone:     prev.phone     || lead.phone || '',
     }));
   }, []);
+
+  // Valida o código de indicação (silenciosamente — se der ruim, o cadastro segue igual)
+  useEffect(() => {
+    if (!refCode) { setRefInfo(null); return; }
+    let alive = true;
+    (async () => {
+      const { data } = await supabase.rpc('resolver_codigo_indicacao', { p_codigo: refCode });
+      if (!alive) return;
+      if (!data) { setRefInfo({ valid: false }); return; }
+      // Busca nome do embaixador pra dar cara humana
+      const { data: mech } = await supabase
+        .from('mechanics')
+        .select('profile:profiles!inner(full_name)')
+        .eq('id', data)
+        .maybeSingle();
+      const name = (mech as any)?.profile?.full_name?.split(' ')[0];
+      setRefInfo({ valid: true, name });
+    })();
+    return () => { alive = false; };
+  }, [refCode]);
 
   function update<K extends keyof typeof f>(k: K, v: typeof f[K]) {
     setF(prev => ({ ...prev, [k]: v }));
@@ -82,11 +122,17 @@ export default function SignupMechanic() {
           city: f.city.trim(),
           state: f.state,
           work_reference: f.work_reference.trim(),
+          // Passa o código de indicação, se válido. handle_new_user resolve
+          // pra mechanic_id e grava em mechanics.indicado_por.
+          indicado_por_codigo: refInfo?.valid ? refCode : null,
         },
       },
     });
 
     if (error) { setLoading(false); setErr(error.message); return; }
+
+    // Limpa o código consumido
+    try { sessionStorage.removeItem('signup_ref_code'); } catch { /* ignore */ }
 
     // Registra aceite dos termos (não bloqueia o signup se falhar)
     if (data.user) {
@@ -110,6 +156,16 @@ export default function SignupMechanic() {
         </div>
 
         <div className="card">
+          {refInfo?.valid && (
+            <div className="mb-4 bg-brand-500/10 border border-brand-500/30 rounded-xl p-3 flex items-center gap-2">
+              <span className="text-lg">🤝</span>
+              <div className="text-sm text-brand-700 leading-tight">
+                Você foi convidado{refInfo.name ? ` por ${refInfo.name}` : ''} pra entrar na plataforma.
+                <div className="text-xs text-steel-500 mt-0.5">Cadastro segue normal — 100% seu.</div>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-1 mb-6">
             {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map(n => (
               <div key={n} className={`h-1.5 flex-1 rounded-full transition ${n <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />
