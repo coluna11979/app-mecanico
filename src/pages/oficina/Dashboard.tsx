@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -173,6 +173,15 @@ export default function WorkshopDashboard() {
     setMode('open'); setPickedMechanic(''); setMechSearch('');
     setModal(true);
   }
+
+  // Link "Chamar mecânico da plataforma" (vindo da Nova OS): /oficina/dashboard?nova=1
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('nova') !== '1' || !currentWorkshop?.id) return;
+    setSearchParams(p => { p.delete('nova'); return p; }, { replace: true });
+    if (!hasPendingFees) openCreateModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, currentWorkshop?.id]);
 
   function openEditModal(j: Job) {
     setEditingId(j.id);
