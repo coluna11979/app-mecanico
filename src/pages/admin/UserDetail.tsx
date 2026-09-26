@@ -730,8 +730,14 @@ function EmbaixadorCard({
       <div className="card space-y-3">
         <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">🌟 Programa de Embaixador</h3>
         <p className="text-sm text-steel-600 leading-relaxed">
-          Torne este mecânico embaixador pra ele ganhar 20% do take da plataforma sobre todo serviço dos mecânicos que ele indicar.
-          Programa dura 12 meses e o indicado nunca sabe que existe comissão.
+          Ele ganha <strong>20% da NOSSA comissão</strong> (não do valor do serviço) sobre cada job dos mecânicos que indicar.
+        </p>
+        <div className="bg-steel-50 border border-steel-200 rounded-xl p-3 text-xs text-steel-700 font-mono leading-relaxed">
+          <div className="text-[10px] uppercase tracking-widest text-steel-500 font-sans font-bold mb-1">Exemplo</div>
+          Serviço <strong>R$ 500</strong> → nossa comissão (18%) <strong>R$ 90</strong> → embaixador (20% dos 90) = <strong className="text-brand-700">R$ 18</strong>
+        </div>
+        <p className="text-xs text-steel-500 leading-relaxed">
+          Programa dura 12 meses. Ele precisa fazer ≥1 serviço a cada 30 dias pra continuar recebendo. O indicado <strong>nunca</strong> sabe que existe comissão.
         </p>
         <button
           onClick={onTornar}

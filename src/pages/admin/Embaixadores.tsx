@@ -69,7 +69,7 @@ export default function AdminEmbaixadores() {
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">🌟 Embaixadores</h1>
           <p className="text-steel-500 text-sm mt-1">
-            Mecânicos que indicam outros mecânicos e ganham 20% do take da plataforma perpetuamente (enquanto ativos).
+            Ganham <strong>20% da nossa comissão</strong> (não do bruto) sobre cada serviço dos indicados — enquanto ativos e dentro do programa de 12 meses.
           </p>
         </div>
       </div>
