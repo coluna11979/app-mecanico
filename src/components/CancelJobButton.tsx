@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Job } from '@/types/database';
+import { formatBRL } from '@/lib/payment';
+import { ACCEPT_TOLERANCE_MS, acceptedAt, arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 
 interface Props {
   job: Job;
@@ -10,11 +12,10 @@ interface Props {
   className?: string;
 }
 
-const TOLERANCE_MS = 5 * 60 * 1000;
 const FEE_PCT = 0.30;
 
 interface Cancellation {
-  scenario: 'open' | 'tolerance' | 'after_tolerance' | 'arrived_unpaid' | 'paid' | 'blocked';
+  scenario: 'open' | 'tolerance' | 'late_arrival' | 'after_tolerance' | 'arrived_unpaid' | 'paid' | 'blocked';
   title: string;
   message: string;
   fee: number;
@@ -37,25 +38,32 @@ function analyseJob(job: Job): Cancellation | null {
       fee: 0, refund: 0 };
   }
   if (job.status === 'assigned' && !job.arrived_at) {
-    const elapsed = Date.now() - new Date(job.created_at).getTime();
-    if (elapsed <= TOLERANCE_MS) {
+    const elapsed = Date.now() - acceptedAt(job);
+    if (elapsed <= ACCEPT_TOLERANCE_MS) {
       return { scenario: 'tolerance', title: 'Cancelar dentro da tolerância',
         message: 'Mecânico aceitou há menos de 5 minutos — cancelamento sem multa.',
         fee: 0, refund: 0 };
     }
-    return { scenario: 'after_tolerance', title: `Cancelar com multa de R$ ${fee.toFixed(2)}`,
-      message: `Mecânico aceitou há mais de 5 min. Multa de 30% (R$ ${fee.toFixed(2)}) ficará registrada como pendente.`,
+    if (isArrivalLate(job)) {
+      return { scenario: 'late_arrival', title: 'Cancelar sem multa — mecânico atrasado',
+        message: `O mecânico não chegou até ${formatDeadline(arrivalDeadline(job)!)}, o prazo de chegada. Você pode cancelar sem multa.`,
+        fee: 0, refund: 0 };
+    }
+    const deadline = arrivalDeadline(job);
+    return { scenario: 'after_tolerance', title: `Cancelar com multa de R$ ${formatBRL(fee)}`,
+      message: `Mecânico aceitou há mais de 5 min. Multa de 30% (R$ ${formatBRL(fee)}) ficará registrada como pendente.`
+        + (deadline ? ` Se ele não chegar até ${formatDeadline(deadline)}, você poderá cancelar sem multa.` : ''),
       fee, refund: 0 };
   }
   if (job.arrived_at && !job.pix_paid_at) {
-    return { scenario: 'arrived_unpaid', title: `Cancelar com multa de R$ ${fee.toFixed(2)}`,
-      message: `Mecânico já chegou. Multa de 30% (R$ ${fee.toFixed(2)}) ficará registrada como pendente.`,
+    return { scenario: 'arrived_unpaid', title: `Cancelar com multa de R$ ${formatBRL(fee)}`,
+      message: `Mecânico já chegou. Multa de 30% (R$ ${formatBRL(fee)}) ficará registrada como pendente.`,
       fee, refund: 0 };
   }
   if (job.pix_paid_at && job.status === 'assigned') {
     const refund = Number((cap - fee).toFixed(2));
     return { scenario: 'paid', title: 'Cancelar com estorno parcial',
-      message: `Pagamento já feito. Estorno de R$ ${refund.toFixed(2)} (70%) será aplicado e a plataforma retém R$ ${fee.toFixed(2)} (30%).`,
+      message: `Pagamento já feito. Estorno de R$ ${formatBRL(refund)} (70%) será aplicado e a plataforma retém R$ ${formatBRL(fee)} (30%).`,
       fee, refund };
   }
   return null;
@@ -100,11 +108,15 @@ export function CancelJobButton({ job, onCancelled, variant = 'link', className 
     setError(null);
   }
 
-  const feeChip = cancellation.fee > 0 && (
+  const feeChip = cancellation.fee > 0 ? (
     <span className="ml-1 inline-flex items-center gap-1 bg-alert-500/15 text-alert-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
-      ⚠️ multa R$ {cancellation.fee.toFixed(0)}
+      ⚠️ multa R$ {formatBRL(cancellation.fee)}
     </span>
-  );
+  ) : cancellation.scenario === 'late_arrival' ? (
+    <span className="ml-1 inline-flex items-center gap-1 bg-signal-500/15 text-signal-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+      ✓ sem multa
+    </span>
+  ) : null;
 
   const trigger = variant === 'button' ? (
     <button onClick={openModal}
@@ -141,16 +153,16 @@ export function CancelJobButton({ job, onCancelled, variant = 'link', className 
               <div className="bg-pending-500/10 border border-pending-300 rounded-xl px-4 py-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-steel-700">Valor original</span>
-                  <span className="font-semibold">R$ {(((job.price_per_hour ?? 0) * (job.max_hours ?? 1))).toFixed(2)}</span>
+                  <span className="font-semibold">R$ {formatBRL((((job.price_per_hour ?? 0) * (job.max_hours ?? 1))))}</span>
                 </div>
                 <div className="flex items-center justify-between text-alert-700 font-semibold mt-1">
                   <span>Multa (30%)</span>
-                  <span>− R$ {cancellation.fee.toFixed(2)}</span>
+                  <span>− R$ {formatBRL(cancellation.fee)}</span>
                 </div>
                 {cancellation.refund > 0 && (
                   <div className="flex items-center justify-between text-signal-700 font-bold mt-2 pt-2 border-t border-pending-300">
                     <span>Você recebe (estorno)</span>
-                    <span>R$ {cancellation.refund.toFixed(2)}</span>
+                    <span>R$ {formatBRL(cancellation.refund)}</span>
                   </div>
                 )}
               </div>

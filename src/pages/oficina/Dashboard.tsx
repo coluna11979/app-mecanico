@@ -6,8 +6,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
 import { MechanicReviews } from '@/components/MechanicReviews';
-import { formatScheduled, isScheduled } from '@/lib/scheduling';
+import { formatScheduled } from '@/lib/scheduling';
+import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 import type { Job } from '@/types/database';
+import { formatBRL } from '@/lib/payment';
 
 type NewJob = {
   title: string; description: string;
@@ -121,7 +123,7 @@ export default function WorkshopDashboard() {
         .in('status', ['open', 'assigned', 'in_progress']).order('created_at', { ascending: false }),
       // Histórico
       supabase.from('jobs').select('*').eq('workshop_id', workshopId)
-        .in('status', ['completed', 'disputed', 'cancelled']).order('created_at', { ascending: false }).limit(10),
+        .in('status', ['completed', 'disputed', 'cancelled']).order('created_at', { ascending: false }).limit(100),
       // Aguardando CONFIRMAÇÃO (mecânico finalizou, oficina ainda não confirmou)
       supabase.from('jobs').select('*').eq('workshop_id', workshopId)
         .eq('status', 'completed').is('workshop_confirmed_at', null)
@@ -383,7 +385,7 @@ export default function WorkshopDashboard() {
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-steel-900 truncate">{j.title}</div>
                     <div className="text-xs text-steel-500 mt-0.5">
-                      R$ {j.price?.toFixed(2)} fechado
+                      R$ {formatBRL(j.price ?? 0)} fechado
                       {j.actual_hours != null && ` · ⏱ ${j.actual_hours}h reais`}
                       {j.completed_at && ` · finalizado ${new Date(j.completed_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
                     </div>
@@ -446,17 +448,9 @@ export default function WorkshopDashboard() {
         </section>
       )}
 
-      {/* Jobs em andamento — agrupados: agora / agendados / aguardando mecânico */}
+      {/* Demandas ativas — agrupadas pela etapa em que estão */}
       {(() => {
-        const bucketOf = (j: Job): 'now' | 'scheduled' | 'waiting' => {
-          if (j.status === 'in_progress' || !!j.en_route_at || !!j.arrived_at) return 'now';
-          if (isScheduled(j)) return 'scheduled';
-          return 'waiting';
-        };
-        const now       = active.filter(j => bucketOf(j) === 'now');
-        const scheduled = active.filter(j => bucketOf(j) === 'scheduled')
-          .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
-        const waiting   = active.filter(j => bucketOf(j) === 'waiting');
+        const buckets = groupActive(active);
 
         const renderCard = (j: Job) => (
           <div key={j.id} className="card">
@@ -464,8 +458,9 @@ export default function WorkshopDashboard() {
               <div className="flex-1 min-w-0">
                 <div className="font-bold truncate">{j.title}</div>
                 <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j)}</div>
+                <ArrivalInfo j={j} />
                 <div className="text-xs text-steel-400 mt-1">
-                  {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
+                  {j.max_hours ?? '—'}h × R$ {j.price_per_hour != null ? formatBRL(j.price_per_hour, { decimals: 0 }) : '—'}/h
                 </div>
                 {j.scheduled_at && (
                   <div className="text-xs text-steel-400 mt-0.5">
@@ -475,7 +470,7 @@ export default function WorkshopDashboard() {
               </div>
               <div className="text-right shrink-0">
                 <div className="text-xs text-steel-400">valor</div>
-                <div className="text-lg font-bold font-display">R$ {j.price.toFixed(0)}</div>
+                <div className="text-lg font-bold font-display">R$ {formatBRL(j.price, { decimals: 0 })}</div>
                 {j.mechanic_id && j.en_route_at ? (
                   <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
                     Ver no mapa
@@ -518,68 +513,26 @@ export default function WorkshopDashboard() {
         }
 
         return (
-          <>
-            {now.length > 0 && (
-              <section className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <h2 className="text-lg font-bold">🔧 Acontecendo agora</h2>
-                  <span className="text-xs font-bold bg-signal-500/15 text-signal-700 px-2 py-0.5 rounded-full">{now.length}</span>
-                </div>
-                <div className="grid md:grid-cols-2 gap-3">{now.map(renderCard)}</div>
-              </section>
-            )}
-
-            {scheduled.length > 0 && (
-              <section className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <h2 className="text-lg font-bold">📅 Agendados</h2>
-                  <span className="text-xs font-bold bg-pending-500/15 text-pending-700 px-2 py-0.5 rounded-full">{scheduled.length}</span>
-                </div>
-                <div className="grid md:grid-cols-2 gap-3">{scheduled.map(renderCard)}</div>
-              </section>
-            )}
-
-            {waiting.length > 0 && (
-              <section className="mb-8">
-                <div className="flex items-center gap-2 mb-3">
-                  <h2 className="text-lg font-bold">📢 Aguardando mecânico</h2>
-                  <span className="text-xs font-bold bg-steel-200 text-steel-700 px-2 py-0.5 rounded-full">{waiting.length}</span>
-                </div>
-                <div className="grid md:grid-cols-2 gap-3">{waiting.map(renderCard)}</div>
-              </section>
-            )}
-          </>
+          <div className="mb-8">
+            {ACTIVE_GROUPS.map(g => {
+              const jobs = buckets[g.key];
+              if (jobs.length === 0) return null;
+              return (
+                <section key={g.key} className="mb-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <h2 className="text-lg font-bold">{g.title}</h2>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{jobs.length}</span>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3">{jobs.map(renderCard)}</div>
+                </section>
+              );
+            })}
+          </div>
         );
       })()}
 
-      {/* Histórico */}
-      <section>
-        <h2 className="text-lg font-bold mb-3">Histórico</h2>
-        {history.length === 0 ? (
-          <div className="card text-center text-steel-500 py-6">Sem histórico ainda.</div>
-        ) : (
-          <div className="card divide-y divide-steel-100">
-            {history.map(j => (
-              <div key={j.id} className="py-3 flex justify-between items-center">
-                <div>
-                  <div className="font-semibold">{j.title}</div>
-                  <div className="text-xs text-steel-500">
-                    {statusLabel(j)} · {j.completed_at ? new Date(j.completed_at).toLocaleDateString('pt-BR') : '—'}
-                  </div>
-                  <div className="text-xs text-steel-400">
-                    Pacote: {j.max_hours}h × R$ {j.price_per_hour}/h
-                    {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold font-display">R$ {j.price.toFixed(2)}</div>
-                  <div className="text-xs text-steel-500">fechado</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Histórico — fechado por padrão; a oficina escolhe abrir */}
+      <HistorySection history={history} workshopId={currentWorkshop?.id ?? null} />
 
       {/* ── Modal nova demanda ── */}
       {modal && (
@@ -669,7 +622,7 @@ export default function WorkshopDashboard() {
                 {estimated > 0 && (
                   <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
                     <span className="text-sm text-brand-700">Valor fechado da demanda</span>
-                    <span className="font-bold text-brand-700 font-display">R$ {estimated.toFixed(2)}</span>
+                    <span className="font-bold text-brand-700 font-display">R$ {formatBRL(estimated)}</span>
                   </div>
                 )}
               </div>
@@ -802,6 +755,189 @@ export default function WorkshopDashboard() {
   );
 }
 
+/* ── Demandas ativas: em que etapa cada uma está ── */
+type ActiveGroup = 'service' | 'enroute' | 'scheduled' | 'waiting';
+
+const ACTIVE_GROUPS: { key: ActiveGroup; title: string; badge: string }[] = [
+  { key: 'service',   title: '🔧 Em serviço',         badge: 'bg-signal-500/15 text-signal-700'   },
+  { key: 'enroute',   title: '🚗 Mecânico a caminho', badge: 'bg-brand-500/15 text-brand-700'     },
+  { key: 'scheduled', title: '📅 Agendados',          badge: 'bg-pending-500/15 text-pending-700' },
+  { key: 'waiting',   title: '📢 Aguardando aceite',  badge: 'bg-steel-200 text-steel-700'        },
+];
+
+function groupOf(j: Job): ActiveGroup {
+  if (j.status === 'in_progress' || j.arrived_at) return 'service';  // mecânico já está na oficina
+  if (!j.mechanic_id) return 'waiting';                              // ninguém aceitou ainda
+  if (j.en_route_at) return 'enroute';                               // aceitou e saiu
+  if (j.scheduled_at) return 'scheduled';                            // aceitou, data marcada, ainda não saiu
+  return 'enroute';                                                  // aceitou demanda imediata
+}
+
+function groupActive(jobs: Job[]): Record<ActiveGroup, Job[]> {
+  const out: Record<ActiveGroup, Job[]> = { service: [], enroute: [], scheduled: [], waiting: [] };
+  jobs.forEach(j => out[groupOf(j)].push(j));
+  // Agendados em ordem de data (o mais próximo primeiro)
+  out.scheduled.sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
+  return out;
+}
+
+/** Prazo de chegada do mecânico — passou do prazo, a oficina cancela sem multa */
+function ArrivalInfo({ j }: { j: Job }) {
+  if (j.status !== 'assigned') return null;
+  const deadline = arrivalDeadline(j);
+  if (!deadline) return null;
+
+  if (isArrivalLate(j)) {
+    return (
+      <div className="mt-1.5 text-[11px] font-semibold text-alert-700 bg-alert-500/10 border border-alert-200 px-2 py-1 rounded-lg">
+        ⏰ Atrasado — o prazo era {formatDeadline(deadline)}. Você pode cancelar sem multa.
+      </div>
+    );
+  }
+  // Agendado para daqui a mais de 1 dia: o prazo ainda não é relevante
+  if (deadline.getTime() - Date.now() > 24 * 60 * 60 * 1000) return null;
+  return (
+    <div className="mt-1 text-[11px] text-steel-500">
+      ⏱ Prazo de chegada: <strong className="text-steel-700">{formatDeadline(deadline)}</strong>
+    </div>
+  );
+}
+
+/* ── Histórico: recolhido por padrão, separado em Concluídos / Cancelados ── */
+type HistTab = 'completed' | 'cancelled';
+const HIST_PAGE = 10;
+
+function HistorySection({ history, workshopId }: { history: Job[]; workshopId: string | null }) {
+  const openKey = workshopId ? `oficina_hist_open:${workshopId}` : null;
+  const [open, setOpen] = useState(false);
+  const [tab, setTab]   = useState<HistTab>('completed');
+  const [shown, setShown] = useState(HIST_PAGE);
+
+  // Lembra se a oficina deixou o histórico aberto (só neste navegador)
+  useEffect(() => {
+    if (!openKey) return;
+    try { setOpen(localStorage.getItem(openKey) === '1'); } catch { /* ignore */ }
+  }, [openKey]);
+
+  function toggle() {
+    setOpen(o => {
+      const next = !o;
+      if (openKey) { try { localStorage.setItem(openKey, next ? '1' : '0'); } catch { /* ignore */ } }
+      return next;
+    });
+  }
+
+  // Disputa não é usada no fluxo atual; se aparecer, entra junto com os concluídos
+  const completed = history.filter(j => j.status !== 'cancelled');
+  const cancelled = history.filter(j => j.status === 'cancelled');
+  const list    = tab === 'completed' ? completed : cancelled;
+  const visible = list.slice(0, shown);
+
+  const TABS: { key: HistTab; label: string; count: number }[] = [
+    { key: 'completed', label: '✅ Concluídos', count: completed.length },
+    { key: 'cancelled', label: '✕ Cancelados',  count: cancelled.length },
+  ];
+
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-full card !py-4 flex items-center gap-3 text-left hover:bg-steel-50 transition"
+        aria-expanded={open}
+      >
+        <span className="text-xl shrink-0">🗂️</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-steel-900">Histórico</div>
+          <div className="text-xs text-steel-500 mt-0.5">
+            {history.length === 0
+              ? 'Sem histórico ainda'
+              : `${completed.length} concluído${completed.length !== 1 ? 's' : ''} · ${cancelled.length} cancelado${cancelled.length !== 1 ? 's' : ''}`}
+          </div>
+        </div>
+        <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Ocultar' : 'Ver histórico'}</span>
+        <span className={`text-steel-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {open && history.length > 0 && (
+        <div className="card mt-2">
+          <div className="flex gap-2 mb-2">
+            {TABS.map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => { setTab(t.key); setShown(HIST_PAGE); }}
+                className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${
+                  tab === t.key
+                    ? 'bg-brand-500 text-white border-brand-500'
+                    : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
+                }`}
+              >
+                {t.label} <span className="opacity-80">({t.count})</span>
+              </button>
+            ))}
+          </div>
+
+          {list.length === 0 ? (
+            <div className="text-center text-steel-500 text-sm py-6">
+              {tab === 'completed' ? 'Nenhum serviço concluído ainda.' : 'Nenhum cancelamento. 👏'}
+            </div>
+          ) : (
+            <div className="divide-y divide-steel-100">
+              {visible.map(j => <HistoryRow key={j.id} j={j} />)}
+            </div>
+          )}
+
+          {list.length > shown && (
+            <button
+              type="button"
+              onClick={() => setShown(s => s + HIST_PAGE)}
+              className="w-full mt-2 pt-3 border-t border-steel-100 text-sm font-semibold text-brand-600 hover:text-brand-700"
+            >
+              Mostrar mais ({list.length - shown} restantes)
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HistoryRow({ j }: { j: Job }) {
+  const isCancelled = j.status === 'cancelled';
+  const fee  = Number(j.cancellation_fee ?? 0);
+  const date = isCancelled ? (j.cancelled_at ?? j.created_at) : j.completed_at;
+  return (
+    <div className="py-3 flex justify-between items-center gap-3">
+      <div className="min-w-0">
+        <div className={`font-semibold truncate ${isCancelled ? 'text-steel-500' : ''}`}>{j.title}</div>
+        <div className="text-xs text-steel-500">
+          {date ? new Date(date).toLocaleDateString('pt-BR') : '—'}
+        </div>
+        <div className="text-xs text-steel-400">
+          Pacote: {j.max_hours}h × R$ {formatBRL(j.price_per_hour ?? 0, { decimals: 0 })}/h
+          {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        {isCancelled ? (
+          <>
+            <div className="font-display text-steel-400 line-through">R$ {formatBRL(j.price)}</div>
+            <div className={`text-xs ${fee > 0 ? 'text-alert-600 font-semibold' : 'text-steel-500'}`}>
+              {fee > 0 ? `multa R$ ${formatBRL(fee)}` : 'sem cobrança'}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="font-bold font-display">R$ {formatBRL(j.price)}</div>
+            <div className="text-xs text-steel-500">fechado</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function KPI({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="card">
@@ -816,7 +952,7 @@ function statusLabel(j: Job): string {
   if (j.status === 'completed')   return 'Concluído';
   if (j.status === 'disputed')    return 'Em disputa';
   if (j.status === 'cancelled')   return 'Cancelado';
-  if (j.status === 'open')        return 'Aguardando mecânico';
+  if (j.status === 'open')        return 'Aguardando aceite de um mecânico';
   if (j.status === 'in_progress') return '🔧 Em serviço';
   // status === 'assigned'
   // Agendado aceito mas mecânico ainda não saiu (en_route_at null)
