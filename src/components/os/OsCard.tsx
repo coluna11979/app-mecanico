@@ -2,7 +2,7 @@ import { MouseEvent } from 'react';
 import type { ServiceOrder, Customer, Vehicle, WorkshopMechanic, OsStatus } from '@/types/database';
 import LicensePlate from './LicensePlate';
 import {
-  osLabel, osColor, osBorder,
+  osStatusLabel, osStatusColor, osBorder,
   durationMin, fmtDur, fmtDate, fmtBRL,
   osNumber, waNumber,
 } from './osHelpers';
@@ -50,7 +50,7 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
             <span className="font-mono font-bold text-steel-700">OS {osNumber(os)}</span>
             <span className="text-steel-400">·</span>
             <span className="text-steel-500">{fmtDate(os.created_at)}</span>
-            <span className={`badge ${osColor(os.status)}`}>{osLabel(os.status)}</span>
+            <span className={`badge ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>
             {os.category && (
               <span className="badge bg-steel-100 text-steel-600">{os.category}</span>
             )}

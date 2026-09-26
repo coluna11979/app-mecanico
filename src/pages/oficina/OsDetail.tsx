@@ -8,7 +8,7 @@ import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
 import {
-  durationMin, fmtBRL, fmtDateTime, fmtDur, osColor, osLabel, osNumber, waNumber,
+  durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber,
 } from '@/components/os/osHelpers';
 import type { OsRow } from '@/components/os/OsCard';
 import type { OsStatus, ServiceOrderItem } from '@/types/database';
@@ -57,13 +57,15 @@ export default function OsDetail() {
     if (!os) return;
     const confirms: Partial<Record<OsStatus, string>> = {
       cancelled: 'Cancelar esta OS?',
-      open: 'Reabrir esta OS? Ela volta para "Aberta".',
+      open: os.quote_status === 'declined'
+        ? 'O cliente aprovou o orçamento? Ele vira uma OS aberta para executar o serviço.'
+        : 'Reabrir esta OS? Ela volta para "Aberta".',
     };
     if (confirms[status] && !confirm(confirms[status])) return;
     const extra: Record<string, unknown> = {};
     if (status === 'in_progress' && !os.started_at) extra.started_at = new Date().toISOString();
     if (status === 'completed') extra.completed_at = new Date().toISOString();
-    if (status === 'open') extra.completed_at = null;
+    if (status === 'open') { extra.completed_at = null; extra.quote_status = null; } // orçamento aprovado vira OS
     setBusy(true);
     const { error } = await supabase.from('service_orders').update({ status, ...extra }).eq('id', os.id);
     setBusy(false);
@@ -95,7 +97,7 @@ export default function OsDetail() {
       lines.push(`• ${os.title}`, '');
     }
     lines.push(`*Total: ${fmtBRL(os.price)}*`);
-    lines.push(`Situação: ${osLabel(os.status)}`);
+    lines.push(`Situação: ${osStatusLabel(os)}`);
     return lines.join('\n');
   }
 
@@ -140,7 +142,7 @@ export default function OsDetail() {
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-sm font-bold text-steel-500">OS nº {osNumber(os)}</span>
-                <span className={`badge ${osColor(os.status)}`}>{osLabel(os.status)}</span>
+                <span className={`badge ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>
                 {os.category && <span className="badge bg-steel-100 text-steel-600">{os.category}</span>}
               </div>
               <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1.5">{os.title}</h1>
@@ -172,7 +174,11 @@ export default function OsDetail() {
             )}
             <div className="flex gap-2 sm:ml-auto">
               {(os.status === 'completed' || os.status === 'cancelled') && (
-                <button onClick={() => changeStatus('open')} disabled={busy} className="btn-ghost text-sm !py-2 text-steel-600">↺ Reabrir</button>
+                os.quote_status === 'declined' ? (
+                  <button onClick={() => changeStatus('open')} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✅ Cliente aprovou — abrir OS</button>
+                ) : (
+                  <button onClick={() => changeStatus('open')} disabled={busy} className="btn-ghost text-sm !py-2 text-steel-600">↺ Reabrir</button>
+                )
               )}
               {os.status !== 'completed' && os.status !== 'cancelled' && (
                 <button onClick={() => changeStatus('cancelled')} disabled={busy} className="btn-ghost text-sm !py-2 text-alert-600 hover:bg-alert-50">✕ Cancelar OS</button>

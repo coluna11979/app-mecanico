@@ -218,6 +218,10 @@ export interface ServiceOrder {
   /** Número sequencial por oficina (OS nº 0001). Preenchido por trigger. */
   number: number | null;
   discount: number;
+  /** 'declined' = orçamento que o cliente não aprovou (status fica 'cancelled') */
+  quote_status?: 'declined' | null;
+  /** 'app' | 'paper_import' */
+  source?: string;
 }
 
 export type OsItemKind = 'part' | 'labor';
@@ -244,7 +248,9 @@ export interface PaperQuoteExtracted {
   numero_documento: string | null;
   servico_resumo: string | null;
   observacoes: string | null;
-  itens: { tipo: OsItemKind; descricao: string; quantidade: number; valor_unitario: number | null }[];
+  /** Serviços recomendados para o futuro (base do módulo de reativação) */
+  recomendacoes?: string[];
+  itens: { tipo: OsItemKind; descricao: string; quantidade: number; valor_unitario: number | null; valor_total_item?: number | null }[];
   desconto: number | null;
   total: number | null;
   campos_incertos: string[];

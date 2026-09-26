@@ -29,6 +29,15 @@ export function osBorder(s: string) {
   return STATUS_BORDER[s] ?? 'border-l-steel-300';
 }
 
+/** Rótulo/cor considerando orçamento não aprovado (status 'cancelled' + quote_status 'declined') */
+type OsLike = { status: string; quote_status?: string | null };
+export function osStatusLabel(os: OsLike) {
+  return os.quote_status === 'declined' ? 'Orçamento não aprovado' : osLabel(os.status);
+}
+export function osStatusColor(os: OsLike) {
+  return os.quote_status === 'declined' ? 'bg-pending-100 text-pending-800' : osColor(os.status);
+}
+
 export function durationMin(started: string | null, completed: string | null): number | null {
   if (!started || !completed) return null;
   return Math.round((new Date(completed).getTime() - new Date(started).getTime()) / 60000);

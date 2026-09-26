@@ -42,11 +42,20 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
     obs:      x?.observacoes ?? '',
     desconto: x?.desconto ? moneyInput(x.desconto) : '',
   });
-  const [items, setItems] = useState<ItemRow[]>(() => (x?.itens ?? []).map(i => ({
-    key: ++seq, tipo: i.tipo, descricao: i.descricao,
-    quantidade: String(i.quantidade ?? 1).replace('.', ','),
-    valor: i.valor_unitario != null ? moneyInput(i.valor_unitario) : '',
-  })));
+  const [items, setItems] = useState<ItemRow[]>(() => (x?.itens ?? []).map(i => {
+    const qty = i.quantidade || 1;
+    // A IA devolve o unitário e/ou o total da linha; o editor trabalha com o unitário
+    const unit = i.valor_unitario ?? (i.valor_total_item != null ? Math.round((i.valor_total_item / qty) * 100) / 100 : null);
+    return {
+      key: ++seq, tipo: i.tipo, descricao: i.descricao,
+      quantidade: String(qty).replace('.', ','),
+      valor: unit != null ? moneyInput(unit) : '',
+    };
+  }));
+  /** O serviço foi feito, ou ficou só no orçamento? */
+  const [done, setDone] = useState(true);
+  /** Serviços recomendados para o futuro (alimentam a reativação de clientes) */
+  const [recs, setRecs] = useState<string[]>(() => x?.recomendacoes ?? []);
 
   // Cliente/veículo já cadastrados (pelo telefone ou pela placa)
   const [matchCustomer, setMatchCustomer] = useState<Customer | null>(null);
@@ -120,6 +129,7 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
           phone: f.telefone.trim() || null,
           cpf: f.cpf.trim() || null,
           address: f.endereco.trim() || null,
+          source: 'paper_import',
         }).select('id').single();
         if (error) throw error;
         customerId = data.id;
@@ -149,17 +159,20 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
         }
       }
 
-      // 3. OS histórica, concluída, com a data do bloquinho
+      // 3. OS com a data do bloquinho: concluída (feito) ou orçamento não aprovado
       const when = f.data ? new Date(`${f.data}T12:00:00`).toISOString() : imp.created_at;
+      const doc = x?.numero_documento?.trim();
+      const description = [doc ? `Talão nº ${doc}` : null, f.obs.trim() || null].filter(Boolean).join('\n') || null;
       const { data: os, error: osErr } = await supabase.from('service_orders').insert({
         workshop_id: wid,
         customer_id: customerId,
         vehicle_id: vehicleId,
         title: f.titulo.trim(),
-        description: f.obs.trim() || null,
-        status: 'completed',
+        description,
+        status: done ? 'completed' : 'cancelled',   // não aprovado fica fora do faturamento
+        quote_status: done ? null : 'declined',
         created_at: when,
-        completed_at: when,
+        completed_at: done ? when : null,
         km_reading: f.km ? parseInt(f.km.replace(/\D/g, ''), 10) || null : null,
         price: items.length ? 0 : (aiTotal ?? 0), // com itens, o banco recalcula
         discount: disc,
@@ -179,12 +192,24 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
         if (error) throw error;
       }
 
-      // 5. Marca a importação como concluída
+      // 5. Recomendações para o futuro (base da reativação de clientes)
+      const recList = recs.map(r => r.trim()).filter(Boolean);
+      if (recList.length) {
+        const { error } = await supabase.from('service_recommendations').insert(recList.map(description => ({
+          workshop_id: wid, customer_id: customerId, vehicle_id: vehicleId, service_order_id: os.id,
+          description, source: 'paper_import', recommended_at: when,
+        })));
+        if (error) console.warn('[ImportReview] recomendações não salvas:', error.message);
+      }
+
+      // 6. Marca a importação como concluída
       await supabase.from('paper_imports').update({
         status: 'confirmed', service_order_id: os.id, customer_id: customerId, confirmed_at: new Date().toISOString(),
       }).eq('id', imp.id);
 
-      toast.success(`Importado ✓ — OS nº ${String(os.number ?? '').padStart(4, '0')}`);
+      toast.success(done
+        ? `Importado ✓ — OS nº ${String(os.number ?? '').padStart(4, '0')}`
+        : 'Importado ✓ — orçamento não aprovado salvo para você retomar o contato');
       onDone();
     } catch (e: any) {
       console.error('[ImportReview] erro:', e);
@@ -217,6 +242,23 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
 
           {/* Dados */}
           <div className="p-5 space-y-5">
+            {/* Foi feito? */}
+            <section className="space-y-2">
+              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Esse serviço foi feito?</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setDone(true)}
+                  className={`rounded-xl border-2 p-3 text-left transition ${done ? 'border-signal-500 bg-signal-50' : 'border-steel-200'}`}>
+                  <div className="font-semibold text-sm">✅ Sim, foi feito</div>
+                  <div className="text-xs text-steel-500">Entra no histórico como serviço concluído</div>
+                </button>
+                <button type="button" onClick={() => setDone(false)}
+                  className={`rounded-xl border-2 p-3 text-left transition ${!done ? 'border-pending-500 bg-pending-50' : 'border-steel-200'}`}>
+                  <div className="font-semibold text-sm">📝 Ficou só no orçamento</div>
+                  <div className="text-xs text-steel-500">Cliente não aprovou — vira oportunidade de contato</div>
+                </button>
+              </div>
+            </section>
+
             {/* Cliente */}
             <section className="space-y-2">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Cliente</div>
@@ -260,6 +302,26 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
                 <input className={cls('data')} type="date" value={f.data} onChange={set('data')} />
               </div>
               <textarea className={cls('observacoes')} rows={2} placeholder="Observações" value={f.obs} onChange={set('obs')} />
+            </section>
+
+            {/* Recomendações */}
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Recomendado para o futuro</div>
+                  <div className="text-[11px] text-steel-400">Serviços que a oficina indicou fazer depois — viram oportunidade de contato.</div>
+                </div>
+                <button type="button" onClick={() => setRecs(r => [...r, ''])}
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-steel-100 hover:bg-steel-200 shrink-0">+ Recomendação</button>
+              </div>
+              {recs.map((r, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <input className={`${cls(`recomendacoes[${i}]`)} flex-1`} placeholder="Ex.: Avaliar bieletas na próxima revisão" value={r}
+                    onChange={e => setRecs(list => list.map((v, j) => j === i ? e.target.value : v))} />
+                  <button type="button" onClick={() => setRecs(list => list.filter((_, j) => j !== i))}
+                    className="h-9 w-9 rounded-lg bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600 text-xs shrink-0">✕</button>
+                </div>
+              ))}
             </section>
 
             {/* Itens */}

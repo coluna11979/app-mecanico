@@ -24,7 +24,7 @@ const SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['legivel', 'cliente', 'veiculo', 'data', 'numero_documento', 'servico_resumo',
-    'observacoes', 'itens', 'desconto', 'total', 'campos_incertos'],
+    'observacoes', 'recomendacoes', 'itens', 'desconto', 'total', 'campos_incertos'],
   properties: {
     legivel: { type: 'boolean', description: 'false se a imagem não for um orçamento/nota de serviço ou estiver ilegível' },
     cliente: {
@@ -44,16 +44,21 @@ const SCHEMA = {
     numero_documento: str,
     servico_resumo: { ...str, description: 'Título curto do serviço, ex.: "Troca de embreagem"' },
     observacoes: str,
+    recomendacoes: {
+      type: 'array', items: { type: 'string' },
+      description: 'Serviços recomendados para o futuro, ex.: ["Avaliar bieletas na próxima revisão"]',
+    },
     itens: {
       type: 'array',
       items: {
         type: 'object', additionalProperties: false,
-        required: ['tipo', 'descricao', 'quantidade', 'valor_unitario'],
+        required: ['tipo', 'descricao', 'quantidade', 'valor_unitario', 'valor_total_item'],
         properties: {
           tipo: { type: 'string', enum: ['part', 'labor'] },
           descricao: { type: 'string' },
           quantidade: { type: 'number' },
           valor_unitario: nullable({ type: 'number' }),
+          valor_total_item: nullable({ type: 'number' }),
         },
       },
     },
@@ -69,13 +74,20 @@ const SCHEMA = {
 const PROMPT = `Esta é a foto de um orçamento ou nota de serviço de uma oficina mecânica brasileira, geralmente escrito à mão em bloquinho.
 
 Extraia os dados exatamente como estão escritos:
+- O cabeçalho impresso (nome, CNPJ, endereço e telefone no topo) é da PRÓPRIA OFICINA que emitiu o talão. Nunca use esses dados como dados do cliente. O cliente é quem aparece nos campos preenchidos (Cliente, Telefone, Veículo…).
+- numero_documento: o número do talão/orçamento (ex.: "Nº 0192" → "0192").
 - Não invente nada. Campo que não aparece ou que você não consegue ler → null.
 - Telefone: só dígitos, com DDD se houver (ex.: "11987654321").
 - Placa: maiúsculas, sem hífen ou espaço (ex.: "ABC1D23" ou "ABC1234").
 - Valores em reais como número: "R$ 1.250,00" → 1250; "85,50" → 85.5.
 - Data no formato AAAA-MM-DD. Ano com 2 dígitos → 20xx.
-- Itens: tipo "part" para peças, materiais e insumos; "labor" para mão de obra e serviços. Quantidade 1 quando não houver.
+- Itens: tipo "part" para peças, materiais e insumos; "labor" para mão de obra e serviços (inclusive alinhamento, balanceamento, diagnóstico). Quantidade 1 quando não houver.
+- Valores dos itens: na maioria dos talões a coluna de valor é o TOTAL DA LINHA (quantidade × unitário). Some a coluna e compare com o TOTAL do documento:
+  • se a soma bate com o TOTAL → a coluna é o total da linha: preencha valor_total_item com ele e valor_unitario = valor_total_item ÷ quantidade;
+  • se só bate multiplicando pela quantidade → a coluna é o unitário: preencha valor_unitario com ele e valor_total_item = quantidade × valor_unitario.
+  Na dúvida, inclua o item em campos_incertos.
 - Se só existir um valor total sem itens discriminados, crie um item "labor" com a descrição do serviço e esse valor.
+- recomendacoes: serviços que a oficina recomendou fazer no futuro (ex.: "Recomendada avaliação das bieletas na próxima revisão" → "Avaliar bieletas"). Um por item. Lista vazia se não houver.
 - Liste em campos_incertos tudo que tiver leitura duvidosa, para a oficina conferir.
 - Se a imagem não for um orçamento/nota ou estiver ilegível, marque legivel = false.`;
 

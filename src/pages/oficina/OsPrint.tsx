@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { fmtBRL, osLabel, osNumber } from '@/components/os/osHelpers';
+import { fmtBRL, osNumber, osStatusLabel } from '@/components/os/osHelpers';
 import type { OsRow } from '@/components/os/OsCard';
 import type { ServiceOrderItem, Workshop } from '@/types/database';
 
@@ -102,7 +102,7 @@ export default function OsPrint() {
             <div className="text-2xl font-bold font-mono">Nº {osNumber(os)}</div>
             <div className="text-steel-600">Emitida em {new Date().toLocaleDateString('pt-BR')}</div>
             <div className="text-steel-600">Abertura: {new Date(os.created_at).toLocaleDateString('pt-BR')}</div>
-            <div className="text-steel-600">Situação: <strong>{osLabel(os.status)}</strong></div>
+            <div className="text-steel-600">Situação: <strong>{osStatusLabel(os)}</strong></div>
           </div>
         </header>
 
