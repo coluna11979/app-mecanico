@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,20 +22,30 @@ export default function MechanicGanhos() {
   const [jobs, setJobs]     = useState<JobWithShop[]>([]);
   const [period, setPeriod] = useState<Period>('month');
   const [loading, setLoading] = useState(true);
+  const [isEmbaixador, setIsEmbaixador] = useState(false);
+  const [comissaoPendente, setComissaoPendente] = useState(0);
 
   useEffect(() => { if (user) load(); }, [user]);
 
   async function load() {
     setLoading(true);
     const { data: m } = await supabase
-      .from('mechanics').select('id').eq('profile_id', user!.id).maybeSingle();
+      .from('mechanics').select('id, is_embaixador').eq('profile_id', user!.id).maybeSingle();
     if (m?.id) {
-      const { data } = await supabase
-        .from('jobs').select('*, workshop:workshops(business_name)')
-        .eq('mechanic_id', m.id)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false });
+      setIsEmbaixador(!!(m as any).is_embaixador);
+      const [{ data }, { data: resumo }] = await Promise.all([
+        supabase
+          .from('jobs').select('*, workshop:workshops(business_name)')
+          .eq('mechanic_id', m.id)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false }),
+        (m as any).is_embaixador
+          ? supabase.rpc('embaixador_resumo')
+          : Promise.resolve({ data: null }),
+      ]);
       setJobs((data as JobWithShop[]) ?? []);
+      const row = Array.isArray(resumo) ? resumo[0] : resumo;
+      if (row) setComissaoPendente(Number(row.comissao_pendente ?? 0));
     }
     setLoading(false);
   }
@@ -150,6 +161,36 @@ export default function MechanicGanhos() {
             </div>
           </div>
         </div>
+
+        {/* 🌟 Card de embaixador — só aparece se for embaixador */}
+        {isEmbaixador && (
+          <Link
+            to="/mecanico/embaixador"
+            className="block relative rounded-2xl overflow-hidden bg-gradient-to-br from-brand-500 to-brand-700 border border-brand-400/40 p-4 hover:from-brand-400 hover:to-brand-600 transition active:scale-[0.99] group"
+          >
+            <div className="absolute -top-8 -right-8 w-40 h-40 bg-white/10 rounded-full pointer-events-none" />
+            <div className="relative flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-100 flex items-center gap-1.5">
+                  <span className="text-base">🌟</span> Painel de indicações
+                </div>
+                <div className="font-bold text-white text-lg leading-tight mt-1">
+                  Minhas Indicações
+                </div>
+                {comissaoPendente > 0 ? (
+                  <div className="text-xs text-brand-100 mt-1">
+                    Você tem <strong className="text-white">R$ {comissaoPendente.toFixed(2).replace('.', ',')}</strong> a receber
+                  </div>
+                ) : (
+                  <div className="text-xs text-brand-100 mt-0.5">
+                    Veja seu link, indicados e ganhos
+                  </div>
+                )}
+              </div>
+              <span className="text-white text-3xl shrink-0 group-hover:translate-x-1 transition">→</span>
+            </div>
+          </Link>
+        )}
 
         {/* Historical breakdown */}
         {months.length > 0 && (
