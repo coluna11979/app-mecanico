@@ -336,21 +336,31 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
                 </div>
               </div>
               {items.map((r, idx) => (
-                <div key={r.key} className="grid grid-cols-12 gap-1.5 items-center">
-                  <select className="input !py-2 !px-2 text-xs col-span-3 sm:col-span-2" value={r.tipo}
+                /* Duas linhas por item: o painel de conferência ocupa só metade da tela */
+                <div key={r.key} className="grid grid-cols-12 gap-1.5 items-center pb-2 border-b border-steel-100 last:border-0">
+                  <select className="input !py-2 !px-2 text-xs col-span-3" value={r.tipo}
                     onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, tipo: e.target.value as OsItemKind } : i))}>
                     <option value="part">Peça</option>
                     <option value="labor">Serviço</option>
                   </select>
-                  <input className={`${cls(`itens[${idx}].descricao`)} col-span-9 sm:col-span-5`} placeholder="Descrição" value={r.descricao}
+                  <input className={`${cls(`itens[${idx}].descricao`)} col-span-9`} placeholder="Descrição" value={r.descricao}
                     onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: e.target.value } : i))} />
-                  <input className={`${cls(`itens[${idx}].quantidade`)} col-span-3 sm:col-span-1 text-right`} inputMode="decimal" value={r.quantidade}
-                    onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, quantidade: e.target.value } : i))} />
-                  <input className={`${cls(`itens[${idx}].valor_unitario`)} col-span-5 sm:col-span-2 text-right`} inputMode="decimal" placeholder="0,00" value={r.valor}
-                    onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, valor: e.target.value } : i))} />
-                  <div className="col-span-3 sm:col-span-1 text-right text-xs font-semibold">{fmtBRL(rowTotal(r))}</div>
-                  <button type="button" onClick={() => setItems(s => s.filter(i => i.key !== r.key))}
-                    className="col-span-1 h-8 rounded-lg bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600 text-xs">✕</button>
+                  <label className="col-span-3 text-[10px] text-steel-400 uppercase">
+                    Qtd
+                    <input className={`${cls(`itens[${idx}].quantidade`)} text-right mt-0.5`} inputMode="decimal" value={r.quantidade}
+                      onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, quantidade: e.target.value } : i))} />
+                  </label>
+                  <label className="col-span-4 text-[10px] text-steel-400 uppercase">
+                    Valor unit.
+                    <input className={`${cls(`itens[${idx}].valor_unitario`)} text-right mt-0.5`} inputMode="decimal" placeholder="0,00" value={r.valor}
+                      onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, valor: e.target.value } : i))} />
+                  </label>
+                  <div className="col-span-4 text-right self-end pb-2">
+                    <div className="text-[10px] text-steel-400 uppercase">Total</div>
+                    <div className="text-sm font-bold whitespace-nowrap">{fmtBRL(rowTotal(r))}</div>
+                  </div>
+                  <button type="button" onClick={() => setItems(s => s.filter(i => i.key !== r.key))} title="Remover item"
+                    className="col-span-1 self-end mb-0.5 h-9 rounded-lg bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600 text-xs">✕</button>
                 </div>
               ))}
               <div className="flex justify-end items-center gap-3 pt-2 text-sm">
