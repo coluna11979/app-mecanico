@@ -259,6 +259,31 @@ export default function MechanicDashboard() {
           </div>
         </div>
 
+        {/* 🌟 Painel de Embaixador — só aparece se for embaixador */}
+        {(me as any)?.is_embaixador && (
+          <Link
+            to="/mecanico/embaixador"
+            className="block relative rounded-2xl overflow-hidden bg-gradient-to-br from-brand-500 to-brand-700 border border-brand-400/40 p-4 hover:from-brand-400 hover:to-brand-600 transition active:scale-[0.99] group"
+          >
+            <div className="absolute -top-8 -right-8 w-40 h-40 bg-white/10 rounded-full pointer-events-none" />
+            <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-black/10 rounded-full pointer-events-none" />
+            <div className="relative flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-100 flex items-center gap-1.5">
+                  <span className="text-base">🌟</span> Painel de indicações
+                </div>
+                <div className="font-bold text-white text-lg leading-tight mt-1">
+                  Minhas Indicações e Comissões
+                </div>
+                <div className="text-xs text-brand-100 mt-0.5 leading-tight">
+                  Toque pra ver quem você indicou e quanto já ganhou
+                </div>
+              </div>
+              <span className="text-white text-3xl shrink-0 group-hover:translate-x-1 transition">→</span>
+            </div>
+          </Link>
+        )}
+
         {/* ── Card: Como você recebe (aparece 1 vez, dismissível) ── */}
         {showEarnings && (
           <div className="card !bg-gradient-to-br from-brand-600 to-brand-700 border border-brand-500/40 relative overflow-hidden">
