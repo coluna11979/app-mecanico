@@ -4,7 +4,7 @@ import LicensePlate from './LicensePlate';
 import {
   osLabel, osColor, osBorder,
   durationMin, fmtDur, fmtDate, fmtBRL,
-  shortOsId, waNumber,
+  osNumber, waNumber,
 } from './osHelpers';
 
 export type OsRow = ServiceOrder & {
@@ -47,7 +47,7 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
         <div className="flex-1 min-w-0">
           {/* linha 1: número + data + status + categoria */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            <span className="font-mono font-bold text-steel-700">#{shortOsId(os.id)}</span>
+            <span className="font-mono font-bold text-steel-700">OS {osNumber(os)}</span>
             <span className="text-steel-400">·</span>
             <span className="text-steel-500">{fmtDate(os.created_at)}</span>
             <span className={`badge ${osColor(os.status)}`}>{osLabel(os.status)}</span>
@@ -160,7 +160,7 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
               onClick={(e) => { e.stopPropagation(); onCopyLink(); }}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-steel-50 text-steel-700 hover:bg-steel-100 border border-steel-200 transition"
             >
-              📋 Copiar link
+              🔗 Copiar link
             </button>
           )}
           {os.status !== 'completed' && onChangeStatus && (

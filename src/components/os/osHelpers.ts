@@ -73,4 +73,37 @@ export function shortOsId(id: string) {
   return id.replace(/-/g, '').slice(-6).toUpperCase();
 }
 
+/** "0042" — número da OS com 4 dígitos (cai no ID curto se ainda não tiver número). */
+export function osNumber(os: { id: string; number?: number | null }) {
+  return os.number != null ? String(os.number).padStart(4, '0') : shortOsId(os.id);
+}
+
+/** Categorias de serviço da OS */
+export const OS_CATEGORIES = [
+  // Captação / gratuitos
+  'Avaliação','Check-up',
+  // Mais comuns
+  'Troca de óleo','Revisão geral','Freios','Pneus','Alinhamento','Balanceamento',
+  // Mecânica
+  'Motor','Câmbio','Suspensão','Transmissão','Embreagem','Injeção eletrônica',
+  // Elétrica / outros
+  'Elétrica','Ar-condicionado','Diagnóstico','Funilaria','Outro',
+];
+
+/**
+ * Lê valor digitado do jeito brasileiro: "85,50", "1.234,56", "85.50", "85".
+ * Retorna NaN se não for número.
+ */
+export function parseMoney(v: string): number {
+  const s = v.trim().replace(/[R$\s]/g, '');
+  if (!s) return NaN;
+  const normalized = s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s;
+  return Number(normalized);
+}
+
+/** 85.5 → "85,50" (para campos de edição) */
+export function moneyInput(v: number): string {
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export type { OsStatus };

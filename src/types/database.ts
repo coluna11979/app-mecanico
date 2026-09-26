@@ -212,6 +212,24 @@ export interface ServiceOrder {
   km_reading: number | null;
   parts_cost: number | null;
   labor_cost: number | null;
+  /** Número sequencial por oficina (OS nº 0001). Preenchido por trigger. */
+  number: number | null;
+  discount: number;
+}
+
+export type OsItemKind = 'part' | 'labor';
+
+/** Item da OS — peça ou serviço. Totais da OS são recalculados por trigger. */
+export interface ServiceOrderItem {
+  id: string;
+  service_order_id: string;
+  workshop_id: string;
+  kind: OsItemKind;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  position: number;
+  created_at: string;
 }
 
 export interface WorkshopMechanic {

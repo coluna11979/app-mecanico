@@ -12,8 +12,9 @@ import StatusChips from '@/components/os/StatusChips';
 import EmptyState from '@/components/os/EmptyState';
 import OsSkeleton from '@/components/os/OsSkeleton';
 import { toast } from '@/components/ui/Toast';
+import { OS_CATEGORIES } from '@/components/os/osHelpers';
 import { usePendingFees } from '@/components/PendingFeesGate';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 /* ─── tipos locais ──────────────────────────────────────────── */
 type OsRow = ServiceOrder & {
@@ -29,16 +30,6 @@ type PeriodFilter = 'all' | 'today' | 'week' | 'month';
 /* ─── constantes ────────────────────────────────────────────── */
 const STATUSES: OsStatus[] = ['open', 'in_progress', 'completed', 'cancelled'];
 
-const OS_CATEGORIES = [
-  // Captação / gratuitos
-  'Avaliação','Check-up',
-  // Mais comuns
-  'Troca de óleo','Revisão geral','Freios','Pneus','Alinhamento','Balanceamento',
-  // Mecânica
-  'Motor','Câmbio','Suspensão','Transmissão','Embreagem','Injeção eletrônica',
-  // Elétrica / outros
-  'Elétrica','Ar-condicionado','Diagnóstico','Funilaria','Outro',
-];
 
 const SKILL_OPTIONS = [
   'Motor','Freios','Suspensão','Elétrica','Câmbio',
@@ -118,7 +109,6 @@ export default function ServiceOrders() {
   const [filterMech, setFilterMech]       = useState('all');
   const [filterPeriod, setFilterPeriod]   = useState<PeriodFilter>('all');
   const [search, setSearch]               = useState('');
-  const [detail, setDetail]               = useState<OsRow | null>(null);
   const [modalOS, setModalOS]             = useState(false);
   const [modalMech, setModalMech]         = useState(false);
   const [editMech, setEditMech]           = useState<WorkshopMechanic | null>(null);
@@ -155,16 +145,15 @@ export default function ServiceOrders() {
 
   const hasPendingFees = usePendingFees(currentWorkshop?.id ?? null);
 
-  /* ── abre a OS indicada no link (?os=<id>) ── */
-  const [searchParams, setSearchParams] = useSearchParams();
+  /* ── links antigos (?os=<id>) → página da OS ── */
+  const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const linkedOsId = searchParams.get('os');
   useEffect(() => {
-    if (!linkedOsId || loading) return;
-    const found = list.find(o => o.id === linkedOsId);
-    if (found) setDetail(found);
-    else toast.error('OS do link não encontrada nesta oficina');
-    setSearchParams(prev => { prev.delete('os'); return prev; }, { replace: true });
-  }, [linkedOsId, loading, list, setSearchParams]);
+    if (linkedOsId) nav(`/oficina/os/${linkedOsId}`, { replace: true });
+  }, [linkedOsId, nav]);
+
+  const openOs = (os: OsRow) => nav(`/oficina/os/${os.id}`);
 
   /* ── persistência de filtros (localStorage por oficina) ── */
   const prefsKey = currentWorkshop ? `os-prefs:${currentWorkshop.id}` : null;
@@ -409,7 +398,7 @@ export default function ServiceOrders() {
       const computed  = (partsVal ?? 0) + (laborVal ?? 0);
       const finalPrice = isCheckup ? 0 : (computed > 0 ? computed : priceCents / 100);
 
-      const { error } = await supabase.from('service_orders').insert({
+      const { data: created, error } = await supabase.from('service_orders').insert({
         workshop_id:          shop.id,
         title:                formOS.title.trim(),
         description:          formOS.description.trim() || null,
@@ -425,15 +414,19 @@ export default function ServiceOrders() {
         km_reading:           formOS.km_reading ? parseInt(formOS.km_reading) : null,
         parts_cost:           partsVal,
         labor_cost:           laborVal,
-      });
+      }).select('id, number').single();
       if (error) {
         console.error('[saveOS] erro OS:', error);
         toast.error('Erro ao criar OS: ' + error.message);
         setSaving(false);
         return; // mantém o modal aberto com os dados
       }
-      toast.success(isCheckup ? 'Check-up gratuito criado 🎁' : 'OS criada ✓');
-      await fetchOS(shop.id);
+      toast.success(isCheckup
+        ? 'Check-up gratuito criado 🎁'
+        : `OS nº ${String(created.number ?? '').padStart(4, '0')} criada ✓ — adicione as peças e os serviços`);
+      setModalOS(false); setSaving(false);
+      nav(`/oficina/os/${created.id}`);
+      return;
     }
 
     setModalOS(false); setSaving(false);
@@ -452,7 +445,6 @@ export default function ServiceOrders() {
     }
     const updated = { ...os, status, ...extra } as OsRow;
     setList(prev => prev.map(o => o.id === os.id ? updated : o));
-    if (detail?.id === os.id) setDetail(updated);
     const msgMap: Record<OsStatus, string> = {
       open:        'OS reaberta',
       in_progress: 'OS iniciada ▶',
@@ -464,7 +456,7 @@ export default function ServiceOrders() {
 
   /* ── copiar link da OS ── */
   function copyOsLink(os: OsRow) {
-    const url = `${window.location.origin}/oficina/os?os=${os.id}`;
+    const url = `${window.location.origin}/oficina/os/${os.id}`;
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(url)
         .then(() => toast.success('Link copiado — abre esta OS para quem estiver logado na oficina'))
@@ -527,6 +519,7 @@ export default function ServiceOrders() {
       const q = search.toLowerCase();
       return (
         o.title.toLowerCase().includes(q) ||
+        (o.number != null && (String(o.number) === q.replace(/^0+/, '') || String(o.number).padStart(4, '0').includes(q))) ||
         (o.customer?.full_name ?? '').toLowerCase().includes(q) ||
         (o.vehicle?.plate ?? '').toLowerCase().includes(q) ||
         (o.mechanic?.name ?? '').toLowerCase().includes(q)
@@ -721,7 +714,7 @@ export default function ServiceOrders() {
                 <OsCardNew
                   key={os.id}
                   os={os}
-                  onClick={() => setDetail(os)}
+                  onClick={() => openOs(os)}
                   onChangeStatus={(status) => updateStatus(os, status)}
                   onCopyLink={() => copyOsLink(os)}
                 />
@@ -750,7 +743,7 @@ export default function ServiceOrders() {
                   const isToday = d.toDateString() === now.toDateString();
                   const isPast  = d < now;
                   return (
-                    <button key={os.id} onClick={() => setDetail(os)}
+                    <button key={os.id} onClick={() => openOs(os)}
                       className="card w-full text-left hover:shadow-md transition hover:-translate-y-0.5">
                       <div className="flex items-start gap-4">
                         <div className={`shrink-0 rounded-xl px-3 py-2 text-center min-w-[56px] ${
@@ -861,71 +854,6 @@ export default function ServiceOrders() {
               ))}
             </div>
           )}
-        </div>
-      )}
-
-      {/* ══ DETALHE DA OS ══ */}
-      {detail && (
-        <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setDetail(null)}>
-          <div onClick={e => e.stopPropagation()} className="card max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex gap-2 flex-wrap mb-2">
-                  <span className={`badge ${osColor(detail.status)}`}>{osLabel(detail.status)}</span>
-                  {detail.category && <span className="badge bg-steel-100 text-steel-600">{detail.category}</span>}
-                  {detail.scheduled_at && detail.status === 'open' && <span className="badge bg-brand-50 text-brand-700 border border-brand-200">📅 Agendado</span>}
-                </div>
-                <h2 className="text-xl font-bold">{detail.title}</h2>
-              </div>
-              <button onClick={() => setDetail(null)} className="text-steel-400 hover:text-steel-700 text-xl leading-none">✕</button>
-            </div>
-            {detail.description && <p className="text-sm text-steel-600 bg-steel-50 rounded-xl p-3">{detail.description}</p>}
-            {detail.notes && (
-              <div className="bg-pending-50 border border-pending-200 rounded-xl p-3">
-                <div className="text-[10px] text-pending-600 font-bold uppercase tracking-wider mb-1">Notas internas</div>
-                <p className="text-sm text-pending-800">{detail.notes}</p>
-              </div>
-            )}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-2">
-              <div className="text-xs font-bold text-steel-500 uppercase tracking-wider mb-2">Timeline</div>
-              {detail.scheduled_at && <TimelineRow label="Agendada para" value={fmtDateTime(detail.scheduled_at)} done />}
-              <TimelineRow label="Criada"    value={fmtDateTime(detail.created_at)} done />
-              <TimelineRow label="Iniciada"  value={detail.started_at   ? fmtDateTime(detail.started_at)   : '—'} done={!!detail.started_at}   />
-              <TimelineRow label="Concluída" value={detail.completed_at ? fmtDateTime(detail.completed_at) : '—'} done={!!detail.completed_at} />
-              {durationMin(detail) !== null && (
-                <div className="pt-2 border-t border-steel-200">
-                  <span className="text-xs text-steel-500">Duração total: </span>
-                  <span className="text-sm font-bold text-brand-600">{fmtDur(durationMin(detail)!)}</span>
-                </div>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {detail.customer      && <InfoCard label="Cliente"       value={detail.customer.full_name} />}
-              {detail.vehicle       && <InfoCard label="Veículo"       value={`${detail.vehicle.plate} · ${detail.vehicle.make} ${detail.vehicle.model}`} />}
-              {detail.mechanic      && <InfoCard label="Mecânico"      value={detail.mechanic.name} sub={detail.mechanic.specialty ?? undefined} />}
-              <InfoCard label="Valor total"   value={`R$ ${detail.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} bold />
-              {detail.estimated_hours != null && <InfoCard label="Tempo estimado" value={`${detail.estimated_hours}h`} />}
-              {detail.km_reading     != null && <InfoCard label="KM atual"        value={`${detail.km_reading.toLocaleString('pt-BR')} km`} />}
-              {detail.parts_cost     != null && <InfoCard label="Peças"           value={`R$ ${detail.parts_cost.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} />}
-              {detail.labor_cost     != null && <InfoCard label="Mão de obra"     value={`R$ ${detail.labor_cost.toLocaleString('pt-BR',{minimumFractionDigits:2})}`} />}
-            </div>
-            {detail.status !== 'completed' && detail.status !== 'cancelled' && (
-              <div>
-                <div className="label mb-2">Alterar status</div>
-                <div className="flex gap-2 flex-wrap">
-                  {detail.status === 'open'        && <button onClick={() => updateStatus(detail,'in_progress')} className="btn-secondary text-sm">▶ Iniciar</button>}
-                  {detail.status === 'in_progress' && <button onClick={() => updateStatus(detail,'completed')}   className="btn-primary  text-sm">✓ Concluir</button>}
-                  <button onClick={() => updateStatus(detail,'cancelled')} className="btn-ghost text-sm text-alert-600 hover:bg-alert-50">Cancelar OS</button>
-                </div>
-              </div>
-            )}
-            {detail.status === 'completed' && (
-              <div className="bg-signal-50 border border-signal-200 rounded-xl p-3 text-sm text-signal-700 font-semibold flex items-center gap-2">
-                <span>✓</span>
-                <span>Concluída · R$ {detail.price.toLocaleString('pt-BR',{minimumFractionDigits:2})}{durationMin(detail) !== null && ` · ${fmtDur(durationMin(detail)!)}`}</span>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
