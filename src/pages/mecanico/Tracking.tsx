@@ -10,6 +10,7 @@ import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { distKm, etaLabel } from '@/lib/geo';
 import { mechanicNet } from '@/lib/payment';
+import { ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
 
 export default function MechanicTracking() {
@@ -354,6 +355,7 @@ export default function MechanicTracking() {
         {/* Ações por estado */}
         {job?.status === 'assigned' && !arrived && (
           <div className="space-y-2">
+            <ArrivalCountdown job={job} className="!text-sm" />
             <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full">
               {busy ? '…' : '📍 Confirmar chegada'}
             </button>

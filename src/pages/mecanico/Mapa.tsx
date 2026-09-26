@@ -9,6 +9,7 @@ import { attachAutoUnlock } from '@/lib/alertSound';
 import { distKm, formatDistance } from '@/lib/geo';
 import { mechanicNet } from '@/lib/payment';
 import { isScheduled } from '@/lib/scheduling';
+import { AcceptDeadlineHint } from '@/components/ArrivalDeadline';
 import mapboxgl from 'mapbox-gl';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
@@ -312,6 +313,8 @@ export default function MechanicMapa() {
                 </span>
               </div>
             )}
+
+            <AcceptDeadlineHint job={selected} />
 
             {/* Actions */}
             <div className="flex gap-3">

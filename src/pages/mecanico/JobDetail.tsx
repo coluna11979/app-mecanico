@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { mechanicNet } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { WorkshopReviews } from '@/components/WorkshopReviews';
+import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
 
 export default function MechanicJobDetail() {
@@ -66,12 +67,19 @@ export default function MechanicJobDetail() {
     const { data: m } = await supabase.from('mechanics').select('id').eq('profile_id', user.id).maybeSingle();
     if (!m) { setBusy(false); return; }
     const scheduled = isScheduled(job);
-    await supabase.from('jobs').update({
+    const { data: updated, error } = await supabase.from('jobs').update({
       status: 'assigned',
       mechanic_id: m.id,
       // Imediato já sai a caminho; agendado fica na Agenda (en_route_at null)
       en_route_at: scheduled ? null : new Date().toISOString(),
-    }).eq('id', job.id);
+    }).eq('id', job.id).eq('status', 'open') // outro mecânico pode ter aceitado antes
+      .select('id');
+    if (error || !updated?.length) {
+      setBusy(false);
+      alert(error ? 'Erro ao aceitar: ' + error.message : 'Esse job já foi aceito por outro mecânico.');
+      nav('/mecanico/dashboard');
+      return;
+    }
     // Agendado: vai pra Agenda. Imediato: abre o tracking direto.
     nav(scheduled ? '/mecanico/agenda' : `/mecanico/job/${job.id}/tracking`);
   }
@@ -160,6 +168,11 @@ export default function MechanicJobDetail() {
             </div>
           );
         })()}
+
+        {/* Prazo de chegada — o mecânico precisa saber antes e depois do aceite */}
+        {isMine
+          ? <ArrivalCountdown job={job} />
+          : job.status === 'open' && <AcceptDeadlineHint job={job} />}
 
         {isMine ? (
           // Já aceitei. Se ainda não saí (agendado), posso ir agora ou desistir.

@@ -19,11 +19,12 @@ function acceptedAtMs(job: any): number {
 
 function arrivalDeadlineMs(job: any): number | null {
   if (!job.mechanic_id || job.arrived_at) return null;
-  const accepted = acceptedAtMs(job);
+  const immediate = acceptedAtMs(job) + IMMEDIATE_ARRIVAL_MS;
   if (job.scheduled_at) {
-    return Math.max(new Date(job.scheduled_at).getTime(), accepted) + SCHEDULED_ARRIVAL_GRACE;
+    // Nunca menos que o prazo de uma imediata (ex.: agendado pra daqui a 10 min)
+    return Math.max(new Date(job.scheduled_at).getTime() + SCHEDULED_ARRIVAL_GRACE, immediate);
   }
-  return accepted + IMMEDIATE_ARRIVAL_MS;
+  return immediate;
 }
 
 async function getStripeKey(supabase: any, kind: 'secret' | 'webhook' | 'publishable'): Promise<string | null> {

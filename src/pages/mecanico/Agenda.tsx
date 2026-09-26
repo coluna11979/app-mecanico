@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { mechanicNet } from '@/lib/payment';
 import { formatScheduled } from '@/lib/scheduling';
+import { ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
 
 type AgendaJob = Job & { workshop: Pick<Workshop, 'business_name' | 'city' | 'state'> | null };
@@ -122,6 +123,7 @@ export default function MechanicAgenda() {
                           <div className="text-[10px] text-steel-500 uppercase tracking-wider">no seu PIX</div>
                         </div>
                       </div>
+                      <ArrivalCountdown job={j} className="mt-3" />
                       <div className="flex gap-2 mt-3">
                         <button
                           onClick={() => nav(`/mecanico/job/${j.id}`)}

@@ -8,6 +8,7 @@ import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { distKm, formatDistance } from '@/lib/geo';
 import { mechanicNet } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
+import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
 type Toast = { id: string; job: Job };
@@ -183,7 +184,10 @@ export default function MechanicDashboard() {
       if (scheduled) {
         nav('/mecanico/agenda');
       } else {
-        setActiveJobs(prev => [{ ...job, mechanic_id: me.id, status: 'assigned', en_route_at: enRoute }, ...prev]);
+        setActiveJobs(prev => [{
+          ...job, mechanic_id: me.id, status: 'assigned', en_route_at: enRoute,
+          accepted_at: new Date().toISOString(), // o banco grava o mesmo via trigger
+        }, ...prev]);
       }
     }
     setAccepting(null);
@@ -340,6 +344,7 @@ export default function MechanicDashboard() {
                       <span className="text-2xl font-bold font-display">R$ {mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1)).toFixed(0)}</span>
                     </div>
                   </div>
+                  <ArrivalCountdown job={j} tone="onBrand" className="mt-2" />
                   <div className="mt-2 text-xs opacity-80">Toque para ver mapa →</div>
                 </Link>
               ))}
@@ -454,6 +459,7 @@ export default function MechanicDashboard() {
                       </div>
                     </div>
                     <div className="mt-3 flex flex-col gap-2">
+                      <AcceptDeadlineHint job={j} />
                       <button
                         onClick={() => acceptJob(j)}
                         disabled={accepting === j.id || !me?.is_available}

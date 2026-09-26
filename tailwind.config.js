@@ -32,19 +32,44 @@ export default {
           900: '#0B1117', // base do dark mode
         },
         // Verde-sinal: ações positivas, disponível, confirmar
+        // (escalas completas: o código usa 50–900; antes só 500/600 existiam e o resto saía sem cor)
         signal: {
+          50:  '#E8FBF3',
+          100: '#C6F4DF',
+          200: '#8FE8C1',
+          300: '#52D9A0',
+          400: '#2ACF8F',
           500: '#16C784',
           600: '#0FA56A',
+          700: '#0C8455',
+          800: '#0A6644',
+          900: '#084D34',
         },
         // Vermelho-alerta: disputa, offline, perigo
         alert: {
+          50:  '#FDEDEE',
+          100: '#FBD5D6',
+          200: '#F6AAAD',
+          300: '#F07D81',
+          400: '#EA5F63',
           500: '#E5484D',
           600: '#C13A3F',
+          700: '#9C2F33',
+          800: '#772427',
+          900: '#561A1D',
         },
         // Amarelo-luz: pendente, aguardando
         pending: {
+          50:  '#FEF6E7',
+          100: '#FDE9C2',
+          200: '#FBD38A',
+          300: '#F9C059',
+          400: '#F7B23A',
           500: '#F5A524',
           600: '#D88B0F',
+          700: '#A86C0B',
+          800: '#7C5008',
+          900: '#573806',
         },
       },
       fontFamily: {
