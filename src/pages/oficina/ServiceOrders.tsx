@@ -625,6 +625,7 @@ export default function ServiceOrders() {
           workshopId={shop.id}
           preset={newOs}
           onClose={() => setNewOs(null)}
+          onManageTeam={() => { setNewOs(null); setTab('mecanicos'); openNewMech(); }}
           onCreated={(id, number) => {
             setNewOs(null);
             toast.success(`OS nº ${String(number ?? '').padStart(4, '0')} aberta ✓ — lance as peças e serviços`);
