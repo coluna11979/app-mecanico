@@ -6,6 +6,7 @@ import { MechanicReviews } from '@/components/MechanicReviews';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { toast } from '@/components/ui/Toast';
 import type { Mechanic, Profile } from '@/types/database';
+import { formatBRL } from '@/lib/payment';
 
 const ALL_SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
 
@@ -168,8 +169,15 @@ export default function WorkshopSearch() {
                 {m.skills.slice(0, 4).map(s => <span key={s} className="badge bg-steel-100 text-steel-700">{s}</span>)}
               </div>
               <div className="mt-3 flex justify-between items-center">
-                <div><span className="text-2xl font-bold font-display">R$ {m.hourly_rate.toFixed(0)}</span><span className="text-xs text-steel-500">/h</span></div>
-                <button onClick={() => { setTarget(m); setJob({ title: '', description: '', price_per_hour: m.hourly_rate, max_hours: 1 }); }} className="btn-primary">Contratar</button>
+                <div><span className="text-2xl font-bold font-display">R$ {formatBRL(m.hourly_rate, { decimals: 0 })}</span><span className="text-xs text-steel-500">/h</span></div>
+                <button
+                  onClick={() => { setTarget(m); setJob({ title: '', description: '', price_per_hour: m.hourly_rate, max_hours: 1 }); }}
+                  disabled={hasPendingFees}
+                  title={hasPendingFees ? 'Quite a multa pendente para contratar' : undefined}
+                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {hasPendingFees ? '🔒 Multa pendente' : 'Contratar'}
+                </button>
               </div>
               <button
                 type="button"
@@ -196,7 +204,7 @@ export default function WorkshopSearch() {
             <form onClick={e => e.stopPropagation()} onSubmit={hire} className="card max-w-md w-full space-y-4">
               <div>
                 <h3 className="text-xl font-bold">Contratar {target.profile.full_name}</h3>
-                <p className="text-sm text-steel-500 mt-1">Taxa de referência: R$ {target.hourly_rate.toFixed(0)}/h · ★ {target.rating.toFixed(1)}</p>
+                <p className="text-sm text-steel-500 mt-1">Taxa de referência: R$ {formatBRL(target.hourly_rate, { decimals: 0 })}/h · ★ {target.rating.toFixed(1)}</p>
               </div>
 
               <div>
@@ -238,7 +246,7 @@ export default function WorkshopSearch() {
               {est > 0 && (
                 <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
                   <span className="text-sm text-brand-700">Teto do orçamento</span>
-                  <span className="font-bold text-brand-700 font-display">R$ {est.toFixed(2)}</span>
+                  <span className="font-bold text-brand-700 font-display">R$ {formatBRL(est)}</span>
                 </div>
               )}
 

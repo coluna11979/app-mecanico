@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getSetting } from '@/lib/settings';
 import { getPublicStripeConfig } from '@/lib/stripeConfig';
+import { formatBRL } from '@/lib/payment';
 
 interface PendingFees {
   total: number;
@@ -48,11 +49,11 @@ export function PendingFeesBanner({ workshopId, onPaid }: Props) {
         <div className="text-3xl shrink-0 animate-pulse">⚠️</div>
         <div className="flex-1 min-w-0">
           <h3 className="font-bold text-alert-700">
-            Multa pendente: R$ {pending.total.toFixed(2)}
+            Multa pendente: R$ {formatBRL(pending.total)}
           </h3>
           <p className="text-sm text-steel-700 mt-1 leading-relaxed">
             Você tem {pending.count_jobs === 1 ? '1 cancelamento' : `${pending.count_jobs} cancelamentos`} com multa em aberto.
-            Para publicar novas demandas, é necessário quitar.
+            Para publicar demandas ou contratar mecânicos, é necessário quitar.
           </p>
           <button
             onClick={() => setOpen(true)}
@@ -217,7 +218,7 @@ function PayFeeModal({
         <div className="bg-alert-50 border border-alert-200 rounded-2xl px-4 py-3 text-center">
           <div className="text-xs text-alert-600 uppercase tracking-widest font-bold">Total a pagar</div>
           <div className="text-3xl font-bold font-display text-alert-700 mt-1">
-            R$ {pending.total.toFixed(2)}
+            R$ {formatBRL(pending.total)}
           </div>
         </div>
 

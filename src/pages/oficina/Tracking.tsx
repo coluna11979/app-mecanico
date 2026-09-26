@@ -10,6 +10,7 @@ import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
+import { formatBRL } from '@/lib/payment';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -589,8 +590,8 @@ export default function WorkshopTracking() {
 
             {job && (
               <div className="flex items-center justify-between text-sm py-2 border-b border-steel-100">
-                <span className="text-steel-500">{job.max_hours}h × R$ {job.price_per_hour?.toFixed(0)}/h</span>
-                <span className="font-bold text-signal-600">R$ {cap.toFixed(2)} fechado</span>
+                <span className="text-steel-500">{job.max_hours}h × R$ {formatBRL(job.price_per_hour ?? 0, { decimals: 0 })}/h</span>
+                <span className="font-bold text-signal-600">R$ {formatBRL(cap)} fechado</span>
               </div>
             )}
 
@@ -748,12 +749,12 @@ export default function WorkshopTracking() {
                     )}
                     {job.cancellation_fee != null && Number(job.cancellation_fee) > 0 && (
                       <p className="text-xs text-pending-700 mt-1">
-                        Multa registrada: R$ {Number(job.cancellation_fee).toFixed(2)}
+                        Multa registrada: R$ {formatBRL(Number(job.cancellation_fee))}
                       </p>
                     )}
                     {job.cancellation_refund != null && Number(job.cancellation_refund) > 0 && (
                       <p className="text-xs text-signal-600 mt-1">
-                        Estorno aplicado: R$ {Number(job.cancellation_refund).toFixed(2)}
+                        Estorno aplicado: R$ {formatBRL(Number(job.cancellation_refund))}
                       </p>
                     )}
                   </div>
@@ -795,16 +796,16 @@ export default function WorkshopTracking() {
               <div className="bg-pending-500/10 border border-pending-300 rounded-xl px-4 py-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-steel-700">Valor original</span>
-                  <span className="font-semibold">R$ {cap.toFixed(2)}</span>
+                  <span className="font-semibold">R$ {formatBRL(cap)}</span>
                 </div>
                 <div className="flex items-center justify-between text-alert-700 font-semibold mt-1">
                   <span>Multa de cancelamento (30%)</span>
-                  <span>− R$ {(cancellation.fee ?? 0).toFixed(2)}</span>
+                  <span>− R$ {formatBRL((cancellation.fee ?? 0))}</span>
                 </div>
                 {(cancellation.refund ?? 0) > 0 && (
                   <div className="flex items-center justify-between text-signal-700 font-bold mt-2 pt-2 border-t border-pending-300">
                     <span>Você recebe (estorno)</span>
-                    <span>R$ {(cancellation.refund ?? 0).toFixed(2)}</span>
+                    <span>R$ {formatBRL((cancellation.refund ?? 0))}</span>
                   </div>
                 )}
               </div>
@@ -874,9 +875,9 @@ export default function WorkshopTracking() {
             {/* Valor */}
             <div className="bg-brand-50 border border-brand-200 rounded-2xl p-4 text-center">
               <div className="text-xs text-brand-600 uppercase tracking-widest font-bold mb-1">Valor a pagar</div>
-              <div className="text-4xl font-bold font-display text-brand-700">R$ {cap.toFixed(2)}</div>
+              <div className="text-4xl font-bold font-display text-brand-700">R$ {formatBRL(cap)}</div>
               <div className="text-xs text-brand-500 mt-1">
-                Pacote fechado · {job?.max_hours}h × R$ {job?.price_per_hour?.toFixed(0)}/h
+                Pacote fechado · {job?.max_hours}h × R$ {formatBRL(job?.price_per_hour ?? 0, { decimals: 0 })}/h
               </div>
               <div className="text-[11px] text-steel-500 mt-1">
                 Valor não muda se o mecânico terminar antes ou levar mais tempo

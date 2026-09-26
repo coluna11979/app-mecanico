@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Customer, Vehicle, ServiceOrder } from '@/types/database';
 import { toast } from '@/components/ui/Toast';
+import { formatBRL } from '@/lib/payment';
 
 type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
 
@@ -221,7 +222,7 @@ export default function Customers() {
                                 <div className="text-xs text-steel-400">{new Date(os.created_at).toLocaleDateString('pt-BR')}</div>
                               </div>
                               <div className="text-right">
-                                <div className="text-sm font-bold">R$ {os.price.toFixed(0)}</div>
+                                <div className="text-sm font-bold">R$ {formatBRL(os.price, { decimals: 0 })}</div>
                                 <span className={`badge text-[10px] ${osColor(os.status)}`}>{osLabel(os.status)}</span>
                               </div>
                             </div>

@@ -7,6 +7,7 @@ import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
+import { formatBRL } from '@/lib/payment';
 
 type ArrivalAlert = { jobId: string; title: string };
 type FinishedAlert = { jobId: string; title: string; price: number };
@@ -367,7 +368,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </p>
             <div className="bg-steel-50 rounded-xl px-4 py-3 text-sm space-y-1">
               <div className="font-semibold text-steel-700 truncate">📋 {finishedAlert.title}</div>
-              <div className="text-xl font-bold text-signal-600 font-display">R$ {finishedAlert.price.toFixed(2)}</div>
+              <div className="text-xl font-bold text-signal-600 font-display">R$ {formatBRL(finishedAlert.price)}</div>
             </div>
             <div className="flex gap-2">
               <button
@@ -433,7 +434,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         fixed top-0 left-0 h-full w-64 bg-steel-900 text-white z-40 flex flex-col
         transition-transform duration-300
         ${open ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:static lg:z-auto lg:shrink-0
+        lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:z-auto lg:shrink-0
       `}>
 
         {/* Logo */}
