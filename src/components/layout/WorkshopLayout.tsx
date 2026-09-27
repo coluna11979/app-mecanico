@@ -28,6 +28,9 @@ const GESTAO: NavItem[] = [
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
 ];
 
+// Gestão Avançada oculta por enquanto — mudar para true quando for retomar o módulo
+const SHOW_ADVANCED = false;
+
 // Todos os módulos premium agrupados por departamento
 const ADVANCED: SoonDept[] = [
   {
@@ -476,7 +479,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           </div>
 
           {/* ── Gestão Avançada (upgrade) ── */}
-          <AdvancedSection />
+          {SHOW_ADVANCED && <AdvancedSection />}
         </nav>
 
         {/* User footer */}
