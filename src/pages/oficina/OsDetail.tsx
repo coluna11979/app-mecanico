@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,12 +8,16 @@ import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
 import Recommendations from '@/components/os/Recommendations';
+import ServiceTimer from '@/components/os/ServiceTimer';
 import {
   durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber, fmtPhone,
-  statusChange, APPROVAL_CHANNELS,
+  statusChange, APPROVAL_CHANNELS, PAUSE_REASONS, openPause, workedMinutes,
+  REWORK_CAUSES, reworkCauseLabel, reworkCounts,
 } from '@/components/os/osHelpers';
 import type { OsRow } from '@/components/os/OsCard';
-import type { OsStatus, ServiceOrderItem } from '@/types/database';
+import type { OsStatus, ReworkCause, ServiceOrderItem } from '@/types/database';
+
+type OsLink = { id: string; number: number | null; title: string; created_at: string; completed_at: string | null; rework_cause?: ReworkCause | null; status?: OsStatus };
 
 export default function OsDetail() {
   const { id } = useParams();
@@ -26,6 +30,12 @@ export default function OsDetail() {
   const [busy, setBusy]     = useState(false);
   const [paperUrl, setPaperUrl] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
+  const [pausing, setPausing]     = useState(false);
+  const [reworkForm, setReworkForm] = useState(false);
+  const [original, setOriginal]   = useState<(OsLink & { mechanic: { name: string } | null }) | null>(null);
+  const [returns, setReturns]     = useState<OsLink[]>([]);
+  const [team, setTeam]           = useState<{ id: string; name: string }[]>([]);
+  const nav = useNavigate();
 
   // OS importada de orçamento em papel → mostra a foto original
   useEffect(() => {
@@ -43,7 +53,7 @@ export default function OsDetail() {
     if (!id) return;
     const [{ data: o, error }, { data: its }] = await Promise.all([
       supabase.from('service_orders')
-        .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics(*)')
+        .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics(*), pauses:service_order_pauses(*)')
         .eq('id', id).maybeSingle(),
       supabase.from('service_order_items').select('*').eq('service_order_id', id).order('position'),
     ]);
@@ -52,7 +62,66 @@ export default function OsDetail() {
     setNotFound(!o);
     setItems((its as ServiceOrderItem[]) ?? []);
     setLoading(false);
+
+    // Retorno/garantia: OS original (se esta é um retorno) e retornos desta OS
+    const row = o as OsRow | null;
+    const [orig, rets] = await Promise.all([
+      row?.rework_of_id
+        ? supabase.from('service_orders')
+            .select('id, number, title, created_at, completed_at, mechanic:workshop_mechanics(name)')
+            .eq('id', row.rework_of_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      supabase.from('service_orders')
+        .select('id, number, title, created_at, completed_at, rework_cause, status')
+        .eq('rework_of_id', id).neq('status', 'cancelled').order('created_at'),
+    ]);
+    setOriginal((orig.data as unknown as (OsLink & { mechanic: { name: string } | null })) ?? null);
+    setReturns((rets.data as OsLink[]) ?? []);
   }, [id]);
+
+  // Equipe (para corrigir o responsável pelo retorno)
+  useEffect(() => {
+    if (!os?.workshop_id || !os.rework_of_id) return;
+    supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', os.workshop_id).order('name')
+      .then(({ data }) => setTeam(data ?? []));
+  }, [os?.workshop_id, os?.rework_of_id]);
+
+  /** 🔁 Cliente voltou: abre uma OS de retorno ligada a esta */
+  async function createRework(cause: ReworkCause | null, notes: string) {
+    if (!os) return;
+    setBusy(true);
+    const now = new Date().toISOString();
+    const { data, error } = await supabase.from('service_orders').insert({
+      workshop_id: os.workshop_id,
+      customer_id: os.customer_id,
+      vehicle_id: os.vehicle_id,
+      title: `Retorno — ${os.title}`,
+      category: os.category,
+      description: notes.trim() || null,
+      workshop_mechanic_id: os.workshop_mechanic_id,
+      // Garantia não precisa de nova aprovação do cliente
+      status: 'approved',
+      approved_at: now,
+      price: 0,
+      rework_of_id: os.id,
+      rework_cause: cause,
+      rework_notes: notes.trim() || null,
+    }).select('id').single();
+    setBusy(false);
+    if (error || !data) { toast.error('Não foi possível abrir o retorno: ' + (error?.message ?? '')); return; }
+    toast.success('Retorno registrado — OS aberta 🔁');
+    setReworkForm(false);
+    nav(`/oficina/os/${data.id}`);
+  }
+
+  /** Atualiza causa / responsável do retorno (depois de avaliar o carro) */
+  async function updateRework(patch: { rework_cause?: ReworkCause | null; rework_mechanic_id?: string | null }) {
+    if (!os) return;
+    const { error } = await supabase.from('service_orders').update(patch).eq('id', os.id);
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
+    toast.success('Retorno atualizado');
+    load();
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -65,11 +134,42 @@ export default function OsDetail() {
     if (!opts.skipConfirm && confirms[status] && !confirm(confirms[status])) return;
     const { patch, message } = statusChange(os, status, opts);
     setBusy(true);
+    // Concluir ou cancelar com o serviço pausado: encerra a pausa no mesmo momento
+    if ((status === 'completed' || status === 'cancelled') && openPause(os.pauses)) {
+      await supabase.from('service_order_pauses').update({ ended_at: new Date().toISOString() })
+        .eq('service_order_id', os.id).is('ended_at', null);
+    }
     const { error } = await supabase.from('service_orders').update(patch).eq('id', os.id);
     setBusy(false);
     if (error) { toast.error('Erro ao atualizar a situação: ' + error.message); return; }
     toast.success(message);
     setApproving(false);
+    load();
+  }
+
+  /** ⏸ Pausa o serviço (tempo parado não conta como trabalhado) */
+  async function pauseService(reason: string) {
+    if (!os) return;
+    setBusy(true);
+    const { error } = await supabase.from('service_order_pauses').insert({
+      service_order_id: os.id, workshop_id: os.workshop_id, reason,
+    });
+    setBusy(false);
+    setPausing(false);
+    if (error) { toast.error('Não foi possível pausar: ' + error.message); return; }
+    toast.success(`Serviço pausado — ${reason.toLowerCase()} ⏸`);
+    load();
+  }
+
+  /** ▶ Retoma o serviço pausado */
+  async function resumeService() {
+    if (!os) return;
+    setBusy(true);
+    const { error } = await supabase.from('service_order_pauses').update({ ended_at: new Date().toISOString() })
+      .eq('service_order_id', os.id).is('ended_at', null);
+    setBusy(false);
+    if (error) { toast.error('Não foi possível retomar: ' + error.message); return; }
+    toast.success('Serviço retomado ▶');
     load();
   }
 
@@ -143,7 +243,7 @@ export default function OsDetail() {
 
   const wa = waNumber(os.customer?.phone);
   const tel = os.customer?.phone?.replace(/\D/g, '');
-  const dur = durationMin(os.started_at, os.completed_at);
+  const dur = os.completed_at ? workedMinutes(os.started_at, os.completed_at, os.pauses) : null;
   // Concluída ou cancelada fica travada: para mudar, é preciso reabrir (protege o histórico)
   const closed = os.status === 'cancelled' || os.status === 'completed';
 
@@ -174,6 +274,12 @@ export default function OsDetail() {
           {/* Etapa atual do fluxo */}
           <FlowSteps os={os} />
 
+          {/* Tempo que o mecânico levou: do Iniciar ao Concluir */}
+          {(os.status === 'in_progress' || os.status === 'completed') && (
+            <ServiceTimer startedAt={os.started_at} completedAt={os.status === 'completed' ? os.completed_at : null}
+              pauses={os.pauses} estimatedHours={os.estimated_hours} mechanicName={os.mechanic?.name} />
+          )}
+
           <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap gap-2">
             {os.status === 'open' && (
               <>
@@ -195,7 +301,20 @@ export default function OsDetail() {
               <button onClick={() => changeStatus('in_progress')} disabled={busy} className="btn-primary text-sm !py-2">▶ Iniciar serviço</button>
             )}
             {os.status === 'in_progress' && (
-              <button onClick={() => changeStatus('completed')} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✓ Concluir</button>
+              openPause(os.pauses) ? (
+                <button onClick={resumeService} disabled={busy} className="btn-primary text-sm !py-2">▶ Retomar serviço</button>
+              ) : (
+                <>
+                  <button onClick={() => changeStatus('completed')} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✓ Concluir</button>
+                  <button onClick={() => setPausing(true)} disabled={busy} className="btn-ghost text-sm !py-2 border border-pending-300 text-pending-800">⏸ Pausar</button>
+                </>
+              )
+            )}
+            {os.status === 'completed' && !os.quote_status && (
+              <button onClick={() => setReworkForm(v => !v)} disabled={busy}
+                className="btn-ghost text-sm !py-2 border border-alert-200 text-alert-700 hover:bg-alert-50">
+                🔁 Cliente voltou (retorno / garantia)
+              </button>
             )}
             <Link to={`/oficina/os/${os.id}/imprimir`} className="btn-ghost text-sm !py-2 border border-steel-200">🖨️ Imprimir / PDF</Link>
             {wa && (
@@ -223,6 +342,78 @@ export default function OsDetail() {
               )}
             </div>
           </div>
+
+          {/* Motivo da pausa */}
+          {pausing && (
+            <div className="mt-3 bg-pending-50 border border-pending-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-pending-800 mr-1">Por que o serviço vai parar?</span>
+              {PAUSE_REASONS.map(r => (
+                <button key={r} onClick={() => pauseService(r)} disabled={busy}
+                  className="text-sm px-3 py-1.5 rounded-lg bg-white border border-pending-300 hover:bg-pending-100 font-medium">
+                  {r}
+                </button>
+              ))}
+              <button onClick={() => setPausing(false)} className="text-xs text-steel-500 hover:underline ml-auto">Cancelar</button>
+            </div>
+          )}
+
+          {/* Registrar retorno / garantia */}
+          {reworkForm && <ReworkForm busy={busy} mechanicName={os.mechanic?.name ?? null}
+            onCancel={() => setReworkForm(false)} onSubmit={createRework} />}
+
+          {/* Esta OS é um retorno */}
+          {os.rework_of_id && (
+            <div className="mt-3 bg-alert-50 border border-alert-200 rounded-xl p-3 space-y-2.5">
+              <div className="text-sm text-alert-800">
+                <strong>🔁 Retorno / garantia</strong> da{' '}
+                {original ? (
+                  <Link to={`/oficina/os/${original.id}`} className="font-semibold underline">OS nº {osNumber(original)}</Link>
+                ) : 'OS original'}
+                {original?.completed_at && (
+                  <> — concluída em {fmtDateTime(original.completed_at)}, voltou{' '}
+                    {Math.max(0, Math.round((new Date(os.created_at).getTime() - new Date(original.completed_at).getTime()) / 86400000))} dias depois</>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-semibold text-alert-800 mr-1">Causa:</span>
+                {REWORK_CAUSES.map(c => (
+                  <button key={c.value} onClick={() => updateRework({ rework_cause: c.value })}
+                    className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition ${
+                      os.rework_cause === c.value ? 'bg-alert-600 text-white border-alert-600' : 'bg-white border-alert-200 hover:bg-alert-100 text-steel-700'}`}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-semibold text-alert-800">Responsável pelo serviço original:</span>
+                <select className="input !py-1 !w-auto text-xs" value={os.rework_mechanic_id ?? ''}
+                  onChange={e => updateRework({ rework_mechanic_id: e.target.value || null })}>
+                  <option value="">— não definido —</option>
+                  {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <span className="text-steel-500">
+                  {!os.rework_cause ? '⏳ Defina a causa depois de avaliar o carro.'
+                    : reworkCounts(os.rework_cause) ? '⚠️ Conta na taxa de retorno do mecânico.'
+                    : '✓ Não conta contra o mecânico.'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Esta OS voltou */}
+          {returns.length > 0 && (
+            <div className="mt-3 bg-alert-50 border border-alert-200 rounded-xl p-3 text-sm text-alert-800">
+              <strong>🔁 Este serviço voltou {returns.length}×</strong>
+              <ul className="mt-1 space-y-0.5 text-xs">
+                {returns.map(r => (
+                  <li key={r.id}>
+                    <Link to={`/oficina/os/${r.id}`} className="underline font-semibold">OS nº {osNumber(r)}</Link>
+                    {' · '}{fmtDateTime(r.created_at)} · {reworkCauseLabel(r.rework_cause)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Como o cliente aprovou */}
           {approving && (
@@ -348,20 +539,38 @@ export default function OsDetail() {
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">Linha do tempo</div>
               <ol className="space-y-3">
                 {os.scheduled_at && <Step label="Agendada para" value={fmtDateTime(os.scheduled_at)} done />}
+                {/* Todas as etapas sempre visíveis: feitas em verde, próximas em cinza */}
                 <Step label="Aberta" value={fmtDateTime(os.created_at)} done />
-                {os.approval_requested_at && <Step label="Orçamento enviado" value={fmtDateTime(os.approval_requested_at)} done />}
-                {os.approved_at && (
-                  <Step label={`Aprovado${os.approval_channel ? ` (${APPROVAL_CHANNELS.find(c => c.value === os.approval_channel)?.label.replace(/^\S+\s/, '').toLowerCase() ?? os.approval_channel})` : ''}`}
-                    value={fmtDateTime(os.approved_at)} done />
+                <Step label="Aguardando aprovação"
+                  value={os.approval_requested_at ? fmtDateTime(os.approval_requested_at) : os.approved_at ? 'aprovado direto' : '—'}
+                  done={!!os.approval_requested_at || !!os.approved_at || os.status === 'awaiting_approval'}
+                  current={os.status === 'awaiting_approval'} />
+                <Step label={`Aprovado${os.approval_channel ? ` (${APPROVAL_CHANNELS.find(c => c.value === os.approval_channel)?.label.replace(/^\S+\s/, '').toLowerCase() ?? os.approval_channel})` : ''}`}
+                  value={os.approved_at ? fmtDateTime(os.approved_at) : '—'}
+                  done={!!os.approved_at} current={os.status === 'approved'} />
+                <Step label="Iniciado" value={os.started_at ? fmtDateTime(os.started_at) : '—'}
+                  done={!!os.started_at} current={os.status === 'in_progress' && !openPause(os.pauses)} />
+                {/* Pausas (ex.: aguardando peça) */}
+                {[...(os.pauses ?? [])].sort((a, b) => a.started_at.localeCompare(b.started_at)).map(p => (
+                  <li key={p.id} className="flex items-start gap-3 pl-5 text-xs">
+                    <span className={p.ended_at ? 'text-steel-500' : 'text-pending-800 font-semibold'}>
+                      ⏸ {p.reason} · {fmtDateTime(p.started_at)}
+                      {p.ended_at
+                        ? ` → ${fmtDateTime(p.ended_at)} (${fmtDur(Math.round((new Date(p.ended_at).getTime() - new Date(p.started_at).getTime()) / 60000))})`
+                        : ' · parado agora'}
+                    </span>
+                  </li>
+                ))}
+                {os.status === 'cancelled' ? (
+                  <Step label={os.quote_status === 'declined' ? 'Não aprovado' : 'Cancelada'} value="✕" done />
+                ) : (
+                  <Step label="Concluído" value={os.completed_at ? fmtDateTime(os.completed_at) : '—'}
+                    done={!!os.completed_at} />
                 )}
-                <Step label="Iniciada" value={os.started_at ? fmtDateTime(os.started_at) : '—'} done={!!os.started_at} />
-                <Step label={os.status === 'cancelled' ? 'Cancelada' : 'Concluída'}
-                  value={os.completed_at ? fmtDateTime(os.completed_at) : os.status === 'cancelled' ? '✕' : '—'}
-                  done={!!os.completed_at || os.status === 'cancelled'} />
               </ol>
-              {dur !== null && (
+              {dur !== null && os.status === 'completed' && (
                 <div className="mt-3 pt-3 border-t border-steel-100 text-xs text-steel-500">
-                  Duração do serviço: <strong className="text-brand-600">{fmtDur(dur)}</strong>
+                  Tempo trabalhado (sem pausas): <strong className="text-brand-600">{fmtDur(dur)}</strong>
                 </div>
               )}
             </div>
@@ -378,6 +587,39 @@ export default function OsDetail() {
         />
       )}
     </WorkshopLayout>
+  );
+}
+
+/** Formulário "Cliente voltou": causa (pode definir depois) + relato */
+function ReworkForm({ busy, mechanicName, onCancel, onSubmit }: {
+  busy: boolean; mechanicName: string | null;
+  onCancel: () => void; onSubmit: (cause: ReworkCause | null, notes: string) => void;
+}) {
+  const [cause, setCause] = useState<ReworkCause | null>(null);
+  const [notes, setNotes] = useState('');
+  return (
+    <div className="mt-3 bg-alert-50 border border-alert-200 rounded-xl p-3 space-y-2.5">
+      <div className="text-sm font-semibold text-alert-800">🔁 O cliente voltou com problema neste serviço?</div>
+      <p className="text-xs text-steel-600">
+        Abrimos uma OS de retorno ligada a esta{mechanicName ? `, atribuída a ${mechanicName}` : ''}. É isso que mede a qualidade de cada mecânico no relatório de desempenho.
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {REWORK_CAUSES.map(c => (
+          <button key={c.value} type="button" onClick={() => setCause(cause === c.value ? null : c.value)}
+            className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition ${
+              cause === c.value ? 'bg-alert-600 text-white border-alert-600' : 'bg-white border-alert-200 hover:bg-alert-100 text-steel-700'}`}>
+            {c.label}
+          </button>
+        ))}
+        <span className="text-[11px] text-steel-500 self-center">{cause ? '' : 'Não sabe ainda? Pode definir depois de avaliar.'}</span>
+      </div>
+      <textarea className="input text-sm" rows={2} placeholder="O que o cliente relatou? (ex.: barulho voltou na roda dianteira)"
+        value={notes} onChange={e => setNotes(e.target.value)} />
+      <div className="flex gap-2">
+        <button onClick={() => onSubmit(cause, notes)} disabled={busy} className="btn-primary text-sm !py-2 !bg-alert-600">Abrir OS de retorno</button>
+        <button onClick={onCancel} className="btn-ghost text-sm !py-2">Cancelar</button>
+      </div>
+    </div>
   );
 }
 
@@ -417,13 +659,16 @@ function FlowSteps({ os }: { os: { status: OsStatus; quote_status?: string | nul
   );
 }
 
-function Step({ label, value, done }: { label: string; value: string; done: boolean }) {
+/** Etapa da linha do tempo: feita (verde), atual (laranja pulsando) ou próxima (cinza) */
+function Step({ label, value, done, current = false }: { label: string; value: string; done: boolean; current?: boolean }) {
+  const dot = current ? 'bg-brand-500 ring-4 ring-brand-500/20 animate-pulse' : done ? 'bg-signal-500' : 'bg-steel-200';
+  const text = current ? 'text-brand-700 font-semibold' : done ? 'text-steel-700 font-medium' : 'text-steel-400';
   return (
     <li className="flex items-start gap-3">
-      <span className={`mt-1 h-2.5 w-2.5 rounded-full shrink-0 ${done ? 'bg-signal-500' : 'bg-steel-200'}`} />
+      <span className={`mt-1 h-2.5 w-2.5 rounded-full shrink-0 ${dot}`} />
       <div className="flex-1 flex justify-between gap-2 text-sm">
-        <span className={done ? 'text-steel-700 font-medium' : 'text-steel-400'}>{label}</span>
-        <span className={done ? 'text-steel-600' : 'text-steel-400'}>{value}</span>
+        <span className={text}>{label}{current && <span className="ml-1.5 text-[10px] uppercase tracking-wider">· agora</span>}</span>
+        <span className={done || current ? 'text-steel-600' : 'text-steel-400'}>{value}</span>
       </div>
     </li>
   );

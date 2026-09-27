@@ -1,4 +1,4 @@
-import type { OsStatus } from '@/types/database';
+import type { OsStatus, ReworkCause } from '@/types/database';
 
 const STATUS_LABEL: Record<string, string> = {
   open: 'Aberta',
@@ -85,6 +85,45 @@ export function osStatusColor(os: OsLike) {
 export function durationMin(started: string | null, completed: string | null): number | null {
   if (!started || !completed) return null;
   return Math.round((new Date(completed).getTime() - new Date(started).getTime()) / 60000);
+}
+
+type PauseLike = { started_at: string; ended_at: string | null };
+
+/** Motivos de pausa mais comuns na oficina */
+/** Causas de retorno/garantia — `counts` = entra na taxa de retorno do mecânico */
+export const REWORK_CAUSES: { value: ReworkCause; label: string; counts: boolean }[] = [
+  { value: 'execution', label: '🔧 Falha na execução',     counts: true },
+  { value: 'diagnosis', label: '🔍 Diagnóstico errado',     counts: true },
+  { value: 'part',      label: '📦 Peça com defeito',       counts: false },
+  { value: 'customer',  label: '🚗 Mau uso / problema novo', counts: false },
+  { value: 'other',     label: '❔ Outro motivo',           counts: false },
+];
+export const reworkCauseLabel = (c?: string | null) => REWORK_CAUSES.find(x => x.value === c)?.label ?? '⏳ Causa a definir';
+export const reworkCounts = (c?: string | null) => !!REWORK_CAUSES.find(x => x.value === c)?.counts;
+
+export const PAUSE_REASONS =['Aguardando peça', 'Aguardando aprovação do cliente', 'Fim do expediente', 'Outro serviço prioritário', 'Outro'];
+
+/** Pausa em aberto (serviço parado agora), se houver */
+export function openPause<T extends PauseLike>(pauses: T[] | null | undefined): T | null {
+  return pauses?.find(p => !p.ended_at) ?? null;
+}
+
+/** Minutos pausados dentro do serviço (pausa aberta conta até agora/fim) */
+export function pausedMinutes(pauses: PauseLike[] | null | undefined, until?: string | null) {
+  const end = until ? new Date(until).getTime() : Date.now();
+  return Math.round((pauses ?? []).reduce((acc, p) => {
+    const a = new Date(p.started_at).getTime();
+    const b = p.ended_at ? new Date(p.ended_at).getTime() : end;
+    return acc + Math.max(0, Math.min(b, end) - a);
+  }, 0) / 60000);
+}
+
+/** Tempo trabalhado = do início ao fim (ou agora) menos as pausas */
+export function workedMinutes(started: string | null, completed: string | null, pauses?: PauseLike[] | null) {
+  if (!started) return null;
+  const end = completed ? new Date(completed).getTime() : Date.now();
+  const total = Math.max(0, Math.round((end - new Date(started).getTime()) / 60000));
+  return Math.max(0, total - pausedMinutes(pauses, completed));
 }
 
 export function fmtDur(min: number) {

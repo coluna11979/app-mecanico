@@ -16,7 +16,7 @@ interface WelcomeData {
 function destino(role: string, status: string) {
   if (status !== 'approved' && role !== 'admin') return '/aguardando-aprovacao';
   if (role === 'mechanic') return '/mecanico/dashboard';
-  if (role === 'workshop') return '/oficina/dashboard';
+  if (role === 'workshop') return '/oficina/painel';
   return '/admin/dashboard';
 }
 

@@ -1,9 +1,10 @@
 import { MouseEvent } from 'react';
-import type { ServiceOrder, Customer, Vehicle, WorkshopMechanic, OsStatus } from '@/types/database';
+import type { ServiceOrder, Customer, Vehicle, WorkshopMechanic, OsStatus, ServiceOrderPause } from '@/types/database';
 import LicensePlate from './LicensePlate';
+import ServiceTimer from './ServiceTimer';
 import {
   osStatusLabel, osStatusColor, osBorder,
-  durationMin, fmtDur, fmtDate, fmtBRL,
+  durationMin, fmtDate, fmtBRL,
   osNumber, waNumber, fmtPhone,
 } from './osHelpers';
 
@@ -11,6 +12,8 @@ export type OsRow = ServiceOrder & {
   customer: Customer | null;
   vehicle: Vehicle | null;
   mechanic: WorkshopMechanic | null;
+  /** Pausas do serviço (ex.: aguardando peça) */
+  pauses?: ServiceOrderPause[];
 };
 
 interface OsCardProps {
@@ -121,9 +124,12 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
             </div>
           )}
 
-          {/* duração total se concluído */}
-          {dur !== null && (
-            <div className="text-[11px] text-steel-400 mt-1">⏱ {fmtDur(dur)}</div>
+          {/* Tempo de serviço: ao vivo em andamento, total quando concluída */}
+          {(os.status === 'in_progress' || (os.status === 'completed' && dur !== null)) && (
+            <div className="mt-1">
+              <ServiceTimer compact startedAt={os.started_at} pauses={os.pauses}
+                completedAt={os.status === 'completed' ? os.completed_at : null} />
+            </div>
           )}
         </div>
 

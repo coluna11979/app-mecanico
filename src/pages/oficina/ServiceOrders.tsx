@@ -1,10 +1,10 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import type {
   ServiceOrder, Customer, Vehicle,
-  OsStatus, WorkshopMechanic,
+  OsStatus, WorkshopMechanic, ServiceOrderPause,
 } from '@/types/database';
 import OsCardNew from '@/components/os/OsCard';
 import LicensePlate from '@/components/os/LicensePlate';
@@ -13,7 +13,7 @@ import EmptyState from '@/components/os/EmptyState';
 import OsSkeleton from '@/components/os/OsSkeleton';
 import { toast } from '@/components/ui/Toast';
 import NewOsModal, { type NewOsPreset } from '@/components/os/NewOsModal';
-import { OS_STATUS_FLOW, statusChange } from '@/components/os/osHelpers';
+import { OS_STATUS_FLOW, openPause, statusChange, workedMinutes } from '@/components/os/osHelpers';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 /* ─── tipos locais ──────────────────────────────────────────── */
@@ -21,6 +21,7 @@ type OsRow = ServiceOrder & {
   customer: Customer | null;
   vehicle:  Vehicle  | null;
   mechanic: WorkshopMechanic | null;
+  pauses?: ServiceOrderPause[];
 };
 
 type MainTab   = 'os' | 'agendados' | 'mecanicos';
@@ -32,23 +33,11 @@ const STATUSES: readonly OsStatus[] = OS_STATUS_FLOW;
 const PRE_START: OsStatus[] = ['open', 'awaiting_approval', 'approved'];
 
 
-const SKILL_OPTIONS = [
-  'Motor','Freios','Suspensão','Elétrica','Câmbio',
-  'Ar-condicionado','Injeção eletrônica','Diagnóstico','Transmissão',
-  'Embreagem','Funilaria','Alinhamento','Balanceamento','Diesel','Geral',
-];
-
-const SPECIALTIES = [
-  'Motor','Elétrica','Freios','Suspensão','Câmbio',
-  'Funilaria','Ar-condicionado','Geral',
-];
-
-const EMPTY_MECH        = { name: '', specialty: '', skills: [] as string[] };
-
 /* ─── helpers ───────────────────────────────────────────────── */
+/** Tempo trabalhado na OS concluída (descontando pausas, ex.: aguardando peça) */
 function durationMin(os: OsRow): number | null {
   if (!os.started_at || !os.completed_at) return null;
-  return Math.round((new Date(os.completed_at).getTime() - new Date(os.started_at).getTime()) / 60000);
+  return workedMinutes(os.started_at, os.completed_at, os.pauses);
 }
 function fmtDur(min: number) {
   if (min < 60) return `${min}min`;
@@ -78,14 +67,6 @@ export default function ServiceOrders() {
   const [filterPeriod, setFilterPeriod]   = useState<PeriodFilter>('all');
   const [search, setSearch]               = useState('');
   const [newOs, setNewOs]                 = useState<NewOsPreset | null>(null);
-  const [modalMech, setModalMech]         = useState(false);
-  const [editMech, setEditMech]           = useState<WorkshopMechanic | null>(null);
-
-  /* Mechanic modal */
-  const [formMech, setFormMech]   = useState(EMPTY_MECH);
-  const [newSkill, setNewSkill]   = useState('');
-  const [saving, setSaving]       = useState(false);
-
   /* ── links antigos (?os=<id>) → página da OS ── */
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
@@ -132,7 +113,7 @@ export default function ServiceOrders() {
   async function fetchOS(wid: string) {
     const { data } = await supabase
       .from('service_orders')
-      .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics(*)')
+      .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics(*), pauses:service_order_pauses(*)')
       .eq('workshop_id', wid)
       .order('created_at', { ascending: false });
     setList((data as OsRow[]) ?? []);
@@ -142,41 +123,13 @@ export default function ServiceOrders() {
       .from('workshop_mechanics').select('*').eq('workshop_id', wid).eq('active', true).order('name');
     setInternalMechs((data as WorkshopMechanic[]) ?? []);
   }
-  /* ── mecânico interno ── */
-  function openNewMech() { setEditMech(null); setFormMech(EMPTY_MECH); setNewSkill(''); setModalMech(true); }
-  function openEditMech(m: WorkshopMechanic) {
-    setEditMech(m); setFormMech({ name: m.name, specialty: m.specialty ?? '', skills: [...m.skills] });
-    setNewSkill(''); setModalMech(true);
-  }
-  function addSkill(s: string) {
-    const t = s.trim();
-    if (t && !formMech.skills.includes(t)) setFormMech(f => ({ ...f, skills: [...f.skills, t] }));
-    setNewSkill('');
-  }
-  function removeSkill(s: string) { setFormMech(f => ({ ...f, skills: f.skills.filter(x => x !== s) })); }
-  async function saveMech(e: FormEvent) {
-    e.preventDefault();
-    if (!shop) { toast.error('Oficina não carregada'); return; }
-    const name = formMech.name.trim();
-    if (!name) { toast.error('Informe o nome do mecânico'); return; }
-    setSaving(true);
-    const payload = { workshop_id: shop.id, name, specialty: formMech.specialty || null, skills: formMech.skills };
-    const { error } = editMech
-      ? await supabase.from('workshop_mechanics').update(payload).eq('id', editMech.id)
-      : await supabase.from('workshop_mechanics').insert(payload);
-    setSaving(false);
-    if (error) {
-      console.error('[saveMech] erro:', error);
-      toast.error(error.message || 'Não foi possível salvar o mecânico');
-      return;
-    }
-    toast.success(editMech ? 'Mecânico atualizado ✓' : 'Mecânico cadastrado ✓');
-    await fetchMechs(shop.id);
-    setModalMech(false);
-  }
+  /* ── equipe: cadastro completo fica em /oficina/equipe ── */
+  function openNewMech() { nav('/oficina/equipe/novo'); }
+  function openEditMech(m: WorkshopMechanic) { nav(`/oficina/equipe/${m.id}`); }
   async function deactivateMech(id: string) {
     if (!confirm('Remover mecânico da lista?')) return;
-    const { error } = await supabase.from('workshop_mechanics').update({ active: false }).eq('id', id);
+    const { error } = await supabase.from('workshop_mechanics')
+      .update({ active: false, status: 'terminated', terminated_at: new Date().toISOString().slice(0, 10) }).eq('id', id);
     if (error) {
       console.error('[deactivateMech] erro:', error);
       toast.error(error.message || 'Não foi possível remover o mecânico');
@@ -190,12 +143,20 @@ export default function ServiceOrders() {
   async function updateStatus(os: OsRow, status: OsStatus, opts: { channel?: string; declined?: boolean } = {}) {
     if (status === 'cancelled' && !opts.declined && !confirm('Cancelar esta OS?')) return;
     const { patch, message } = statusChange(os, status, opts);
+    // Concluir/cancelar com o serviço pausado: encerra a pausa no mesmo momento
+    let pauses = os.pauses;
+    if ((status === 'completed' || status === 'cancelled') && openPause(os.pauses)) {
+      const endedAt = new Date().toISOString();
+      await supabase.from('service_order_pauses').update({ ended_at: endedAt })
+        .eq('service_order_id', os.id).is('ended_at', null);
+      pauses = os.pauses?.map(p => p.ended_at ? p : { ...p, ended_at: endedAt });
+    }
     const { error } = await supabase.from('service_orders').update(patch).eq('id', os.id);
     if (error) {
       toast.error('Erro ao atualizar a situação: ' + error.message);
       return;
     }
-    setList(prev => prev.map(o => o.id === os.id ? { ...o, ...patch } as OsRow : o));
+    setList(prev => prev.map(o => o.id === os.id ? { ...o, ...patch, pauses } as OsRow : o));
     toast.success(message);
   }
 
@@ -608,69 +569,13 @@ export default function ServiceOrders() {
           workshopId={shop.id}
           preset={newOs}
           onClose={() => setNewOs(null)}
-          onManageTeam={() => { setNewOs(null); setTab('mecanicos'); openNewMech(); }}
+          onManageTeam={() => { setNewOs(null); openNewMech(); }}
           onCreated={(id, number) => {
             setNewOs(null);
             toast.success(`OS nº ${String(number ?? '').padStart(4, '0')} aberta ✓ — lance as peças e serviços`);
             nav(`/oficina/os/${id}`);
           }}
         />
-      )}
-
-      {/* ══ MODAL MECÂNICO ══ */}
-      {modalMech && (
-        <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setModalMech(false)}>
-          <form onSubmit={saveMech} onClick={e => e.stopPropagation()}
-            className="card max-w-md w-full max-h-[90vh] overflow-y-auto space-y-5">
-            <div>
-              <h2 className="text-xl font-bold">{editMech ? 'Editar mecânico' : 'Novo mecânico'}</h2>
-              <p className="text-sm text-steel-500 mt-0.5">Funcionário interno da oficina.</p>
-            </div>
-            <div>
-              <label className="label">Nome completo *</label>
-              <input className="input" required value={formMech.name}
-                onChange={e => setFormMech(f => ({ ...f, name: e.target.value }))} placeholder="João da Silva" />
-            </div>
-            <div>
-              <label className="label">Especialidade principal</label>
-              <select className="input" value={formMech.specialty}
-                onChange={e => setFormMech(f => ({ ...f, specialty: e.target.value }))}>
-                <option value="">— Selecionar —</option>
-                {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Habilidades</label>
-              <div className="flex flex-wrap gap-2 mb-3 min-h-[28px]">
-                {formMech.skills.map(s => (
-                  <span key={s} className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-brand-500/15 text-brand-700 border border-brand-300/40">
-                    {s}<button type="button" onClick={() => removeSkill(s)} className="hover:text-alert-600 text-sm">×</button>
-                  </span>
-                ))}
-                {formMech.skills.length === 0 && <span className="text-sm text-steel-400">Nenhuma selecionada.</span>}
-              </div>
-              <div className="text-[10px] text-steel-500 uppercase tracking-wider font-semibold mb-2">Sugestões rápidas</div>
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {SKILL_OPTIONS.filter(s => !formMech.skills.includes(s)).map(s => (
-                  <button key={s} type="button" onClick={() => addSkill(s)}
-                    className="text-xs px-2.5 py-1 rounded-full bg-steel-100 text-steel-600 hover:bg-brand-50 hover:text-brand-700 border border-steel-200 hover:border-brand-300 transition">
-                    + {s}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input className="input flex-1 text-sm" placeholder="Outra habilidade…"
-                  value={newSkill} onChange={e => setNewSkill(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSkill(newSkill); } }} />
-                <button type="button" onClick={() => addSkill(newSkill)} className="btn-primary !py-2 !px-4 shrink-0 text-sm">+</button>
-              </div>
-            </div>
-            <div className="flex gap-3 pt-1">
-              <button type="button" onClick={() => setModalMech(false)} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={saving}>{saving ? '…' : editMech ? 'Salvar' : 'Cadastrar'}</button>
-            </div>
-          </form>
-        </div>
       )}
 
     </WorkshopLayout>

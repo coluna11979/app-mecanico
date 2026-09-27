@@ -229,7 +229,16 @@ export interface ServiceOrder {
   approved_at?: string | null;
   /** Como o cliente aprovou: whatsapp | telefone | presencial */
   approval_channel?: string | null;
+  /** Retorno/garantia: OS original que "voltou" */
+  rework_of_id?: string | null;
+  /** execution | diagnosis contam contra o mecânico; part | customer | other não */
+  rework_cause?: ReworkCause | null;
+  /** Mecânico responsável pelo serviço original (preenchido por trigger) */
+  rework_mechanic_id?: string | null;
+  rework_notes?: string | null;
 }
+
+export type ReworkCause = 'execution' | 'diagnosis' | 'part' | 'customer' | 'other';
 
 export type OsItemKind = 'part' | 'labor';
 
@@ -283,6 +292,17 @@ export interface PaperImport {
   confirmed_at: string | null;
 }
 
+/** Pausa no serviço (ex.: aguardando peça). ended_at null = pausa em andamento */
+export interface ServiceOrderPause {
+  id: string;
+  service_order_id: string;
+  workshop_id: string;
+  reason: string;
+  started_at: string;
+  ended_at: string | null;
+  created_at: string;
+}
+
 /** Serviço recomendado para o futuro ("avaliar bieletas na próxima revisão") */
 export interface ServiceRecommendation {
   id: string;
@@ -304,6 +324,61 @@ export interface WorkshopMechanic {
   specialty: string | null;
   skills: string[];
   active: boolean;
+  created_at: string;
+  /** Comissão: % sobre a mão de obra das OS concluídas por ele */
+  commission_percent?: number;
+  photo_url?: string | null;
+  phone?: string | null;
+  /** Função: mecânico, eletricista, auxiliar… */
+  role_title?: string | null;
+  employment_type?: EmploymentType | null;
+  hired_at?: string | null;
+  work_schedule?: string | null;
+  status?: TeamStatus;
+  terminated_at?: string | null;
+  cnh_category?: string | null;
+  cnh_expires_at?: string | null;
+  notes?: string | null;
+}
+
+export type EmploymentType = 'clt' | 'pj' | 'autonomo' | 'comissionado';
+export type TeamStatus = 'active' | 'away' | 'terminated';
+
+/** Dados sensíveis do colaborador (LGPD) — só o dono da oficina acessa */
+export interface MechanicPrivate {
+  mechanic_id: string;
+  workshop_id: string;
+  cpf: string | null;
+  rg: string | null;
+  birth_date: string | null;
+  email: string | null;
+  address: string | null;
+  emergency_name: string | null;
+  emergency_phone: string | null;
+  salary: number | null;
+  pix_key: string | null;
+  bank_name: string | null;
+  bank_agency: string | null;
+  bank_account: string | null;
+}
+
+export interface MechanicCertification {
+  id: string;
+  mechanic_id: string;
+  workshop_id: string;
+  name: string;
+  issued_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface MechanicDocument {
+  id: string;
+  mechanic_id: string;
+  workshop_id: string;
+  kind: string;
+  file_path: string;
+  file_name: string | null;
   created_at: string;
 }
 

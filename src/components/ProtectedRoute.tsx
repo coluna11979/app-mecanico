@@ -78,7 +78,7 @@ export function ProtectedRoute({ allow, children }: { allow: Role[]; children: R
     // Redireciona para a área correta do usuário em vez de jogar no /
     const home = profile.role === 'admin' ? '/admin/dashboard'
       : profile.role === 'mechanic' ? '/mecanico/dashboard'
-      : '/oficina/dashboard';
+      : '/oficina/painel';
     return <Navigate to={home} replace />;
   }
 

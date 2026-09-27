@@ -127,7 +127,7 @@ export default function NovaOficina() {
     await refreshWorkshops();
     if (data) setCurrentWorkshop(data as Workshop);
     setBusy(false);
-    nav('/oficina/dashboard', { replace: true });
+    nav('/oficina/painel', { replace: true });
   }
 
   return (

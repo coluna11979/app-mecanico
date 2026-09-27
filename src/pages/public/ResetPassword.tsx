@@ -92,7 +92,7 @@ export default function ResetPassword() {
         nav('/aguardando-aprovacao');
       } else {
         nav(p.role === 'mechanic' ? '/mecanico/dashboard'
-          : p.role === 'workshop' ? '/oficina/dashboard'
+          : p.role === 'workshop' ? '/oficina/painel'
           : '/admin/dashboard');
       }
     }, 1500);

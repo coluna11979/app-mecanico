@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from './LicensePlate';
-import { fmtPhone } from './osHelpers';
+import { fmtDur, fmtPhone } from './osHelpers';
+import { teamPerformance, type PerfOs, type ServiceType } from '@/lib/teamPerformance';
 import type { Customer, ServiceRecommendation, Vehicle, WorkshopMechanic } from '@/types/database';
 
 type CustomerWithVehicles = Customer & { vehicles: Vehicle[] };
@@ -83,6 +84,25 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { searchRef.current?.focus(); }, []);
+
+  // Histórico de 12 meses → quem tem mais habilidade em cada tipo de serviço
+  const [history, setHistory] = useState<PerfOs[]>([]);
+  useEffect(() => {
+    const since = new Date(); since.setFullYear(since.getFullYear() - 1);
+    supabase.from('service_orders')
+      .select('id, number, title, status, quote_status, category, labor_cost, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, rework_of_id, rework_cause, rework_mechanic_id, pauses:service_order_pauses(started_at, ended_at, reason)')
+      .eq('workshop_id', workshopId).gte('created_at', since.toISOString()).limit(3000)
+      .then(({ data }) => setHistory((data as unknown as PerfOs[]) ?? []));
+  }, [workshopId]);
+  const skillByType = useMemo(() => {
+    if (!history.length || !mechs.length) return new Map<string, ServiceType>();
+    const to = new Date(); to.setDate(to.getDate() + 1);
+    const from = new Date(); from.setFullYear(from.getFullYear() - 1);
+    const { serviceTypes } = teamPerformance(history, mechs.map(m => ({ id: m.id, name: m.name, active: true })), { from, to });
+    return new Map(serviceTypes.map(t => [t.category, t]));
+  }, [history, mechs]);
+  const skill = category ? skillByType.get(category) : undefined;
+  const suggested = skill?.mechanics.find(x => x.count >= 2 && mechs.some(m => m.id === x.id)) ?? null;
 
   useEffect(() => {
     supabase.from('workshop_mechanics').select('*').eq('workshop_id', workshopId).eq('active', true).order('name')
@@ -451,6 +471,27 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
               </button>
             </div>
 
+            {/* Sugestão: quem tem mais habilidade neste tipo de serviço */}
+            {suggested && skill && (
+              <div className="mb-2.5 rounded-xl bg-signal-50 border border-signal-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm text-signal-900 min-w-0">
+                  💡 Para <strong>{category}</strong>, o mais indicado é <strong>{suggested.name}</strong>
+                  <span className="block text-[11px] text-signal-700">
+                    {suggested.level} · fez {suggested.count}×
+                    {suggested.avgMin != null && ` · leva ~${fmtDur(suggested.avgMin)}`}
+                    {suggested.vsShop != null && suggested.vsShop > 0 && ` · ${suggested.vsShop}% mais rápido que a média`}
+                    {suggested.returns === 0 ? ' · sem retornos' : ` · ${suggested.returns} retorno${suggested.returns > 1 ? 's' : ''}`}
+                    {suggested.confidence === 'baixa' && ' · poucos dados'}
+                  </span>
+                </div>
+                {mechId !== suggested.id ? (
+                  <button type="button" onClick={() => setMechId(suggested.id)} className="btn-primary text-xs !py-1.5 !bg-signal-600 shrink-0">
+                    Escolher {suggested.name.split(' ')[0]}
+                  </button>
+                ) : <span className="text-xs font-semibold text-signal-700 shrink-0">✓ Escolhido</span>}
+              </div>
+            )}
+
             {mechs.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 <button type="button" onClick={() => setMechId('')}
@@ -460,7 +501,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
                 {mechs.map(m => (
                   <button type="button" key={m.id} onClick={() => setMechId(m.id)}
                     className={`text-xs px-3 py-1.5 rounded-full border transition ${mechId === m.id ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'}`}>
-                    {mechId === m.id ? '✓ ' : ''}{m.name}{m.specialty ? ` · ${m.specialty}` : ''}
+                    {mechId === m.id ? '✓ ' : ''}{suggested?.id === m.id ? '⭐ ' : ''}{m.name}{m.specialty ? ` · ${m.specialty}` : ''}
                   </button>
                 ))}
               </div>

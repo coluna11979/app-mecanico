@@ -25,8 +25,11 @@ const PLATAFORMA: NavItem[] = [
 ];
 
 const GESTAO: NavItem[] = [
+  { to: '/oficina/painel',   icon: '📊', label: 'Painel'            },
   { to: '/oficina/os',       icon: '📋', label: 'Ordens de Serviço' },
   { to: '/oficina/clientes', icon: '👥', label: 'Clientes'           },
+  { to: '/oficina/equipe',   icon: '👷', label: 'Equipe'             },
+  { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho da equipe' },
   { to: '/oficina/importar', icon: '📷', label: 'Importar orçamentos' },
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
 ];
@@ -43,7 +46,6 @@ const ADVANCED: SoonDept[] = [
   {
     dept: '👥 RH & Pessoal',
     items: [
-      { icon: '🪪', label: 'Funcionários',    desc: 'Cadastro, docs e histórico'     },
       { icon: '💵', label: 'Folha de Salário', desc: 'Pagamentos e holerites'         },
       { icon: '%',  label: 'Comissões',        desc: 'Metas, bonificações e ranking'  },
       { icon: '📆', label: 'Ponto Digital',    desc: 'Controle de jornada'            },
@@ -86,10 +88,10 @@ const ADVANCED: SoonDept[] = [
 ];
 
 const BOTTOM_TABS: NavItem[] = [
+  { to: '/oficina/painel',     icon: '📊', label: 'Painel'    },
+  { to: '/oficina/os',         icon: '📋', label: 'OS'        },
   { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'  },
   { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens' },
-  { to: '/oficina/os',         icon: '📋', label: 'OS'        },
-  { to: '/oficina/perfil',     icon: '🏪', label: 'Perfil'    },
 ];
 
 const LS_KEY = 'oficina_msgs_last_seen';
@@ -459,6 +461,17 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
           <div>
             <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
+              Gestão da oficina
+            </div>
+            <div className="space-y-0.5">
+              {GESTAO.map(item => (
+                <SideItem key={item.to} {...item} badge={0} onClick={() => setOpen(false)} />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
               Plataforma
             </div>
             <div className="space-y-0.5">
@@ -469,17 +482,6 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                   badge={item.to === '/oficina/mensagens' ? unread : item.to === '/oficina/avisos' ? unreadNotif : 0}
                   onClick={() => setOpen(false)}
                 />
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
-              Gestão da oficina
-            </div>
-            <div className="space-y-0.5">
-              {GESTAO.map(item => (
-                <SideItem key={item.to} {...item} badge={0} onClick={() => setOpen(false)} />
               ))}
             </div>
           </div>
