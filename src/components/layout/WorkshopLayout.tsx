@@ -32,6 +32,7 @@ const GESTAO: NavItem[] = [
   { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho da equipe' },
   { to: '/oficina/importar', icon: '📷', label: 'Importar orçamentos' },
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
+  { to: '/oficina/vip',      icon: '⭐', label: 'Plano VIP'          },
 ];
 
 // Todos os módulos premium agrupados por departamento
@@ -760,10 +761,11 @@ function AdvancedSection() {
           ))}
 
           {/* CTA upgrade */}
-          <div className="mx-1 mt-2 bg-brand-500/10 border border-brand-500/20 rounded-xl px-3 py-2.5 text-center">
-            <div className="text-[10px] font-bold text-brand-400 uppercase tracking-wider">Quer acesso?</div>
-            <div className="text-[9px] text-steel-500 mt-0.5">Fale com nosso time para fazer upgrade</div>
-          </div>
+          <NavLink to="/oficina/vip"
+            className="block mx-1 mt-2 bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/20 rounded-xl px-3 py-2.5 text-center transition">
+            <div className="text-[10px] font-bold text-brand-400 uppercase tracking-wider">⭐ Quer acesso?</div>
+            <div className="text-[9px] text-steel-400 mt-0.5">Solicite o plano VIP — nosso time entra em contato</div>
+          </NavLink>
         </div>
       )}
     </div>

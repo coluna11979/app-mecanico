@@ -10,6 +10,7 @@ import {
   type PanelItem, type PanelJob, type PanelMechanic, type PanelOs, type Range,
 } from '@/lib/workshopMetrics';
 import { arrivalDeadline } from '@/lib/arrivalDeadline';
+import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
 
 type Preset = 'today' | '7d' | 'month' | 'lastMonth' | 'custom';
 
@@ -142,6 +143,8 @@ export default function Painel() {
             )}
           </div>
         </div>
+
+        {wid && <ShowcaseReminder workshopId={wid} />}
 
         {loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
