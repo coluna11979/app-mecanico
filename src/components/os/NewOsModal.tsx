@@ -5,6 +5,7 @@ import { toast } from '@/components/ui/Toast';
 import LicensePlate from './LicensePlate';
 import { fmtDur, fmtPhone } from './osHelpers';
 import { teamPerformance, type PerfOs, type ServiceType } from '@/lib/teamPerformance';
+import { fetchAll } from '@/lib/fetchAll';
 import type { Customer, ServiceRecommendation, Vehicle, WorkshopMechanic } from '@/types/database';
 
 type CustomerWithVehicles = Customer & { vehicles: Vehicle[] };
@@ -89,10 +90,10 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   const [history, setHistory] = useState<PerfOs[]>([]);
   useEffect(() => {
     const since = new Date(); since.setFullYear(since.getFullYear() - 1);
-    supabase.from('service_orders')
+    fetchAll((a, b) => supabase.from('service_orders')
       .select('id, number, title, status, quote_status, category, labor_cost, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, rework_of_id, rework_cause, rework_mechanic_id, pauses:service_order_pauses(started_at, ended_at, reason)')
-      .eq('workshop_id', workshopId).gte('created_at', since.toISOString()).limit(3000)
-      .then(({ data }) => setHistory((data as unknown as PerfOs[]) ?? []));
+      .eq('workshop_id', workshopId).gte('created_at', since.toISOString()).order('id').range(a, b))
+      .then(({ data }) => setHistory(data as unknown as PerfOs[]));
   }, [workshopId]);
   const skillByType = useMemo(() => {
     if (!history.length || !mechs.length) return new Map<string, ServiceType>();

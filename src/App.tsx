@@ -107,8 +107,7 @@ export default function App() {
       <Route path="/oficina/equipe" element={<ProtectedRoute allow={['workshop']}><WorkshopEquipe /></ProtectedRoute>} />
       <Route path="/oficina/equipe/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopEquipeFicha /></ProtectedRoute>} />
       <Route path="/oficina/desempenho" element={<ProtectedRoute allow={['workshop']}><WorkshopDesempenho /></ProtectedRoute>} />
-      <Route path="/oficina/vip" element={<ProtectedRoute allow={['workshop']}><WorkshopPlanoVip /></ProtectedRoute>} />
-      <Route path="/admin/vip" element={<ProtectedRoute allow={['admin']}><AdminVip /></ProtectedRoute>} />
+      <Route path="/oficina/vip" element={<ProtectedRoute allow={['workshop']}><WorkshopPlanoVip /></ProtectedRoute>} />      <Route path="/admin/vip" element={<ProtectedRoute allow={['admin']}><AdminVip /></ProtectedRoute>} />
       <Route path="/oficina/os" element={<ProtectedRoute allow={['workshop']}><WorkshopServiceOrders /></ProtectedRoute>} />
       <Route path="/oficina/os/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopOsDetail /></ProtectedRoute>} />
       <Route path="/oficina/importar" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopImportar /></Suspense></ProtectedRoute>} />

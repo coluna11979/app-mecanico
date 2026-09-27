@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { resizeImage } from '@/lib/imageResize';
+import AbsencePanel from '@/components/team/AbsencePanel';
 import { fmtBRL, fmtDur, moneyInput, osNumber, parseMoney, workedMinutes } from '@/components/os/osHelpers';
 import {
   DOCUMENT_KINDS, EMPLOYMENT_TYPES, ROLE_TITLES, TEAM_STATUS, expiryLabel, tenure,
@@ -49,7 +50,7 @@ export default function EquipeFicha() {
   const { id } = useParams();
   const isNew = id === 'novo';
   const nav = useNavigate();
-  const { currentWorkshop } = useAuth();
+  const { currentWorkshop, user } = useAuth();
   const wid = currentWorkshop?.id ?? null;
 
   const [tab, setTab]       = useState<Tab>('pessoal');
@@ -234,6 +235,12 @@ export default function EquipeFicha() {
           </div>
         </div>
 
+        {/* Afastamento: data de saída, previsão e retorno */}
+        {mech && wid && (
+          <AbsencePanel workshopId={wid} mechanicId={mech.id} status={f.status} userId={user?.id ?? null}
+            onStatusChange={s => { setF(x => ({ ...x, status: s })); setMech(m => m ? { ...m, status: s, active: s === 'active' } : m); }} />
+        )}
+
         {/* Comissão: sempre à vista, em qualquer aba */}
         <CommissionBox value={f.commission} onChange={v => { setF(s => ({ ...s, commission: v })); setDirty(true); }} />
 
@@ -288,15 +295,22 @@ export default function EquipeFicha() {
                   onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) setF(s => ({ ...s, salary: moneyInput(v) })); }} />
               </Field>
               <Field label="Situação">
+                {f.status === 'away' ? (
+                  <p className="text-sm text-pending-800 bg-pending-50 rounded-xl px-3 py-2">
+                    Afastado — para registrar a volta, use <strong>✅ Registrar retorno</strong> no topo da ficha.
+                  </p>
+                ) : (
                 <div className="flex gap-2">
-                  {(Object.keys(TEAM_STATUS) as TeamStatus[]).map(s => (
+                  {(['active', 'terminated'] as TeamStatus[]).map(s => (
                     <button type="button" key={s} onClick={() => { setF(x => ({ ...x, status: s })); setDirty(true); }}
                       className={`flex-1 text-sm font-semibold py-2 rounded-xl border-2 transition ${f.status === s ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-steel-200 text-steel-600'}`}>
                       {TEAM_STATUS[s].label}
                     </button>
                   ))}
                 </div>
-                {f.status !== 'active' && <p className="text-xs text-steel-500 mt-1">Não aparece para escolher em novas OS. O histórico fica guardado.</p>}
+                )}
+                {f.status === 'active' && mech && <p className="text-xs text-steel-500 mt-1">Férias, atestado ou licença? Use <strong>🏖️ Registrar afastamento</strong> no topo da ficha.</p>}
+                {f.status === 'terminated' && <p className="text-xs text-steel-500 mt-1">Não aparece para escolher em novas OS. O histórico fica guardado.</p>}
               </Field>
               {f.status === 'terminated' && (
                 <Field label="Data de desligamento"><input className="input" type="date" value={f.terminated_at} onChange={set('terminated_at')} /></Field>

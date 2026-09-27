@@ -14,6 +14,7 @@ import type { OsStatus, ReworkCause } from '@/types/database';
 
 export const MIN_SAMPLE = 5;      // serviços mínimos para taxa/índice do mecânico
 export const MIN_CATEGORY = 3;    // serviços mínimos para média de uma categoria
+export const MIN_VALID_MIN = 5;   // tempos abaixo disso são descartados das médias
 
 export type PerfOs = {
   id: string;
@@ -134,7 +135,12 @@ export type MechanicPerf = {
 export function teamPerformance(list: PerfOs[], mechanics: PerfMechanic[], r: Range) {
   const byId = new Map(list.map(o => [o.id, o]));
   const isDone = (o: PerfOs) => o.status === 'completed' && !o.quote_status;
-  const worked = (o: PerfOs) => (o.started_at && o.completed_at ? workedMinutes(o.started_at, o.completed_at, o.pauses) : null);
+  // Menos de MIN_VALID_MIN = cronômetro usado errado (Iniciar e Concluir em seguida): não entra nas médias
+  const worked = (o: PerfOs) => {
+    if (!o.started_at || !o.completed_at) return null;
+    const w = workedMinutes(o.started_at, o.completed_at, o.pauses);
+    return w != null && w >= MIN_VALID_MIN ? w : null;
+  };
 
   // Serviços do período (sem retornos)
   const services = list.filter(o => isDone(o) && !o.rework_of_id && inRange(o.completed_at, r));

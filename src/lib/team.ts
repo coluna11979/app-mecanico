@@ -38,6 +38,52 @@ export function expiryLabel(date?: string | null) {
   return { text: `válido até ${new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR')}`, cls: 'text-steel-500 bg-steel-50' };
 }
 
+/* ── Afastamentos ─────────────────────────────────────────────────────────── */
+
+export type AbsenceReason = 'vacation' | 'medical' | 'inss' | 'leave' | 'time_off' | 'other';
+export type Absence = {
+  id: string; workshop_id: string; mechanic_id: string; reason: AbsenceReason;
+  started_on: string; expected_return: string | null; returned_on: string | null; notes: string | null; created_at: string;
+};
+
+export const ABSENCE_REASONS: Record<AbsenceReason, { label: string; icon: string }> = {
+  vacation: { label: 'Férias',                         icon: '🏖️' },
+  medical:  { label: 'Atestado médico',                icon: '🩺' },
+  inss:     { label: 'Afastamento INSS',               icon: '🏥' },
+  leave:    { label: 'Licença (maternidade/paternidade…)', icon: '👶' },
+  time_off: { label: 'Folga / banco de horas',         icon: '🕒' },
+  other:    { label: 'Outro',                          icon: '📝' },
+};
+
+const d0 = (iso: string) => new Date(`${iso}T00:00:00`).getTime();
+const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+export const isoToday = todayIso;
+export const fmtDay = (iso?: string | null) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('pt-BR') : '—');
+
+/** Dias corridos do afastamento (conta o dia de saída; o dia do retorno não conta) */
+export function absenceDays(a: Pick<Absence, 'started_on' | 'returned_on'>, until = todayIso()) {
+  const end = a.returned_on ?? until;
+  return Math.max(0, Math.round((d0(end) - d0(a.started_on)) / 86400000) + (a.returned_on ? 0 : 1));
+}
+
+/** Dias do afastamento que caem dentro de [from, to] (datas ISO, inclusivas) */
+export function absenceDaysIn(a: Pick<Absence, 'started_on' | 'returned_on'>, from: string, to: string) {
+  const start = Math.max(d0(a.started_on), d0(from));
+  // último dia afastado = véspera do retorno (ou hoje, se ainda afastado)
+  const lastAway = a.returned_on ? d0(a.returned_on) - 86400000 : d0(todayIso());
+  const end = Math.min(lastAway, d0(to));
+  return end < start ? 0 : Math.round((end - start) / 86400000) + 1;
+}
+
+/** Situação do retorno previsto: "volta em 3 dias", "volta hoje", "retorno atrasado 2 dias" */
+export function returnStatus(a: Pick<Absence, 'expected_return' | 'returned_on'>) {
+  if (a.returned_on || !a.expected_return) return null;
+  const days = Math.round((d0(a.expected_return) - d0(todayIso())) / 86400000);
+  if (days < 0) return { text: `retorno atrasado ${-days} dia${-days === 1 ? '' : 's'}`, late: true };
+  if (days === 0) return { text: 'volta hoje', late: false };
+  return { text: `volta em ${days} dia${days === 1 ? '' : 's'}`, late: false };
+}
+
 /** Tempo de casa: "2 anos e 3 meses" */
 export function tenure(hiredAt?: string | null, until?: string | null) {
   if (!hiredAt) return null;

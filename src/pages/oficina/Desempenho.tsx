@@ -4,6 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { fmtBRL, fmtDur, osNumber, reworkCauseLabel } from '@/components/os/osHelpers';
+import { fetchAll } from '@/lib/fetchAll';
 import { MIN_SAMPLE, teamPerformance, type MechanicPerf, type PerfMechanic, type PerfOs, type ServiceType } from '@/lib/teamPerformance';
 
 type Period = '30d' | '90d' | '6m' | '12m';
@@ -13,7 +14,7 @@ const PERIODS: { key: Period; label: string; days: number }[] = [
   { key: '6m',  label: '6 meses', days: 182 },
   { key: '12m', label: '12 meses', days: 365 },
 ];
-type Tab = 'prod' | 'quality' | 'skills';
+type Tab = 'prod' | 'quality' | 'skills' | 'times';
 
 const pct = (v: number | null, digits = 0) => (v == null ? '—' : `${v.toFixed(digits).replace('.', ',')}%`);
 const signed = (v: number | null) => (v == null ? '—' : v === 0 ? 'na média' : v > 0 ? `${v}% mais rápido` : `${Math.abs(v)}% mais lento`);
@@ -37,9 +38,9 @@ export default function Desempenho() {
     (async () => {
       setLoading(true);
       const [o, m] = await Promise.all([
-        supabase.from('service_orders')
+        fetchAll((a, b) => supabase.from('service_orders')
           .select('id, number, title, status, quote_status, category, labor_cost, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, rework_of_id, rework_cause, rework_mechanic_id, vehicle:vehicles(plate), pauses:service_order_pauses(started_at, ended_at, reason)')
-          .eq('workshop_id', wid).order('created_at', { ascending: false }).limit(5000),
+          .eq('workshop_id', wid).order('created_at', { ascending: false }).order('id').range(a, b)),
         supabase.from('workshop_mechanics').select('id, name, photo_url, status, active').eq('workshop_id', wid).order('name'),
       ]);
       if (!alive) return;
@@ -120,8 +121,8 @@ export default function Desempenho() {
             </div>
 
             {/* Abas */}
-            <div className="flex gap-1 bg-steel-100 rounded-xl p-1 w-fit">
-              {([['skills', '🎯 Quem escalar'], ['prod', '⏱ Produtividade'], ['quality', '✅ Qualidade']] as [Tab, string][]).map(([k, l]) => (
+            <div className="flex flex-wrap gap-1 bg-steel-100 rounded-xl p-1 w-fit">
+              {([['skills', '🎯 Quem escalar'], ['times', '🕒 Tempo por serviço'], ['prod', '⏱ Produtividade'], ['quality', '✅ Qualidade']] as [Tab, string][]).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)}
                   className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition ${tab === k ? 'bg-white shadow-sm text-steel-900' : 'text-steel-500 hover:text-steel-800'}`}>
                   {l}
@@ -129,12 +130,8 @@ export default function Desempenho() {
               ))}
             </div>
 
-            {tab === 'prod' && (
-              <>
-                <ServiceTypes types={r.serviceTypes} />
-                <ProductivityTable rows={r.rows} />
-              </>
-            )}
+            {tab === 'times' && <ServiceTypes types={r.serviceTypes} />}
+            {tab === 'prod' && <ProductivityTable rows={r.rows} />}
             {tab === 'quality' && <QualityTable rows={r.rows} />}
             {tab === 'skills' && (
               <>
@@ -227,8 +224,8 @@ function ServiceTypes({ types }: { types: ServiceType[] }) {
     <div className="card !p-0 overflow-hidden">
       <div className="px-5 pt-5 pb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">🧰 Tempo por tipo de serviço</div>
-          <p className="text-xs text-steel-400">Quanto cada serviço leva de verdade na sua oficina e quem faz melhor. Toque num serviço para ver cada colaborador.</p>
+          <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">🕒 Tempo médio de cada serviço</div>
+          <p className="text-xs text-steel-400">Média de todos os serviços concluídos no período, independente de quem fez (já sem as pausas). Toque num serviço para ver cada colaborador.</p>
         </div>
         <label className="text-xs text-steel-600 flex items-center gap-2">
           <span>Valor da hora do mecânico da plataforma</span>
@@ -246,13 +243,13 @@ function ServiceTypes({ types }: { types: ServiceType[] }) {
           <table className="w-full text-sm">
             <thead className="bg-steel-50 border-y border-steel-100">
               <tr>
-                <Th right={false}>Tipo de serviço</Th><Th>Feitos</Th><Th>Tempo de referência</Th><Th>Faixa</Th>
+                <Th right={false}>Tipo de serviço</Th><Th>Feitos</Th><Th>Tempo médio</Th><Th>Mais rápido / mais lento</Th>
                 <Th>Você cobra (m.o.)</Th><Th right={false}>Quem faz melhor</Th><Th>Pagar p/ mecânico da plataforma</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-steel-100">
               {types.map(t => {
-                const cost = hourly && t.medianMin ? (t.medianMin / 60) * hourly : null;
+                const cost = hourly && t.avgMin ? (t.avgMin / 60) * hourly : null;
                 const isOpen = open === t.category;
                 return (
                   <FragmentRow key={t.category}>
@@ -262,8 +259,10 @@ function ServiceTypes({ types }: { types: ServiceType[] }) {
                         {t.returns > 0 && <span className="ml-1.5 text-[10px] text-alert-600">⚠ {t.returns} retorno{t.returns > 1 ? 's' : ''}</span>}
                       </Td>
                       <Td>{t.count}{t.timed < t.count && <span className="block text-[10px] text-steel-400">{t.timed} cronometrado{t.timed === 1 ? '' : 's'}</span>}</Td>
-                      <Td><strong>{t.medianMin != null ? fmtDur(t.medianMin) : '—'}</strong>
-                        {t.avgMin != null && t.avgMin !== t.medianMin && <span className="block text-[10px] text-steel-400">média {fmtDur(t.avgMin)}</span>}
+                      <Td><strong className="text-base">{t.avgMin != null ? fmtDur(t.avgMin) : '—'}</strong>
+                        {t.medianMin != null && t.avgMin != null && Math.abs(t.avgMin - t.medianMin) >= 5 && (
+                          <span className="block text-[10px] text-steel-400">normalmente {fmtDur(t.medianMin)}</span>
+                        )}
                       </Td>
                       <Td className="text-steel-500">{t.minMin != null && t.maxMin != null && t.minMin !== t.maxMin ? `${fmtDur(t.minMin)} a ${fmtDur(t.maxMin)}` : '—'}</Td>
                       <Td>{t.avgLabor != null ? fmtBRL(t.avgLabor) : '—'}
@@ -285,7 +284,7 @@ function ServiceTypes({ types }: { types: ServiceType[] }) {
                               </span>
                             )}
                           </span>
-                        ) : <span className="text-[11px] text-steel-400">{t.medianMin == null ? 'sem tempo medido' : 'informe o valor da hora'}</span>}
+                        ) : <span className="text-[11px] text-steel-400">{t.avgMin == null ? 'sem tempo medido' : 'informe o valor da hora'}</span>}
                       </Td>
                     </tr>
                     {isOpen && (
@@ -319,7 +318,8 @@ function ServiceTypes({ types }: { types: ServiceType[] }) {
         </div>
       )}
       <p className="text-[11px] text-steel-400 px-5 py-2 border-t border-steel-100">
-        Tempo de referência = mediana do tempo trabalhado (um serviço que travou não distorce). Pagar p/ mecânico da plataforma = tempo de referência × valor da hora.
+        Tempo médio = soma do tempo trabalhado ÷ número de serviços cronometrados (do Iniciar ao Concluir, sem pausas). "Normalmente" aparece quando
+        algum serviço fora da curva puxa a média. Pagar p/ mecânico da plataforma = tempo médio × valor da hora.
         Use esse valor ao <Link to="/oficina/dashboard?nova=1" className="text-brand-600 hover:underline">chamar um mecânico pelo app</Link>.
       </p>
     </div>

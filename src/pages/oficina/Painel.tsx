@@ -11,6 +11,7 @@ import {
 } from '@/lib/workshopMetrics';
 import { arrivalDeadline } from '@/lib/arrivalDeadline';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
+import { fetchAll } from '@/lib/fetchAll';
 
 type Preset = 'today' | '7d' | 'month' | 'lastMonth' | 'custom';
 
@@ -67,11 +68,11 @@ export default function Painel() {
     (async () => {
       setLoading(true);
       const [o, it, m, jb] = await Promise.all([
-        supabase.from('service_orders')
+        fetchAll((a, b) => supabase.from('service_orders')
           .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, created_at, started_at, completed_at, approval_requested_at, approved_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, created_at), vehicle:vehicles(make, model, plate), pauses:service_order_pauses(started_at, ended_at, reason)')
-          .eq('workshop_id', wid).order('created_at', { ascending: false }).limit(5000),
-        supabase.from('service_order_items').select('service_order_id, kind, description, quantity, unit_price')
-          .eq('workshop_id', wid).limit(20000),
+          .eq('workshop_id', wid).order('created_at', { ascending: false }).order('id').range(a, b)),
+        fetchAll((a, b) => supabase.from('service_order_items').select('service_order_id, kind, description, quantity, unit_price')
+          .eq('workshop_id', wid).order('id').range(a, b)),
         supabase.from('workshop_mechanics').select('id, name, commission_percent, active').eq('workshop_id', wid),
         supabase.from('jobs')
           .select('id, title, status, price, created_at, accepted_at, en_route_at, arrived_at, completed_at, cancelled_at, cancelled_by, cancellation_fee, cancellation_fee_paid_at, workshop_confirmed_at, mechanic_rating, scheduled_at, mechanic_id, mechanic:mechanics(id, profile:profiles(full_name))')

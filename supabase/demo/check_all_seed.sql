@@ -351,6 +351,22 @@ begin
     end if;
   end loop;
 
+  -- ── Afastamentos (relatório da equipe) ──────────────────────────────────
+  -- Anderson afastado agora (atestado); histórico de férias, atestados e folga.
+  insert into workshop_mechanic_absences (workshop_id, mechanic_id, reason, started_on, expected_return, returned_on, notes) values
+    (wid, m_and, 'medical',  now_ts::date - 1,   now_ts::date + 2,   null,               'Atestado de 3 dias'),
+    (wid, m_rai, 'medical',  now_ts::date - 19,  now_ts::date - 17,  now_ts::date - 17,  null),
+    (wid, m_die, 'time_off', now_ts::date - 12,  now_ts::date - 11,  now_ts::date - 11,  'Banco de horas'),
+    (wid, m_car, 'medical',  now_ts::date - 47,  now_ts::date - 45,  now_ts::date - 44,  null),
+    (wid, m_raf, 'vacation', now_ts::date - 83,  now_ts::date - 70,  now_ts::date - 68,  'Férias de 15 dias'),
+    (wid, m_and, 'vacation', now_ts::date - 174, now_ts::date - 144, now_ts::date - 144, 'Férias de 30 dias');
+  update workshop_mechanics set status = 'away', active = false where id = m_and;
+  -- ninguém trabalha nas próprias férias: OS desses períodos vão para outro colaborador
+  update service_orders s set workshop_mechanic_id = case when a.mechanic_id = m_raf then m_rai else m_raf end
+    from workshop_mechanic_absences a
+   where a.workshop_id = wid and s.workshop_id = wid and s.workshop_mechanic_id = a.mechanic_id
+     and s.created_at::date >= a.started_on and s.created_at::date < coalesce(a.returned_on, now_ts::date + 1);
+
   -- ── Numeração em ordem cronológica ───────────────────────────────────────
   update service_orders set number = number + 100000 where workshop_id = wid;
   update service_orders s set number = x.rn

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { useWorkshopPlan } from '@/lib/plan';
+import { fetchAll } from '@/lib/fetchAll';
 
 const BENEFITS: { icon: string; title: string; desc: string }[] = [
   { icon: '🤖', title: 'CRM com IA',                desc: 'Todo dia, a lista de clientes que estão na hora de voltar — com a mensagem de WhatsApp já escrita pela IA, usando o histórico de cada um.' },
@@ -36,9 +37,9 @@ function useOpportunity(wid: string | null) {
     (async () => {
       const [c, o, r] = await Promise.all([
         supabase.from('customers').select('id', { count: 'exact', head: true }).eq('workshop_id', wid),
-        supabase.from('service_orders').select('customer_id, completed_at, price')
+        fetchAll((a, b) => supabase.from('service_orders').select('id, customer_id, completed_at, price')
           .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null)
-          .not('customer_id', 'is', null).limit(20000),
+          .not('customer_id', 'is', null).order('id').range(a, b)),
         supabase.from('service_recommendations').select('id', { count: 'exact', head: true })
           .eq('workshop_id', wid).eq('status', 'pending'),
       ]);

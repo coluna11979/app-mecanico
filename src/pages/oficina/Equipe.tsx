@@ -4,7 +4,8 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { fmtBRL, fmtDur, fmtPhone, workedMinutes } from '@/components/os/osHelpers';
-import { TEAM_STATUS, employmentLabel, expiryState, tenure } from '@/lib/team';
+import { ABSENCE_REASONS, TEAM_STATUS, employmentLabel, expiryState, fmtDay, returnStatus, tenure, type Absence } from '@/lib/team';
+import AbsenceReport from '@/components/team/AbsenceReport';
 import type { MechanicCertification, TeamStatus, WorkshopMechanic } from '@/types/database';
 
 type MonthOs = {
@@ -13,7 +14,7 @@ type MonthOs = {
   pauses: { started_at: string; ended_at: string | null }[] | null;
 };
 
-type Filter = TeamStatus | 'all';
+type Filter = TeamStatus | 'all' | 'absences';
 
 export default function Equipe() {
   const { currentWorkshop } = useAuth();
@@ -23,6 +24,7 @@ export default function Equipe() {
   const [month, setMonth]   = useState<MonthOs[]>([]);
   const [photos, setPhotos] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<Filter>('active');
+  const [absences, setAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,15 +32,17 @@ export default function Equipe() {
     let alive = true;
     (async () => {
       const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-      const [m, c, o] = await Promise.all([
+      const [m, c, o, ab] = await Promise.all([
         supabase.from('workshop_mechanics').select('*').eq('workshop_id', wid).order('name'),
         supabase.from('workshop_mechanic_certifications').select('*').eq('workshop_id', wid),
         supabase.from('service_orders')
           .select('workshop_mechanic_id, price, labor_cost, started_at, completed_at, pauses:service_order_pauses(started_at, ended_at)')
           .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null)
           .gte('completed_at', monthStart.toISOString()),
+        supabase.from('workshop_mechanic_absences').select('*').eq('workshop_id', wid).order('started_on', { ascending: false }).limit(1000),
       ]);
       if (!alive) return;
+      setAbsences((ab.data as Absence[]) ?? []);
       const mechs = (m.data as WorkshopMechanic[]) ?? [];
       setList(mechs);
       setCerts((c.data as MechanicCertification[]) ?? []);
@@ -60,7 +64,9 @@ export default function Equipe() {
     active: list.filter(x => statusOf(x) === 'active').length,
     away: list.filter(x => statusOf(x) === 'away').length,
     terminated: list.filter(x => statusOf(x) === 'terminated').length,
-  }), [list]);
+    absences: absences.filter(a => !a.returned_on).length,
+  }), [list, absences]);
+  const openAbsence = (id: string) => absences.find(a => a.mechanic_id === id && !a.returned_on) ?? null;
   const shown = list.filter(x => filter === 'all' || statusOf(x) === filter);
 
   /** Alertas de validade (CNH e certificados) por colaborador */
@@ -85,6 +91,7 @@ export default function Equipe() {
   const FILTERS: { key: Filter; label: string }[] = [
     { key: 'active', label: 'Ativos' }, { key: 'away', label: 'Afastados' },
     { key: 'terminated', label: 'Desligados' }, { key: 'all', label: 'Todos' },
+    { key: 'absences', label: '📅 Relatório de afastamentos' },
   ];
 
   return (
@@ -103,13 +110,15 @@ export default function Equipe() {
             <button key={f.key} onClick={() => setFilter(f.key)}
               className={`text-sm font-semibold px-3.5 py-1.5 rounded-full border transition ${
                 filter === f.key ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
-              {f.label} <span className="opacity-70">({counts[f.key]})</span>
+              {f.label} {f.key !== 'absences' && <span className="opacity-70">({counts[f.key]})</span>}
             </button>
           ))}
         </div>
 
         {loading ? (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">{[1, 2, 3].map(i => <div key={i} className="h-44 bg-white rounded-2xl animate-pulse" />)}</div>
+        ) : filter === 'absences' ? (
+          <AbsenceReport absences={absences} mechanics={list} />
         ) : shown.length === 0 ? (
           <div className="card text-center py-14">
             <div className="text-4xl mb-2">👷</div>
@@ -142,6 +151,18 @@ export default function Equipe() {
                       </div>
                     </div>
                   </div>
+                  {(() => {
+                    const ab = openAbsence(x.id);
+                    if (!ab) return null;
+                    const rs = returnStatus(ab);
+                    return (
+                      <div className={`text-xs mt-3 rounded-lg px-2.5 py-1.5 ${rs?.late ? 'bg-alert-50 text-alert-700' : 'bg-pending-50 text-pending-800'}`}>
+                        {ABSENCE_REASONS[ab.reason].icon} {ABSENCE_REASONS[ab.reason].label} desde {fmtDay(ab.started_on)}
+                        {ab.expected_return ? ` · volta ${fmtDay(ab.expected_return)}` : ' · sem previsão'}
+                        {rs?.late && <strong> · {rs.text}</strong>}
+                      </div>
+                    );
+                  })()}
                   {x.phone && <div className="text-xs text-steel-500 mt-3">📞 {fmtPhone(x.phone)}</div>}
                   {alerts.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
