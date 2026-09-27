@@ -13,6 +13,7 @@ import EmptyState from '@/components/os/EmptyState';
 import OsSkeleton from '@/components/os/OsSkeleton';
 import { toast } from '@/components/ui/Toast';
 import NewOsModal, { type NewOsPreset } from '@/components/os/NewOsModal';
+import { OS_STATUS_FLOW, statusChange } from '@/components/os/osHelpers';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 /* ─── tipos locais ──────────────────────────────────────────── */
@@ -26,7 +27,9 @@ type MainTab   = 'os' | 'agendados' | 'mecanicos';
 type PeriodFilter = 'all' | 'today' | 'week' | 'month';
 
 /* ─── constantes ────────────────────────────────────────────── */
-const STATUSES: OsStatus[] = ['open', 'in_progress', 'completed', 'cancelled'];
+const STATUSES: readonly OsStatus[] = OS_STATUS_FLOW;
+/** Etapas antes de o serviço começar (agendadas aparecem na aba Agendados) */
+const PRE_START: OsStatus[] = ['open', 'awaiting_approval', 'approved'];
 
 
 const SKILL_OPTIONS = [
@@ -43,17 +46,6 @@ const SPECIALTIES = [
 const EMPTY_MECH        = { name: '', specialty: '', skills: [] as string[] };
 
 /* ─── helpers ───────────────────────────────────────────────── */
-function osLabel(s: string) {
-  return ({ open:'Aberta', in_progress:'Em andamento', completed:'Concluída', cancelled:'Cancelada' } as Record<string,string>)[s] ?? s;
-}
-function osColor(s: string) {
-  return ({
-    open:        'bg-pending-100 text-pending-700',
-    in_progress: 'bg-brand-100 text-brand-700',
-    completed:   'bg-signal-100 text-signal-700',
-    cancelled:   'bg-steel-100 text-steel-500',
-  } as Record<string,string>)[s] ?? '';
-}
 function durationMin(os: OsRow): number | null {
   if (!os.started_at || !os.completed_at) return null;
   return Math.round((new Date(os.completed_at).getTime() - new Date(os.started_at).getTime()) / 60000);
@@ -195,25 +187,16 @@ export default function ServiceOrders() {
   }
 
   /* ── status ── */
-  async function updateStatus(os: OsRow, status: OsStatus) {
-    if (status === 'cancelled' && !confirm('Cancelar esta OS?')) return;
-    const extra: Record<string, unknown> = {};
-    if (status === 'in_progress' && !os.started_at)  extra.started_at  = new Date().toISOString();
-    if (status === 'completed')                        extra.completed_at = new Date().toISOString();
-    const { error } = await supabase.from('service_orders').update({ status, ...extra }).eq('id', os.id);
+  async function updateStatus(os: OsRow, status: OsStatus, opts: { channel?: string; declined?: boolean } = {}) {
+    if (status === 'cancelled' && !opts.declined && !confirm('Cancelar esta OS?')) return;
+    const { patch, message } = statusChange(os, status, opts);
+    const { error } = await supabase.from('service_orders').update(patch).eq('id', os.id);
     if (error) {
-      toast.error('Erro ao atualizar status');
+      toast.error('Erro ao atualizar a situação: ' + error.message);
       return;
     }
-    const updated = { ...os, status, ...extra } as OsRow;
-    setList(prev => prev.map(o => o.id === os.id ? updated : o));
-    const msgMap: Record<OsStatus, string> = {
-      open:        'OS reaberta',
-      in_progress: 'OS iniciada ▶',
-      completed:   'OS concluída ✓',
-      cancelled:   'OS cancelada',
-    };
-    toast.success(msgMap[status]);
+    setList(prev => prev.map(o => o.id === os.id ? { ...o, ...patch } as OsRow : o));
+    toast.success(message);
   }
 
   /* ── copiar link da OS ── */
@@ -291,11 +274,11 @@ export default function ServiceOrders() {
   });
 
   const agendados = list
-    .filter(o => o.scheduled_at && o.status === 'open')
+    .filter(o => o.scheduled_at && PRE_START.includes(o.status))
     .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
 
   const counts  = STATUSES.reduce((acc, s) => ({ ...acc, [s]: list.filter(o => o.status === s).length }), {} as Record<string, number>);
-  const osCount = list.filter(o => !o.scheduled_at || o.status !== 'open').length;
+  const osCount = list.filter(o => !o.scheduled_at || !PRE_START.includes(o.status)).length;
 
   /* ══════════════════════════════════════════════ RENDER ══ */
   return (
@@ -477,7 +460,7 @@ export default function ServiceOrders() {
                   key={os.id}
                   os={os}
                   onClick={() => openOs(os)}
-                  onChangeStatus={(status) => updateStatus(os, status)}
+                  onChangeStatus={(status, opts) => updateStatus(os, status, opts)}
                   onCopyLink={() => copyOsLink(os)}
                 />
               ))}

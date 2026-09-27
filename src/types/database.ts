@@ -163,7 +163,8 @@ export interface AppSetting {
   updated_by: string | null;
 }
 
-export type OsStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+/** Aberta → Aguardando aprovação → Aprovada → Em andamento → Concluída (ou Cancelada) */
+export type OsStatus = 'open' | 'awaiting_approval' | 'approved' | 'in_progress' | 'completed' | 'cancelled';
 
 export interface Customer {
   id: string;
@@ -222,6 +223,12 @@ export interface ServiceOrder {
   quote_status?: 'declined' | null;
   /** 'app' | 'paper_import' */
   source?: string;
+  /** Orçamento enviado ao cliente para aprovação */
+  approval_requested_at?: string | null;
+  /** Cliente aprovou o orçamento */
+  approved_at?: string | null;
+  /** Como o cliente aprovou: whatsapp | telefone | presencial */
+  approval_channel?: string | null;
 }
 
 export type OsItemKind = 'part' | 'labor';

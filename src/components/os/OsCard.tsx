@@ -16,7 +16,7 @@ export type OsRow = ServiceOrder & {
 interface OsCardProps {
   os: OsRow;
   onClick: () => void;
-  onChangeStatus?: (status: OsStatus) => void;
+  onChangeStatus?: (status: OsStatus, opts?: { declined?: boolean }) => void;
   onCopyLink?: () => void;
 }
 
@@ -24,7 +24,7 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
   const dur = durationMin(os.started_at, os.completed_at);
   const wa = waNumber(os.customer?.phone);
   const tel = os.customer?.phone?.replace(/\D/g, '') ?? null;
-  const isScheduledFuture = os.scheduled_at && os.status === 'open';
+  const isScheduledFuture = os.scheduled_at && ['open', 'awaiting_approval', 'approved'].includes(os.status);
 
   // Evita propagar click pro card principal
   const stop = (e: MouseEvent) => e.stopPropagation();
@@ -139,12 +139,36 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
       {/* Ações rápidas */}
       {(onChangeStatus || onCopyLink) && os.status !== 'cancelled' && (
         <div className="mt-3 pt-3 border-t border-steel-100 flex flex-wrap gap-2">
-          {os.status === 'open' && onChangeStatus && (
+          {os.status === 'open' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onClick(); }}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition"
+            >
+              📋 Montar orçamento
+            </button>
+          )}
+          {os.status === 'awaiting_approval' && onChangeStatus && (
+            <>
+              <button
+                onClick={handleQuick('approved')}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-signal-50 text-signal-700 hover:bg-signal-100 border border-signal-200 transition"
+              >
+                ✅ Aprovado
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); if (confirm('O cliente não aprovou o orçamento?')) onChangeStatus('cancelled', { declined: true }); }}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white text-steel-600 hover:bg-steel-50 border border-steel-200 transition"
+              >
+                ✕ Não aprovou
+              </button>
+            </>
+          )}
+          {os.status === 'approved' && onChangeStatus && (
             <button
               onClick={handleQuick('in_progress')}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition"
             >
-              ▶ Iniciar
+              ▶ Iniciar serviço
             </button>
           )}
           {os.status === 'in_progress' && onChangeStatus && (

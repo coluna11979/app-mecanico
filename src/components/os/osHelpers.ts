@@ -2,22 +2,66 @@ import type { OsStatus } from '@/types/database';
 
 const STATUS_LABEL: Record<string, string> = {
   open: 'Aberta',
+  awaiting_approval: 'Aguardando aprovação',
+  approved: 'Aprovada',
   in_progress: 'Em andamento',
   completed: 'Concluída',
   cancelled: 'Cancelada',
 };
 const STATUS_BADGE: Record<string, string> = {
-  open: 'bg-pending-100 text-pending-700',
+  open: 'bg-steel-100 text-steel-700',
+  awaiting_approval: 'bg-pending-100 text-pending-800',
+  approved: 'bg-blue-100 text-blue-700',
   in_progress: 'bg-brand-100 text-brand-700',
   completed: 'bg-signal-100 text-signal-700',
   cancelled: 'bg-steel-100 text-steel-500',
 };
 const STATUS_BORDER: Record<string, string> = {
-  open: 'border-l-pending-500',
+  open: 'border-l-steel-400',
+  awaiting_approval: 'border-l-pending-500',
+  approved: 'border-l-blue-500',
   in_progress: 'border-l-brand-500',
   completed: 'border-l-signal-500',
   cancelled: 'border-l-steel-300',
 };
+
+/** Ordem do fluxo da OS (usada nos filtros e contadores) */
+export const OS_STATUS_FLOW = ['open', 'awaiting_approval', 'approved', 'in_progress', 'completed', 'cancelled'] as const;
+
+/**
+ * O que muda na OS ao trocar de situação (datas, recusa) + mensagem para o toast.
+ * Única regra usada pela lista de OS e pela página da OS.
+ */
+export function statusChange(
+  os: { started_at: string | null },
+  to: OsStatus,
+  opts: { channel?: string; declined?: boolean } = {},
+): { patch: Record<string, unknown>; message: string } {
+  const now = new Date().toISOString();
+  switch (to) {
+    case 'awaiting_approval':
+      return { patch: { status: to, approval_requested_at: now }, message: 'Orçamento enviado para aprovação 📤' };
+    case 'approved':
+      return { patch: { status: to, approved_at: now, approval_channel: opts.channel ?? null, quote_status: null }, message: 'Orçamento aprovado ✅' };
+    case 'in_progress':
+      return { patch: { status: to, ...(os.started_at ? {} : { started_at: now }) }, message: 'Serviço iniciado ▶' };
+    case 'completed':
+      return { patch: { status: to, completed_at: now }, message: 'OS concluída ✓' };
+    case 'open':
+      return { patch: { status: to, completed_at: null, quote_status: null }, message: 'OS reaberta para correção' };
+    case 'cancelled':
+      return opts.declined
+        ? { patch: { status: to, quote_status: 'declined' }, message: 'Orçamento não aprovado — fica salvo para retomar o contato' }
+        : { patch: { status: to }, message: 'OS cancelada' };
+  }
+}
+
+/** Como o cliente aprovou o orçamento */
+export const APPROVAL_CHANNELS: { value: string; label: string }[] = [
+  { value: 'whatsapp',   label: '💬 WhatsApp' },
+  { value: 'telefone',   label: '📞 Telefone' },
+  { value: 'presencial', label: '🤝 Pessoalmente' },
+];
 
 export function osLabel(s: string) {
   return STATUS_LABEL[s] ?? s;

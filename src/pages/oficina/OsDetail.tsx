@@ -10,6 +10,7 @@ import OsEditModal from '@/components/os/OsEditModal';
 import Recommendations from '@/components/os/Recommendations';
 import {
   durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber, fmtPhone,
+  statusChange, APPROVAL_CHANNELS,
 } from '@/components/os/osHelpers';
 import type { OsRow } from '@/components/os/OsCard';
 import type { OsStatus, ServiceOrderItem } from '@/types/database';
@@ -24,6 +25,7 @@ export default function OsDetail() {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy]     = useState(false);
   const [paperUrl, setPaperUrl] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
 
   // OS importada de orçamento em papel → mostra a foto original
   useEffect(() => {
@@ -54,37 +56,45 @@ export default function OsDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function changeStatus(status: OsStatus) {
+  async function changeStatus(status: OsStatus, opts: { channel?: string; declined?: boolean; skipConfirm?: boolean } = {}) {
     if (!os) return;
     const confirms: Partial<Record<OsStatus, string>> = {
-      cancelled: 'Cancelar esta OS?',
-      open: os.quote_status === 'declined'
-        ? 'O cliente aprovou o orçamento? Ele vira uma OS aberta para executar o serviço.'
-        : 'Reabrir esta OS? Ela volta para "Aberta".',
+      cancelled: opts.declined ? 'O cliente não aprovou o orçamento?' : 'Cancelar esta OS?',
+      open: 'Reabrir esta OS para corrigir? Ela volta para "Aberta". Depois é só seguir o fluxo de novo.',
     };
-    if (confirms[status] && !confirm(confirms[status])) return;
-    const extra: Record<string, unknown> = {};
-    if (status === 'in_progress' && !os.started_at) extra.started_at = new Date().toISOString();
-    if (status === 'completed') extra.completed_at = new Date().toISOString();
-    if (status === 'open') { extra.completed_at = null; extra.quote_status = null; } // orçamento aprovado vira OS
+    if (!opts.skipConfirm && confirms[status] && !confirm(confirms[status])) return;
+    const { patch, message } = statusChange(os, status, opts);
     setBusy(true);
-    const { error } = await supabase.from('service_orders').update({ status, ...extra }).eq('id', os.id);
+    const { error } = await supabase.from('service_orders').update(patch).eq('id', os.id);
     setBusy(false);
-    if (error) { toast.error('Erro ao atualizar status: ' + error.message); return; }
-    const msg: Record<OsStatus, string> = {
-      open: 'OS reaberta', in_progress: 'OS iniciada ▶', completed: 'OS concluída ✓', cancelled: 'OS cancelada',
-    };
-    toast.success(msg[status]);
+    if (error) { toast.error('Erro ao atualizar a situação: ' + error.message); return; }
+    toast.success(message);
+    setApproving(false);
     load();
   }
 
-  function whatsappText(): string {
+  /** Envia o orçamento ao cliente (WhatsApp) e marca "Aguardando aprovação" */
+  function sendForApproval() {
+    if (!os) return;
+    if (!items.length || os.price <= 0) {
+      if (!confirm('O orçamento ainda está sem valores. Enviar mesmo assim?')) return;
+    }
+    const wa = waNumber(os.customer?.phone);
+    if (wa) window.open(`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText('approval'))}`, '_blank', 'noopener');
+    else toast.info('Cliente sem telefone — marcado como enviado. Combine a aprovação por outro meio.');
+    changeStatus('awaiting_approval', { skipConfirm: true });
+  }
+
+  function whatsappText(kind: 'summary' | 'approval' = 'summary'): string {
     if (!os) return '';
     const shop = currentWorkshop?.business_name ?? 'nossa oficina';
     const name = os.customer?.full_name?.split(' ')[0] ?? '';
+    const car = os.vehicle ? ` (${os.vehicle.make} ${os.vehicle.model} · ${os.vehicle.plate})` : '';
     const lines = [
       `Olá${name ? `, ${name}` : ''}! Aqui é da *${shop}*.`,
-      `Segue o resumo da sua *OS nº ${osNumber(os)}*${os.vehicle ? ` (${os.vehicle.make} ${os.vehicle.model} · ${os.vehicle.plate})` : ''}:`,
+      kind === 'approval'
+        ? `Segue o *orçamento da OS nº ${osNumber(os)}*${car} para sua aprovação:`
+        : `Segue o resumo da sua *OS nº ${osNumber(os)}*${car}:`,
       '',
     ];
     if (items.length) {
@@ -98,7 +108,11 @@ export default function OsDetail() {
       lines.push(`• ${os.title}`, '');
     }
     lines.push(`*Total: ${fmtBRL(os.price)}*`);
-    lines.push(`Situação: ${osStatusLabel(os)}`);
+    if (kind === 'approval') {
+      lines.push('', 'Podemos seguir com o serviço? É só responder *SIM* para aprovar. 👍');
+    } else {
+      lines.push(`Situação: ${osStatusLabel(os)}`);
+    }
     return lines.join('\n');
   }
 
@@ -157,8 +171,27 @@ export default function OsDetail() {
           </div>
 
           {/* Ações */}
+          {/* Etapa atual do fluxo */}
+          <FlowSteps os={os} />
+
           <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap gap-2">
             {os.status === 'open' && (
+              <>
+                <button onClick={sendForApproval} disabled={busy} className="btn-primary text-sm !py-2">📤 Enviar orçamento para aprovação</button>
+                <button onClick={() => setApproving(true)} disabled={busy} className="btn-ghost text-sm !py-2 border border-steel-200">✅ Cliente já aprovou</button>
+              </>
+            )}
+            {os.status === 'awaiting_approval' && (
+              <>
+                <button onClick={() => setApproving(true)} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✅ Cliente aprovou</button>
+                <button onClick={() => changeStatus('cancelled', { declined: true })} disabled={busy} className="btn-ghost text-sm !py-2 border border-steel-200 text-alert-600">✕ Não aprovou</button>
+                {wa && (
+                  <a href={`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText('approval'))}`} target="_blank" rel="noopener noreferrer"
+                    className="btn-ghost text-sm !py-2 border border-steel-200">↻ Reenviar orçamento</a>
+                )}
+              </>
+            )}
+            {os.status === 'approved' && (
               <button onClick={() => changeStatus('in_progress')} disabled={busy} className="btn-primary text-sm !py-2">▶ Iniciar serviço</button>
             )}
             {os.status === 'in_progress' && (
@@ -180,9 +213,9 @@ export default function OsDetail() {
             <div className="flex gap-2 sm:ml-auto">
               {(os.status === 'completed' || os.status === 'cancelled') && (
                 os.quote_status === 'declined' ? (
-                  <button onClick={() => changeStatus('open')} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✅ Cliente aprovou — abrir OS</button>
+                  <button onClick={() => setApproving(true)} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✅ Cliente aprovou agora</button>
                 ) : (
-                  <button onClick={() => changeStatus('open')} disabled={busy} className="btn-ghost text-sm !py-2 text-steel-600">↺ Reabrir</button>
+                  <button onClick={() => changeStatus('open')} disabled={busy} className="btn-ghost text-sm !py-2 text-steel-600">✏️ Corrigir OS</button>
                 )
               )}
               {os.status !== 'completed' && os.status !== 'cancelled' && (
@@ -190,6 +223,20 @@ export default function OsDetail() {
               )}
             </div>
           </div>
+
+          {/* Como o cliente aprovou */}
+          {approving && (
+            <div className="mt-3 bg-signal-50 border border-signal-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-signal-800 mr-1">Como o cliente aprovou?</span>
+              {APPROVAL_CHANNELS.map(c => (
+                <button key={c.value} onClick={() => changeStatus('approved', { channel: c.value, skipConfirm: true })} disabled={busy}
+                  className="text-sm px-3 py-1.5 rounded-lg bg-white border border-signal-300 hover:bg-signal-100 font-medium">
+                  {c.label}
+                </button>
+              ))}
+              <button onClick={() => setApproving(false)} className="text-xs text-steel-500 hover:underline ml-auto">Cancelar</button>
+            </div>
+          )}
         </div>
 
         <div className="grid lg:grid-cols-3 gap-5">
@@ -302,6 +349,11 @@ export default function OsDetail() {
               <ol className="space-y-3">
                 {os.scheduled_at && <Step label="Agendada para" value={fmtDateTime(os.scheduled_at)} done />}
                 <Step label="Aberta" value={fmtDateTime(os.created_at)} done />
+                {os.approval_requested_at && <Step label="Orçamento enviado" value={fmtDateTime(os.approval_requested_at)} done />}
+                {os.approved_at && (
+                  <Step label={`Aprovado${os.approval_channel ? ` (${APPROVAL_CHANNELS.find(c => c.value === os.approval_channel)?.label.replace(/^\S+\s/, '').toLowerCase() ?? os.approval_channel})` : ''}`}
+                    value={fmtDateTime(os.approved_at)} done />
+                )}
                 <Step label="Iniciada" value={os.started_at ? fmtDateTime(os.started_at) : '—'} done={!!os.started_at} />
                 <Step label={os.status === 'cancelled' ? 'Cancelada' : 'Concluída'}
                   value={os.completed_at ? fmtDateTime(os.completed_at) : os.status === 'cancelled' ? '✕' : '—'}
@@ -326,6 +378,42 @@ export default function OsDetail() {
         />
       )}
     </WorkshopLayout>
+  );
+}
+
+/** Barra de etapas: Aberta → Aguardando aprovação → Aprovada → Em andamento → Concluída */
+const FLOW: { key: OsStatus; label: string }[] = [
+  { key: 'open',              label: 'Aberta' },
+  { key: 'awaiting_approval', label: 'Aguardando aprovação' },
+  { key: 'approved',          label: 'Aprovada' },
+  { key: 'in_progress',       label: 'Em andamento' },
+  { key: 'completed',         label: 'Concluída' },
+];
+
+function FlowSteps({ os }: { os: { status: OsStatus; quote_status?: string | null } }) {
+  if (os.status === 'cancelled') {
+    return (
+      <div className={`mt-4 text-sm font-semibold rounded-xl px-3 py-2 ${os.quote_status === 'declined' ? 'bg-pending-50 text-pending-800' : 'bg-steel-100 text-steel-600'}`}>
+        {os.quote_status === 'declined' ? '📝 Orçamento não aprovado pelo cliente' : '✕ OS cancelada'}
+      </div>
+    );
+  }
+  const current = FLOW.findIndex(s => s.key === os.status);
+  return (
+    <ol className="mt-4 flex items-center gap-1 overflow-x-auto pb-1">
+      {FLOW.map((s, i) => {
+        const done = i < current, active = i === current;
+        return (
+          <li key={s.key} className="flex items-center gap-1 shrink-0">
+            <span className={`flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-1 ${
+              active ? 'bg-brand-500 text-white' : done ? 'bg-signal-100 text-signal-700' : 'bg-steel-100 text-steel-400'}`}>
+              <span>{done ? '✓' : i + 1}</span>{s.label}
+            </span>
+            {i < FLOW.length - 1 && <span className={`w-4 h-px ${done ? 'bg-signal-500' : 'bg-steel-200'}`} />}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

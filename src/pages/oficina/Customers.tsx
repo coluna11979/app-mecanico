@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Customer, Vehicle, ServiceOrder } from '@/types/database';
 import { toast } from '@/components/ui/Toast';
 import { formatBRL } from '@/lib/payment';
-import { fmtPhone } from '@/components/os/osHelpers';
+import { fmtPhone, osStatusColor, osStatusLabel } from '@/components/os/osHelpers';
 import ReactivationList from '@/components/customers/ReactivationList';
 
 type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
@@ -244,7 +244,7 @@ export default function Customers() {
                               </div>
                               <div className="text-right">
                                 <div className="text-sm font-bold">R$ {formatBRL(os.price, { decimals: 0 })}</div>
-                                <span className={`badge text-[10px] ${osColor(os.status)}`}>{osLabel(os.status)}</span>
+                                <span className={`badge text-[10px] ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>
                               </div>
                             </div>
                           ))}
@@ -405,9 +405,4 @@ export default function Customers() {
   );
 }
 
-function osLabel(s: string) {
-  return ({ open: 'Aberta', in_progress: 'Em andamento', completed: 'Concluída', cancelled: 'Cancelada' } as Record<string, string>)[s] ?? s;
-}
-function osColor(s: string) {
-  return ({ open: 'badge-pending', in_progress: 'badge-brand', completed: 'badge-success', cancelled: 'badge-alert' } as Record<string, string>)[s] ?? '';
-}
+
