@@ -8,7 +8,7 @@ import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
-import { ROLES, roleAllows, useOperator } from '@/lib/operators';
+import { ROLES, sessionAllows, useOperator } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
 
 type ArrivalAlert = { jobId: string; title: string };
@@ -28,6 +28,7 @@ const PLATAFORMA: NavItem[] = [
 
 const GESTAO: NavItem[] = [
   { to: '/oficina/caixa',    icon: '💰', label: 'Caixa'             },
+  { to: '/oficina/financeiro', icon: '💵', label: 'Financeiro'      },
   { to: '/oficina/painel',   icon: '📊', label: 'Painel'            },
   { to: '/oficina/os',       icon: '📋', label: 'Ordens de Serviço' },
   { to: '/oficina/clientes', icon: '👥', label: 'Clientes'           },
@@ -341,11 +342,11 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const op = useOperator();
   useEffect(() => { op.bind(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
   const role = op.balcao ? op.session?.role ?? null : null;
-  const allowed = (to: string) => !role || roleAllows(role, to);
+  const allowed = (to: string) => !role || sessionAllows(op.session!, to);
 
   /* Tela fora da função → volta pra tela inicial da função */
   useEffect(() => {
-    if (role && !roleAllows(role, location.pathname)) nav(ROLES[role].home, { replace: true });
+    if (role && !sessionAllows(op.session!, location.pathname)) nav(ROLES[role].home, { replace: true });
   }, [role, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function enterBalcao() {

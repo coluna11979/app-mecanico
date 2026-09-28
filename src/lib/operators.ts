@@ -44,13 +44,25 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   dar_desconto:         { label: 'Dar desconto',          desc: 'Conceder desconto no recebimento' },
   cancelar_recebimento: { label: 'Cancelar recebimento',  desc: 'Estornar um recebimento já lançado' },
   reabrir_caixa:        { label: 'Reabrir caixa',         desc: 'Reabrir um caixa já fechado' },
-  ver_financeiro:       { label: 'Ver financeiro',        desc: 'Acessar o fluxo de caixa da empresa' },
+  ver_financeiro:       { label: 'Ver financeiro',        desc: 'Acessar o Financeiro: resultado, a receber, comissões e fechamentos' },
 };
 
 /** A rota está liberada para a função? */
 export function roleAllows(role: OperatorRole, path: string) {
   const routes = ROLES[role].routes;
   return routes === null || routes.some(r => path === r || path.startsWith(`${r}/`));
+}
+
+/** Telas extras liberadas por permissão, além das da função */
+const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
+  ver_financeiro: ['/oficina/financeiro'],
+};
+
+/** A rota está liberada para quem está operando (função + permissões extras)? */
+export function sessionAllows(session: OperatorSession, path: string) {
+  if (roleAllows(session.role, path)) return true;
+  return session.permissions.some(p =>
+    (PERM_ROUTES[p] ?? []).some(r => path === r || path.startsWith(`${r}/`)));
 }
 
 /* ── Modo balcão (por aparelho e por oficina) ─────────────────────────────── */
