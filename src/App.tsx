@@ -15,6 +15,7 @@ import Terms from './pages/public/Terms';
 import Privacy from './pages/public/Privacy';
 import ForgotPassword from './pages/public/ForgotPassword';
 import ResetPassword from './pages/public/ResetPassword';
+import CheckupReport from './pages/public/CheckupReport';
 
 import MechanicDashboard from './pages/mecanico/Dashboard';
 import MechanicJob from './pages/mecanico/JobDetail';
@@ -23,6 +24,8 @@ import MechanicGanhos from './pages/mecanico/Ganhos';
 import MechanicAgenda from './pages/mecanico/Agenda';
 import MechanicAvisos from './pages/mecanico/Avisos';
 import MechanicEmbaixador from './pages/mecanico/Embaixador';
+import MechanicCheckups from './pages/mecanico/Checkups';
+import MechanicCheckupRun from './pages/mecanico/CheckupRun';
 
 // Lazy: páginas com Mapbox (~3.7MB) — carregadas sob demanda
 const MechanicTracking = lazy(() => import('./pages/mecanico/Tracking'));
@@ -89,6 +92,10 @@ export default function App() {
       <Route path="/privacidade"        element={<Privacy />} />
       <Route path="/recuperar-senha"    element={<ForgotPassword />} />
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
+      <Route path="/checkup/:token"     element={<CheckupReport />} />
+      {/* Pré-visualização do check-up com dados fictícios — só em dev */}
+      {import.meta.env.DEV && <Route path="/demo/checkup" element={<MechanicCheckups />} />}
+      {import.meta.env.DEV && <Route path="/demo/checkup/:id" element={<MechanicCheckupRun />} />}
 
       {/* Mecânico */}
       <Route path="/mecanico/dashboard" element={<ProtectedRoute allow={['mechanic']}><MechanicDashboard /></ProtectedRoute>} />
@@ -100,6 +107,8 @@ export default function App() {
       <Route path="/mecanico/avisos" element={<ProtectedRoute allow={['mechanic']}><MechanicAvisos /></ProtectedRoute>} />
       <Route path="/mecanico/mapa" element={<ProtectedRoute allow={['mechanic']}><Suspense fallback={<LazyFallback />}><MechanicMapa /></Suspense></ProtectedRoute>} />
       <Route path="/mecanico/embaixador" element={<ProtectedRoute allow={['mechanic']}><MechanicEmbaixador /></ProtectedRoute>} />
+      <Route path="/mecanico/checkup" element={<ProtectedRoute allow={['mechanic']}><MechanicCheckups /></ProtectedRoute>} />
+      <Route path="/mecanico/checkup/:id" element={<ProtectedRoute allow={['mechanic']}><MechanicCheckupRun /></ProtectedRoute>} />
 
       {/* Oficina */}
       <Route path="/oficina/dashboard" element={<ProtectedRoute allow={['workshop']}><WorkshopDashboard /></ProtectedRoute>} />
