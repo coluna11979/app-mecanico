@@ -5,6 +5,11 @@ import { computeScore, templateRows, type CheckupItem, type VehicleCheckup } fro
 export const DEMO_ID = 'demo';
 const KEY = 'checkup-demo';
 
+export const DEMO_MECHANICS = [
+  { id: 'demo-mec-1', name: 'Roberto Alves' },
+  { id: 'demo-mec-2', name: 'Diego Santos' },
+];
+
 const DEMO_STATUS: Record<string, Partial<CheckupItem>> = {
   pastilhas_diant: { status: 'urgent', measurement: '15%', note: 'Trocar imediatamente — já encostando no disco' },
   pneu_te:         { status: 'warn',   measurement: '2,2 mm', note: 'Perto do limite (1,6 mm)' },
@@ -14,9 +19,12 @@ const DEMO_STATUS: Record<string, Partial<CheckupItem>> = {
   ar_cond:         { status: 'na' },
 };
 
-export type DemoVehicle = Pick<VehicleCheckup, 'plate' | 'make' | 'model' | 'year' | 'km_reading' | 'customer_name' | 'customer_phone'>;
+export type DemoVehicle = Partial<Pick<VehicleCheckup,
+  'customer_id' | 'vehicle_id' | 'workshop_mechanic_id' |
+  'plate' | 'make' | 'model' | 'year' | 'km_reading' | 'customer_name' | 'customer_phone'>>;
 
 const DEFAULT_VEHICLE: DemoVehicle = {
+  workshop_mechanic_id: 'demo-mec-1',
   plate: 'FJK3B21', make: 'Fiat', model: 'Argo 1.3', year: 2019, km_reading: 87450,
   customer_name: 'Carlos Pereira', customer_phone: '(11) 98888-7777',
 };
@@ -33,16 +41,23 @@ export function startDemo(vehicle: DemoVehicle) {
   try { localStorage.setItem(KEY, JSON.stringify({ vehicle })); } catch { /* ignore */ }
 }
 
+function baseCheckup(vehicle: DemoVehicle): VehicleCheckup {
+  const now = new Date().toISOString();
+  return {
+    id: DEMO_ID, workshop_id: 'demo', workshop_mechanic_id: null, service_order_id: null,
+    customer_id: null, vehicle_id: null, created_by: null,
+    plate: null, make: null, model: null, year: null, km_reading: null,
+    customer_name: null, customer_phone: null,
+    ...vehicle,
+    score: null, status: 'draft', notes: null, public_token: DEMO_ID,
+    created_at: now, updated_at: now, completed_at: null,
+  };
+}
+
 /** Check-up em branco para preencher (usa o veículo digitado, se houver). */
 export function demoDraft(): { checkup: VehicleCheckup; items: CheckupItem[] } {
-  const now = new Date().toISOString();
-  const vehicle = read().vehicle ?? DEFAULT_VEHICLE;
   return {
-    checkup: {
-      id: DEMO_ID, created_by: 'demo', ...vehicle,
-      score: null, status: 'draft', notes: null, public_token: DEMO_ID,
-      created_at: now, updated_at: now, completed_at: null,
-    },
+    checkup: baseCheckup(read().vehicle ?? DEFAULT_VEHICLE),
     items: templateRows(DEMO_ID).map((r, i) => ({
       id: `demo-${i}`, ...r, status: null, measurement: null, note: null, photo_path: null,
     })),
@@ -57,13 +72,17 @@ export function saveDemoResult(checkup: VehicleCheckup, items: CheckupItem[]) {
 export function demoResult(): { checkup: VehicleCheckup; items: CheckupItem[] } {
   const saved = read();
   if (saved.checkup && saved.items) return { checkup: saved.checkup, items: saved.items };
-  const { checkup, items: blank } = demoDraft();
-  const items = blank.map(i => ({ ...i, status: 'ok' as const, ...DEMO_STATUS[i.item_key] }));
+  const base  = baseCheckup(DEFAULT_VEHICLE);
+  const items = demoDraft().items.map(i => ({ ...i, status: 'ok' as const, ...DEMO_STATUS[i.item_key] }));
   return {
     checkup: {
-      ...checkup, ...DEFAULT_VEHICLE, status: 'completed', score: computeScore(items), completed_at: checkup.created_at,
-      notes: 'Recomendo trocar as pastilhas dianteiras antes de pegar estrada. Pneus traseiros e bateria podem esperar uns 30 dias.',
+      ...base, status: 'completed', score: computeScore(items), completed_at: base.created_at,
+      notes: 'Recomendamos trocar as pastilhas dianteiras antes de pegar estrada. Pneus traseiros e bateria podem esperar uns 30 dias.',
     },
     items,
   };
+}
+
+export function demoMechanicName(id: string | null) {
+  return DEMO_MECHANICS.find(m => m.id === id)?.name ?? null;
 }
