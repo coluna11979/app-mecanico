@@ -23,7 +23,7 @@ export default function OsPrint() {
     (async () => {
       const [{ data: o }, { data: its }] = await Promise.all([
         supabase.from('service_orders')
-          .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics(*)')
+          .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics!fk_so_workshop_mechanic(*)')
           .eq('id', id).maybeSingle(),
         supabase.from('service_order_items').select('*').eq('service_order_id', id).order('position'),
       ]);

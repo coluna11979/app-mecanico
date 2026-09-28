@@ -113,7 +113,7 @@ export default function ServiceOrders() {
   async function fetchOS(wid: string) {
     const { data } = await supabase
       .from('service_orders')
-      .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics(*), pauses:service_order_pauses(*)')
+      .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics!fk_so_workshop_mechanic(*), pauses:service_order_pauses(*)')
       .eq('workshop_id', wid)
       .order('created_at', { ascending: false });
     setList((data as OsRow[]) ?? []);

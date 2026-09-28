@@ -53,7 +53,7 @@ export default function OsDetail() {
     if (!id) return;
     const [{ data: o, error }, { data: its }] = await Promise.all([
       supabase.from('service_orders')
-        .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics(*), pauses:service_order_pauses(*)')
+        .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics!fk_so_workshop_mechanic(*), pauses:service_order_pauses(*)')
         .eq('id', id).maybeSingle(),
       supabase.from('service_order_items').select('*').eq('service_order_id', id).order('position'),
     ]);
@@ -68,7 +68,7 @@ export default function OsDetail() {
     const [orig, rets] = await Promise.all([
       row?.rework_of_id
         ? supabase.from('service_orders')
-            .select('id, number, title, created_at, completed_at, mechanic:workshop_mechanics(name)')
+            .select('id, number, title, created_at, completed_at, mechanic:workshop_mechanics!fk_so_workshop_mechanic(name)')
             .eq('id', row.rework_of_id).maybeSingle()
         : Promise.resolve({ data: null }),
       supabase.from('service_orders')
