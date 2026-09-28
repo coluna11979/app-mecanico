@@ -446,6 +446,7 @@ export default function OsDetail() {
               legacy={{ parts: os.parts_cost, labor: os.labor_cost, price: os.price }}
               readOnly={closed}
               showCost={showCost}
+              osLabel={`OS nº ${os.number != null ? String(os.number).padStart(4, '0') : os.id.slice(0, 8)}`}
               onSaved={load}
             />
 

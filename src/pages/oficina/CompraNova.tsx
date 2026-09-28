@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
-import { UNITS, fmtQty, loadDefaultMargin, priceModeOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { DEFAULT_MARGIN, UNITS, fmtQty, loadDefaultMargin, priceModeOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
 
@@ -27,7 +27,7 @@ export default function CompraNova() {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [parts, setParts]         = useState<WorkshopPart[]>([]);
-  const [margin, setMargin]       = useState(40);
+  const [margin, setMargin]       = useState(DEFAULT_MARGIN);
   const [supplierId, setSupplierId] = useState(params.get('fornecedor') ?? '');
   const [number, setNumber]       = useState('');
   const [date, setDate]           = useState(todayISO());

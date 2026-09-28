@@ -1,7 +1,7 @@
 /**
  * Cadastro de peças — preço de venda a partir do custo.
  *
- * Margem aqui é sobre o custo (markup): custo R$ 100 com 40% → venda R$ 140.
+ * Margem aqui é sobre o custo (markup): custo R$ 100 com 100% → venda R$ 200.
  * Preço da peça: preço fixo, se tiver; senão custo + margem da peça; senão custo + margem padrão.
  */
 import { supabase } from '@/lib/supabase';
@@ -14,7 +14,7 @@ export type WorkshopPart = {
   active: boolean; created_at: string; updated_at: string;
 };
 
-export const DEFAULT_MARGIN = 40;
+export const DEFAULT_MARGIN = 100;
 
 export const UNITS = ['un', 'par', 'jogo', 'kit', 'litro', 'ml', 'kg', 'metro'];
 
@@ -41,7 +41,7 @@ export function marginOf(cost: number | null | undefined, price: number) {
 
 export const fmtPct = (n: number | null) => (n == null ? '—' : `${Math.round(n)}%`);
 
-/** Margem padrão da oficina (40% se nunca foi definida) */
+/** Margem padrão da oficina (100% se nunca foi definida) */
 export async function loadDefaultMargin(workshopId: string) {
   const { data } = await supabase.from('workshop_pricing').select('part_margin_percent').eq('workshop_id', workshopId).maybeSingle();
   return data ? Number((data as { part_margin_percent: number }).part_margin_percent) : DEFAULT_MARGIN;

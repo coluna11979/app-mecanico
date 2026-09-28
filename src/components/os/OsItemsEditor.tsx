@@ -3,7 +3,8 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
-import { fmtPct, fmtQty, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { DEFAULT_MARGIN, fmtPct, fmtQty, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import QuickPartModal from '@/components/parts/QuickPartModal';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -58,14 +59,18 @@ interface Props {
   readOnly?: boolean;
   /** Mostra custo e margem das peças (gestor / permissão "Ver financeiro") */
   showCost?: boolean;
+  /** "OS nº 0123" — vai na observação da compra feita pelo cadastro rápido de peça */
+  osLabel?: string;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => items.map(toRow));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
   const [suggestions, setSugg]  = useState<Suggestion[]>([]);
+  const [margin, setMargin]     = useState(DEFAULT_MARGIN);
+  const [quick, setQuick]       = useState<{ key: string; name: string; qty: number } | null>(null);
 
   // Recarrega quando os itens salvos mudam (após salvar)
   useEffect(() => { setRows(items.map(toRow)); }, [items]);
@@ -96,6 +101,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         if (!seen.has(k)) seen.set(k, { description: d.description.trim(), kind: d.kind, unit_price: Number(d.unit_price) });
       }
       setSugg([...seen.values()]);
+      setMargin(margin);
     })();
     return () => { alive = false; };
   }, [workshopId]);
@@ -263,6 +269,19 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         </div>
       )}
 
+      {quick && (
+        <QuickPartModal wid={workshopId} osLabel={osLabel} initialName={quick.name} quantity={quick.qty} defaultMargin={margin}
+          onClose={() => setQuick(null)}
+          onSaved={res => {
+            setSugg(xs => [{ description: res.name, kind: 'part', unit_price: res.price, part_id: res.part_id, cost: res.cost, stock: 0, unit: res.unit },
+              ...xs.filter(x => x.description.toLowerCase() !== res.name.toLowerCase())]);
+            setRows(rs => rs.map(x => x.key === quick.key
+              ? { ...x, description: res.name, part_id: res.part_id, unit_cost: moneyInput(res.cost), unit_price: moneyInput(res.price) }
+              : x));
+            setQuick(null);
+          }} />
+      )}
+
       <datalist id={`os-items-sugg-${osId}`}>
         {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? `Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : KIND_LABEL[s.kind]} · {fmtBRL(s.unit_price)}</option>)}
       </datalist>
@@ -294,6 +313,20 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : 'Ex.: Troca de pastilhas'}
                   list={`os-items-sugg-${osId}`} value={r.description}
                   onChange={e => update(r.key, { description: e.target.value })} />
+              )}
+              {!readOnly && r.kind === 'part' && r.description.trim().length >= 2 && !r.part_id && (
+                showCost ? (
+                  <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
+                    <span>Peça não cadastrada</span>
+                    <button type="button" className="font-semibold text-brand-700 hover:underline"
+                      onClick={() => setQuick({ key: r.key, name: r.description.trim(), qty: parseMoney(r.quantity) || 1 })}>
+                      ➕ Cadastrar esta peça
+                    </button>
+                    <span className="text-steel-400">ou use só nesta OS (avulsa)</span>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-steel-400 mt-1">Peça avulsa (não está no cadastro)</div>
+                )
               )}
             </div>
             {/* Qtd */}

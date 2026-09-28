@@ -11,6 +11,7 @@ import {
   type PriceMode, type WorkshopPart,
 } from '@/lib/parts';
 import { fmtDate, type StockMovement, type Supplier } from '@/lib/purchasing';
+import SupplierPicker from '@/components/parts/SupplierPicker';
 
 const MOVE_LABEL: Record<StockMovement['kind'], string> = {
   compra: 'Compra', estorno_compra: 'Estorno de compra', os: 'Usada em OS', estorno_os: 'OS reaberta', ajuste: 'Ajuste',
@@ -170,7 +171,7 @@ export default function Pecas() {
       </div>
 
       {editing && wid && margin != null && (
-        <PartForm wid={wid} part={editing === 'new' ? null : editing} defaultMargin={margin} suppliers={suppliers}
+        <PartForm wid={wid} part={editing === 'new' ? null : editing} defaultMargin={margin}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}
     </WorkshopLayout>
@@ -213,8 +214,8 @@ function DefaultMargin({ wid, value, onSaved }: { wid: string; value: number; on
   );
 }
 
-function PartForm({ wid, part, defaultMargin, suppliers, onClose, onSaved }: {
-  wid: string; part: WorkshopPart | null; defaultMargin: number; suppliers: Supplier[]; onClose: () => void; onSaved: () => void;
+function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
+  wid: string; part: WorkshopPart | null; defaultMargin: number; onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName]         = useState(part?.name ?? '');
   const [code, setCode]         = useState(part?.code ?? '');
@@ -316,10 +317,7 @@ function PartForm({ wid, part, defaultMargin, suppliers, onClose, onSaved }: {
             </div>
             <div>
               <label className="label">Fornecedor</label>
-              <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-                <option value="">—</option>
-                {suppliers.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
-              </select>
+              <SupplierPicker wid={wid} value={supplierId || null} onChange={x => setSupplierId(x?.id ?? '')} placeholder="Buscar…" />
             </div>
           </div>
 
