@@ -28,10 +28,29 @@ export type StockMovement = {
   invoice_id: string | null; service_order_id: string | null; note: string | null; created_at: string;
 };
 
-export const PAYABLE_CATEGORIES = [
-  'Fornecedor', 'Aluguel', 'Energia', 'Água', 'Internet / telefone', 'Salários', 'Impostos',
-  'Contador', 'Sistemas', 'Manutenção', 'Outros',
+/** Tipos de despesa e as categorias de cada um */
+export type PayableGroupKey = 'fixas' | 'pessoal' | 'fornecedores' | 'impostos' | 'variaveis';
+
+export const PAYABLE_GROUPS: { key: PayableGroupKey; label: string; icon: string; badge: string; bar: string; categories: string[] }[] = [
+  { key: 'fixas', label: 'Fixas', icon: '🏠', badge: 'bg-brand-50 text-brand-700', bar: 'bg-brand-500',
+    categories: ['Aluguel', 'Energia', 'Água', 'Internet / telefone', 'Contador', 'Sistemas', 'Seguro'] },
+  { key: 'pessoal', label: 'Pessoal', icon: '👷', badge: 'bg-signal-50 text-signal-700', bar: 'bg-signal-500',
+    categories: ['Salários', 'Pró-labore', 'Encargos (INSS/FGTS)', 'Vale-transporte / alimentação'] },
+  { key: 'fornecedores', label: 'Fornecedores e peças', icon: '🔩', badge: 'bg-steel-100 text-steel-700', bar: 'bg-steel-500',
+    categories: ['Fornecedor'] },
+  { key: 'impostos', label: 'Impostos', icon: '🧾', badge: 'bg-alert-50 text-alert-700', bar: 'bg-alert-400',
+    categories: ['Simples / DAS', 'IPTU', 'Impostos'] },
+  { key: 'variaveis', label: 'Variáveis', icon: '🔧', badge: 'bg-pending-50 text-pending-800', bar: 'bg-pending-500',
+    categories: ['Manutenção', 'Ferramentas', 'Marketing', 'Combustível', 'Outros'] },
 ];
+
+export const PAYABLE_CATEGORIES = PAYABLE_GROUPS.flatMap(g => g.categories);
+
+/** Tipo da categoria (categoria própria ou desconhecida → Variáveis) */
+export function groupOf(category: string | null | undefined) {
+  const c = (category ?? '').trim().toLowerCase();
+  return PAYABLE_GROUPS.find(g => g.categories.some(x => x.toLowerCase() === c)) ?? PAYABLE_GROUPS[4];
+}
 
 /** Data local de hoje em "AAAA-MM-DD" */
 export function todayISO() {
