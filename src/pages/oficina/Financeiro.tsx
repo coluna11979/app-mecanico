@@ -29,6 +29,7 @@ export default function Financeiro() {
   const [mechs, setMechs]       = useState<PanelMechanic[]>([]);
   const [ops, setOps]           = useState<Record<string, string>>({});
   const [firstOpen, setFirstOpen] = useState<string | null>(null);
+  const [costItems, setCostItems] = useState<{ service_order_id: string; quantity: number; unit_price: number; unit_cost: number }[]>([]);
   const [loading, setLoading]   = useState(true);
 
   const prev  = useMemo(() => previousRange(range), [range]);
@@ -42,7 +43,7 @@ export default function Financeiro() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [e, p, r, o, m, op, first] = await Promise.all([
+      const [e, p, r, o, m, op, first, ci] = await Promise.all([
         fetchAll((a, b) => supabase.from('cash_entries')
           .select('id, kind, method, amount, installments, category, mechanic_id, created_at')
           .eq('workshop_id', wid).is('cancelled_at', null).gte('created_at', fromIso).lt('created_at', toIso)
@@ -62,6 +63,10 @@ export default function Financeiro() {
         supabase.from('workshop_operators').select('id, name').eq('workshop_id', wid),
         supabase.from('cash_registers').select('opened_at').eq('workshop_id', wid)
           .order('opened_at').limit(1).maybeSingle(),
+        fetchAll((a, b) => supabase.from('service_order_items')
+          .select('service_order_id, quantity, unit_price, unit_cost')
+          .eq('workshop_id', wid).eq('kind', 'part').not('unit_cost', 'is', null)
+          .order('id').range(a, b)),
       ]);
       if (!alive) return;
       setEntries((e.data as FinEntry[]) ?? []);
@@ -70,6 +75,7 @@ export default function Financeiro() {
       setOs((o.data as unknown as FinOs[]) ?? []);
       setMechs((m.data as PanelMechanic[]) ?? []);
       setOps(Object.fromEntries(((op.data as { id: string; name: string }[]) ?? []).map(x => [x.id, x.name])));
+      setCostItems((ci.data as typeof costItems) ?? []);
       setFirstOpen((first.data as { opened_at: string } | null)?.opened_at ?? null);
       setLoading(false);
     })();
@@ -80,6 +86,12 @@ export default function Financeiro() {
     const cur = cashFlowOf(entries, payments, range);
     const before = cashFlowOf(entries, payments, prev);
     const sales = salesOf(os, range);
+    // Peças com custo informado nas OS concluídas no período
+    const saleIds = new Set(sales.sales.map(o => o.id));
+    const withCost = costItems.filter(i => saleIds.has(i.service_order_id));
+    const partsCost = withCost.reduce((a, i) => a + Number(i.quantity) * Number(i.unit_cost), 0);
+    const partsSale = withCost.reduce((a, i) => a + Number(i.quantity) * Number(i.unit_price), 0);
+    const osWithCost = new Set(withCost.map(i => i.service_order_id)).size;
     const vales = valesByMechanic(entries, range);
     const names = new Map(mechs.map(x => [x.id, x.name]));
     const team = new Map<string, { id: string; name: string; commission: number; vales: number }>();
@@ -100,10 +112,11 @@ export default function Financeiro() {
       categories: expensesByCategory(entries, range),
       team: [...team.values()].sort((a, b) => (b.commission - b.vales) - (a.commission - a.vales)),
       toReceive: receivables(os, firstOpen),
+      partsCost, partsSale, osWithCost,
       closes: closings(regs, range),
       series: flowSeries(entries, range),
     };
-  }, [entries, payments, regs, os, mechs, range, prev, firstOpen]);
+  }, [entries, payments, regs, os, mechs, range, prev, firstOpen, costItems]);
 
   if (!allowed) {
     return (
@@ -172,6 +185,13 @@ export default function Financeiro() {
                 <Line label="Recebido de OS no caixa" value={brl(f.cur.received)} sub={`${f.cur.receipts} recebimento${f.cur.receipts === 1 ? '' : 's'}`} />
                 {f.cur.other > 0 && <Line label="Entradas avulsas" value={brl(f.cur.other)} />}
                 <Line label="Descontos no balcão" value={brl(f.cur.discounts)} sub={`${f.cur.discountCount}×`} muted />
+                {f.osWithCost > 0 && (
+                  <>
+                    <Line label="Custo das peças" value={brl(f.partsCost)} sub={`${f.osWithCost} de ${f.sales.count} OS com custo`} />
+                    <Line label="Lucro nas peças" value={brl(f.partsSale - f.partsCost)}
+                      sub={f.partsCost > 0 ? `margem ${Math.round(((f.partsSale - f.partsCost) / f.partsCost) * 100)}%` : undefined} />
+                  </>
+                )}
                 <p className="text-[11px] text-steel-400 mt-3 leading-snug">
                   Faturado conta a OS no dia em que foi concluída; recebido conta o dia em que o dinheiro entrou.
                 </p>

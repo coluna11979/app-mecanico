@@ -1,0 +1,47 @@
+/**
+ * Cadastro de peças — preço de venda a partir do custo.
+ *
+ * Margem aqui é sobre o custo (markup): custo R$ 100 com 40% → venda R$ 140.
+ * Preço da peça: preço fixo, se tiver; senão custo + margem da peça; senão custo + margem padrão.
+ */
+import { supabase } from '@/lib/supabase';
+
+export type WorkshopPart = {
+  id: string; workshop_id: string; name: string; code: string | null; brand: string | null;
+  unit: string; supplier: string | null; cost: number;
+  margin_percent: number | null; sale_price: number | null;
+  active: boolean; created_at: string; updated_at: string;
+};
+
+export const DEFAULT_MARGIN = 40;
+
+export const UNITS = ['un', 'par', 'jogo', 'kit', 'litro', 'ml', 'kg', 'metro'];
+
+export type PriceMode = 'default' | 'margin' | 'fixed';
+
+export const priceModeOf = (p: Pick<WorkshopPart, 'margin_percent' | 'sale_price'>): PriceMode =>
+  p.sale_price != null ? 'fixed' : p.margin_percent != null ? 'margin' : 'default';
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export const priceFromMargin = (cost: number, margin: number) => round2(cost * (1 + margin / 100));
+
+/** Preço de venda da peça */
+export function salePriceOf(p: Pick<WorkshopPart, 'cost' | 'margin_percent' | 'sale_price'>, defaultMargin: number) {
+  if (p.sale_price != null) return Number(p.sale_price);
+  return priceFromMargin(Number(p.cost), p.margin_percent != null ? Number(p.margin_percent) : defaultMargin);
+}
+
+/** Margem sobre o custo (%) — null quando não há custo para comparar */
+export function marginOf(cost: number | null | undefined, price: number) {
+  if (cost == null || !(cost > 0)) return null;
+  return ((price - cost) / cost) * 100;
+}
+
+export const fmtPct = (n: number | null) => (n == null ? '—' : `${Math.round(n)}%`);
+
+/** Margem padrão da oficina (40% se nunca foi definida) */
+export async function loadDefaultMargin(workshopId: string) {
+  const { data } = await supabase.from('workshop_pricing').select('part_margin_percent').eq('workshop_id', workshopId).maybeSingle();
+  return data ? Number((data as { part_margin_percent: number }).part_margin_percent) : DEFAULT_MARGIN;
+}

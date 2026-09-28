@@ -4,6 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
+import { canDo, useOperator } from '@/lib/operators';
 import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
@@ -22,6 +23,8 @@ type OsLink = { id: string; number: number | null; title: string; created_at: st
 export default function OsDetail() {
   const { id } = useParams();
   const { currentWorkshop } = useAuth();
+  const { balcao, session } = useOperator();
+  const showCost = canDo(session, balcao, 'ver_financeiro');
   const [os, setOs]         = useState<OsRow | null>(null);
   const [items, setItems]   = useState<ServiceOrderItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -441,6 +444,7 @@ export default function OsDetail() {
               discount={Number(os.discount ?? 0)}
               legacy={{ parts: os.parts_cost, labor: os.labor_cost, price: os.price }}
               readOnly={closed}
+              showCost={showCost}
               onSaved={load}
             />
 

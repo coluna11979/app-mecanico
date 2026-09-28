@@ -254,6 +254,10 @@ export interface ServiceOrderItem {
   description: string;
   quantity: number;
   unit_price: number;
+  /** Custo de compra no momento (só peças; null = não informado) */
+  unit_cost?: number | null;
+  /** Peça do cadastro de onde veio */
+  part_id?: string | null;
   position: number;
   created_at: string;
 }

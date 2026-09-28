@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
+import { fmtPct, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -12,9 +13,13 @@ type Row = {
   description: string;
   quantity: string;
   unit_price: string;
+  /** Custo de compra do momento (só peças) */
+  unit_cost: string;
+  /** Peça do cadastro de onde veio */
+  part_id: string | null;
 };
 
-type Suggestion = { description: string; kind: OsItemKind; unit_price: number };
+type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -25,6 +30,7 @@ function toRow(i: ServiceOrderItem): Row {
   return {
     key: i.id, id: i.id, kind: i.kind, description: i.description,
     quantity: String(i.quantity).replace('.', ','), unit_price: moneyInput(i.unit_price),
+    unit_cost: i.unit_cost != null ? moneyInput(Number(i.unit_cost)) : '', part_id: i.part_id ?? null,
   };
 }
 
@@ -32,6 +38,14 @@ function rowTotal(r: Row): number {
   const q = parseMoney(r.quantity);
   const p = parseMoney(r.unit_price);
   return Number.isFinite(q) && Number.isFinite(p) ? q * p : 0;
+}
+
+/** Custo total da linha (null quando a peça não tem custo informado) */
+function rowCost(r: Row): number | null {
+  if (r.kind !== 'part' || !r.unit_cost.trim()) return null;
+  const q = parseMoney(r.quantity);
+  const c = parseMoney(r.unit_cost);
+  return Number.isFinite(q) && Number.isFinite(c) ? q * c : null;
 }
 
 interface Props {
@@ -42,10 +56,12 @@ interface Props {
   /** OS antiga sem itens: valores digitados à mão na criação */
   legacy: { parts: number | null; labor: number | null; price: number };
   readOnly?: boolean;
+  /** Mostra custo e margem das peças (gestor / permissão "Ver financeiro") */
+  showCost?: boolean;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => items.map(toRow));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -55,23 +71,32 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   useEffect(() => { setRows(items.map(toRow)); }, [items]);
   useEffect(() => { setDisc(discount ? moneyInput(discount) : ''); }, [discount]);
 
-  // Sugestões: itens que a oficina já usou (último preço cobrado)
+  // Sugestões: peças do cadastro (preço de venda atual) e itens que a oficina já usou (último preço cobrado)
   useEffect(() => {
     let alive = true;
-    supabase.from('service_order_items')
-      .select('description, kind, unit_price, created_at')
-      .eq('workshop_id', workshopId)
-      .order('created_at', { ascending: false })
-      .limit(300)
-      .then(({ data }) => {
-        if (!alive || !data) return;
-        const seen = new Map<string, Suggestion>();
-        for (const d of data as Suggestion[]) {
-          const k = d.description.trim().toLowerCase();
-          if (!seen.has(k)) seen.set(k, { description: d.description.trim(), kind: d.kind, unit_price: Number(d.unit_price) });
-        }
-        setSugg([...seen.values()]);
-      });
+    (async () => {
+      const [cat, hist, margin] = await Promise.all([
+        supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price')
+          .eq('workshop_id', workshopId).eq('active', true).order('name'),
+        supabase.from('service_order_items')
+          .select('description, kind, unit_price, created_at')
+          .eq('workshop_id', workshopId)
+          .order('created_at', { ascending: false })
+          .limit(300),
+        loadDefaultMargin(workshopId),
+      ]);
+      if (!alive) return;
+      const seen = new Map<string, Suggestion>();
+      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'cost' | 'margin_percent' | 'sale_price'>[]) {
+        const k = p.name.trim().toLowerCase();
+        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, cost: Number(p.cost) });
+      }
+      for (const d of (hist.data ?? []) as Suggestion[]) {
+        const k = d.description.trim().toLowerCase();
+        if (!seen.has(k)) seen.set(k, { description: d.description.trim(), kind: d.kind, unit_price: Number(d.unit_price) });
+      }
+      setSugg([...seen.values()]);
+    })();
     return () => { alive = false; };
   }, [workshopId]);
 
@@ -79,26 +104,39 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const labor = rows.filter(r => r.kind === 'labor').reduce((a, r) => a + rowTotal(r), 0);
   const disc  = Number.isFinite(parseMoney(discountStr)) ? parseMoney(discountStr) : 0;
   const total = Math.max(parts + labor - disc, 0);
+  const partRows = rows.filter(r => r.kind === 'part');
+  const costed = partRows.filter(r => rowCost(r) != null);
+  const partsCost = costed.reduce((a, r) => a + (rowCost(r) ?? 0), 0);
+  const costedSale = costed.reduce((a, r) => a + rowTotal(r), 0);
 
   const original = useMemo(() => JSON.stringify(items.map(toRow)), [items]);
   const dirty = JSON.stringify(rows) !== original
     || Math.abs(disc - (discount ?? 0)) > 0.001;
 
   function addRow(kind: OsItemKind) {
-    setRows(rs => [...rs, { key: newKey(), kind, description: '', quantity: '1', unit_price: '' }]);
+    setRows(rs => [...rs, { key: newKey(), kind, description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null }]);
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
       if (r.key !== key) return r;
       const next = { ...r, ...patch };
-      // Escolheu um item já usado antes → completa tipo e preço (se vazio)
+      // Escolheu um item já usado antes → completa tipo e preço (se vazio).
+      // Peça do cadastro → também guarda de qual peça veio e o custo de agora.
       if (patch.description !== undefined) {
         const s = suggestions.find(x => x.description.toLowerCase() === patch.description!.trim().toLowerCase());
         if (s) {
           next.kind = s.kind;
           if (!r.unit_price) next.unit_price = moneyInput(s.unit_price);
+          if (s.part_id && s.part_id !== r.part_id) {
+            next.part_id = s.part_id;
+            next.unit_price = moneyInput(s.unit_price);
+            next.unit_cost = s.cost ? moneyInput(s.cost) : '';
+          }
+        } else if (r.part_id) {
+          next.part_id = null;
         }
       }
+      if (next.kind !== 'part') { next.part_id = null; next.unit_cost = ''; }
       return next;
     }));
   }
@@ -122,6 +160,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       if (!Number.isFinite(q) || q <= 0) return toast.error(`Item ${i + 1}: quantidade inválida`);
       const p = parseMoney(r.unit_price || '0');
       if (!Number.isFinite(p) || p < 0) return toast.error(`Item ${i + 1}: valor inválido`);
+      if (r.kind === 'part' && r.unit_cost.trim()) {
+        const c = parseMoney(r.unit_cost);
+        if (!Number.isFinite(c) || c < 0) return toast.error(`Item ${i + 1}: custo inválido`);
+      }
     }
     if (!Number.isFinite(disc) || disc < 0) return toast.error('Desconto inválido');
     if (disc > parts + labor && rows.length > 0) return toast.error('O desconto não pode ser maior que o total');
@@ -143,6 +185,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         description: r.description.trim(),
         quantity: parseMoney(r.quantity),
         unit_price: parseMoney(r.unit_price || '0'),
+        unit_cost: r.kind === 'part' && r.unit_cost.trim() ? parseMoney(r.unit_cost) : null,
+        part_id: r.kind === 'part' ? r.part_id : null,
         position: idx,
       }));
       const existing = payload.filter(p => 'id' in p);
@@ -220,7 +264,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       )}
 
       <datalist id={`os-items-sugg-${osId}`}>
-        {suggestions.map(s => <option key={s.description} value={s.description}>{KIND_LABEL[s.kind]} · {fmtBRL(s.unit_price)}</option>)}
+        {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? 'Peça cadastrada' : KIND_LABEL[s.kind]} · {fmtBRL(s.unit_price)}</option>)}
       </datalist>
 
       <div className="divide-y divide-steel-100">
@@ -283,6 +327,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 <RowActions idx={idx} count={rows.length} onUp={() => move(r.key, -1)} onDown={() => move(r.key, 1)} onRemove={() => remove(r.key)} />
               </div>
             )}
+            {/* Custo e margem da peça (só para quem vê o financeiro) */}
+            {showCost && r.kind === 'part' && (
+              <CostLine row={r} readOnly={readOnly} onChange={v => update(r.key, { unit_cost: v })} />
+            )}
           </div>
         ))}
       </div>
@@ -317,6 +365,21 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               <span className="font-bold text-steel-900">Total</span>
               <span className="font-bold font-display text-xl text-steel-900">{fmtBRL(total)}</span>
             </div>
+            {showCost && partRows.length > 0 && (
+              <div className="pt-2 mt-1 border-t border-dashed border-steel-200 space-y-1 text-xs">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">Só a gestão vê</div>
+                <div className="flex justify-between text-steel-600"><span>Custo das peças</span><span>{fmtBRL(partsCost)}</span></div>
+                <div className="flex justify-between text-steel-600">
+                  <span>Lucro nas peças</span>
+                  <span className={costedSale - partsCost < 0 ? 'text-alert-600 font-semibold' : 'text-signal-700 font-semibold'}>
+                    {fmtBRL(costedSale - partsCost)} · {fmtPct(marginOf(partsCost, costedSale))}
+                  </span>
+                </div>
+                {costed.length < partRows.length && (
+                  <div className="text-pending-700">{partRows.length - costed.length} peça{partRows.length - costed.length === 1 ? '' : 's'} sem custo informado</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -350,5 +413,32 @@ function RowActions({ idx, count, onUp, onDown, onRemove }: {
       <button type="button" onClick={onDown} disabled={idx === count - 1} className={`${btn} bg-steel-100 hover:bg-steel-200 text-steel-600`} title="Descer">↓</button>
       <button type="button" onClick={onRemove} className={`${btn} bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600`} title="Remover">✕</button>
     </>
+  );
+}
+
+function CostLine({ row, readOnly, onChange }: { row: Row; readOnly?: boolean; onChange: (v: string) => void }) {
+  const cost = rowCost(row);
+  const sale = rowTotal(row);
+  const pct = cost != null ? marginOf(cost, sale) : null;
+  return (
+    <div className="col-span-12 md:col-start-3 md:col-span-9 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-steel-500 -mt-1">
+      {row.part_id && <span className="badge bg-steel-100 text-steel-600">🔩 do cadastro</span>}
+      <span className="flex items-center gap-1.5">
+        Custo unit.
+        {readOnly ? <strong className="text-steel-700">{row.unit_cost ? `R$ ${row.unit_cost}` : '—'}</strong> : (
+          <span className="relative">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-steel-400 text-[11px]">R$</span>
+            <input className="input !py-1 !pl-7 !w-24 text-xs text-right" inputMode="decimal" placeholder="0,00" value={row.unit_cost}
+              onChange={e => onChange(e.target.value)}
+              onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) onChange(moneyInput(v)); }} />
+          </span>
+        )}
+      </span>
+      {cost != null && (
+        <span className={sale - cost < 0 ? 'text-alert-600 font-semibold' : 'text-signal-700'}>
+          lucro {fmtBRL(sale - cost)} · margem {fmtPct(pct)}
+        </span>
+      )}
+    </div>
   );
 }

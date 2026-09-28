@@ -32,6 +32,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'Operação', items: [
     { to: '/oficina/os',         icon: '📋', label: 'Ordens de Serviço'    },
     { to: '/oficina/checkup',    icon: '🩺', label: 'Check-up'             },
+    { to: '/oficina/pecas',      icon: '🔩', label: 'Peças e preços'       },
     { to: '/oficina/importar',   icon: '📷', label: 'Importar orçamentos'  },
   ] },
   { title: 'Equipe', items: [
