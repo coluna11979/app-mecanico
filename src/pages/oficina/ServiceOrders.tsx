@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
+import { fetchAll } from '@/lib/fetchAll';
 import { useAuth } from '@/contexts/AuthContext';
 import type {
   ServiceOrder, Customer, Vehicle,
@@ -120,11 +121,13 @@ export default function ServiceOrders() {
   }, [user, currentWorkshop?.id]);
 
   async function fetchOS(wid: string) {
-    const { data } = await supabase
+    // Em páginas: o Supabase devolve no máximo 1000 linhas por consulta
+    const { data } = await fetchAll((a, b) => supabase
       .from('service_orders')
       .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics!fk_so_workshop_mechanic(*), pauses:service_order_pauses(*)')
       .eq('workshop_id', wid)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }).order('id')
+      .range(a, b));
     setList((data as OsRow[]) ?? []);
   }
   async function fetchMechs(wid: string) {
@@ -226,10 +229,14 @@ export default function ServiceOrders() {
     return null;
   })();
 
-  const filtered = list.filter(o => {
-    if (filterStatus !== 'all' && o.status !== filterStatus) return false;
+  // Período: a OS entra se foi aberta, concluída ou paga dentro dele
+  const inPeriod = (o: OsRow) => periodCutoff === null
+    || [o.created_at, o.completed_at, o.paid_at].some(d => d && new Date(d).getTime() >= periodCutoff);
+
+  // Filtros de período, mecânico e busca (sem o de status) — os contadores dos chips usam esta base
+  const base = list.filter(o => {
     if (filterMech !== 'all' && (o.workshop_mechanic_id ?? 'none') !== filterMech) return false;
-    if (periodCutoff !== null && new Date(o.created_at).getTime() < periodCutoff) return false;
+    if (!inPeriod(o)) return false;
     if (search) {
       const q = search.toLowerCase();
       return (
@@ -242,12 +249,13 @@ export default function ServiceOrders() {
     }
     return true;
   });
+  const filtered = filterStatus === 'all' ? base : base.filter(o => o.status === filterStatus);
 
   const agendados = list
     .filter(o => o.scheduled_at && PRE_START.includes(o.status))
     .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
 
-  const counts  = STATUSES.reduce((acc, s) => ({ ...acc, [s]: list.filter(o => o.status === s).length }), {} as Record<string, number>);
+  const counts  = STATUSES.reduce((acc, s) => ({ ...acc, [s]: base.filter(o => o.status === s).length }), {} as Record<string, number>);
   const osCount = list.filter(o => !o.scheduled_at || !PRE_START.includes(o.status)).length;
 
   /* ══════════════════════════════════════════════ RENDER ══ */
@@ -350,7 +358,7 @@ export default function ServiceOrders() {
             <StatusChips
               value={filterStatus}
               counts={counts}
-              total={list.length}
+              total={base.length}
               onChange={setFilterStatus}
             />
             <div className="flex flex-wrap gap-2 items-center">

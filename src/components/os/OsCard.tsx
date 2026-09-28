@@ -139,6 +139,11 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
           <div className="text-lg sm:text-xl font-bold font-display text-steel-900">
             {fmtBRL(os.price)}
           </div>
+          {Number(os.paid_amount ?? 0) > 0 && (
+            Number(os.price) - Number(os.counter_discount ?? 0) - Number(os.paid_amount) > 0.009
+              ? <span className="badge bg-pending-100 text-pending-800 text-[10px]">Pago em parte</span>
+              : <span className="badge bg-signal-100 text-signal-700 text-[10px]">✓ Paga</span>
+          )}
         </div>
       </div>
 

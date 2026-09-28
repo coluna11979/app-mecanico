@@ -222,6 +222,12 @@ export interface ServiceOrder {
   /** Número sequencial por oficina (OS nº 0001). Preenchido por trigger. */
   number: number | null;
   discount: number;
+  /** Quanto já foi recebido no Caixa */
+  paid_amount?: number;
+  /** Desconto dado no balcão, na hora de receber */
+  counter_discount?: number;
+  /** Quitada em */
+  paid_at?: string | null;
   /** 'declined' = orçamento que o cliente não aprovou (status fica 'cancelled') */
   quote_status?: 'declined' | null;
   /** 'app' | 'paper_import' */

@@ -8,6 +8,7 @@ import { METHODS, brl, hhmm } from '@/lib/cash';
 import { osNumber } from '@/components/os/osHelpers';
 import { fetchAll } from '@/lib/fetchAll';
 import { daysUntil, type Payable } from '@/lib/purchasing';
+import ReceivedPayments from '@/components/cash/ReceivedPayments';
 import { change, previousRange, productivity, salesOf, type PanelMechanic } from '@/lib/workshopMetrics';
 import PeriodPicker, { PREV_LABEL, usePeriod } from '@/components/PeriodPicker';
 import {
@@ -269,6 +270,14 @@ export default function Financeiro() {
                 </p>
               </div>
             </div>
+
+            {/* OS recebidas */}
+            {wid && (
+              <div className="card">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">🧾 OS recebidas no período</div>
+                <ReceivedPayments wid={wid} from={range.from} to={range.to} ops={ops} compact />
+              </div>
+            )}
 
             {/* Contas a pagar */}
             <PayablesCard payables={payables} from={range.from} to={range.to} />

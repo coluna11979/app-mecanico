@@ -9,6 +9,7 @@ import {
   type CashEntry, type CashRegister, type CashSummary, type EntryKind, type PayMethod,
 } from '@/lib/cash';
 import type { WorkshopMechanic } from '@/types/database';
+import ReceivedPayments from '@/components/cash/ReceivedPayments';
 
 type OpenOs = {
   id: string; number: number | null; title: string; price: number; paid_amount: number; counter_discount: number;
@@ -16,7 +17,7 @@ type OpenOs = {
   customer: { full_name: string } | null; vehicle: { plate: string | null; make: string | null; model: string | null } | null;
 };
 
-type Tab = 'receber' | 'movimentos' | 'fechar';
+type Tab = 'receber' | 'recebidas' | 'movimentos' | 'fechar';
 
 const osNum = (o: { id: string; number: number | null }) => (o.number != null ? String(o.number).padStart(4, '0') : o.id.slice(0, 8));
 const remainingOf = (o: OpenOs) => Math.round((o.price - o.counter_discount - o.paid_amount) * 100) / 100;
@@ -84,7 +85,13 @@ export default function Caixa() {
         </div>
 
         {!reg ? (
-          <OpenRegister wid={wid!} sid={sid} lastClosed={lastClosed} ops={ops} canReopen={can('reabrir_caixa')} onDone={load} />
+          <>
+            <OpenRegister wid={wid!} sid={sid} lastClosed={lastClosed} ops={ops} canReopen={can('reabrir_caixa')} onDone={load} />
+            <div className="card mt-5">
+              <h2 className="font-bold mb-3">✅ Consultar OS recebidas</h2>
+              <ReceivedTab wid={wid!} ops={ops} />
+            </div>
+          </>
         ) : (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
@@ -95,7 +102,7 @@ export default function Caixa() {
             </div>
 
             <div className="flex gap-2 mb-4">
-              {([['receber', '🧾 Receber OS'], ['movimentos', '↕️ Movimentações'], ['fechar', '🔒 Fechar caixa']] as [Tab, string][]).map(([k, l]) => (
+              {([['receber', '🧾 Receber OS'], ['recebidas', '✅ Recebidas'], ['movimentos', '↕️ Movimentações'], ['fechar', '🔒 Fechar caixa']] as [Tab, string][]).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)}
                   className={`text-sm font-semibold px-4 py-2 rounded-full border transition ${
                     tab === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
@@ -105,6 +112,7 @@ export default function Caixa() {
             </div>
 
             {tab === 'receber' && <ReceiveTab wid={wid!} sid={sid} canDiscount={can('dar_desconto')} onDone={load} />}
+            {tab === 'recebidas' && <div className="card"><ReceivedTab wid={wid!} ops={ops} /></div>}
             {tab === 'movimentos' && (
               <MovementsTab wid={wid!} sid={sid} entries={entries} ops={ops} team={team}
                 canCancel={can('cancelar_recebimento')} onDone={load} />
@@ -584,6 +592,38 @@ function CloseTab({ wid, sid, summary, onDone }: { wid: string; sid: string | nu
         <textarea className="input min-h-[70px]" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Explique qualquer diferença" />
         <button onClick={close} disabled={busy} className="btn-primary w-full mt-4 btn-lg">{busy ? 'Fechando…' : '🔒 Fechar caixa'}</button>
       </div>
+    </div>
+  );
+}
+
+const RECEIVED_PERIODS: { key: string; label: string; days: number }[] = [
+  { key: 'hoje', label: 'Hoje', days: 0 },
+  { key: '7d', label: '7 dias', days: 6 },
+  { key: '30d', label: '30 dias', days: 29 },
+  { key: '12m', label: '12 meses', days: 364 },
+];
+
+/** OS já pagas: para consultar depois que saíram da lista de "Receber" */
+function ReceivedTab({ wid, ops }: { wid: string; ops: Record<string, string> }) {
+  const [period, setPeriod] = useState('hoje');
+  const range = useMemo(() => {
+    const days = RECEIVED_PERIODS.find(p => p.key === period)?.days ?? 0;
+    const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - days);
+    const to = new Date(); to.setHours(0, 0, 0, 0); to.setDate(to.getDate() + 1);
+    return { from, to };
+  }, [period]);
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {RECEIVED_PERIODS.map(p => (
+          <button key={p.key} onClick={() => setPeriod(p.key)}
+            className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${
+              period === p.key ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <ReceivedPayments wid={wid} from={range.from} to={range.to} ops={ops} />
     </div>
   );
 }
