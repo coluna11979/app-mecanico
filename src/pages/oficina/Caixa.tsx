@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import NewOsModal from '@/components/os/NewOsModal';
+import PaymentsList from '@/components/cash/PaymentsList';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
@@ -109,7 +110,7 @@ export default function Caixa() {
             </div>
 
             {tab === 'receber' && (
-              <ReceiveTab wid={wid!} sid={sid} canDiscount={can('dar_desconto')} onDone={load}
+              <ReceiveTab wid={wid!} sid={sid} registerId={reg.id} entriesCount={entries.length} canDiscount={can('dar_desconto')} onDone={load}
                 focusOs={focusOs} onFocusUsed={() => setParams({}, { replace: true })} />
             )}
             {tab === 'movimentos' && (
@@ -200,8 +201,8 @@ function Line({ label, value, cls = '' }: { label: string; value: string; cls?: 
 
 /* ── Receber OS ──────────────────────────────────────────────────────────── */
 
-function ReceiveTab({ wid, sid, canDiscount, onDone, focusOs, onFocusUsed }: {
-  wid: string; sid: string | null; canDiscount: boolean; onDone: () => void;
+function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, focusOs, onFocusUsed }: {
+  wid: string; sid: string | null; registerId: string; entriesCount: number; canDiscount: boolean; onDone: () => void;
   focusOs: string | null; onFocusUsed: () => void;
 }) {
   const nav = useNavigate();
@@ -281,6 +282,10 @@ function ReceiveTab({ wid, sid, canDiscount, onDone, focusOs, onFocusUsed }: {
           })}
         </div>
       )}
+
+      <div className="mt-6">
+        <PaymentsList filter={{ registerId }} reloadKey={entriesCount} title="✅ Recebidas neste caixa" empty="Nenhuma OS recebida neste caixa ainda." />
+      </div>
 
       {newOs && (
         <NewOsModal
@@ -432,7 +437,16 @@ function MovementsTab({ wid, sid, entries, ops, team, canCancel, onDone }: {
   canCancel: boolean; onDone: () => void;
 }) {
   const [kind, setKind] = useState<EntryKind | null>(null);
+  const [payOs, setPayOs] = useState<Record<string, string>>({});
   const teamName = (id: string | null) => team.find(t => t.id === id)?.name;
+
+  /* recebimento → OS de origem */
+  useEffect(() => {
+    const ids = [...new Set(entries.map(e => e.payment_id).filter(Boolean))] as string[];
+    if (!ids.length) return;
+    supabase.from('os_payments').select('id, service_order_id').in('id', ids)
+      .then(({ data }) => setPayOs(Object.fromEntries(((data as { id: string; service_order_id: string }[]) ?? []).map(x => [x.id, x.service_order_id]))));
+  }, [entries]);
 
   async function cancel(e: CashEntry) {
     const what = e.payment_id ? 'o recebimento inteiro desta OS (todas as formas de pagamento)' : 'este lançamento';
@@ -478,6 +492,9 @@ function MovementsTab({ wid, sid, entries, ops, team, canCancel, onDone }: {
                     {e.category && ` · ${e.category}`}
                   </div>
                   <div className="text-xs text-steel-500 truncate">
+                    {e.kind === 'recebimento' && e.payment_id && payOs[e.payment_id] && (
+                      <Link to={`/oficina/os/${payOs[e.payment_id]}`} className="text-brand-600 font-semibold hover:underline mr-1">ver OS ›</Link>
+                    )}
                     {[e.description, e.operator_id && ops[e.operator_id] ? `por ${ops[e.operator_id]}` : null,
                       cancelled ? `estornado: ${e.cancel_reason}` : null].filter(Boolean).join(' · ')}
                   </div>

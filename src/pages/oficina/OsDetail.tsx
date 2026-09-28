@@ -10,6 +10,7 @@ import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
+import PaymentsList from '@/components/cash/PaymentsList';
 import {
   durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber, fmtPhone,
   statusChange, APPROVAL_CHANNELS, PAUSE_REASONS, openPause, workedMinutes,
@@ -459,6 +460,10 @@ export default function OsDetail() {
               showCost={showCost}
               onSaved={load}
             />
+
+            {/* Pagamentos recebidos no caixa: quando, como e quem recebeu */}
+            <PaymentsList filter={{ serviceOrderId: os.id }} showOs={false} empty={null} reloadKey={os.paid_amount}
+              title="💰 Pagamentos desta OS" />
 
             {(os.description || os.notes) && (
               <div className="grid sm:grid-cols-2 gap-4">
