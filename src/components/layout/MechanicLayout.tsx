@@ -121,9 +121,10 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
 
       {/* ── Bottom tab bar ── */}
       <nav className="fixed bottom-0 inset-x-0 bg-steel-950/98 backdrop-blur border-t border-steel-800 z-30 safe-area-inset-bottom">
-        <div className="grid grid-cols-5 max-w-lg mx-auto">
+        <div className="grid grid-cols-6 max-w-lg mx-auto">
           <Tab to="/mecanico/dashboard" label="Jobs"    icon={<IconJobs />}    badge={unread} />
           <Tab to="/mecanico/agenda"    label="Agenda"  icon={<IconAgenda />}  badge={agendaCount} />
+          <Tab to="/mecanico/checkup"   label="Check-up" icon={<IconCheckup />} end={false} />
           <Tab to="/mecanico/mapa"      label="Mapa"    icon={<IconMap />}     />
           <Tab to="/mecanico/ganhos"    label="Ganhos"  icon={<IconGanhos />}  />
           <Tab to="/mecanico/perfil"    label="Perfil"  icon={<IconProfile />} />
@@ -201,6 +202,16 @@ function IconAgenda() {
       <line x1="16" y1="2" x2="16" y2="6" />
       <line x1="8" y1="2" x2="8" y2="6" />
       <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+}
+
+function IconCheckup() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M9 3h6v3H9z" />
+      <path d="m9 13 2 2 4-4" />
     </svg>
   );
 }
