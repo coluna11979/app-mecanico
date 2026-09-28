@@ -9,9 +9,19 @@ import ReactivationList from '@/components/customers/ReactivationList';
 import CustomerForm from '@/components/customers/CustomerForm';
 import { onlyDigits, plateNorm, timeAgo } from '@/lib/customers';
 import { SEGMENTS, baseInsights, type CustomerInsight, type InsOs, type InsRec } from '@/lib/customerInsights';
+import { PRESETS, rangeOf, type Preset } from '@/components/PeriodPicker';
 
 type Base = { id: string; full_name: string; phone: string | null; cpf: string | null; created_at: string; contact_opt_out: boolean | null };
-type Row = Base & { plates: string[]; ins: CustomerInsight };
+type Sale = { d: string; price: number };
+type Row = Base & { plates: string[]; ins: CustomerInsight; sales: Sale[] };
+type PeriodKey = 'all' | Preset;
+type DateMode = 'served' | 'registered' | 'lastvisit';
+const DATE_MODES: { key: DateMode; label: string }[] = [
+  { key: 'served', label: 'Atendidos no período' },
+  { key: 'registered', label: 'Cadastrados no período' },
+  { key: 'lastvisit', label: 'Última visita no período' },
+];
+const toInput = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 type Filter = 'all' | 'money' | 'vip' | 'risk' | 'gone' | 'new' | 'due' | 'nophone';
 type Sort = 'money' | 'spent' | 'visits' | 'recent' | 'gone';
 
@@ -45,6 +55,13 @@ export default function Customers() {
   const [shown, setShown] = useState(PAGE);
   const [creating, setCreating] = useState(false);
   const [view, setView] = useState<'all' | 'reactivate'>('all');
+  const [period, setPeriod] = useState<PeriodKey>('all');
+  const [dateMode, setDateMode] = useState<DateMode>('served');
+  const [custom, setCustom] = useState(() => {
+    const t = new Date(); const f = new Date(); f.setDate(f.getDate() - 29);
+    return { from: toInput(f), to: toInput(t) };
+  });
+  const range = useMemo(() => (period === 'all' ? null : rangeOf(period, custom)), [period, custom]);
 
   useEffect(() => {
     if (!shop) return;
@@ -66,12 +83,28 @@ export default function Customers() {
       const plates = new Map<string, string[]>();
       for (const x of v.data) plates.set(x.customer_id, [...(plates.get(x.customer_id) ?? []), x.plate]);
       const ins = baseInsights(c.data.map(x => x.id), o.data, r.data);
-      setRows(c.data.map(x => ({ ...x, plates: plates.get(x.id) ?? [], ins: ins.map.get(x.id)! })));
+      const sales = new Map<string, Sale[]>();
+      for (const x of o.data) {
+        if (!x.customer_id || x.status !== 'completed' || x.quote_status || x.rework_of_id) continue;
+        sales.set(x.customer_id, [...(sales.get(x.customer_id) ?? []), { d: x.completed_at ?? x.created_at, price: Number(x.price) }]);
+      }
+      setRows(c.data.map(x => ({ ...x, plates: plates.get(x.id) ?? [], ins: ins.map.get(x.id)!, sales: sales.get(x.id) ?? [] })));
       setSummary(ins.summary);
       setLoading(false);
     })();
     return () => { alive = false; };
   }, [shop?.id]);
+
+  // Gasto/visitas de cada cliente dentro do período escolhido
+  const inRange = (iso: string | null | undefined) => {
+    if (!range || !iso) return false;
+    const t = new Date(iso).getTime();
+    return t >= range.from.getTime() && t < range.to.getTime();
+  };
+  const periodOf = (r: Row) => {
+    const s = r.sales.filter(x => inRange(x.d));
+    return { visits: s.length, spent: s.reduce((a, x) => a + x.price, 0) };
+  };
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -92,6 +125,11 @@ export default function Customers() {
         if (!(t >= mStart && t < mEnd) || s === 'risk' || s === 'gone') return false;
       }
       if (filter === 'nophone' && onlyDigits(r.phone).length >= 10) return false;
+      if (range) {
+        if (dateMode === 'served' && !r.sales.some(x => inRange(x.d))) return false;
+        if (dateMode === 'registered' && !inRange(r.created_at)) return false;
+        if (dateMode === 'lastvisit' && !inRange(r.ins.lastVisit)) return false;
+      }
       if (!q) return true;
       return r.full_name.toLowerCase().includes(q)
         || (qd.length >= 3 && (onlyDigits(r.phone).includes(qd) || onlyDigits(r.cpf).includes(qd)))
@@ -100,14 +138,25 @@ export default function Customers() {
     out = [...out].sort((a, b) => {
       switch (sort) {
         case 'money': return b.ins.opportunity.total - a.ins.opportunity.total || b.ins.spent - a.ins.spent;
-        case 'spent': return b.ins.spent - a.ins.spent;
+        case 'spent': return range && dateMode === 'served' ? periodOf(b).spent - periodOf(a).spent : b.ins.spent - a.ins.spent;
         case 'visits': return b.ins.visits - a.ins.visits || b.ins.spent - a.ins.spent;
         case 'gone': return (a.ins.lastVisit ?? '9999').localeCompare(b.ins.lastVisit ?? '9999');
         default: return b.created_at.localeCompare(a.created_at);
       }
     });
     return out;
-  }, [rows, search, filter, sort]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, search, filter, sort, range, dateMode]);
+
+  // Resumo do período (quem entrou na lista)
+  const periodSummary = useMemo(() => {
+    if (!range) return null;
+    if (dateMode !== 'served') return { count: list.length, spent: null as number | null, visits: null as number | null };
+    let spent = 0, visits = 0;
+    for (const r of list) { const p = periodOf(r); spent += p.spent; visits += p.visits; }
+    return { count: list.length, spent, visits };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, range, dateMode]);
 
   const go = (f: Filter, s?: Sort) => { setFilter(f); if (s) setSort(s); setShown(PAGE); };
 
@@ -158,9 +207,47 @@ export default function Customers() {
               <input className="input max-w-sm" placeholder="Buscar por nome, telefone, placa ou CPF…"
                 value={search} onChange={e => { setSearch(e.target.value); setShown(PAGE); }} />
               <select className="input !w-auto" value={sort} onChange={e => setSort(e.target.value as Sort)}>
-                {SORTS.map(s => <option key={s.key} value={s.key}>Ordenar: {s.label}</option>)}
+                {SORTS.map(s => <option key={s.key} value={s.key}>Ordenar: {s.key === 'spent' && range && dateMode === 'served' ? 'Maior gasto no período' : s.label}</option>)}
               </select>
             </div>
+            {/* Filtro por data */}
+            <div className="card !py-3 !px-4 mb-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-steel-500 mr-1">📅 Período</span>
+              {([{ key: 'all', label: 'Todo o período' }, ...PRESETS] as { key: PeriodKey; label: string }[]).map(p => (
+                <button key={p.key} onClick={() => { setPeriod(p.key); setShown(PAGE); }}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${period === p.key ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200 hover:border-steel-300'}`}>
+                  {p.label}
+                </button>
+              ))}
+              {period === 'custom' && (
+                <span className="flex items-center gap-1.5">
+                  <input type="date" className="input !py-1 !w-auto text-sm" value={custom.from} onChange={e => setCustom(c => ({ ...c, from: e.target.value }))} />
+                  <span className="text-steel-400 text-sm">a</span>
+                  <input type="date" className="input !py-1 !w-auto text-sm" value={custom.to} onChange={e => setCustom(c => ({ ...c, to: e.target.value }))} />
+                </span>
+              )}
+              {period !== 'all' && (
+                <select className="input !py-1 !w-auto text-sm ml-auto" value={dateMode} onChange={e => { setDateMode(e.target.value as DateMode); setShown(PAGE); }}>
+                  {DATE_MODES.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                </select>
+              )}
+            </div>
+            {range && periodSummary && (
+              <div className="mb-3 text-sm bg-brand-50 border border-brand-200 text-brand-900 rounded-xl px-4 py-2 flex flex-wrap gap-x-4 gap-y-1">
+                <span>
+                  <strong>{periodSummary.count.toLocaleString('pt-BR')}</strong> cliente{periodSummary.count === 1 ? '' : 's'}{' '}
+                  {dateMode === 'served' ? 'atendidos' : dateMode === 'registered' ? 'cadastrados' : 'com a última visita'} de{' '}
+                  {range.from.toLocaleDateString('pt-BR')} a {new Date(range.to.getTime() - 86400000).toLocaleDateString('pt-BR')}
+                </span>
+                {periodSummary.spent != null && (
+                  <>
+                    <span>💰 <strong>{fmtBRL(periodSummary.spent)}</strong> faturados</span>
+                    <span>{periodSummary.visits} visita{periodSummary.visits === 1 ? '' : 's'} · ticket {fmtBRL(periodSummary.visits ? periodSummary.spent / periodSummary.visits! : 0)}</span>
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-1.5 mb-4">
               {FILTERS.map(x => (
                 <button key={x.key} onClick={() => go(x.key)}
@@ -211,7 +298,14 @@ export default function Customers() {
                           {r.plates.length === 0 && <span className="text-xs text-steel-400">—</span>}
                         </div>
                         <div className="hidden md:block text-right text-sm">{r.ins.visits}</div>
-                        <div className="hidden md:block text-right text-sm">{fmtBRL(r.ins.spent)}</div>
+                        <div className="hidden md:block text-right text-sm">{fmtBRL(r.ins.spent)}
+                          {r.ins.openOs > 0 && (
+                            <div className="text-[11px] text-brand-700" title="OS abertas, aguardando aprovação ou em andamento">
+                              🔧 {r.ins.openValue > 0 ? `${fmtBRL(r.ins.openValue)} em aberto` : `${r.ins.openOs} OS em aberto`}
+                            </div>
+                          )}
+                          {range && dateMode === 'served' && <div className="text-[11px] text-brand-700">no período: {fmtBRL(periodOf(r).spent)}</div>}
+                        </div>
                         <div className="hidden md:block text-right text-xs text-steel-600">{timeAgo(r.ins.lastVisit)}</div>
                         <div className="text-right">
                           {r.ins.opportunity.total > 0

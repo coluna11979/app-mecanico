@@ -43,6 +43,8 @@ export type CustomerInsight = {
   perYear: number;
   segment: Segment; vip: boolean;
   openOs: number;
+  /** Valor das OS em aberto (orçadas/aprovadas/em andamento) — dinheiro a entrar */
+  openValue: number;
   opportunity: Opportunity;
   lastOil: string | null;
 };
@@ -113,6 +115,7 @@ export function customerInsight(os: InsOs[], recs: InsRec[], ctx: ShopContext, n
     visits, spent, avgTicket, firstVisit, lastVisit, avgIntervalDays, nextExpected, overdueDays, perYear,
     segment, vip: visits > 0 && spent >= ctx.vipThreshold && segment !== 'gone',
     openOs: os.filter(o => OPEN.has(o.status)).length,
+    openValue: os.filter(o => OPEN.has(o.status)).reduce((a, o) => a + Number(o.price), 0),
     opportunity: { total: Math.round(parts.reduce((a, p) => a + p.value, 0)), parts },
     lastOil,
   };

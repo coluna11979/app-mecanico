@@ -6,6 +6,8 @@ import LicensePlate from './LicensePlate';
 import { fmtDur, fmtPhone } from './osHelpers';
 import { teamPerformance, type PerfOs, type ServiceType } from '@/lib/teamPerformance';
 import { fetchAll } from '@/lib/fetchAll';
+import { findDuplicatesRemote } from '@/components/customers/CustomerForm';
+import { maskPhone } from '@/lib/customers';
 import type { Customer, ServiceRecommendation, Vehicle, WorkshopMechanic } from '@/types/database';
 
 type CustomerWithVehicles = Customer & { vehicles: Vehicle[] };
@@ -66,6 +68,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   const [searching, setSearching] = useState(false);
   const [picked, setPicked]     = useState<Match | null>(null);
   const [newCar, setNewCar]     = useState(false);   // cadastrar carro (e cliente, se não houver)
+  const [dups, setDups]         = useState<{ id: string; full_name: string; reason: string }[]>([]);
+  const [ignoreDups, setIgnoreDups] = useState(false);
   const [car, setCar]           = useState({ plate: '', make: '', model: '', year: '' });
   const [person, setPerson]     = useState({ name: '', phone: '' });
   const [recs, setRecs]         = useState<ServiceRecommendation[]>([]);
@@ -200,6 +204,20 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
     setCar({ plate: '', make: '', model: '', year: '' });
   }
 
+  /** Troca o cadastro novo pelo cliente que já existe (e o carro da mesma placa, se houver) */
+  async function pickExisting(customerId: string) {
+    const { data } = await supabase.from('customers').select('*, vehicles(*)').eq('id', customerId).maybeSingle();
+    if (!data) return;
+    const { vehicles, ...customer } = data as CustomerWithVehicles;
+    const plate = plateNorm(car.plate);
+    const vehicle = vehicles?.find(v => plateNorm(v.plate) === plate) ?? null;
+    setDups([]); setIgnoreDups(false);
+    setPicked({ customer, vehicle: vehicle ?? vehicles?.[0] ?? null });
+    setNewCar(!vehicle && !!plate);          // placa nova para esse cliente → continua cadastrando só o carro
+    if (vehicle) setCar({ plate: '', make: '', model: '', year: '' });
+    toast.success(`Usando o cadastro de ${customer.full_name.split(' ')[0]}`);
+  }
+
   function startNew() {
     const q = query.trim();
     setPicked(null);
@@ -250,6 +268,13 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
 
     setSaving(true);
     try {
+      // Cadastro repetido? (mesmo telefone ou placa de alguém que já existe)
+      if (!ignoreDups && newCar) {
+        const found = await findDuplicatesRemote(workshopId,
+          { phone: picked ? '' : person.phone, plate: car.plate }, picked?.customer.id);
+        if (found.length) { setDups(found); setSaving(false); return; }
+      }
+
       // Cliente
       let customerId = picked?.customer.id ?? null;
       if (!customerId) {
@@ -399,14 +424,14 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
                       <input className="input !py-2" placeholder="Nome *" value={person.name}
                         onChange={e => setPerson(p => ({ ...p, name: e.target.value }))} />
                       <input className="input !py-2" placeholder="Telefone / WhatsApp" inputMode="tel" value={person.phone}
-                        onChange={e => setPerson(p => ({ ...p, phone: e.target.value }))} />
+                        onChange={e => { setPerson(p => ({ ...p, phone: maskPhone(e.target.value) })); setDups([]); setIgnoreDups(false); }} />
                     </div>
                   </>
                 )}
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest pt-1">🚗 Carro</div>
                 <div className="grid grid-cols-2 gap-2">
                   <input className="input !py-2 uppercase font-mono" placeholder="Placa" value={car.plate}
-                    onChange={e => setCar(c => ({ ...c, plate: e.target.value.toUpperCase() }))} />
+                    onChange={e => { setCar(c => ({ ...c, plate: e.target.value.toUpperCase() })); setDups([]); setIgnoreDups(false); }} />
                   <input className="input !py-2" placeholder="Ano" inputMode="numeric" value={car.year}
                     onChange={e => setCar(c => ({ ...c, year: e.target.value }))} />
                   <input className="input !py-2" placeholder="Marca (ex.: Chevrolet)" value={car.make}
@@ -414,6 +439,21 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
                   <input className="input !py-2" placeholder="Modelo (ex.: Onix)" value={car.model}
                     onChange={e => setCar(c => ({ ...c, model: e.target.value }))} />
                 </div>
+                {dups.length > 0 && !ignoreDups && (
+                  <div className="bg-pending-50 border border-pending-200 rounded-xl p-3 text-sm space-y-2">
+                    <div className="font-semibold text-pending-900">⚠️ Esse cliente parece já estar cadastrado:</div>
+                    {dups.map(d => (
+                      <div key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+                        <span><strong>{d.full_name}</strong> <span className="text-xs text-steel-600">· {d.reason}</span></span>
+                        <button type="button" onClick={() => pickExisting(d.id)}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-signal-600 text-white hover:bg-signal-700">Usar este cliente</button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => { setIgnoreDups(true); setDups([]); }} className="text-xs text-steel-600 hover:underline">
+                      Não é a mesma pessoa — cadastrar assim mesmo
+                    </button>
+                  </div>
+                )}
                 {!picked && (
                   <button type="button" onClick={reset} className="text-xs text-steel-500 hover:underline">← Voltar e escolher um cliente cadastrado</button>
                 )}
