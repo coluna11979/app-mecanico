@@ -75,6 +75,15 @@ export default function ServiceOrders() {
     if (linkedOsId) nav(`/oficina/os/${linkedOsId}`, { replace: true });
   }, [linkedOsId, nav]);
 
+  /* ── ?nova=1&cliente=<id>&veiculo=<id> → abre a Nova OS já com o cliente (ficha do cliente) ── */
+  const newForCustomer = searchParams.get('nova') === '1' ? searchParams.get('cliente') : null;
+  const newForVehicle = searchParams.get('veiculo');
+  useEffect(() => {
+    if (!newForCustomer) return;
+    setNewOs({ customerId: newForCustomer, vehicleId: newForVehicle });
+    nav('/oficina/os', { replace: true });
+  }, [newForCustomer, newForVehicle, nav]);
+
   const openOs = (os: OsRow) => nav(`/oficina/os/${os.id}`);
 
   /* ── persistência de filtros (localStorage por oficina) ── */
@@ -113,7 +122,7 @@ export default function ServiceOrders() {
   async function fetchOS(wid: string) {
     const { data } = await supabase
       .from('service_orders')
-      .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics(*), pauses:service_order_pauses(*)')
+      .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics!fk_so_workshop_mechanic(*), pauses:service_order_pauses(*)')
       .eq('workshop_id', wid)
       .order('created_at', { ascending: false });
     setList((data as OsRow[]) ?? []);

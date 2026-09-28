@@ -24,8 +24,6 @@ import MechanicGanhos from './pages/mecanico/Ganhos';
 import MechanicAgenda from './pages/mecanico/Agenda';
 import MechanicAvisos from './pages/mecanico/Avisos';
 import MechanicEmbaixador from './pages/mecanico/Embaixador';
-import MechanicCheckups from './pages/mecanico/Checkups';
-import MechanicCheckupRun from './pages/mecanico/CheckupRun';
 
 // Lazy: páginas com Mapbox (~3.7MB) — carregadas sob demanda
 const MechanicTracking = lazy(() => import('./pages/mecanico/Tracking'));
@@ -49,6 +47,9 @@ import WorkshopCaixa from './pages/oficina/Caixa';
 import WorkshopFinanceiro from './pages/oficina/Financeiro';
 import WorkshopDesempenho from './pages/oficina/Desempenho';
 import WorkshopPlanoVip from './pages/oficina/PlanoVip';
+import WorkshopCheckups from './pages/oficina/Checkups';
+import WorkshopCheckupRun from './pages/oficina/CheckupRun';
+import WorkshopClienteFicha from './pages/oficina/ClienteFicha';
 import AdminVip from './pages/admin/Vip';
 const WorkshopOsPrint = lazy(() => import('./pages/oficina/OsPrint'));
 const WorkshopImportar = lazy(() => import('./pages/oficina/ImportarOrcamentos'));
@@ -97,8 +98,8 @@ export default function App() {
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
       <Route path="/checkup/:token"     element={<CheckupReport />} />
       {/* Pré-visualização do check-up com dados fictícios — só em dev */}
-      {import.meta.env.DEV && <Route path="/demo/checkup" element={<MechanicCheckups />} />}
-      {import.meta.env.DEV && <Route path="/demo/checkup/:id" element={<MechanicCheckupRun />} />}
+      {import.meta.env.DEV && <Route path="/demo/checkup" element={<WorkshopCheckups />} />}
+      {import.meta.env.DEV && <Route path="/demo/checkup/:id" element={<WorkshopCheckupRun />} />}
 
       {/* Mecânico */}
       <Route path="/mecanico/dashboard" element={<ProtectedRoute allow={['mechanic']}><MechanicDashboard /></ProtectedRoute>} />
@@ -110,8 +111,6 @@ export default function App() {
       <Route path="/mecanico/avisos" element={<ProtectedRoute allow={['mechanic']}><MechanicAvisos /></ProtectedRoute>} />
       <Route path="/mecanico/mapa" element={<ProtectedRoute allow={['mechanic']}><Suspense fallback={<LazyFallback />}><MechanicMapa /></Suspense></ProtectedRoute>} />
       <Route path="/mecanico/embaixador" element={<ProtectedRoute allow={['mechanic']}><MechanicEmbaixador /></ProtectedRoute>} />
-      <Route path="/mecanico/checkup" element={<ProtectedRoute allow={['mechanic']}><MechanicCheckups /></ProtectedRoute>} />
-      <Route path="/mecanico/checkup/:id" element={<ProtectedRoute allow={['mechanic']}><MechanicCheckupRun /></ProtectedRoute>} />
 
       {/* Oficina */}
       <Route path="/oficina/dashboard" element={<ProtectedRoute allow={['workshop']}><WorkshopDashboard /></ProtectedRoute>} />
@@ -124,10 +123,13 @@ export default function App() {
       <Route path="/oficina/desempenho" element={<ProtectedRoute allow={['workshop']}><WorkshopDesempenho /></ProtectedRoute>} />
       <Route path="/oficina/vip" element={<ProtectedRoute allow={['workshop']}><WorkshopPlanoVip /></ProtectedRoute>} />      <Route path="/admin/vip" element={<ProtectedRoute allow={['admin']}><AdminVip /></ProtectedRoute>} />
       <Route path="/oficina/os" element={<ProtectedRoute allow={['workshop']}><WorkshopServiceOrders /></ProtectedRoute>} />
+      <Route path="/oficina/checkup" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
+      <Route path="/oficina/checkup/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckupRun /></ProtectedRoute>} />
       <Route path="/oficina/os/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopOsDetail /></ProtectedRoute>} />
       <Route path="/oficina/importar" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopImportar /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/os/:id/imprimir" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopOsPrint /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/clientes" element={<ProtectedRoute allow={['workshop']}><WorkshopCustomers /></ProtectedRoute>} />
+      <Route path="/oficina/clientes/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopClienteFicha /></ProtectedRoute>} />
       <Route path="/oficina/buscar" element={<ProtectedRoute allow={['workshop']}><WorkshopSearch /></ProtectedRoute>} />
       <Route path="/oficina/job/:id/tracking" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopTracking /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/mensagens" element={<ProtectedRoute allow={['workshop']}><WorkshopMensagens /></ProtectedRoute>} />

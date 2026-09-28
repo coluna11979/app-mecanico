@@ -11,7 +11,8 @@ export default function Recommendations({ workshopId, customerId, vehicleId, osI
   workshopId: string;
   customerId: string;
   vehicleId: string | null;
-  osId: string;
+  /** OS de onde veio a recomendação (null quando anotada direto na ficha do cliente) */
+  osId?: string | null;
 }) {
   const [list, setList]     = useState<ServiceRecommendation[]>([]);
   const [adding, setAdding] = useState(false);
@@ -41,7 +42,7 @@ export default function Recommendations({ workshopId, customerId, vehicleId, osI
     setSaving(true);
     const { error } = await supabase.from('service_recommendations').insert({
       workshop_id: workshopId, customer_id: customerId, vehicle_id: vehicleId,
-      service_order_id: osId, description, source: 'app',
+      service_order_id: osId ?? null, description, source: 'app',
     });
     setSaving(false);
     if (error) { toast.error('Erro: ' + error.message); return; }

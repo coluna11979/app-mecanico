@@ -180,6 +180,9 @@ export interface Customer {
   /** LGPD: cliente pediu para não receber contato */
   contact_opt_out?: boolean;
   last_contacted_at?: string | null;
+  /** Observações internas (só a oficina vê) */
+  notes?: string | null;
+  source?: string | null;
 }
 
 export interface Vehicle {

@@ -36,6 +36,8 @@ export interface NewOsPreset {
   category?: string;
   free?: boolean;       // check-up gratuito
   schedule?: boolean;   // abrir já em "Agendar"
+  customerId?: string;  // abrir com o cliente já escolhido (ex.: vindo da ficha do cliente)
+  vehicleId?: string | null;
 }
 
 interface Props {
@@ -126,6 +128,21 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
         setRecent(list);
       });
   }, [workshopId]);
+
+  // Veio com cliente/carro definidos (ficha do cliente): já deixa escolhido
+  useEffect(() => {
+    if (!preset?.customerId) return;
+    let alive = true;
+    supabase.from('customers').select('*, vehicles(*)').eq('id', preset.customerId).maybeSingle()
+      .then(({ data }) => {
+        if (!alive || !data) return;
+        const { vehicles, ...customer } = data as CustomerWithVehicles;
+        const vehicle = vehicles?.find(v => v.id === preset.vehicleId) ?? (vehicles?.length === 1 ? vehicles[0] : null);
+        choose({ customer, vehicle });
+      });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset?.customerId, preset?.vehicleId]);
 
   // Busca por placa, nome ou telefone (com pequena espera enquanto digita)
   useEffect(() => {

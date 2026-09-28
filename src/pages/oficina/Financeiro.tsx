@@ -8,7 +8,7 @@ import { METHODS, brl, hhmm } from '@/lib/cash';
 import { osNumber } from '@/components/os/osHelpers';
 import { fetchAll } from '@/lib/fetchAll';
 import { change, previousRange, productivity, salesOf, type PanelMechanic } from '@/lib/workshopMetrics';
-import { PRESETS, PREV_LABEL, addDays, periodLabel, rangeOf, toInput, type Preset } from '@/lib/periods';
+import PeriodPicker, { PREV_LABEL, usePeriod } from '@/components/PeriodPicker';
 import {
   byMethod, cashFlowOf, closings, expensesByCategory, flowSeries, receivables, valesByMechanic,
   type FinEntry, type FinOs, type FinPayment, type FinRegister,
@@ -20,10 +20,8 @@ export default function Financeiro() {
   const { balcao, session } = useOperator();
   const allowed = canDo(session, balcao, 'ver_financeiro');
 
-  const [preset, setPreset] = useState<Preset>(() => {
-    try { return (localStorage.getItem('financeiro-periodo') as Preset) || 'month'; } catch { return 'month'; }
-  });
-  const [custom, setCustom] = useState({ from: toInput(addDays(new Date(), -29)), to: toInput(new Date()) });
+  const period = usePeriod('financeiro-periodo');
+  const { preset, range } = period;
   const [entries, setEntries]   = useState<FinEntry[]>([]);
   const [payments, setPayments] = useState<FinPayment[]>([]);
   const [regs, setRegs]         = useState<FinRegister[]>([]);
@@ -33,9 +31,6 @@ export default function Financeiro() {
   const [firstOpen, setFirstOpen] = useState<string | null>(null);
   const [loading, setLoading]   = useState(true);
 
-  useEffect(() => { try { localStorage.setItem('financeiro-periodo', preset); } catch { /* ignore */ } }, [preset]);
-
-  const range = useMemo(() => rangeOf(preset, custom), [preset, custom]);
   const prev  = useMemo(() => previousRange(range), [range]);
 
   // Movimentos do caixa: do início do período anterior (comparação) até o fim do atual
@@ -136,24 +131,9 @@ export default function Financeiro() {
           <div>
             <div className="text-sm text-steel-500">Financeiro</div>
             <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">💵 Como está o dinheiro</h1>
-            <div className="text-xs text-steel-400 mt-0.5">{periodLabel(range)}</div>
+            <div className="text-xs text-steel-400 mt-0.5">{period.label}</div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {PRESETS.map(p => (
-              <button key={p.key} onClick={() => setPreset(p.key)}
-                className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${
-                  preset === p.key ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200 hover:border-steel-300'}`}>
-                {p.label}
-              </button>
-            ))}
-            {preset === 'custom' && (
-              <div className="flex items-center gap-1.5">
-                <input type="date" className="input !py-1.5 !w-auto text-sm" value={custom.from} onChange={e => setCustom(c => ({ ...c, from: e.target.value }))} />
-                <span className="text-steel-400 text-sm">a</span>
-                <input type="date" className="input !py-1.5 !w-auto text-sm" value={custom.to} onChange={e => setCustom(c => ({ ...c, to: e.target.value }))} />
-              </div>
-            )}
-          </div>
+          <PeriodPicker period={period} />
         </div>
 
         {loading ? (
