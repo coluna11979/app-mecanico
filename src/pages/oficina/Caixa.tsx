@@ -23,6 +23,24 @@ type Tab = 'receber' | 'movimentos' | 'fechar';
 
 const osNum = (o: { id: string; number: number | null }) => (o.number != null ? String(o.number).padStart(4, '0') : o.id.slice(0, 8));
 const remainingOf = (o: OpenOs) => Math.round((o.price - o.counter_discount - o.paid_amount) * 100) / 100;
+/* Filtro por data: concluída em (ou aberta em, se ainda não concluiu) */
+type DatePeriod = 'today' | '7d' | '30d' | 'all' | 'custom';
+const DATE_PERIODS: [DatePeriod, string][] = [['today', 'Hoje'], ['7d', '7 dias'], ['30d', '30 dias'], ['all', 'Todas'], ['custom', '📅 Escolher datas']];
+const osDate = (o: { completed_at: string | null; created_at: string }) => new Date(o.completed_at ?? o.created_at).getTime();
+
+function periodRange(p: DatePeriod, from: string, to: string): [number | null, number | null] {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = 86400000;
+  if (p === 'today') return [today.getTime(), null];
+  if (p === '7d') return [today.getTime() - 6 * day, null];
+  if (p === '30d') return [today.getTime() - 29 * day, null];
+  if (p === 'custom') return [
+    from ? new Date(`${from}T00:00:00`).getTime() : null,
+    to ? new Date(`${to}T00:00:00`).getTime() + day : null,
+  ];
+  return [null, null];
+}
+
 const STATUS_LABEL: Record<string, string> = { open: 'Aberta', approved: 'Aprovada', in_progress: 'Em execução', completed: 'Concluída' };
 
 export default function Caixa() {
@@ -232,21 +250,47 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, f
     onFocusUsed();
   }, [focusOs, list]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [period, setPeriod] = useState<DatePeriod>('all');
+  const [from, setFrom] = useState('');
+  const [to, setTo]     = useState('');
+
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase().replace(/[^a-z0-9à-ú ]/g, '');
-    if (!t || !list) return list ?? [];
-    return list.filter(o =>
+    const [start, end] = periodRange(period, from, to);
+    const inDate = (o: OpenOs) => {
+      const d = osDate(o);
+      return (!start || d >= start) && (!end || d < end);
+    };
+    if (!list) return [];
+    return list.filter(o => inDate(o) && (!t ||
       osNum(o).includes(t) ||
       (o.customer?.full_name ?? '').toLowerCase().includes(t) ||
       (o.vehicle?.plate ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(t.replace(/ /g, '')) ||
-      o.title.toLowerCase().includes(t));
-  }, [list, q]);
+      o.title.toLowerCase().includes(t)));
+  }, [list, q, period, from, to]);
 
   return (
     <div>
       <div className="flex gap-2 mb-3">
         <input className="input flex-1" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
         <button onClick={() => setNewOs(true)} className="btn-secondary shrink-0">+ Nova OS</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {DATE_PERIODS.map(([k, l]) => (
+          <button key={k} onClick={() => setPeriod(k)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+              period === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+            {l}
+          </button>
+        ))}
+        {period === 'custom' && (
+          <div className="flex items-center gap-1.5 text-xs text-steel-500">
+            <input type="date" className="input !py-1.5 !text-xs w-auto" value={from} onChange={e => setFrom(e.target.value)} />
+            até
+            <input type="date" className="input !py-1.5 !text-xs w-auto" value={to} onChange={e => setTo(e.target.value)} />
+          </div>
+        )}
+        {list && <span className="text-xs text-steel-400 ml-auto">{shown.length} OS · {brl(shown.reduce((a, o) => a + remainingOf(o), 0))} em aberto</span>}
       </div>
       {list === null ? (
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
@@ -269,6 +313,9 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, f
                   </div>
                   <div className="flex gap-1 mt-1">
                     <span className={`badge text-[10px] ${o.status === 'completed' ? 'bg-signal-100 text-signal-700' : 'bg-steel-100 text-steel-600'}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
+                    <span className="text-[10px] text-steel-400 self-center">
+                      {o.completed_at ? 'concluída' : 'aberta'} em {new Date(osDate(o)).toLocaleDateString('pt-BR')}
+                    </span>
                     {o.paid_amount > 0 && <span className="badge text-[10px] bg-pending-100 text-pending-800">Parcialmente paga</span>}
                   </div>
                 </div>
