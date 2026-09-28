@@ -379,7 +379,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             )}
             {/* Custo e margem da peça (só para quem vê o financeiro) */}
             {showCost && r.kind === 'part' && (
-              <CostLine row={r} readOnly={readOnly} onChange={v => update(r.key, { unit_cost: v })} />
+              <CostLine row={r} readOnly={readOnly} onCost={v => update(r.key, { unit_cost: v })} onPrice={v => update(r.key, { unit_price: v })} />
             )}
           </div>
         ))}
@@ -466,10 +466,38 @@ function RowActions({ idx, count, onUp, onDown, onRemove }: {
   );
 }
 
-function CostLine({ row, readOnly, onChange }: { row: Row; readOnly?: boolean; onChange: (v: string) => void }) {
+function CostLine({ row, readOnly, onCost, onPrice }: {
+  row: Row; readOnly?: boolean; onCost: (v: string) => void; onPrice: (v: string) => void;
+}) {
   const cost = rowCost(row);
   const sale = rowTotal(row);
   const pct = cost != null ? marginOf(cost, sale) : null;
+  const unitCost = parseMoney(row.unit_cost || '');
+  // Margem digitada (enquanto edita); fora disso mostra a margem calculada
+  const [mStr, setMStr] = useState<string | null>(null);
+  const [changed, setChanged] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  function setMargin(v: string) {
+    setMStr(v);
+    const m = parseMoney(v);
+    if (Number.isFinite(m) && m >= -100 && unitCost > 0) {
+      onPrice(moneyInput(Math.round(unitCost * (1 + m / 100) * 100) / 100));
+      setChanged(true);
+    }
+  }
+
+  async function saveForPart() {
+    const m = parseMoney(mStr ?? String(Math.round(pct ?? 0)));
+    if (!row.part_id || !Number.isFinite(m) || m < 0) return;
+    setSaving(true);
+    const { error } = await supabase.from('workshop_parts').update({ margin_percent: m, sale_price: null }).eq('id', row.part_id);
+    setSaving(false);
+    if (error) return toast.error('Não foi possível salvar a margem da peça: ' + error.message);
+    toast.success(`Margem de ${Math.round(m)}% salva na peça ✓ (próximas OS)`);
+    setChanged(false);
+  }
+
   return (
     <div className="col-span-12 md:col-start-3 md:col-span-9 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-steel-500 -mt-1">
       {row.part_id && <span className="badge bg-steel-100 text-steel-600">🔩 do cadastro</span>}
@@ -479,15 +507,35 @@ function CostLine({ row, readOnly, onChange }: { row: Row; readOnly?: boolean; o
           <span className="relative">
             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-steel-400 text-[11px]">R$</span>
             <input className="input !py-1 !pl-7 !w-24 text-xs text-right" inputMode="decimal" placeholder="0,00" value={row.unit_cost}
-              onChange={e => onChange(e.target.value)}
-              onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) onChange(moneyInput(v)); }} />
+              onChange={e => onCost(e.target.value)}
+              onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) onCost(moneyInput(v)); }} />
           </span>
         )}
       </span>
       {cost != null && (
-        <span className={sale - cost < 0 ? 'text-alert-600 font-semibold' : 'text-signal-700'}>
-          lucro {fmtBRL(sale - cost)} · margem {fmtPct(pct)}
+        <span className="flex items-center gap-1.5">
+          Margem
+          {readOnly ? <strong className="text-steel-700">{fmtPct(pct)}</strong> : (
+            <span className="relative">
+              <input className="input !py-1 !pr-6 !w-20 text-xs text-right" inputMode="decimal"
+                value={mStr ?? (pct == null ? '' : String(Math.round(pct)))}
+                onChange={e => setMargin(e.target.value)}
+                onBlur={() => setMStr(null)} />
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-steel-400 text-[11px]">%</span>
+            </span>
+          )}
         </span>
+      )}
+      {cost != null && (
+        <span className={sale - cost < 0 ? 'text-alert-600 font-semibold' : 'text-signal-700'}>
+          lucro {fmtBRL(sale - cost)}
+        </span>
+      )}
+      {!readOnly && row.part_id && changed && (
+        <button type="button" onClick={saveForPart} disabled={saving}
+          className="font-semibold text-brand-700 hover:underline" title="Grava esta margem na peça do cadastro">
+          {saving ? 'Salvando…' : '💾 usar sempre nesta peça'}
+        </button>
       )}
     </div>
   );

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
-import { UNITS, fmtPct, marginOf, priceFromMargin } from '@/lib/parts';
+import { UNITS, priceFromMargin } from '@/lib/parts';
 import { addDaysISO, todayISO, type Supplier } from '@/lib/purchasing';
 import SupplierPicker from './SupplierPicker';
 
@@ -25,6 +25,7 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const [code, setCode]         = useState('');
   const [unit, setUnit]         = useState('un');
   const [cost, setCost]         = useState('');
+  const [marginStr, setMarginStr] = useState(String(defaultMargin));
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [bought, setBought]     = useState(true);
   const [qty, setQty]           = useState(String(quantity || 1).replace('.', ','));
@@ -43,13 +44,16 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
 
   const c = Number.isFinite(parseMoney(cost)) ? parseMoney(cost) : 0;
   const q = Number.isFinite(parseMoney(qty)) ? parseMoney(qty) : 0;
-  const price = priceFromMargin(c, defaultMargin);
+  const m = parseMoney(marginStr);
+  const marginOk = Number.isFinite(m) && m >= 0 && m <= 1000;
+  const price = priceFromMargin(c, marginOk ? m : defaultMargin);
   const total = Math.round(c * q * 100) / 100;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return toast.error('Informe o nome da peça');
     if (!(c > 0)) return toast.error('Informe o custo da peça');
+    if (!marginOk) return toast.error('Margem inválida');
     if (bought) {
       if (!supplier) return toast.error('Escolha ou cadastre a autopeças / fornecedor');
       if (!(q > 0)) return toast.error('Quantidade inválida');
@@ -58,7 +62,8 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
     setSaving(true);
     try {
       const { data: part, error } = await supabase.from('workshop_parts')
-        .insert({ workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c, supplier_id: supplier?.id ?? null })
+        .insert({ workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c, supplier_id: supplier?.id ?? null,
+          margin_percent: Math.abs(m - defaultMargin) > 0.001 ? m : null })
         .select('id').single();
       if (error) throw error;
       const partId = (part as { id: string }).id;
@@ -143,7 +148,11 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             </div>
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">Margem</div>
-              <div className="text-lg font-bold font-display">{fmtPct(marginOf(c, price))}</div>
+              <div className="relative mx-auto w-24 mt-0.5">
+                <input className="input !py-1 !pr-6 text-right font-bold" inputMode="decimal" value={marginStr} onChange={e => setMarginStr(e.target.value)} />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-steel-400 text-xs">%</span>
+              </div>
+              <div className="text-[10px] text-steel-400 mt-0.5">{Math.abs((marginOk ? m : defaultMargin) - defaultMargin) < 0.001 ? 'padrão' : `padrão é ${defaultMargin}%`}</div>
             </div>
           </div>
 
