@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
+import NewOsModal from '@/components/os/NewOsModal';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
@@ -20,7 +22,7 @@ type Tab = 'receber' | 'movimentos' | 'fechar';
 
 const osNum = (o: { id: string; number: number | null }) => (o.number != null ? String(o.number).padStart(4, '0') : o.id.slice(0, 8));
 const remainingOf = (o: OpenOs) => Math.round((o.price - o.counter_discount - o.paid_amount) * 100) / 100;
-const STATUS_LABEL: Record<string, string> = { approved: 'Aprovada', in_progress: 'Em execução', completed: 'Concluída' };
+const STATUS_LABEL: Record<string, string> = { open: 'Aberta', approved: 'Aprovada', in_progress: 'Em execução', completed: 'Concluída' };
 
 export default function Caixa() {
   const { currentWorkshop } = useAuth();
@@ -36,6 +38,8 @@ export default function Caixa() {
   const [ops, setOps]         = useState<Record<string, string>>({});
   const [team, setTeam]       = useState<WorkshopMechanic[]>([]);
   const [tab, setTab]         = useState<Tab>('receber');
+  const [params, setParams]   = useSearchParams();
+  const focusOs = params.get('os');
 
   const load = useCallback(async () => {
     if (!wid) return;
@@ -104,7 +108,10 @@ export default function Caixa() {
               ))}
             </div>
 
-            {tab === 'receber' && <ReceiveTab wid={wid!} sid={sid} canDiscount={can('dar_desconto')} onDone={load} />}
+            {tab === 'receber' && (
+              <ReceiveTab wid={wid!} sid={sid} canDiscount={can('dar_desconto')} onDone={load}
+                focusOs={focusOs} onFocusUsed={() => setParams({}, { replace: true })} />
+            )}
             {tab === 'movimentos' && (
               <MovementsTab wid={wid!} sid={sid} entries={entries} ops={ops} team={team}
                 canCancel={can('cancelar_recebimento')} onDone={load} />
@@ -193,15 +200,20 @@ function Line({ label, value, cls = '' }: { label: string; value: string; cls?: 
 
 /* ── Receber OS ──────────────────────────────────────────────────────────── */
 
-function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: string | null; canDiscount: boolean; onDone: () => void }) {
+function ReceiveTab({ wid, sid, canDiscount, onDone, focusOs, onFocusUsed }: {
+  wid: string; sid: string | null; canDiscount: boolean; onDone: () => void;
+  focusOs: string | null; onFocusUsed: () => void;
+}) {
+  const nav = useNavigate();
   const [list, setList]   = useState<OpenOs[] | null>(null);
   const [q, setQ]         = useState('');
   const [picked, setPicked] = useState<OpenOs | null>(null);
+  const [newOs, setNewOs] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('service_orders')
       .select('id, number, title, price, paid_amount, counter_discount, status, completed_at, created_at, customer:customers(full_name), vehicle:vehicles(plate, make, model)')
-      .eq('workshop_id', wid).in('status', ['approved', 'in_progress', 'completed'])
+      .eq('workshop_id', wid).in('status', ['open', 'approved', 'in_progress', 'completed'])
       .order('created_at', { ascending: false }).limit(500);
     const rows = ((data as unknown as OpenOs[]) ?? []).filter(o => remainingOf(o) > 0.004);
     rows.sort((a, b) => (a.status === 'completed' ? 0 : 1) - (b.status === 'completed' ? 0 : 1));
@@ -209,6 +221,15 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
   }, [wid]);
 
   useEffect(() => { load(); }, [load]);
+
+  /* Veio da tela da OS ("Receber no caixa"): já abre o recebimento dela */
+  useEffect(() => {
+    if (!focusOs || !list) return;
+    const o = list.find(x => x.id === focusOs);
+    if (o) setPicked(o);
+    else toast.info('Essa OS não tem valor em aberto para receber.');
+    onFocusUsed();
+  }, [focusOs, list]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase().replace(/[^a-z0-9à-ú ]/g, '');
@@ -222,7 +243,10 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
 
   return (
     <div>
-      <input className="input mb-3" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+      <div className="flex gap-2 mb-3">
+        <input className="input flex-1" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <button onClick={() => setNewOs(true)} className="btn-secondary shrink-0">+ Nova OS</button>
+      </div>
       {list === null ? (
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
       ) : shown.length === 0 ? (
@@ -256,6 +280,18 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
             );
           })}
         </div>
+      )}
+
+      {newOs && (
+        <NewOsModal
+          workshopId={wid}
+          onClose={() => setNewOs(false)}
+          onCreated={(id, number) => {
+            setNewOs(false);
+            toast.success(`OS nº ${String(number ?? '').padStart(4, '0')} aberta ✓ — lance as peças e serviços e toque em Receber no caixa`);
+            nav(`/oficina/os/${id}`);
+          }}
+        />
       )}
 
       {picked && (

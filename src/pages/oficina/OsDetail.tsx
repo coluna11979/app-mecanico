@@ -246,6 +246,8 @@ export default function OsDetail() {
 
   const wa = waNumber(os.customer?.phone);
   const tel = os.customer?.phone?.replace(/\D/g, '');
+  const osOpenAmount = Math.round((os.price - Number(os.counter_discount ?? 0) - Number(os.paid_amount ?? 0)) * 100) / 100;
+  const canReceive = osOpenAmount > 0.004 && ['open', 'approved', 'in_progress', 'completed'].includes(os.status);
   const dur = os.completed_at ? workedMinutes(os.started_at, os.completed_at, os.pauses) : null;
   // Concluída ou cancelada fica travada: para mudar, é preciso reabrir (protege o histórico)
   const closed = os.status === 'cancelled' || os.status === 'completed';
@@ -270,6 +272,11 @@ export default function OsDetail() {
             <div className="text-left lg:text-right shrink-0">
               <div className="text-[10px] text-steel-400 uppercase tracking-wider">Total</div>
               <div className="text-3xl font-bold font-display text-steel-900">{fmtBRL(os.price)}</div>
+              {Number(os.paid_amount ?? 0) > 0 && (
+                <div className={`text-xs font-semibold mt-0.5 ${os.paid_at ? 'text-signal-700' : 'text-pending-800'}`}>
+                  {os.paid_at ? '✓ Paga' : `Pago ${fmtBRL(Number(os.paid_amount))} · falta ${fmtBRL(osOpenAmount)}`}
+                </div>
+              )}
             </div>
           </div>
 
@@ -284,6 +291,11 @@ export default function OsDetail() {
           )}
 
           <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap gap-2">
+            {canReceive && (
+              <button onClick={() => nav(`/oficina/caixa?os=${os.id}`)} className="btn-primary text-sm !py-2 !bg-signal-500">
+                💰 Receber no caixa · {fmtBRL(osOpenAmount)}
+              </button>
+            )}
             {os.status === 'open' && (
               <>
                 <button onClick={sendForApproval} disabled={busy} className="btn-primary text-sm !py-2">📤 Enviar orçamento para aprovação</button>
