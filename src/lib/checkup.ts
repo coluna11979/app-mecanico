@@ -4,7 +4,13 @@ export type CheckupItemStatus = 'ok' | 'warn' | 'urgent' | 'na';
 
 export interface VehicleCheckup {
   id: string;
-  created_by: string;
+  workshop_id: string;
+  /** Mecânico da equipe da oficina que fez a inspeção */
+  workshop_mechanic_id: string | null;
+  service_order_id: string | null;
+  customer_id: string | null;
+  vehicle_id: string | null;
+  created_by: string | null;
   plate: string | null;
   make: string | null;
   model: string | null;
@@ -131,10 +137,10 @@ export function templateRows(checkupId: string) {
 /* ─── Fotos ──────────────────────────────────────────────────── */
 const BUCKET = 'checkup-photos';
 
-/** Path: {profileId}/{checkupId}/{itemKey}-{timestamp}.{ext} — a RLS usa a 1ª pasta como dono. */
-export async function uploadCheckupPhoto(file: File, profileId: string, checkupId: string, itemKey: string) {
+/** Path: {workshopId}/{checkupId}/{itemKey}-{timestamp}.{ext} — a RLS usa a 1ª pasta como oficina. */
+export async function uploadCheckupPhoto(file: File, workshopId: string, checkupId: string, itemKey: string) {
   const ext  = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-  const path = `${profileId}/${checkupId}/${itemKey}-${Date.now()}.${ext}`;
+  const path = `${workshopId}/${checkupId}/${itemKey}-${Date.now()}.${ext}`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
     contentType: file.type || 'image/jpeg',
     cacheControl: '3600',
@@ -154,12 +160,16 @@ export function publicReportUrl(token: string) {
   return `${window.location.origin}/checkup/${token}`;
 }
 
-export function whatsappLink(c: Pick<VehicleCheckup, 'customer_name' | 'customer_phone' | 'plate' | 'make' | 'model' | 'score' | 'public_token'>) {
+export function whatsappLink(
+  c: Pick<VehicleCheckup, 'customer_name' | 'customer_phone' | 'plate' | 'make' | 'model' | 'score' | 'public_token'>,
+  workshopName?: string,
+) {
   const first = c.customer_name?.trim().split(' ')[0];
   const car   = [c.make, c.model].filter(Boolean).join(' ') || 'seu veículo';
   const plate = c.plate ? ` (${c.plate})` : '';
   const text =
-    `Olá${first ? ` ${first}` : ''}! Fiz o check-up do ${car}${plate}. ` +
+    `Olá${first ? ` ${first}` : ''}! Aqui é da ${workshopName || 'oficina'}. ` +
+    `Fizemos o check-up do ${car}${plate}. ` +
     `Nota de saúde: ${c.score ?? '—'}/100.\n\n` +
     `Veja o relatório completo com fotos: ${publicReportUrl(c.public_token)}`;
   const digits = (c.customer_phone ?? '').replace(/\D/g, '');

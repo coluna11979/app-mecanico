@@ -6,7 +6,7 @@ import {
   CHECKUP_TEMPLATE, SYSTEM_ICON, STATUS_META, checkupPhotoUrl, scoreMeta,
   type CheckupItemStatus,
 } from '@/lib/checkup';
-import { DEMO_ID, demoResult } from '@/lib/checkupDemo';
+import { DEMO_ID, demoMechanicName, demoResult } from '@/lib/checkupDemo';
 
 function demoReport(): PublicCheckup {
   const { checkup: c, items } = demoResult();
@@ -14,7 +14,8 @@ function demoReport(): PublicCheckup {
     score: c.score ?? 0, plate: c.plate, make: c.make, model: c.model, year: c.year,
     km_reading: c.km_reading, notes: c.notes, completed_at: c.completed_at ?? c.created_at,
     customer_first_name: c.customer_name?.trim().split(' ')[0] || null,
-    mechanic: { full_name: 'Mecânico Demonstração', avatar_url: null },
+    workshop: { business_name: 'Oficina Demonstração', logo_url: null, city: 'São Paulo', state: 'SP' },
+    mechanic_name: demoMechanicName(c.workshop_mechanic_id),
     items: items.filter(i => i.status).map(i => ({
       system: i.system, label: i.label, status: i.status!,
       measurement: i.measurement, note: i.note, photo_path: i.photo_path,
@@ -30,7 +31,8 @@ interface PublicCheckup {
   score: number; plate: string | null; make: string | null; model: string | null; year: number | null;
   km_reading: number | null; notes: string | null; completed_at: string;
   customer_first_name: string | null;
-  mechanic: { full_name: string; avatar_url: string | null };
+  workshop: { business_name: string; logo_url: string | null; city: string | null; state: string | null };
+  mechanic_name: string | null;
   items: PublicItem[];
 }
 
@@ -84,9 +86,14 @@ export default function CheckupReport() {
   return (
     <div className="min-h-screen bg-steel-50 text-steel-800">
       <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
-        <header className="flex items-center justify-between">
-          <Logo size={28} />
-          <span className="text-xs text-steel-500">{date}</span>
+        <header className="flex items-center gap-3">
+          {data.workshop.logo_url
+            ? <img src={data.workshop.logo_url} alt="" className="h-12 w-12 rounded-xl object-cover bg-white border border-steel-100" />
+            : <div className="h-12 w-12 rounded-xl bg-brand-100 text-brand-600 grid place-items-center font-bold text-lg">{data.workshop.business_name?.[0] ?? '?'}</div>}
+          <div className="flex-1 min-w-0">
+            <div className="font-bold truncate">{data.workshop.business_name}</div>
+            <div className="text-xs text-steel-500">{[data.workshop.city, data.workshop.state].filter(Boolean).join('/')}{data.workshop.city ? ' · ' : ''}{date}</div>
+          </div>
         </header>
 
         {/* ── Veículo + nota ── */}
@@ -170,17 +177,14 @@ export default function CheckupReport() {
         </section>
 
         {/* ── Rodapé ── */}
-        <footer className="card !p-4 flex items-center gap-3">
-          {data.mechanic.avatar_url
-            ? <img src={data.mechanic.avatar_url} alt="" className="h-11 w-11 rounded-full object-cover" />
-            : <div className="h-11 w-11 rounded-full bg-brand-100 text-brand-600 grid place-items-center font-bold">{data.mechanic.full_name?.[0] ?? '?'}</div>}
-          <div className="flex-1 min-w-0">
-            <div className="text-xs text-steel-500">Inspeção realizada por</div>
-            <div className="font-semibold truncate">{data.mechanic.full_name}</div>
+        <footer className="card !p-4">
+          <div className="text-xs text-steel-500">Inspeção realizada por</div>
+          <div className="font-semibold">
+            {data.mechanic_name ? `${data.mechanic_name} · ` : ''}{data.workshop.business_name}
           </div>
         </footer>
-        <p className="text-center text-xs text-steel-400 pb-4">
-          Relatório gerado pelo <Link to="/" className="text-brand-600 font-semibold">MecânicoApp</Link>
+        <p className="text-center text-xs text-steel-400 pb-4 flex items-center justify-center gap-1.5">
+          Relatório gerado pelo <Link to="/" className="inline-flex"><Logo size={16} /></Link>
         </p>
       </div>
 
