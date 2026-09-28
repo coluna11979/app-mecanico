@@ -7,7 +7,7 @@ import { UNITS, fmtPct, marginOf, priceFromMargin } from '@/lib/parts';
 import { addDaysISO, todayISO, type Supplier } from '@/lib/purchasing';
 import SupplierPicker from './SupplierPicker';
 
-export type QuickPartResult = { part_id: string; name: string; cost: number; price: number; unit: string };
+export type QuickPartResult = { part_id: string; name: string; cost: number; price: number; unit: string; quantity: number };
 
 /**
  * Cadastrar uma peça sem sair da OS. Com "Comprei agora para esta OS" (o caso da
@@ -81,7 +81,7 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
         }
       }
       toast.success(bought ? 'Peça cadastrada e compra lançada ✓' : 'Peça cadastrada ✓');
-      onSaved({ part_id: partId, name: name.trim(), cost: c, price, unit });
+      onSaved({ part_id: partId, name: name.trim(), cost: c, price, unit, quantity: bought ? q : 1 });
     } catch (err: unknown) {
       toast.error('Não foi possível salvar: ' + ((err as { message?: string })?.message ?? 'erro'));
     } finally {

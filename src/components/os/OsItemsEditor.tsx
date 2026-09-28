@@ -70,7 +70,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const [saving, setSaving]     = useState(false);
   const [suggestions, setSugg]  = useState<Suggestion[]>([]);
   const [margin, setMargin]     = useState(DEFAULT_MARGIN);
-  const [quick, setQuick]       = useState<{ key: string; name: string; qty: number } | null>(null);
+  /** Cadastro rápido de peça: key = linha que vai receber a peça (null = cria linha nova) */
+  const [quick, setQuick]       = useState<{ key: string | null; name: string; qty: number } | null>(null);
 
   // Recarrega quando os itens salvos mudam (após salvar)
   useEffect(() => { setRows(items.map(toRow)); }, [items]);
@@ -238,6 +239,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
               + Peça
             </button>
+            {showCost && (
+              <button type="button" onClick={() => setQuick({ key: null, name: '', qty: 1 })}
+                className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
+                🔩 Cadastrar peça
+              </button>
+            )}
             <button type="button" onClick={() => addRow('labor')}
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 transition">
               + Serviço
@@ -275,9 +282,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           onSaved={res => {
             setSugg(xs => [{ description: res.name, kind: 'part', unit_price: res.price, part_id: res.part_id, cost: res.cost, stock: 0, unit: res.unit },
               ...xs.filter(x => x.description.toLowerCase() !== res.name.toLowerCase())]);
-            setRows(rs => rs.map(x => x.key === quick.key
-              ? { ...x, description: res.name, part_id: res.part_id, unit_cost: moneyInput(res.cost), unit_price: moneyInput(res.price) }
-              : x));
+            const filled = { description: res.name, part_id: res.part_id, unit_cost: moneyInput(res.cost), unit_price: moneyInput(res.price) };
+            setRows(rs => quick.key
+              ? rs.map(x => x.key === quick.key ? { ...x, ...filled } : x)
+              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), ...filled }]);
             setQuick(null);
           }} />
       )}
@@ -313,6 +321,15 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : 'Ex.: Troca de pastilhas'}
                   list={`os-items-sugg-${osId}`} value={r.description}
                   onChange={e => update(r.key, { description: e.target.value })} />
+              )}
+              {!readOnly && r.kind === 'part' && !r.part_id && !r.description.trim() && showCost && (
+                <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
+                  <span>Digite para buscar no cadastro</span>
+                  <button type="button" className="font-semibold text-brand-700 hover:underline"
+                    onClick={() => setQuick({ key: r.key, name: '', qty: parseMoney(r.quantity) || 1 })}>
+                    ➕ Cadastrar peça nova
+                  </button>
+                </div>
               )}
               {!readOnly && r.kind === 'part' && r.description.trim().length >= 2 && !r.part_id && (
                 showCost ? (
