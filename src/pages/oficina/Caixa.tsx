@@ -10,6 +10,8 @@ import {
 } from '@/lib/cash';
 import type { WorkshopMechanic } from '@/types/database';
 import ReceivedPayments from '@/components/cash/ReceivedPayments';
+import NewOsModal from '@/components/os/NewOsModal';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 type OpenOs = {
   id: string; number: number | null; title: string; price: number; paid_amount: number; counter_discount: number;
@@ -21,7 +23,10 @@ type Tab = 'receber' | 'recebidas' | 'movimentos' | 'fechar';
 
 const osNum = (o: { id: string; number: number | null }) => (o.number != null ? String(o.number).padStart(4, '0') : o.id.slice(0, 8));
 const remainingOf = (o: OpenOs) => Math.round((o.price - o.counter_discount - o.paid_amount) * 100) / 100;
-const STATUS_LABEL: Record<string, string> = { approved: 'Aprovada', in_progress: 'Em execução', completed: 'Concluída' };
+const STATUS_LABEL: Record<string, string> = {
+  open: 'Aberta', awaiting_approval: 'Aguardando aprovação', approved: 'Aprovada', in_progress: 'Em execução', completed: 'Concluída',
+};
+const OS_FIELDS = 'id, number, title, price, paid_amount, counter_discount, status, completed_at, created_at, customer:customers(full_name), vehicle:vehicles(plate, make, model)';
 
 export default function Caixa() {
   const { currentWorkshop } = useAuth();
@@ -205,11 +210,28 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
   const [list, setList]   = useState<OpenOs[] | null>(null);
   const [q, setQ]         = useState('');
   const [picked, setPicked] = useState<OpenOs | null>(null);
+  const [newOs, setNewOs]   = useState(false);
+  const nav = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const wanted = params.get('os');
+
+  // Veio da OS ("Receber agora") → abre o recebimento dela
+  useEffect(() => {
+    if (!wanted) return;
+    supabase.from('service_orders').select(OS_FIELDS).eq('id', wanted).eq('workshop_id', wid).maybeSingle()
+      .then(({ data }) => {
+        const o = data as unknown as OpenOs | null;
+        if (o && o.status !== 'cancelled' && remainingOf(o) > 0.004) setPicked(o);
+        else if (o) toast.info(remainingOf(o) <= 0.004 ? 'Essa OS não tem valor em aberto. Lance os valores na OS primeiro.' : 'OS cancelada');
+        const next = new URLSearchParams(params); next.delete('os'); setParams(next, { replace: true });
+      });
+  }, [wanted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
+    // Balcão: OS aberta ou aguardando aprovação também pode ser paga na hora
     const { data } = await supabase.from('service_orders')
-      .select('id, number, title, price, paid_amount, counter_discount, status, completed_at, created_at, customer:customers(full_name), vehicle:vehicles(plate, make, model)')
-      .eq('workshop_id', wid).in('status', ['approved', 'in_progress', 'completed'])
+      .select(OS_FIELDS)
+      .eq('workshop_id', wid).in('status', ['open', 'awaiting_approval', 'approved', 'in_progress', 'completed'])
       .order('created_at', { ascending: false }).limit(500);
     const rows = ((data as unknown as OpenOs[]) ?? []).filter(o => remainingOf(o) > 0.004);
     rows.sort((a, b) => (a.status === 'completed' ? 0 : 1) - (b.status === 'completed' ? 0 : 1));
@@ -230,7 +252,10 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
 
   return (
     <div>
-      <input className="input mb-3" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+      <div className="flex gap-2 mb-3">
+        <input className="input flex-1" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <button type="button" className="btn-primary shrink-0" onClick={() => setNewOs(true)}>+ Nova OS</button>
+      </div>
       {list === null ? (
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
       ) : shown.length === 0 ? (
@@ -264,6 +289,11 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
             );
           })}
         </div>
+      )}
+
+      {newOs && (
+        <NewOsModal workshopId={wid} onClose={() => setNewOs(false)}
+          onCreated={id => { setNewOs(false); nav(`/oficina/os/${id}?caixa=1`); }} />
       )}
 
       {picked && (

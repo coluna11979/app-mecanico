@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +23,7 @@ type OsLink = { id: string; number: number | null; title: string; created_at: st
 
 export default function OsDetail() {
   const { id } = useParams();
+  const fromCaixa = useSearchParams()[0].get('caixa') === '1';
   const { currentWorkshop } = useAuth();
   const { balcao, session } = useOperator();
   const showCost = canDo(session, balcao, 'ver_financeiro');
@@ -254,7 +255,16 @@ export default function OsDetail() {
   return (
     <WorkshopLayout>
       <div className="max-w-6xl mx-auto">
-        <Link to="/oficina/os" className="text-sm text-steel-500 hover:text-steel-800">← Ordens de Serviço</Link>
+        <Link to={fromCaixa ? '/oficina/caixa' : '/oficina/os'} className="text-sm text-steel-500 hover:text-steel-800">← {fromCaixa ? 'Caixa' : 'Ordens de Serviço'}</Link>
+
+        {fromCaixa && os.status !== 'cancelled' && (
+          <div className="mt-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-brand-900">
+              <strong>Venda no balcão:</strong> lance as peças e serviços com os valores e clique em <strong>Salvar itens</strong>. Depois é só receber.
+            </p>
+            <Link to={`/oficina/caixa?os=${os.id}`} className="btn-primary text-sm !py-2">💰 Receber agora</Link>
+          </div>
+        )}
 
         {/* ── Cabeçalho ── */}
         <div className="card mt-3 mb-5">
@@ -741,7 +751,7 @@ function PaymentCard({ osId, price, paid, counterDiscount }: { osId: string; pri
         </ul>
       )}
       {state !== 'paid' && (
-        <Link to="/oficina/caixa" className="block text-center text-xs font-semibold text-brand-700 mt-3">💰 Receber no Caixa →</Link>
+        <Link to={`/oficina/caixa?os=${osId}`} className="block text-center text-xs font-semibold text-brand-700 mt-3">💰 Receber no Caixa →</Link>
       )}
     </div>
   );
