@@ -124,7 +124,7 @@ export default function Equipe() {
             <div className="text-4xl mb-2">👷</div>
             <h2 className="text-lg font-bold">{list.length === 0 ? 'Cadastre sua equipe' : 'Ninguém nesta lista'}</h2>
             <p className="text-sm text-steel-500 mt-1 max-w-md mx-auto">
-              Com a equipe cadastrada você escolhe quem executa cada OS e acompanha horas trabalhadas e comissões no Painel.
+              Com a equipe cadastrada você escolhe quem executa cada OS e acompanha horas trabalhadas e comissões em Desempenho e comissões.
             </p>
             {list.length === 0 && <Link to="/oficina/equipe/novo" className="btn-primary mt-5 inline-block">+ Cadastrar primeiro colaborador</Link>}
           </div>

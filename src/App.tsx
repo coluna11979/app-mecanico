@@ -46,6 +46,7 @@ import WorkshopDesempenho from './pages/oficina/Desempenho';
 import WorkshopPlanoVip from './pages/oficina/PlanoVip';
 import WorkshopCheckups from './pages/oficina/Checkups';
 import WorkshopCheckupRun from './pages/oficina/CheckupRun';
+import WorkshopClienteFicha from './pages/oficina/ClienteFicha';
 import AdminVip from './pages/admin/Vip';
 const WorkshopOsPrint = lazy(() => import('./pages/oficina/OsPrint'));
 const WorkshopImportar = lazy(() => import('./pages/oficina/ImportarOrcamentos'));
@@ -122,6 +123,7 @@ export default function App() {
       <Route path="/oficina/importar" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopImportar /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/os/:id/imprimir" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopOsPrint /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/clientes" element={<ProtectedRoute allow={['workshop']}><WorkshopCustomers /></ProtectedRoute>} />
+      <Route path="/oficina/clientes/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopClienteFicha /></ProtectedRoute>} />
       <Route path="/oficina/buscar" element={<ProtectedRoute allow={['workshop']}><WorkshopSearch /></ProtectedRoute>} />
       <Route path="/oficina/job/:id/tracking" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopTracking /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/mensagens" element={<ProtectedRoute allow={['workshop']}><WorkshopMensagens /></ProtectedRoute>} />

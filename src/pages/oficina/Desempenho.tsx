@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { fmtBRL, fmtDur, osNumber, reworkCauseLabel } from '@/components/os/osHelpers';
 import { fetchAll } from '@/lib/fetchAll';
+import TeamCommissions from '@/components/team/TeamCommissions';
 import { MIN_SAMPLE, teamPerformance, type MechanicPerf, type PerfMechanic, type PerfOs, type ServiceType } from '@/lib/teamPerformance';
 
 type Period = '30d' | '90d' | '6m' | '12m';
@@ -14,7 +15,7 @@ const PERIODS: { key: Period; label: string; days: number }[] = [
   { key: '6m',  label: '6 meses', days: 182 },
   { key: '12m', label: '12 meses', days: 365 },
 ];
-type Tab = 'prod' | 'quality' | 'skills' | 'times';
+type Tab = 'prod' | 'quality' | 'skills' | 'times' | 'money';
 
 const pct = (v: number | null, digits = 0) => (v == null ? '—' : `${v.toFixed(digits).replace('.', ',')}%`);
 const signed = (v: number | null) => (v == null ? '—' : v === 0 ? 'na média' : v > 0 ? `${v}% mais rápido` : `${Math.abs(v)}% mais lento`);
@@ -25,7 +26,8 @@ export default function Desempenho() {
   const [period, setPeriod] = useState<Period>(() => {
     try { return (localStorage.getItem('desempenho-periodo') as Period) || '90d'; } catch { return '90d'; }
   });
-  const [tab, setTab] = useState<Tab>('skills');
+  // /oficina/desempenho?aba=comissoes abre direto nas comissões
+  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).get('aba') === 'comissoes' ? 'money' : 'skills'));
   const [os, setOs] = useState<PerfOs[]>([]);
   const [mechs, setMechs] = useState<PerfMechanic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +60,18 @@ export default function Desempenho() {
   }, [period]);
 
   const r = useMemo(() => teamPerformance(os, mechs, range), [os, mechs, range]);
+  const isMoney = tab === 'money';
+
+  const tabs = (
+    <div className="flex flex-wrap gap-1 bg-steel-100 rounded-xl p-1 w-fit">
+      {([['skills', '🎯 Quem escalar'], ['times', '🕒 Tempo por serviço'], ['prod', '⏱ Produtividade'], ['quality', '✅ Qualidade'], ['money', '💵 Comissões e horas']] as [Tab, string][]).map(([k, l]) => (
+        <button key={k} onClick={() => setTab(k)}
+          className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition ${tab === k ? 'bg-white shadow-sm text-steel-900' : 'text-steel-500 hover:text-steel-800'}`}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <WorkshopLayout>
@@ -65,11 +79,11 @@ export default function Desempenho() {
         {/* Cabeçalho */}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="text-sm text-steel-500">Relatório</div>
-            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">🏆 Desempenho da equipe</h1>
-            <p className="text-xs text-steel-500 mt-0.5">Produtividade e qualidade de cada colaborador, medidas pelas OS — não por achismo.</p>
+            <div className="text-sm text-steel-500">Equipe</div>
+            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">🏆 Desempenho e comissões</h1>
+            <p className="text-xs text-steel-500 mt-0.5">Produtividade, qualidade e comissões de cada colaborador, medidas pelas OS — não por achismo.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className={`flex flex-wrap gap-2 ${isMoney ? 'hidden' : ''}`}>
             {PERIODS.map(p => (
               <button key={p.key} onClick={() => setPeriod(p.key)}
                 className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${
@@ -89,6 +103,11 @@ export default function Desempenho() {
             <p className="text-sm text-steel-500 mt-1">O relatório compara os colaboradores pelas OS que cada um executa.</p>
             <Link to="/oficina/equipe" className="btn-primary mt-5 inline-block">Ir para Equipe</Link>
           </div>
+        ) : isMoney && wid ? (
+          <>
+            {tabs}
+            <TeamCommissions workshopId={wid} />
+          </>
         ) : (
           <>
             {/* Qualidade dos dados: sem isso o relatório mente */}
@@ -121,14 +140,7 @@ export default function Desempenho() {
             </div>
 
             {/* Abas */}
-            <div className="flex flex-wrap gap-1 bg-steel-100 rounded-xl p-1 w-fit">
-              {([['skills', '🎯 Quem escalar'], ['times', '🕒 Tempo por serviço'], ['prod', '⏱ Produtividade'], ['quality', '✅ Qualidade']] as [Tab, string][]).map(([k, l]) => (
-                <button key={k} onClick={() => setTab(k)}
-                  className={`text-sm font-semibold px-3.5 py-1.5 rounded-lg transition ${tab === k ? 'bg-white shadow-sm text-steel-900' : 'text-steel-500 hover:text-steel-800'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
+            {tabs}
 
             {tab === 'times' && <ServiceTypes types={r.serviceTypes} />}
             {tab === 'prod' && <ProductivityTable rows={r.rows} />}

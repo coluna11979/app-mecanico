@@ -1,408 +1,262 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Customer, Vehicle, ServiceOrder } from '@/types/database';
-import { toast } from '@/components/ui/Toast';
-import { formatBRL } from '@/lib/payment';
-import { fmtPhone, osStatusColor, osStatusLabel } from '@/components/os/osHelpers';
+import { fetchAll } from '@/lib/fetchAll';
+import { fmtBRL, fmtPhone } from '@/components/os/osHelpers';
 import ReactivationList from '@/components/customers/ReactivationList';
+import CustomerForm from '@/components/customers/CustomerForm';
+import { onlyDigits, plateNorm, timeAgo } from '@/lib/customers';
+import { SEGMENTS, baseInsights, type CustomerInsight, type InsOs, type InsRec } from '@/lib/customerInsights';
 
-type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
+type Base = { id: string; full_name: string; phone: string | null; cpf: string | null; created_at: string; contact_opt_out: boolean | null };
+type Row = Base & { plates: string[]; ins: CustomerInsight };
+type Filter = 'all' | 'money' | 'vip' | 'risk' | 'gone' | 'new' | 'due' | 'nophone';
+type Sort = 'money' | 'spent' | 'visits' | 'recent' | 'gone';
 
-const EMPTY_C = { full_name: '', phone: '', email: '', cpf: '', address: '', city: '', birth_date: '', veh_make: '', veh_model: '', veh_plate: '', veh_year: '' };
-const EMPTY_V = { plate: '', make: '', model: '', year: '', color: '', notes: '' };
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: 'all', label: 'Todos' },
+  { key: 'money', label: '💰 Com dinheiro na mesa' },
+  { key: 'vip', label: '⭐ VIP' },
+  { key: 'risk', label: '⚠️ Em risco' },
+  { key: 'due', label: '📅 Voltam este mês' },
+  { key: 'gone', label: '😴 Sumidos' },
+  { key: 'new', label: '🆕 Novos' },
+  { key: 'nophone', label: '📵 Sem telefone' },
+];
+const SORTS: { key: Sort; label: string }[] = [
+  { key: 'money', label: 'Maior oportunidade' }, { key: 'spent', label: 'Maior gasto' },
+  { key: 'visits', label: 'Mais visitas' }, { key: 'recent', label: 'Cadastrados recentemente' },
+  { key: 'gone', label: 'Sumidos há mais tempo' },
+];
+const PAGE = 50;
 
 export default function Customers() {
-  const { user, currentWorkshop } = useAuth();
+  const { currentWorkshop } = useAuth();
   const shop = currentWorkshop;
-  const [list, setList]         = useState<CustomerFull[]>([]);
-  const [search, setSearch]     = useState('');
-  const [selected, setSelected] = useState<CustomerFull | null>(null);
-  const [modalC, setModalC]     = useState(false);
-  const [modalV, setModalV]     = useState(false);
-  const [formC, setFormC]       = useState(EMPTY_C);
-  const [formV, setFormV]       = useState(EMPTY_V);
-  const [saving, setSaving]     = useState(false);
-  const [view, setView]         = useState<'all' | 'reactivate'>('all');
+  const nav = useNavigate();
+  const [rows, setRows] = useState<Row[]>([]);
+  const [summary, setSummary] = useState<ReturnType<typeof baseInsights>['summary'] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [sort, setSort] = useState<Sort>('money');
+  const [shown, setShown] = useState(PAGE);
+  const [creating, setCreating] = useState(false);
+  const [view, setView] = useState<'all' | 'reactivate'>('all');
 
   useEffect(() => {
-    if (!user || !currentWorkshop) return;
-    fetchCustomers(currentWorkshop.id);
-  }, [user, currentWorkshop?.id]);
-
-  async function fetchCustomers(wid: string): Promise<CustomerFull[]> {
-    const { data } = await supabase
-      .from('customers')
-      .select('*, vehicles(*, service_orders(*))')
-      .eq('workshop_id', wid)
-      .order('created_at', { ascending: false });
-    const rows = (data as CustomerFull[]) ?? [];
-    setList(rows);
-    return rows;
-  }
-
-  async function saveCustomer(e: FormEvent) {
-    e.preventDefault();
     if (!shop) return;
-    if (!formC.full_name.trim()) { toast.error('Informe o nome do cliente'); return; }
-    setSaving(true);
-    const payload = {
-      workshop_id: shop.id,
-      full_name:   formC.full_name.trim(),
-      phone:       formC.phone.trim()      || null,
-      email:       formC.email.trim()      || null,
-      cpf:         formC.cpf.trim()        || null,
-      address:     formC.address.trim()    || null,
-      city:        formC.city.trim()       || null,
-      birth_date:  formC.birth_date        || null,
-    };
-    const { data: custData, error } = await supabase.from('customers').insert(payload).select('*').single();
-    if (error || !custData) {
-      console.error('[saveCustomer] erro:', error);
-      toast.error(error?.message || 'Não foi possível salvar o cliente');
-      setSaving(false);
-      return; // mantém o modal aberto com os dados
-    }
-    let vehicleFailed = false;
-    if (formC.veh_make.trim() && formC.veh_model.trim()) {
-      const { error: vErr } = await supabase.from('vehicles').insert({
-        customer_id: custData.id,
-        workshop_id: shop.id,
-        plate: formC.veh_plate.toUpperCase().trim() || 'S/P',
-        make:  formC.veh_make.trim(),
-        model: formC.veh_model.trim(),
-        year:  formC.veh_year ? parseInt(formC.veh_year) : null,
-      });
-      if (vErr) {
-        console.error('[saveCustomer] erro veículo:', vErr);
-        vehicleFailed = true;
-        toast.error('Cliente salvo, mas o veículo não: ' + vErr.message);
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      const [c, v, o, r] = await Promise.all([
+        fetchAll<Base>((a, b) => supabase.from('customers')
+          .select('id, full_name, phone, cpf, created_at, contact_opt_out').eq('workshop_id', shop.id).order('id').range(a, b)),
+        fetchAll<{ customer_id: string; plate: string }>((a, b) => supabase.from('vehicles')
+          .select('customer_id, plate').eq('workshop_id', shop.id).order('id').range(a, b)),
+        fetchAll<InsOs>((a, b) => supabase.from('service_orders')
+          .select('id, customer_id, vehicle_id, category, status, quote_status, price, created_at, completed_at, rework_of_id')
+          .eq('workshop_id', shop.id).order('id').range(a, b)),
+        fetchAll<InsRec>((a, b) => supabase.from('service_recommendations')
+          .select('id, customer_id, vehicle_id, description, recommended_at').eq('workshop_id', shop.id).eq('status', 'pending').order('id').range(a, b)),
+      ]);
+      if (!alive) return;
+      const plates = new Map<string, string[]>();
+      for (const x of v.data) plates.set(x.customer_id, [...(plates.get(x.customer_id) ?? []), x.plate]);
+      const ins = baseInsights(c.data.map(x => x.id), o.data, r.data);
+      setRows(c.data.map(x => ({ ...x, plates: plates.get(x.id) ?? [], ins: ins.map.get(x.id)! })));
+      setSummary(ins.summary);
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [shop?.id]);
+
+  const list = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const qd = onlyDigits(q);
+    const qp = plateNorm(q);
+    const now = new Date();
+    const mStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const mEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+    let out = rows.filter(r => {
+      const s = r.ins.segment;
+      if (filter === 'money' && r.ins.opportunity.total <= 0) return false;
+      if (filter === 'vip' && !r.ins.vip) return false;
+      if (filter === 'risk' && s !== 'risk') return false;
+      if (filter === 'gone' && s !== 'gone') return false;
+      if (filter === 'new' && s !== 'new') return false;
+      if (filter === 'due') {
+        const t = r.ins.nextExpected ? new Date(r.ins.nextExpected).getTime() : 0;
+        if (!(t >= mStart && t < mEnd) || s === 'risk' || s === 'gone') return false;
       }
-    }
-    if (!vehicleFailed) toast.success('Cliente cadastrado ✓');
-    await fetchCustomers(shop.id);
-    setModalC(false); setFormC(EMPTY_C);
-    setSaving(false);
-  }
-
-  async function saveVehicle(e: FormEvent) {
-    e.preventDefault();
-    if (!shop || !selected) return;
-    setSaving(true);
-    const { error } = await supabase.from('vehicles').insert({
-      ...formV, year: formV.year ? Number(formV.year) : null,
-      customer_id: selected.id, workshop_id: shop.id
+      if (filter === 'nophone' && onlyDigits(r.phone).length >= 10) return false;
+      if (!q) return true;
+      return r.full_name.toLowerCase().includes(q)
+        || (qd.length >= 3 && (onlyDigits(r.phone).includes(qd) || onlyDigits(r.cpf).includes(qd)))
+        || (qp.length >= 3 && r.plates.some(p => plateNorm(p).includes(qp)));
     });
-    if (error) {
-      console.error('[saveVehicle] erro:', error);
-      toast.error(error.message || 'Não foi possível salvar o veículo');
-      setSaving(false);
-      return; // mantém o modal aberto com os dados
-    }
-    // Usa a lista recém-buscada (a variável `list` ainda é a antiga neste ponto)
-    const fresh = await fetchCustomers(shop.id);
-    const updated = fresh.find(c => c.id === selected.id);
-    if (updated) setSelected(updated);
-    toast.success('Veículo cadastrado ✓');
-    setModalV(false); setFormV(EMPTY_V);
-    setSaving(false);
-  }
+    out = [...out].sort((a, b) => {
+      switch (sort) {
+        case 'money': return b.ins.opportunity.total - a.ins.opportunity.total || b.ins.spent - a.ins.spent;
+        case 'spent': return b.ins.spent - a.ins.spent;
+        case 'visits': return b.ins.visits - a.ins.visits || b.ins.spent - a.ins.spent;
+        case 'gone': return (a.ins.lastVisit ?? '9999').localeCompare(b.ins.lastVisit ?? '9999');
+        default: return b.created_at.localeCompare(a.created_at);
+      }
+    });
+    return out;
+  }, [rows, search, filter, sort]);
 
-  const filtered = list.filter(c =>
-    c.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone?.includes(search) ||
-    c.vehicles.some(v => v.plate.toLowerCase().includes(search.toLowerCase()))
-  );
+  const go = (f: Filter, s?: Sort) => { setFilter(f); if (s) setSort(s); setShown(PAGE); };
 
   return (
     <WorkshopLayout>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
-          <p className="text-sm text-steel-500 mt-1">{list.length} cliente{list.length !== 1 ? 's' : ''} cadastrado{list.length !== 1 ? 's' : ''}</p>
-        </div>
-        <button onClick={() => setModalC(true)} className="btn-primary btn-lg">+ Novo cliente</button>
-      </div>
-
-      {/* Visões */}
-      <div className="flex flex-wrap gap-2 mb-5">
-        <button onClick={() => setView('all')}
-          className={`text-sm font-semibold px-3.5 py-2 rounded-full border transition ${view === 'all' ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200'}`}>
-          👥 Todos os clientes
-        </button>
-        <button onClick={() => setView('reactivate')}
-          className={`text-sm font-semibold px-3.5 py-2 rounded-full border transition ${view === 'reactivate' ? 'bg-signal-500 text-white border-signal-500' : 'bg-white text-steel-600 border-steel-200'}`}>
-          💬 Reativar clientes
-        </button>
-      </div>
-
-      {view === 'reactivate' && shop && (
-        <ReactivationList workshopId={shop.id} workshopName={shop.business_name} />
-      )}
-
-      {view === 'all' && (<>
-      {/* Busca */}
-      <input className="input mb-6 max-w-sm" placeholder="Buscar por nome, telefone ou placa…"
-        value={search} onChange={e => setSearch(e.target.value)} />
-
-      {/* Lista */}
-      {filtered.length === 0 ? (
-        <div className="card text-center text-steel-500 py-16">
-          {list.length === 0
-            ? <><p className="text-lg font-semibold">Nenhum cliente ainda</p><p className="text-sm mt-1">Cadastre seu primeiro cliente e comece a construir o histórico.</p></>
-            : 'Nenhum resultado para essa busca.'}
-        </div>
-      ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(c => (
-            <button key={c.id} onClick={() => setSelected(c)}
-              className="card text-left hover:shadow-lg transition hover:-translate-y-0.5 group">
-              <div className="flex items-center gap-3">
-                <div className="h-11 w-11 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold text-lg shrink-0">
-                  {c.full_name.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold truncate">{c.full_name}</div>
-                  <div className="text-xs text-steel-500">{c.phone ? fmtPhone(c.phone) : '—'}</div>
-                </div>
-                <div className="text-xs text-steel-400 shrink-0">
-                  {c.vehicles.length} veículo{c.vehicles.length !== 1 ? 's' : ''}
-                </div>
-              </div>
-              {c.vehicles.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {c.vehicles.slice(0, 3).map(v => (
-                    <span key={v.id} className="badge bg-steel-100 text-steel-700 uppercase">{v.plate}</span>
-                  ))}
-                  {c.vehicles.length > 3 && <span className="badge bg-steel-100 text-steel-500">+{c.vehicles.length - 3}</span>}
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-      </>)}
-
-      {/* Drawer do cliente */}
-      {selected && (
-        <div className="fixed inset-0 z-40 flex" onClick={() => setSelected(null)}>
-          <div className="flex-1 bg-steel-900/50" />
-          <div className="w-full max-w-lg bg-white h-full overflow-y-auto shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-steel-100 flex items-start justify-between">
-              <div>
-                <div className="h-14 w-14 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-2xl mb-3">
-                  {selected.full_name.charAt(0).toUpperCase()}
-                </div>
-                <h2 className="text-2xl font-bold">{selected.full_name}</h2>
-                <div className="text-sm text-steel-500 mt-1 space-y-0.5">
-                  {selected.phone      && <div>📞 {fmtPhone(selected.phone)}</div>}
-                  {selected.email      && <div>✉️ {selected.email}</div>}
-                  {selected.cpf        && <div>🪪 {selected.cpf}</div>}
-                  {selected.birth_date && <div>🎂 {new Date(selected.birth_date + 'T00:00:00').toLocaleDateString('pt-BR')}</div>}
-                  {(selected.address || selected.city) && (
-                    <div>📍 {[selected.address, selected.city].filter(Boolean).join(' · ')}</div>
-                  )}
-                </div>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-steel-400 hover:text-steel-700 text-2xl leading-none">✕</button>
-            </div>
-
-            <div className="p-6 flex-1">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg">Veículos</h3>
-                <button onClick={() => setModalV(true)} className="btn-primary !py-1.5 !px-3 text-sm">+ Veículo</button>
-              </div>
-
-              {selected.vehicles.length === 0 ? (
-                <p className="text-sm text-steel-400">Nenhum veículo cadastrado ainda.</p>
-              ) : (
-                <div className="space-y-4">
-                  {selected.vehicles.map(v => (
-                    <div key={v.id} className="card !p-4 border border-steel-100">
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="text-2xl">🚗</span>
-                        <div>
-                          <div className="font-bold uppercase tracking-wide">{v.plate}</div>
-                          <div className="text-sm text-steel-500">{v.make} {v.model} {v.year ? `(${v.year})` : ''} {v.color ? `· ${v.color}` : ''}</div>
-                        </div>
-                      </div>
-                      {v.notes && <p className="text-xs text-steel-500 mb-3 italic">{v.notes}</p>}
-
-                      <div className="text-xs font-semibold text-steel-400 uppercase tracking-wider mb-2">
-                        Histórico de OS ({v.service_orders.length})
-                      </div>
-                      {v.service_orders.length === 0 ? (
-                        <p className="text-xs text-steel-400">Nenhuma OS neste veículo.</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {v.service_orders.slice(0, 5).map(os => (
-                            <div key={os.id} className="flex justify-between items-center py-1 border-b border-steel-50 last:border-0">
-                              <div>
-                                <div className="text-sm font-semibold">{os.title}</div>
-                                <div className="text-xs text-steel-400">{new Date(os.created_at).toLocaleDateString('pt-BR')}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-sm font-bold">R$ {formatBRL(os.price, { decimals: 0 })}</div>
-                                <span className={`badge text-[10px] ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+      <div className="max-w-6xl mx-auto">
+        <div className="flex flex-wrap justify-between items-end gap-3 mb-5">
+          <div>
+            <div className="text-sm text-steel-500">Vendas</div>
+            <h1 className="text-3xl font-bold tracking-tight">👥 Clientes</h1>
+            {!loading && <p className="text-xs text-steel-500 mt-0.5">{rows.length.toLocaleString('pt-BR')} clientes na base</p>}
           </div>
+          <button onClick={() => setCreating(true)} className="btn-primary">+ Novo cliente</button>
         </div>
-      )}
 
-      {/* Modal novo cliente */}
-      {modalC && (
-        <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setModalC(false)}>
-          <form onSubmit={saveCustomer} onClick={e => e.stopPropagation()} className="card max-w-md w-full space-y-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold">Novo cliente</h2>
-
-            {/* Identificação */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Identificação</div>
-              <div>
-                <label className="label">Nome completo *</label>
-                <input className="input" required value={formC.full_name}
-                  onChange={e => setFormC(f => ({ ...f, full_name: e.target.value }))}
-                  placeholder="Maria da Silva" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">CPF</label>
-                  <input className="input" value={formC.cpf}
-                    onChange={e => setFormC(f => ({ ...f, cpf: e.target.value }))}
-                    placeholder="000.000.000-00" />
-                </div>
-                <div>
-                  <label className="label">Data de nascimento</label>
-                  <input className="input" type="date" value={formC.birth_date}
-                    onChange={e => setFormC(f => ({ ...f, birth_date: e.target.value }))} />
-                </div>
-              </div>
-            </div>
-
-            {/* Contato */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Contato</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Telefone / WhatsApp</label>
-                  <input className="input" value={formC.phone}
-                    onChange={e => setFormC(f => ({ ...f, phone: e.target.value }))}
-                    placeholder="(11) 9 9999-9999" />
-                </div>
-                <div>
-                  <label className="label">E-mail</label>
-                  <input className="input" type="email" value={formC.email}
-                    onChange={e => setFormC(f => ({ ...f, email: e.target.value }))}
-                    placeholder="maria@email.com" />
-                </div>
-              </div>
-            </div>
-
-            {/* Endereço */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Endereço (opcional)</div>
-              <div>
-                <label className="label">Rua, número, bairro</label>
-                <input className="input" value={formC.address}
-                  onChange={e => setFormC(f => ({ ...f, address: e.target.value }))}
-                  placeholder="Rua das Flores, 123 — Centro" />
-              </div>
-              <div>
-                <label className="label">Cidade</label>
-                <input className="input" value={formC.city}
-                  onChange={e => setFormC(f => ({ ...f, city: e.target.value }))}
-                  placeholder="São Paulo" />
-              </div>
-            </div>
-
-            {/* Veículo */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">🚗 Veículo (opcional — cadastra junto)</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Marca</label>
-                  <input className="input" value={formC.veh_make}
-                    onChange={e => setFormC(f => ({ ...f, veh_make: e.target.value }))}
-                    placeholder="Honda" />
-                </div>
-                <div>
-                  <label className="label">Modelo</label>
-                  <input className="input" value={formC.veh_model}
-                    onChange={e => setFormC(f => ({ ...f, veh_model: e.target.value }))}
-                    placeholder="Civic" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Placa</label>
-                  <input className="input uppercase" value={formC.veh_plate}
-                    onChange={e => setFormC(f => ({ ...f, veh_plate: e.target.value.toUpperCase() }))}
-                    placeholder="ABC1D23" />
-                </div>
-                <div>
-                  <label className="label">Ano</label>
-                  <input className="input" type="number" min={1950} max={2030} value={formC.veh_year}
-                    onChange={e => setFormC(f => ({ ...f, veh_year: e.target.value }))}
-                    placeholder="2020" />
-                </div>
-              </div>
-              {formC.veh_make && formC.veh_model && (
-                <p className="text-xs text-signal-600 font-semibold">✓ O veículo será cadastrado junto com o cliente</p>
-              )}
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button type="button" onClick={() => setModalC(false)} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={saving}>
-                {saving ? '…' : formC.veh_make && formC.veh_model ? 'Salvar cliente + veículo' : 'Salvar cliente'}
-              </button>
-            </div>
-          </form>
+        <div className="flex flex-wrap gap-2 mb-5">
+          <button onClick={() => setView('all')}
+            className={`text-sm font-semibold px-3.5 py-2 rounded-full border transition ${view === 'all' ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+            👥 Base de clientes
+          </button>
+          <button onClick={() => setView('reactivate')}
+            className={`text-sm font-semibold px-3.5 py-2 rounded-full border transition ${view === 'reactivate' ? 'bg-signal-500 text-white border-signal-500' : 'bg-white text-steel-600 border-steel-200'}`}>
+            💬 Reativar clientes
+          </button>
         </div>
-      )}
 
-      {/* Modal novo veículo */}
-      {modalV && selected && (
-        <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setModalV(false)}>
-          <form onSubmit={saveVehicle} onClick={e => e.stopPropagation()} className="card max-w-md w-full space-y-4">
-            <h2 className="text-xl font-bold">Novo veículo — {selected.full_name}</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Placa *</label>
-                <input className="input uppercase" required value={formV.plate} onChange={e => setFormV(f => ({ ...f, plate: e.target.value.toUpperCase() }))} placeholder="ABC1D23" /></div>
-              <div><label className="label">Ano</label>
-                <input className="input" type="number" min={1950} max={2030} value={formV.year} onChange={e => setFormV(f => ({ ...f, year: e.target.value }))} placeholder="2020" /></div>
+        {view === 'reactivate' && shop && <ReactivationList workshopId={shop.id} workshopName={shop.business_name} />}
+
+        {view === 'all' && (
+          <>
+            {/* O dinheiro da base */}
+            {summary && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+                <MoneyCard dark label="💰 Dinheiro na mesa (potencial)" value={fmtBRL(summary.onTable)}
+                  sub={`em ${summary.withOpportunity.toLocaleString('pt-BR')} clientes · recuperando 1 em cada 5: ~${fmtBRL(summary.onTable / 5)}`}
+                  onClick={() => go('money', 'money')} />
+                <MoneyCard label="⚠️ Em risco" value={`${summary.riskCount} clientes`}
+                  sub={`~${fmtBRL(summary.riskPerYear)} por ano que podem parar de vir`} onClick={() => go('risk', 'money')} warn />
+                <MoneyCard label="📅 Voltam este mês" value={`${summary.dueThisMonth} clientes`}
+                  sub={`~${fmtBRL(summary.dueThisMonthValue)} previstos pelo ritmo de cada um`} onClick={() => go('due', 'money')} />
+                <MoneyCard label="⭐ Clientes VIP" value={`${summary.vipCount} clientes`}
+                  sub={`os 20% que mais gastam = ${Math.round(summary.vipShare)}% do faturamento`} onClick={() => go('vip', 'spent')} />
+              </div>
+            )}
+
+            {/* Busca, filtros e ordem */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <input className="input max-w-sm" placeholder="Buscar por nome, telefone, placa ou CPF…"
+                value={search} onChange={e => { setSearch(e.target.value); setShown(PAGE); }} />
+              <select className="input !w-auto" value={sort} onChange={e => setSort(e.target.value as Sort)}>
+                {SORTS.map(s => <option key={s.key} value={s.key}>Ordenar: {s.label}</option>)}
+              </select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Marca *</label>
-                <input className="input" required value={formV.make} onChange={e => setFormV(f => ({ ...f, make: e.target.value }))} placeholder="Honda" /></div>
-              <div><label className="label">Modelo *</label>
-                <input className="input" required value={formV.model} onChange={e => setFormV(f => ({ ...f, model: e.target.value }))} placeholder="Civic" /></div>
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {FILTERS.map(x => (
+                <button key={x.key} onClick={() => go(x.key)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === x.key ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'}`}>
+                  {x.label}
+                </button>
+              ))}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Cor</label>
-                <input className="input" value={formV.color} onChange={e => setFormV(f => ({ ...f, color: e.target.value }))} placeholder="Prata" /></div>
-              <div><label className="label">Obs. técnicas</label>
-                <input className="input" value={formV.notes} onChange={e => setFormV(f => ({ ...f, notes: e.target.value }))} placeholder="Ex.: troca óleo 10k km" /></div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button type="button" onClick={() => setModalV(false)} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={saving}>{saving ? '…' : 'Salvar'}</button>
-            </div>
-          </form>
-        </div>
+
+            {loading ? (
+              <div className="card h-64 animate-pulse" />
+            ) : list.length === 0 ? (
+              <div className="card text-center text-steel-500 py-16">
+                {rows.length === 0
+                  ? <><p className="text-lg font-semibold">Nenhum cliente ainda</p><p className="text-sm mt-1">Cadastre seu primeiro cliente e comece a construir o histórico.</p></>
+                  : 'Nenhum cliente encontrado com esse filtro ou busca.'}
+              </div>
+            ) : (
+              <div className="card !p-0 overflow-hidden">
+                <div className="hidden md:grid grid-cols-[minmax(0,2.3fr)_minmax(0,1.1fr)_60px_110px_110px_130px] gap-3 px-4 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold uppercase tracking-wider text-steel-500">
+                  <span>Cliente</span><span>Carros</span><span className="text-right">Visitas</span><span className="text-right">Total gasto</span>
+                  <span className="text-right">Última visita</span><span className="text-right">💰 Oportunidade</span>
+                </div>
+                <div className="divide-y divide-steel-100">
+                  {list.slice(0, shown).map(r => {
+                    const seg = SEGMENTS[r.ins.segment];
+                    return (
+                      <button key={r.id} onClick={() => nav(`/oficina/clientes/${r.id}`)}
+                        className="w-full text-left px-4 py-3 hover:bg-steel-50 transition grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,2.3fr)_minmax(0,1.1fr)_60px_110px_110px_130px] gap-x-3 gap-y-1 items-center">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`h-9 w-9 rounded-full grid place-items-center font-bold shrink-0 ${r.ins.vip ? 'bg-brand-500 text-white' : 'bg-brand-500/10 text-brand-600'}`}>
+                            {r.full_name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold truncate">
+                              {r.full_name}{r.contact_opt_out && <span title="Não quer receber mensagens" className="ml-1 text-xs">🚫</span>}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                              <span title={seg.hint} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${seg.cls}`}>{seg.icon} {seg.label}</span>
+                              {r.ins.vip && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-brand-100 text-brand-800">⭐ VIP</span>}
+                              <span className="text-[11px] text-steel-500 truncate">{r.phone ? fmtPhone(r.phone) : 'sem telefone'}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="hidden md:flex flex-wrap gap-1 min-w-0">
+                          {r.plates.slice(0, 2).map(p => <span key={p} className="badge bg-steel-100 text-steel-700 uppercase font-mono">{p}</span>)}
+                          {r.plates.length > 2 && <span className="badge bg-steel-100 text-steel-500">+{r.plates.length - 2}</span>}
+                          {r.plates.length === 0 && <span className="text-xs text-steel-400">—</span>}
+                        </div>
+                        <div className="hidden md:block text-right text-sm">{r.ins.visits}</div>
+                        <div className="hidden md:block text-right text-sm">{fmtBRL(r.ins.spent)}</div>
+                        <div className="hidden md:block text-right text-xs text-steel-600">{timeAgo(r.ins.lastVisit)}</div>
+                        <div className="text-right">
+                          {r.ins.opportunity.total > 0
+                            ? <span className="text-sm font-bold text-signal-700">{fmtBRL(r.ins.opportunity.total)}</span>
+                            : <span className="text-xs text-steel-300">—</span>}
+                          <div className="md:hidden text-[11px] text-steel-500">{fmtBRL(r.ins.spent)} · {timeAgo(r.ins.lastVisit)}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                {list.length > shown && (
+                  <button onClick={() => setShown(s => s + PAGE)} className="w-full py-3 text-sm font-semibold text-brand-600 hover:bg-steel-50 border-t border-steel-100">
+                    Mostrar mais ({(list.length - shown).toLocaleString('pt-BR')} restantes)
+                  </button>
+                )}
+              </div>
+            )}
+            {!loading && list.length > 0 && (
+              <p className="text-[11px] text-steel-400 mt-2">
+                {list.length.toLocaleString('pt-BR')} cliente{list.length === 1 ? '' : 's'} nesta lista. 💰 Oportunidade = orçamento não aprovado (6 meses) + serviço recomendado (último ano)
+                + troca de óleo vencida + uma visita de volta (em risco ou sumido há até 18 meses; depois disso consideramos perdido). Visita típica = ticket médio do cliente,
+                limitado a 1,5× o da oficina. É o potencial — na prática, só parte volta.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {creating && shop && (
+        <CustomerForm workshopId={shop.id} onClose={() => setCreating(false)}
+          onSaved={id => { setCreating(false); nav(`/oficina/clientes/${id}`); }} />
       )}
     </WorkshopLayout>
   );
 }
 
-
+function MoneyCard({ label, value, sub, onClick, dark = false, warn = false }: {
+  label: string; value: string; sub: string; onClick: () => void; dark?: boolean; warn?: boolean;
+}) {
+  return (
+    <button onClick={onClick} className={`card text-left hover:shadow-md hover:-translate-y-0.5 transition ${dark ? '!bg-steel-900 text-white' : ''}`}>
+      <div className={`text-[10px] font-bold uppercase tracking-widest ${dark ? 'text-brand-300' : 'text-steel-500'}`}>{label}</div>
+      <div className={`text-2xl font-bold font-display mt-1 ${warn ? 'text-pending-700' : ''}`}>{value}</div>
+      <div className={`text-xs mt-0.5 ${dark ? 'text-steel-300' : 'text-steel-500'}`}>{sub}</div>
+    </button>
+  );
+}

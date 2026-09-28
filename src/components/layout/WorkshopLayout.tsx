@@ -17,22 +17,31 @@ interface NavItem  { to: string; icon: string; label: string }
 interface SoonItem { icon: string; label: string; desc: string }
 interface SoonDept { dept: string; items: SoonItem[] }
 
-const PLATAFORMA: NavItem[] = [
-  { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'         },
-  { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar mecânicos' },
-  { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens'        },
-  { to: '/oficina/avisos',     icon: '🔔', label: 'Avisos'           },
-];
-
-const GESTAO: NavItem[] = [
-  { to: '/oficina/painel',   icon: '📊', label: 'Painel'            },
-  { to: '/oficina/os',       icon: '📋', label: 'Ordens de Serviço' },
-  { to: '/oficina/checkup',  icon: '🔍', label: 'Check-up'          },
-  { to: '/oficina/clientes', icon: '👥', label: 'Clientes'           },  { to: '/oficina/equipe',   icon: '👷', label: 'Equipe'             },
-  { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho da equipe' },
-  { to: '/oficina/importar', icon: '📷', label: 'Importar orçamentos' },
-  { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
-  { to: '/oficina/vip',      icon: '⭐', label: 'Plano VIP'          },
+/** Menu organizado por departamento: cada área com o que é dela */
+const SECTIONS: { title: string; items: NavItem[] }[] = [
+  { title: 'Vendas', items: [
+    { to: '/oficina/painel',     icon: '📊', label: 'Painel de vendas'     },
+    { to: '/oficina/clientes',   icon: '👥', label: 'Clientes'             },
+  ] },
+  { title: 'Operação', items: [
+    { to: '/oficina/os',         icon: '📋', label: 'Ordens de Serviço'    },
+    { to: '/oficina/checkup',    icon: '🩺', label: 'Check-up'             },
+    { to: '/oficina/importar',   icon: '📷', label: 'Importar orçamentos'  },
+  ] },
+  { title: 'Equipe', items: [
+    { to: '/oficina/equipe',     icon: '👷', label: 'Colaboradores'        },
+    { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho e comissões' },
+  ] },
+  { title: 'Plataforma', items: [
+    { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
+    { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar mecânicos'     },
+    { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens'            },
+    { to: '/oficina/avisos',     icon: '🔔', label: 'Avisos'               },
+  ] },
+  { title: 'Oficina', items: [
+    { to: '/oficina/perfil',     icon: '🏪', label: 'Perfil e vitrine'     },
+    { to: '/oficina/vip',        icon: '⭐', label: 'Plano VIP'            },
+  ] },
 ];
 
 // Gestão Avançada oculta por enquanto — mudar para true quando for retomar o módulo
@@ -92,7 +101,7 @@ const ADVANCED: SoonDept[] = [
 ];
 
 const BOTTOM_TABS: NavItem[] = [
-  { to: '/oficina/painel',     icon: '📊', label: 'Painel'    },
+  { to: '/oficina/painel',     icon: '📊', label: 'Vendas'    },
   { to: '/oficina/os',         icon: '📋', label: 'OS'        },
   { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'  },
   { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens' },
@@ -462,33 +471,24 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         )}
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
-          <div>
-            <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
-              Gestão da oficina
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
+          {SECTIONS.map(sec => (
+            <div key={sec.title}>
+              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-1.5">
+                {sec.title}
+              </div>
+              <div className="space-y-0.5">
+                {sec.items.map(item => (
+                  <SideItem
+                    key={item.to}
+                    {...item}
+                    badge={item.to === '/oficina/mensagens' ? unread : item.to === '/oficina/avisos' ? unreadNotif : 0}
+                    onClick={() => setOpen(false)}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="space-y-0.5">
-              {GESTAO.map(item => (
-                <SideItem key={item.to} {...item} badge={0} onClick={() => setOpen(false)} />
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
-              Plataforma
-            </div>
-            <div className="space-y-0.5">
-              {PLATAFORMA.map(item => (
-                <SideItem
-                  key={item.to}
-                  {...item}
-                  badge={item.to === '/oficina/mensagens' ? unread : item.to === '/oficina/avisos' ? unreadNotif : 0}
-                  onClick={() => setOpen(false)}
-                />
-              ))}
-            </div>
-          </div>
+          ))}
 
           {/* ── Gestão Avançada (upgrade) ── */}
           {SHOW_ADVANCED && <AdvancedSection />}

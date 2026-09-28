@@ -10,6 +10,7 @@ import { formatScheduled } from '@/lib/scheduling';
 import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 import type { Job } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
+import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
 
 type NewJob = {
   title: string; description: string;
@@ -366,6 +367,9 @@ export default function WorkshopDashboard() {
         <KPI label="Concluídos"  value={shop?.total_jobs ?? 0} />
         <KPI label="Avaliação"   value={`★ ${(shop?.rating ?? 0).toFixed(1)}`} />
       </div>
+
+      {/* Resumo do período: gasto, tempos de aceite/chegada, mecânicos mais contratados */}
+      {currentWorkshop?.id && <MarketplaceSummary workshopId={currentWorkshop.id} />}
 
       {/* 🔔 Confirmações pendentes — ação prioritária */}
       {pendingConfirm.length > 0 && (

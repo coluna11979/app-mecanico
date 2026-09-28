@@ -75,6 +75,15 @@ export default function ServiceOrders() {
     if (linkedOsId) nav(`/oficina/os/${linkedOsId}`, { replace: true });
   }, [linkedOsId, nav]);
 
+  /* ── ?nova=1&cliente=<id>&veiculo=<id> → abre a Nova OS já com o cliente (ficha do cliente) ── */
+  const newForCustomer = searchParams.get('nova') === '1' ? searchParams.get('cliente') : null;
+  const newForVehicle = searchParams.get('veiculo');
+  useEffect(() => {
+    if (!newForCustomer) return;
+    setNewOs({ customerId: newForCustomer, vehicleId: newForVehicle });
+    nav('/oficina/os', { replace: true });
+  }, [newForCustomer, newForVehicle, nav]);
+
   const openOs = (os: OsRow) => nav(`/oficina/os/${os.id}`);
 
   /* ── persistência de filtros (localStorage por oficina) ── */
