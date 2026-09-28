@@ -8,6 +8,8 @@ import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
+import { ROLES, roleAllows, useOperator } from '@/lib/operators';
+import OperatorLock from '@/components/operator/OperatorLock';
 
 type ArrivalAlert = { jobId: string; title: string };
 type FinishedAlert = { jobId: string; title: string; price: number };
@@ -27,7 +29,9 @@ const PLATAFORMA: NavItem[] = [
 const GESTAO: NavItem[] = [
   { to: '/oficina/painel',   icon: '📊', label: 'Painel'            },
   { to: '/oficina/os',       icon: '📋', label: 'Ordens de Serviço' },
-  { to: '/oficina/clientes', icon: '👥', label: 'Clientes'           },  { to: '/oficina/equipe',   icon: '👷', label: 'Equipe'             },
+  { to: '/oficina/clientes', icon: '👥', label: 'Clientes'           },
+  { to: '/oficina/equipe',   icon: '👷', label: 'Equipe'             },
+  { to: '/oficina/acessos',  icon: '🔐', label: 'Acessos e funções'  },
   { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho da equipe' },
   { to: '/oficina/importar', icon: '📷', label: 'Importar orçamentos' },
   { to: '/oficina/perfil',   icon: '🏪', label: 'Perfil da oficina'  },
@@ -331,6 +335,36 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     }
   }, [location.pathname]);
 
+  /* ── Modo balcão: quem está operando e em qual função ── */
+  const op = useOperator();
+  useEffect(() => { op.bind(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const role = op.balcao ? op.session?.role ?? null : null;
+  const allowed = (to: string) => !role || roleAllows(role, to);
+
+  /* Tela fora da função → volta pra tela inicial da função */
+  useEffect(() => {
+    if (role && !roleAllows(role, location.pathname)) nav(ROLES[role].home, { replace: true });
+  }, [role, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function enterBalcao() {
+    if (!shopId) return;
+    const { count } = await supabase.from('workshop_operators')
+      .select('id', { count: 'exact', head: true })
+      .eq('workshop_id', shopId).eq('active', true).eq('has_pin', true).contains('roles', ['gestor']);
+    if (!count) {
+      toast.warning('Antes, cadastre o seu PIN de gestor em Acessos e funções.');
+      nav('/oficina/acessos');
+      setOpen(false);
+      return;
+    }
+    op.enterBalcao();
+    setOpen(false);
+  }
+
+  if (op.balcao && !op.session && op.wid === shopId) return <OperatorLock />;
+
+  const bottomTabs = BOTTOM_TABS.filter(t => allowed(t.to));
+
   return (
     <div className="min-h-screen flex bg-steel-50">
 
@@ -462,23 +496,26 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
+          {GESTAO.some(i => allowed(i.to)) && (
           <div>
             <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
               Gestão da oficina
             </div>
             <div className="space-y-0.5">
-              {GESTAO.map(item => (
+              {GESTAO.filter(i => allowed(i.to)).map(item => (
                 <SideItem key={item.to} {...item} badge={0} onClick={() => setOpen(false)} />
               ))}
             </div>
           </div>
+          )}
 
+          {PLATAFORMA.some(i => allowed(i.to)) && (
           <div>
             <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-2">
               Plataforma
             </div>
             <div className="space-y-0.5">
-              {PLATAFORMA.map(item => (
+              {PLATAFORMA.filter(i => allowed(i.to)).map(item => (
                 <SideItem
                   key={item.to}
                   {...item}
@@ -488,13 +525,49 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
               ))}
             </div>
           </div>
+          )}
 
           {/* ── Gestão Avançada (upgrade) ── */}
-          {SHOW_ADVANCED && <AdvancedSection />}
+          {SHOW_ADVANCED && !role && <AdvancedSection />}
         </nav>
 
-        {/* User footer */}
+        {/* Quem está operando (modo balcão) */}
+        {op.balcao && op.session ? (
+          <div className="border-t border-steel-800 p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm shrink-0">
+                {op.session.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold truncate">{op.session.name}</div>
+                <div className="text-[11px] text-steel-400">{ROLES[op.session.role].icon} {ROLES[op.session.role].label}</div>
+              </div>
+              <button
+                onClick={() => { op.switchUser(); setOpen(false); }}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-steel-800 text-steel-200 hover:bg-steel-700 hover:text-white transition"
+                title="Trocar operador ou função"
+              >
+                🔒 Trocar
+              </button>
+            </div>
+            {op.session.role === 'gestor' && (
+              <button
+                onClick={() => { op.exitBalcao(); setOpen(false); }}
+                className="mt-3 w-full text-[11px] text-steel-500 hover:text-steel-300"
+              >
+                Desligar o modo balcão neste aparelho
+              </button>
+            )}
+          </div>
+        ) : (
         <div className="border-t border-steel-800 p-4">
+          <button
+            onClick={enterBalcao}
+            className="w-full mb-3 text-xs font-semibold px-3 py-2 rounded-lg bg-steel-800 text-steel-300 hover:bg-steel-700 hover:text-white transition"
+            title="Cada colaborador entra com o próprio PIN e vê só as telas da função dele"
+          >
+            🔒 Ativar modo balcão
+          </button>
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm shrink-0">
               {initials}
@@ -512,6 +585,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </button>
           </div>
         </div>
+        )}
       </aside>
 
       {/* ── Main content ── */}
@@ -579,8 +653,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
       {/* ── Bottom tab bar (mobile only) ── */}
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-steel-200 z-20 lg:hidden safe-area-inset-bottom">
-        <div className="grid grid-cols-4 h-16">
-          {BOTTOM_TABS.map(tab => (
+        <div className="grid h-16" style={{ gridTemplateColumns: `repeat(${Math.max(bottomTabs.length, 1)}, minmax(0, 1fr))` }}>
+          {bottomTabs.map(tab => (
             <NavLink
               key={tab.to}
               to={tab.to}
