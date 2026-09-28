@@ -44,7 +44,7 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   dar_desconto:         { label: 'Dar desconto',          desc: 'Conceder desconto no recebimento' },
   cancelar_recebimento: { label: 'Cancelar recebimento',  desc: 'Estornar um recebimento já lançado' },
   reabrir_caixa:        { label: 'Reabrir caixa',         desc: 'Reabrir um caixa já fechado' },
-  ver_financeiro:       { label: 'Ver financeiro',        desc: 'Acessar o Financeiro e ver custo e margem das peças' },
+  ver_financeiro:       { label: 'Ver financeiro',        desc: 'Financeiro, contas a pagar, compras, fornecedores, estoque e custo das peças' },
 };
 
 /** A rota está liberada para a função? */
@@ -55,7 +55,7 @@ export function roleAllows(role: OperatorRole, path: string) {
 
 /** Telas extras liberadas por permissão, além das da função */
 const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
-  ver_financeiro: ['/oficina/financeiro', '/oficina/pecas'],
+  ver_financeiro: ['/oficina/financeiro', '/oficina/contas-a-pagar', '/oficina/pecas', '/oficina/compras', '/oficina/fornecedores'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */

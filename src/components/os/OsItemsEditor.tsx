@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
-import { fmtPct, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { fmtPct, fmtQty, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -19,7 +19,7 @@ type Row = {
   part_id: string | null;
 };
 
-type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number };
+type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -76,7 +76,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     let alive = true;
     (async () => {
       const [cat, hist, margin] = await Promise.all([
-        supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price')
+        supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price, stock_qty, unit')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
           .select('description, kind, unit_price, created_at')
@@ -87,9 +87,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       ]);
       if (!alive) return;
       const seen = new Map<string, Suggestion>();
-      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'cost' | 'margin_percent' | 'sale_price'>[]) {
+      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>[]) {
         const k = p.name.trim().toLowerCase();
-        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, cost: Number(p.cost) });
+        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit });
       }
       for (const d of (hist.data ?? []) as Suggestion[]) {
         const k = d.description.trim().toLowerCase();
@@ -264,7 +264,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       )}
 
       <datalist id={`os-items-sugg-${osId}`}>
-        {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? 'Peça cadastrada' : KIND_LABEL[s.kind]} · {fmtBRL(s.unit_price)}</option>)}
+        {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? `Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : KIND_LABEL[s.kind]} · {fmtBRL(s.unit_price)}</option>)}
       </datalist>
 
       <div className="divide-y divide-steel-100">

@@ -28,11 +28,16 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'Financeiro', items: [
     { to: '/oficina/caixa',      icon: '💰', label: 'Caixa'                },
     { to: '/oficina/financeiro', icon: '💵', label: 'Financeiro'           },
+    { to: '/oficina/contas-a-pagar', icon: '📤', label: 'Contas a pagar'   },
+  ] },
+  { title: 'Compras e estoque', items: [
+    { to: '/oficina/pecas',      icon: '🔩', label: 'Peças e estoque'      },
+    { to: '/oficina/compras',    icon: '🧾', label: 'Notas de compra'      },
+    { to: '/oficina/fornecedores', icon: '🚚', label: 'Fornecedores'       },
   ] },
   { title: 'Operação', items: [
     { to: '/oficina/os',         icon: '📋', label: 'Ordens de Serviço'    },
     { to: '/oficina/checkup',    icon: '🩺', label: 'Check-up'             },
-    { to: '/oficina/pecas',      icon: '🔩', label: 'Peças e preços'       },
     { to: '/oficina/importar',   icon: '📷', label: 'Importar orçamentos'  },
   ] },
   { title: 'Equipe', items: [

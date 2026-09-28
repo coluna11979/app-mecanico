@@ -1,0 +1,301 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import WorkshopLayout from '@/components/layout/WorkshopLayout';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/Toast';
+import { canDo, useOperator } from '@/lib/operators';
+import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
+import { UNITS, fmtQty, loadDefaultMargin, priceModeOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
+import { Restricted, SupplierForm } from './Fornecedores';
+
+type Row = { key: string; part_id: string | null; name: string; unit: string; quantity: string; unit_cost: string };
+type Inst = { due_date: string; amount: string };
+
+let seq = 0;
+const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, name: '', unit: 'un', quantity: '1', unit_cost: '' });
+const num = (s: string) => { const n = parseMoney(s); return Number.isFinite(n) ? n : 0; };
+
+export default function CompraNova() {
+  const { currentWorkshop } = useAuth();
+  const wid = currentWorkshop?.id ?? null;
+  const { balcao, session } = useOperator();
+  const allowed = canDo(session, balcao, 'ver_financeiro');
+  const nav = useNavigate();
+  const [params] = useSearchParams();
+
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [parts, setParts]         = useState<WorkshopPart[]>([]);
+  const [margin, setMargin]       = useState(40);
+  const [supplierId, setSupplierId] = useState(params.get('fornecedor') ?? '');
+  const [number, setNumber]       = useState('');
+  const [date, setDate]           = useState(todayISO());
+  const [freight, setFreight]     = useState('');
+  const [discount, setDiscount]   = useState('');
+  const [notes, setNotes]         = useState('');
+  const [rows, setRows]           = useState<Row[]>([newRow()]);
+  const [count, setCount]         = useState(1);
+  const [firstDue, setFirstDue]   = useState(todayISO());
+  const [insts, setInsts]         = useState<Inst[]>([]);
+  const [newSupplier, setNewSupplier] = useState(false);
+  const [saving, setSaving]       = useState(false);
+
+  useEffect(() => {
+    if (!wid || !allowed) return;
+    (async () => {
+      const [s, p, m] = await Promise.all([
+        supabase.from('suppliers').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
+        supabase.from('workshop_parts').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
+        loadDefaultMargin(wid),
+      ]);
+      setSuppliers((s.data as Supplier[]) ?? []);
+      setParts((p.data as WorkshopPart[]) ?? []);
+      setMargin(m);
+    })();
+  }, [wid, allowed]);
+
+  const supplier = suppliers.find(s => s.id === supplierId) ?? null;
+  const byName = useMemo(() => new Map(parts.map(p => [p.name.trim().toLowerCase(), p])), [parts]);
+  const byId = useMemo(() => new Map(parts.map(p => [p.id, p])), [parts]);
+
+  const itemsTotal = rows.reduce((a, r) => a + num(r.quantity) * num(r.unit_cost), 0);
+  const total = Math.round((itemsTotal + num(freight) - num(discount)) * 100) / 100;
+
+  // Vencimento sugerido pelo prazo do fornecedor
+  useEffect(() => { setFirstDue(addDaysISO(date, supplier?.payment_days ?? 0)); }, [date, supplier?.payment_days]);
+  // Parcelas refeitas quando muda total, quantidade ou 1º vencimento
+  useEffect(() => {
+    setInsts(total > 0
+      ? splitInstallments(total, count, firstDue).map(i => ({ due_date: i.due_date, amount: moneyInput(i.amount) }))
+      : []);
+  }, [total, count, firstDue]);
+
+  const instTotal = insts.reduce((a, i) => a + num(i.amount), 0);
+  const instOk = insts.length > 0 && Math.abs(instTotal - total) < 0.01;
+
+  function update(key: string, patch: Partial<Row>) {
+    setRows(rs => rs.map(r => {
+      if (r.key !== key) return r;
+      const next = { ...r, ...patch };
+      if (patch.name !== undefined) {
+        const p = byName.get(patch.name.trim().toLowerCase());
+        if (p) {
+          next.part_id = p.id;
+          next.unit = p.unit;
+          if (!r.unit_cost) next.unit_cost = moneyInput(Number(p.cost));
+        } else {
+          next.part_id = null;
+        }
+      }
+      return next;
+    }));
+  }
+
+  async function save() {
+    if (!supplierId) return toast.error('Escolha o fornecedor');
+    const items = rows.filter(r => r.name.trim());
+    if (!items.length) return toast.error('Adicione ao menos uma peça');
+    for (const [i, r] of items.entries()) {
+      if (!(num(r.quantity) > 0)) return toast.error(`Item ${i + 1}: quantidade inválida`);
+      if (!Number.isFinite(parseMoney(r.unit_cost || '0')) || num(r.unit_cost) < 0) return toast.error(`Item ${i + 1}: custo inválido`);
+    }
+    if (total <= 0) return toast.error('O total da nota precisa ser maior que zero');
+    if (!instOk) return toast.error(`As parcelas somam ${fmtBRL(instTotal)} e a nota dá ${fmtBRL(total)}`);
+
+    setSaving(true);
+    const { data, error } = await supabase.rpc('purchase_post', {
+      p_workshop: wid, p_supplier: supplierId, p_number: number, p_issue_date: date,
+      p_freight: num(freight), p_discount: num(discount),
+      p_items: items.map(r => ({ part_id: r.part_id, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: num(r.unit_cost) })),
+      p_installments: insts.map(i => ({ due_date: i.due_date, amount: num(i.amount) })),
+      p_notes: notes,
+    });
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    toast.success('Nota lançada ✓ Estoque e contas a pagar atualizados');
+    nav(`/oficina/compras?nota=${data}`);
+  }
+
+  if (!allowed) return <Restricted />;
+
+  return (
+    <WorkshopLayout>
+      <div className="max-w-4xl mx-auto space-y-5">
+        <div>
+          <Link to="/oficina/compras" className="text-sm text-steel-500 hover:text-steel-700">← Notas de compra</Link>
+          <h1 className="text-3xl font-bold tracking-tight mt-1">🧾 Lançar nota de compra</h1>
+          <p className="text-sm text-steel-500 mt-1">Ao lançar, as peças entram no estoque, o custo é atualizado e as parcelas vão para as contas a pagar.</p>
+        </div>
+
+        {/* Fornecedor e nota */}
+        <div className="card grid sm:grid-cols-4 gap-3">
+          <div className="sm:col-span-2">
+            <label className="label">Fornecedor *</label>
+            <div className="flex gap-2">
+              <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+                <option value="">Escolha…</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <button type="button" className="btn-ghost border border-steel-200 shrink-0" onClick={() => setNewSupplier(true)}>+ Novo</button>
+            </div>
+            {supplier && <p className="text-[11px] text-steel-400 mt-1">{supplier.payment_days ? `Prazo de ${supplier.payment_days} dias` : 'Pagamento à vista'}</p>}
+          </div>
+          <div>
+            <label className="label">Nº da nota</label>
+            <input className="input" placeholder="Ex.: 12345" value={number} onChange={e => setNumber(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Data da nota</label>
+            <input type="date" className="input" value={date} onChange={e => setDate(e.target.value || todayISO())} />
+          </div>
+        </div>
+
+        {/* Itens */}
+        <div className="card !p-0 overflow-hidden">
+          <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+            <h2 className="font-bold text-lg">Peças da nota</h2>
+            <button type="button" onClick={() => setRows(rs => [...rs, newRow()])}
+              className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700">+ Peça</button>
+          </div>
+          <datalist id="compra-pecas">
+            {parts.map(p => <option key={p.id} value={p.name}>{`estoque ${fmtQty(p.stock_qty)} ${p.unit} · custo ${fmtBRL(p.cost)}`}</option>)}
+          </datalist>
+          <div className="hidden md:grid grid-cols-12 gap-2 px-5 py-2 bg-steel-50 border-y border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
+            <div className="col-span-5">Peça</div>
+            <div className="col-span-2 text-right">Qtd</div>
+            <div className="col-span-2 text-right">Custo unit.</div>
+            <div className="col-span-2 text-right">Total</div>
+            <div className="col-span-1" />
+          </div>
+          <div className="divide-y divide-steel-100">
+            {rows.map(r => {
+              const part = r.part_id ? byId.get(r.part_id) : undefined;
+              const newCost = num(r.unit_cost);
+              const costChanged = part && r.unit_cost && Math.abs(newCost - Number(part.cost)) > 0.001;
+              return (
+                <div key={r.key} className="px-5 py-3 grid grid-cols-12 gap-2 items-center">
+                  <div className="col-span-12 md:col-span-5">
+                    <input className="input !py-2 text-sm" list="compra-pecas" placeholder="Digite o nome (do cadastro ou nova)"
+                      value={r.name} onChange={e => update(r.key, { name: e.target.value })} />
+                  </div>
+                  <div className="col-span-4 md:col-span-2 flex gap-1">
+                    <input className="input !py-2 text-sm text-right" inputMode="decimal" value={r.quantity}
+                      onChange={e => update(r.key, { quantity: e.target.value })} />
+                    {!r.part_id && r.name.trim() && (
+                      <select className="input !py-2 !px-1 text-xs !w-16" value={r.unit} onChange={e => update(r.key, { unit: e.target.value })}>
+                        {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <div className="col-span-4 md:col-span-2 relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+                    <input className="input !py-2 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={r.unit_cost}
+                      onChange={e => update(r.key, { unit_cost: e.target.value })}
+                      onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) update(r.key, { unit_cost: moneyInput(v) }); }} />
+                  </div>
+                  <div className="col-span-3 md:col-span-2 text-right text-sm font-bold">{fmtBRL(num(r.quantity) * num(r.unit_cost))}</div>
+                  <div className="col-span-1 flex justify-end">
+                    <button type="button" onClick={() => setRows(rs => rs.length > 1 ? rs.filter(x => x.key !== r.key) : [newRow()])}
+                      className="h-8 w-8 rounded-lg grid place-items-center text-xs bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600" title="Remover">✕</button>
+                  </div>
+                  {r.name.trim() && (
+                    <div className="col-span-12 text-xs -mt-1">
+                      {part ? (
+                        <span className="text-steel-500">
+                          🔩 Estoque {fmtQty(part.stock_qty)} → <strong className="text-steel-700">{fmtQty(Number(part.stock_qty) + num(r.quantity))} {part.unit}</strong>
+                          {costChanged && (
+                            <> · custo {fmtBRL(part.cost)} → <strong className={newCost > Number(part.cost) ? 'text-alert-600' : 'text-signal-700'}>{fmtBRL(newCost)}</strong>
+                              {priceModeOf(part) !== 'fixed' && <> · venda passa a {fmtBRL(salePriceOf({ ...part, cost: newCost }, margin))}</>}
+                            </>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-brand-700">✨ Peça nova: será cadastrada com a margem padrão ({margin}%) → venda {fmtBRL(salePriceOf({ cost: newCost, margin_percent: null, sale_price: null }, margin))}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="bg-steel-50 border-t border-steel-100 px-5 py-4">
+            <div className="ml-auto max-w-xs space-y-1.5 text-sm">
+              <div className="flex justify-between text-steel-600"><span>Peças</span><span>{fmtBRL(itemsTotal)}</span></div>
+              <MoneyLine label="Frete" value={freight} onChange={setFreight} />
+              <MoneyLine label="Desconto" value={discount} onChange={setDiscount} minus />
+              <div className="flex justify-between pt-2 border-t border-steel-200">
+                <span className="font-bold">Total da nota</span>
+                <span className="font-bold font-display text-xl">{fmtBRL(total)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Pagamento */}
+        <div className="card space-y-4">
+          <h2 className="font-bold text-lg">Pagamento</h2>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="label">Parcelas</label>
+              <select className="input !w-auto" value={count} onChange={e => setCount(Number(e.target.value))}>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n === 1 ? '1× (à vista / boleto único)' : `${n}×`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">{count === 1 ? 'Vencimento' : '1º vencimento'}</label>
+              <input type="date" className="input !w-auto" value={firstDue} onChange={e => setFirstDue(e.target.value || todayISO())} />
+            </div>
+            {count > 1 && <p className="text-xs text-steel-500 pb-3">As demais a cada 30 dias. Dá para ajustar abaixo.</p>}
+          </div>
+          {insts.length > 0 && (
+            <div className="space-y-2">
+              {insts.map((i, idx) => (
+                <div key={idx} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="w-12 text-steel-500">{count > 1 ? `${idx + 1}/${count}` : 'Única'}</span>
+                  <input type="date" className="input !py-1.5 !w-auto text-sm" value={i.due_date}
+                    onChange={e => setInsts(xs => xs.map((x, j) => j === idx ? { ...x, due_date: e.target.value } : x))} />
+                  <div className="relative w-36">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+                    <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" value={i.amount}
+                      onChange={e => setInsts(xs => xs.map((x, j) => j === idx ? { ...x, amount: e.target.value } : x))} />
+                  </div>
+                  <span className="text-xs text-steel-400">{fmtDate(i.due_date)}</span>
+                </div>
+              ))}
+              {!instOk && <p className="text-xs text-alert-600">As parcelas somam {fmtBRL(instTotal)} e a nota dá {fmtBRL(total)}.</p>}
+            </div>
+          )}
+          <div>
+            <label className="label">Observações</label>
+            <input className="input" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pb-6">
+          <Link to="/oficina/compras" className="btn-ghost">Cancelar</Link>
+          <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Lançando…' : `✓ Lançar nota de ${fmtBRL(total)}`}</button>
+        </div>
+      </div>
+
+      {newSupplier && wid && (
+        <SupplierForm wid={wid} supplier={null} onClose={() => setNewSupplier(false)}
+          onSaved={s => { setSuppliers(xs => [...xs, s].sort((a, b) => a.name.localeCompare(b.name))); setSupplierId(s.id); setNewSupplier(false); }} />
+      )}
+    </WorkshopLayout>
+  );
+}
+
+function MoneyLine({ label, value, onChange, minus }: { label: string; value: string; onChange: (v: string) => void; minus?: boolean }) {
+  return (
+    <div className="flex justify-between items-center text-steel-600">
+      <span>{label}</span>
+      <div className="relative w-32">
+        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">{minus ? '− R$' : 'R$'}</span>
+        <input className={`input !py-1.5 ${minus ? '!pl-11' : '!pl-8'} text-sm text-right`} inputMode="decimal" placeholder="0,00" value={value}
+          onChange={e => onChange(e.target.value)}
+          onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) onChange(v ? moneyInput(v) : ''); }} />
+      </div>
+    </div>
+  );
+}

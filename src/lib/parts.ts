@@ -8,8 +8,9 @@ import { supabase } from '@/lib/supabase';
 
 export type WorkshopPart = {
   id: string; workshop_id: string; name: string; code: string | null; brand: string | null;
-  unit: string; supplier: string | null; cost: number;
+  unit: string; supplier: string | null; supplier_id: string | null; cost: number;
   margin_percent: number | null; sale_price: number | null;
+  stock_qty: number; min_qty: number;
   active: boolean; created_at: string; updated_at: string;
 };
 
@@ -45,3 +46,11 @@ export async function loadDefaultMargin(workshopId: string) {
   const { data } = await supabase.from('workshop_pricing').select('part_margin_percent').eq('workshop_id', workshopId).maybeSingle();
   return data ? Number((data as { part_margin_percent: number }).part_margin_percent) : DEFAULT_MARGIN;
 }
+
+/** "2.000" → "2"; "1.5" → "1,5" */
+export const fmtQty = (n: number | null | undefined) =>
+  Number(n ?? 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+
+/** Estoque abaixo do mínimo (só quando há mínimo definido) */
+export const needsRestock = (p: Pick<WorkshopPart, 'stock_qty' | 'min_qty'>) =>
+  Number(p.min_qty) > 0 && Number(p.stock_qty) <= Number(p.min_qty);

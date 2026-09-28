@@ -7,6 +7,7 @@ import { canDo, useOperator } from '@/lib/operators';
 import { METHODS, brl, hhmm } from '@/lib/cash';
 import { osNumber } from '@/components/os/osHelpers';
 import { fetchAll } from '@/lib/fetchAll';
+import { daysUntil, type Payable } from '@/lib/purchasing';
 import { change, previousRange, productivity, salesOf, type PanelMechanic } from '@/lib/workshopMetrics';
 import PeriodPicker, { PREV_LABEL, usePeriod } from '@/components/PeriodPicker';
 import {
@@ -29,6 +30,7 @@ export default function Financeiro() {
   const [mechs, setMechs]       = useState<PanelMechanic[]>([]);
   const [ops, setOps]           = useState<Record<string, string>>({});
   const [firstOpen, setFirstOpen] = useState<string | null>(null);
+  const [payables, setPayables] = useState<Pick<Payable, 'amount' | 'due_date' | 'paid_at' | 'paid_from'>[]>([]);
   const [costItems, setCostItems] = useState<{ service_order_id: string; quantity: number; unit_price: number; unit_cost: number }[]>([]);
   const [loading, setLoading]   = useState(true);
 
@@ -43,7 +45,7 @@ export default function Financeiro() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [e, p, r, o, m, op, first, ci] = await Promise.all([
+      const [e, p, r, o, m, op, first, ci, pay] = await Promise.all([
         fetchAll((a, b) => supabase.from('cash_entries')
           .select('id, kind, method, amount, installments, category, mechanic_id, created_at')
           .eq('workshop_id', wid).is('cancelled_at', null).gte('created_at', fromIso).lt('created_at', toIso)
@@ -67,6 +69,11 @@ export default function Financeiro() {
           .select('service_order_id, quantity, unit_price, unit_cost')
           .eq('workshop_id', wid).eq('kind', 'part').not('unit_cost', 'is', null)
           .order('id').range(a, b)),
+        // Contas em aberto (todas) + pagas no período
+        fetchAll((a, b) => supabase.from('payables').select('amount, due_date, paid_at, paid_from')
+          .eq('workshop_id', wid).is('cancelled_at', null)
+          .or(`paid_at.is.null,paid_at.gte.${fromIso.slice(0, 10)}`)
+          .order('id').range(a, b)),
       ]);
       if (!alive) return;
       setEntries((e.data as FinEntry[]) ?? []);
@@ -76,6 +83,7 @@ export default function Financeiro() {
       setMechs((m.data as PanelMechanic[]) ?? []);
       setOps(Object.fromEntries(((op.data as { id: string; name: string }[]) ?? []).map(x => [x.id, x.name])));
       setCostItems((ci.data as typeof costItems) ?? []);
+      setPayables((pay.data as typeof payables) ?? []);
       setFirstOpen((first.data as { opened_at: string } | null)?.opened_at ?? null);
       setLoading(false);
     })();
@@ -262,6 +270,9 @@ export default function Financeiro() {
               </div>
             </div>
 
+            {/* Contas a pagar */}
+            <PayablesCard payables={payables} from={range.from} to={range.to} />
+
             {/* A receber */}
             <div className="card">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -423,6 +434,46 @@ function Split({ label, value, total, color }: { label: string; value: number; t
       <div className="h-2 rounded-full bg-steel-100 overflow-hidden">
         <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
+    </div>
+  );
+}
+
+function PayablesCard({ payables, from, to }: {
+  payables: Pick<Payable, 'amount' | 'due_date' | 'paid_at' | 'paid_from'>[]; from: Date; to: Date;
+}) {
+  const open = payables.filter(p => !p.paid_at);
+  const sum = (xs: typeof payables) => xs.reduce((a, p) => a + Number(p.amount), 0);
+  const overdue = sum(open.filter(p => daysUntil(p.due_date) < 0));
+  const week = sum(open.filter(p => { const d = daysUntil(p.due_date); return d >= 0 && d <= 7; }));
+  const inRange = (iso: string) => { const t = new Date(`${iso}T12:00:00`).getTime(); return t >= from.getTime() && t < to.getTime(); };
+  const paid = payables.filter(p => p.paid_at && inRange(p.paid_at));
+  const paidBank = sum(paid.filter(p => p.paid_from === 'banco'));
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">📤 Contas a pagar</div>
+        <Link to="/oficina/contas-a-pagar" className="text-xs font-semibold text-brand-700">Abrir contas a pagar →</Link>
+      </div>
+      {payables.length === 0 ? (
+        <p className="text-sm text-steel-400">Nenhuma conta lançada. As parcelas das notas de compra e as contas fixas (aluguel, luz…) aparecem aqui.</p>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Mini label="Vencidas" value={brl(overdue)} tone={overdue > 0 ? 'text-alert-600' : ''} />
+          <Mini label="Hoje + 7 dias" value={brl(week)} tone={week > 0 ? 'text-pending-700' : ''} />
+          <Mini label="Total em aberto" value={brl(sum(open))} />
+          <Mini label="Pago pelo banco no período" value={brl(paidBank)} sub="as pagas pelo caixa já estão nas saídas" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Mini({ label, value, sub, tone = '' }: { label: string; value: string; sub?: string; tone?: string }) {
+  return (
+    <div className="bg-steel-50 rounded-xl px-3 py-3">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">{label}</div>
+      <div className={`text-xl font-bold font-display mt-0.5 ${tone}`}>{value}</div>
+      {sub && <div className="text-[10px] text-steel-400 mt-0.5 leading-tight">{sub}</div>}
     </div>
   );
 }

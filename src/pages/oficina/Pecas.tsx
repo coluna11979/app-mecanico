@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,9 +7,14 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  UNITS, fmtPct, loadDefaultMargin, marginOf, priceFromMargin, priceModeOf, salePriceOf,
+  UNITS, fmtPct, fmtQty, loadDefaultMargin, marginOf, needsRestock, priceFromMargin, priceModeOf, salePriceOf,
   type PriceMode, type WorkshopPart,
 } from '@/lib/parts';
+import { fmtDate, type StockMovement, type Supplier } from '@/lib/purchasing';
+
+const MOVE_LABEL: Record<StockMovement['kind'], string> = {
+  compra: 'Compra', estorno_compra: 'Estorno de compra', os: 'Usada em OS', estorno_os: 'OS reaberta', ajuste: 'Ajuste',
+};
 
 export default function Pecas() {
   const { currentWorkshop } = useAuth();
@@ -20,26 +26,33 @@ export default function Pecas() {
   const [margin, setMargin]     = useState<number | null>(null);
   const [q, setQ]               = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  const [onlyRestock, setOnlyRestock] = useState(false);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [editing, setEditing]   = useState<WorkshopPart | 'new' | null>(null);
 
   const load = useCallback(async () => {
     if (!wid) return;
-    const [p, m] = await Promise.all([
+    const [p, m, s] = await Promise.all([
       supabase.from('workshop_parts').select('*').eq('workshop_id', wid).order('name'),
       loadDefaultMargin(wid),
+      supabase.from('suppliers').select('*').eq('workshop_id', wid).order('name'),
     ]);
     setParts((p.data as WorkshopPart[]) ?? []);
     setMargin(m);
+    setSuppliers((s.data as Supplier[]) ?? []);
   }, [wid]);
 
   useEffect(() => { if (allowed) load(); }, [load, allowed]);
 
   const list = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return (parts ?? []).filter(p => (showInactive || p.active) && (!t
+    const supName = new Map(suppliers.map(x => [x.id, x.name.toLowerCase()]));
+    return (parts ?? []).filter(p => (showInactive || p.active) && (!onlyRestock || needsRestock(p)) && (!t
       || p.name.toLowerCase().includes(t) || p.code?.toLowerCase().includes(t)
-      || p.brand?.toLowerCase().includes(t) || p.supplier?.toLowerCase().includes(t)));
-  }, [parts, q, showInactive]);
+      || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supName.get(p.supplier_id)?.includes(t))));
+  }, [parts, q, showInactive, onlyRestock, suppliers]);
+  const supplierName = useMemo(() => new Map(suppliers.map(x => [x.id, x.name])), [suppliers]);
+  const restockCount = (parts ?? []).filter(p => p.active && needsRestock(p)).length;
 
   if (!allowed) {
     return (
@@ -60,10 +73,13 @@ export default function Pecas() {
       <div className="max-w-5xl mx-auto space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">🔩 Peças e preços</h1>
-            <p className="text-sm text-steel-500 mt-1">Custo de compra e preço de venda. O orçamento puxa o preço daqui.</p>
+            <h1 className="text-3xl font-bold tracking-tight">🔩 Peças e estoque</h1>
+            <p className="text-sm text-steel-500 mt-1">Custo, preço de venda e quantidade. O orçamento puxa o preço daqui e a OS concluída dá baixa no estoque.</p>
           </div>
-          <button className="btn-primary" onClick={() => setEditing('new')}>+ Nova peça</button>
+          <div className="flex gap-2">
+            <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200">🧾 Lançar nota</Link>
+            <button className="btn-primary" onClick={() => setEditing('new')}>+ Nova peça</button>
+          </div>
         </div>
 
         {margin != null && wid && <DefaultMargin wid={wid} value={margin} onSaved={v => setMargin(v)} />}
@@ -71,6 +87,12 @@ export default function Pecas() {
         <div className="flex flex-wrap items-center gap-3">
           <input className="input !w-auto flex-1 min-w-[220px]" placeholder="Buscar por nome, código, marca ou fornecedor"
             value={q} onChange={e => setQ(e.target.value)} />
+          {restockCount > 0 && (
+            <button onClick={() => setOnlyRestock(v => !v)}
+              className={`text-sm font-semibold px-3 py-2 rounded-full border transition ${onlyRestock ? 'bg-alert-600 text-white border-alert-600' : 'bg-alert-50 text-alert-700 border-alert-200'}`}>
+              🛒 Comprar ({restockCount})
+            </button>
+          )}
           {inactiveCount > 0 && (
             <label className="text-sm text-steel-600 flex items-center gap-2">
               <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
@@ -96,9 +118,10 @@ export default function Pecas() {
         ) : (
           <div className="card !p-0 overflow-hidden">
             <div className="hidden md:grid grid-cols-12 gap-2 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
-              <div className="col-span-5">Peça</div>
+              <div className="col-span-4">Peça</div>
+              <div className="col-span-2 text-right">Estoque</div>
               <div className="col-span-2 text-right">Custo</div>
-              <div className="col-span-2 text-right">Margem</div>
+              <div className="col-span-1 text-right">Margem</div>
               <div className="col-span-2 text-right">Venda</div>
               <div className="col-span-1" />
             </div>
@@ -110,22 +133,29 @@ export default function Pecas() {
                   <li key={p.id}>
                     <button onClick={() => setEditing(p)}
                       className={`w-full text-left px-5 py-3 grid grid-cols-12 gap-2 items-center hover:bg-steel-50 transition ${p.active ? '' : 'opacity-50'}`}>
-                      <div className="col-span-12 md:col-span-5 min-w-0">
+                      <div className="col-span-12 md:col-span-4 min-w-0">
                         <div className="text-sm font-semibold truncate">{p.name}{!p.active && <span className="badge bg-steel-100 text-steel-500 ml-2">desativada</span>}</div>
                         <div className="text-xs text-steel-500 truncate">
-                          {[p.code, p.brand, p.supplier].filter(Boolean).join(' · ') || `por ${p.unit}`}
+                          {[p.code, p.brand, p.supplier_id && supplierName.get(p.supplier_id)].filter(Boolean).join(' · ') || `por ${p.unit}`}
                         </div>
                       </div>
-                      <div className="col-span-4 md:col-span-2 text-right">
+                      <div className="col-span-3 md:col-span-2 text-right">
+                        <span className="md:hidden text-[10px] text-steel-400 uppercase block">Estoque</span>
+                        <span className={`text-sm font-semibold ${needsRestock(p) ? 'text-alert-600' : Number(p.stock_qty) < 0 ? 'text-alert-600' : ''}`}>
+                          {fmtQty(p.stock_qty)} <span className="text-xs font-normal text-steel-400">{p.unit}</span>
+                        </span>
+                        {needsRestock(p) && <span className="block text-[10px] text-alert-600">mín. {fmtQty(p.min_qty)}</span>}
+                      </div>
+                      <div className="col-span-3 md:col-span-2 text-right">
                         <span className="md:hidden text-[10px] text-steel-400 uppercase block">Custo</span>
                         <span className="text-sm">{fmtBRL(p.cost)}</span>
                       </div>
-                      <div className="col-span-4 md:col-span-2 text-right">
+                      <div className="col-span-3 md:col-span-1 text-right">
                         <span className="md:hidden text-[10px] text-steel-400 uppercase block">Margem</span>
                         <span className="text-sm">{fmtPct(marginOf(Number(p.cost), price))}</span>
                         <span className="block text-[10px] text-steel-400">{mode === 'default' ? 'padrão' : mode === 'margin' ? 'própria' : 'preço fixo'}</span>
                       </div>
-                      <div className="col-span-4 md:col-span-2 text-right">
+                      <div className="col-span-3 md:col-span-2 text-right">
                         <span className="md:hidden text-[10px] text-steel-400 uppercase block">Venda</span>
                         <span className="text-sm font-bold">{fmtBRL(price)}</span>
                       </div>
@@ -140,7 +170,7 @@ export default function Pecas() {
       </div>
 
       {editing && wid && margin != null && (
-        <PartForm wid={wid} part={editing === 'new' ? null : editing} defaultMargin={margin}
+        <PartForm wid={wid} part={editing === 'new' ? null : editing} defaultMargin={margin} suppliers={suppliers}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}
     </WorkshopLayout>
@@ -183,14 +213,23 @@ function DefaultMargin({ wid, value, onSaved }: { wid: string; value: number; on
   );
 }
 
-function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
-  wid: string; part: WorkshopPart | null; defaultMargin: number; onClose: () => void; onSaved: () => void;
+function PartForm({ wid, part, defaultMargin, suppliers, onClose, onSaved }: {
+  wid: string; part: WorkshopPart | null; defaultMargin: number; suppliers: Supplier[]; onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName]         = useState(part?.name ?? '');
   const [code, setCode]         = useState(part?.code ?? '');
   const [brand, setBrand]       = useState(part?.brand ?? '');
   const [unit, setUnit]         = useState(part?.unit ?? 'un');
-  const [supplier, setSupplier] = useState(part?.supplier ?? '');
+  const [supplierId, setSupplierId] = useState(part?.supplier_id ?? '');
+  const [minQty, setMinQty]     = useState(part ? fmtQty(part.min_qty) : '0');
+  const [stock, setStock]       = useState(part ? fmtQty(part.stock_qty) : '0');
+  const [moves, setMoves]       = useState<StockMovement[]>([]);
+
+  useEffect(() => {
+    if (!part) return;
+    supabase.from('stock_movements').select('*').eq('part_id', part.id).order('created_at', { ascending: false }).limit(10)
+      .then(({ data }) => setMoves((data as StockMovement[]) ?? []));
+  }, [part]);
   const [cost, setCost]         = useState(part ? moneyInput(Number(part.cost)) : '');
   const [mode, setMode]         = useState<PriceMode>(part ? priceModeOf(part) : 'default');
   const [marginStr, setMarginStr] = useState(part?.margin_percent != null ? String(part.margin_percent) : String(defaultMargin));
@@ -211,6 +250,10 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
     if (!Number.isFinite(parseMoney(cost || '0')) || parseMoney(cost || '0') < 0) return toast.error('Custo inválido');
     if (mode === 'margin' && (!Number.isFinite(m) || m < 0 || m > 1000)) return toast.error('Margem inválida');
     if (mode === 'fixed' && (!Number.isFinite(f) || f < 0)) return toast.error('Preço de venda inválido');
+    const min = parseMoney(minQty || '0');
+    const counted = parseMoney(stock || '0');
+    if (!Number.isFinite(min) || min < 0) return toast.error('Estoque mínimo inválido');
+    if (!Number.isFinite(counted) || counted < 0) return toast.error('Quantidade em estoque inválida');
 
     const row = {
       workshop_id: wid,
@@ -218,18 +261,26 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
       code: code.trim() || null,
       brand: brand.trim() || null,
       unit,
-      supplier: supplier.trim() || null,
+      supplier_id: supplierId || null,
+      min_qty: min,
       cost: parseMoney(cost || '0'),
       margin_percent: mode === 'margin' ? m : null,
       sale_price: mode === 'fixed' ? f : null,
       active,
     };
     setSaving(true);
-    const { error } = part
-      ? await supabase.from('workshop_parts').update(row).eq('id', part.id)
-      : await supabase.from('workshop_parts').insert(row);
+    const { data, error } = part
+      ? await supabase.from('workshop_parts').update(row).eq('id', part.id).select('id').single()
+      : await supabase.from('workshop_parts').insert(row).select('id').single();
+    if (error) { setSaving(false); return toast.error('Não foi possível salvar: ' + error.message); }
+    // Quantidade diferente da atual → ajuste de estoque (fica no histórico)
+    if (Math.abs(counted - Number(part?.stock_qty ?? 0)) > 0.0005) {
+      const { error: e2 } = await supabase.rpc('stock_adjust', {
+        p_part: (data as { id: string }).id, p_counted: counted, p_note: part ? 'Contagem de estoque' : 'Estoque inicial',
+      });
+      if (e2) { setSaving(false); return toast.error('Peça salva, mas o estoque não foi ajustado: ' + e2.message); }
+    }
     setSaving(false);
-    if (error) return toast.error('Não foi possível salvar: ' + error.message);
     toast.success(part ? 'Peça atualizada ✓' : 'Peça cadastrada ✓');
     onSaved();
   }
@@ -265,7 +316,10 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
             </div>
             <div>
               <label className="label">Fornecedor</label>
-              <input className="input" placeholder="Opcional" value={supplier} onChange={e => setSupplier(e.target.value)} />
+              <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+                <option value="">—</option>
+                {suppliers.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
             </div>
           </div>
 
@@ -323,6 +377,34 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
               </div>
             </div>
             {profit < 0 && <p className="text-xs text-alert-600">⚠️ O preço de venda está abaixo do custo.</p>}
+          </div>
+
+          <div className="rounded-2xl border border-steel-200 p-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">{part ? 'Quantidade em estoque' : 'Estoque inicial'}</label>
+                <input className="input text-right" inputMode="decimal" value={stock} onChange={e => setStock(e.target.value)} />
+                <p className="text-[11px] text-steel-400 mt-1">{part ? 'Mude só se contou e está diferente — fica registrado como ajuste.' : 'Quanto você já tem na prateleira.'}</p>
+              </div>
+              <div>
+                <label className="label">Estoque mínimo</label>
+                <input className="input text-right" inputMode="decimal" value={minQty} onChange={e => setMinQty(e.target.value)} />
+                <p className="text-[11px] text-steel-400 mt-1">Abaixo disso aparece em “Comprar”. 0 = sem alerta.</p>
+              </div>
+            </div>
+            {moves.length > 0 && (
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500 mb-1">Últimas movimentações</div>
+                <ul className="text-xs divide-y divide-steel-100">
+                  {moves.map(m => (
+                    <li key={m.id} className="py-1 flex justify-between gap-2">
+                      <span className="min-w-0 truncate text-steel-600">{fmtDate(m.created_at)} · {MOVE_LABEL[m.kind]}{m.note ? ` · ${m.note}` : ''}</span>
+                      <span className={`shrink-0 font-semibold ${Number(m.qty) > 0 ? 'text-signal-700' : 'text-alert-600'}`}>{Number(m.qty) > 0 ? '+' : ''}{fmtQty(m.qty)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {part && (
