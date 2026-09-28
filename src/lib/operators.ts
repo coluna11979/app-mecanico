@@ -24,7 +24,7 @@ export const ROLES: Record<OperatorRole, {
   },
   caixa: {
     label: 'Caixa', icon: '💰', desc: 'Abre e fecha o caixa, recebe as OS, lança vales, despesas e sangrias.',
-    routes: ['/oficina/os', '/oficina/clientes', '/oficina/avisos'], home: '/oficina/os',
+    routes: ['/oficina/caixa', '/oficina/os', '/oficina/clientes', '/oficina/avisos'], home: '/oficina/caixa',
   },
   atendente: {
     label: 'Atendente', icon: '🧑‍💼', desc: 'Abre e acompanha OS, cadastra clientes e responde mensagens.',

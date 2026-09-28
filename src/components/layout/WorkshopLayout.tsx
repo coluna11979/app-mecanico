@@ -27,6 +27,7 @@ const PLATAFORMA: NavItem[] = [
 ];
 
 const GESTAO: NavItem[] = [
+  { to: '/oficina/caixa',    icon: '💰', label: 'Caixa'             },
   { to: '/oficina/painel',   icon: '📊', label: 'Painel'            },
   { to: '/oficina/os',       icon: '📋', label: 'Ordens de Serviço' },
   { to: '/oficina/clientes', icon: '👥', label: 'Clientes'           },
@@ -97,6 +98,7 @@ const ADVANCED: SoonDept[] = [
 const BOTTOM_TABS: NavItem[] = [
   { to: '/oficina/painel',     icon: '📊', label: 'Painel'    },
   { to: '/oficina/os',         icon: '📋', label: 'OS'        },
+  { to: '/oficina/caixa',      icon: '💰', label: 'Caixa'     },
   { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'  },
   { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens' },
 ];
