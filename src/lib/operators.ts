@@ -72,7 +72,7 @@ const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
   contas_pagar:   ['/oficina/contas-a-pagar'],
   compras:        ['/oficina/compras', '/oficina/fornecedores'],
   pecas_estoque:  ['/oficina/pecas', '/oficina/servicos'],
-  folha:          ['/oficina/folha'],
+  folha:          ['/oficina/folha', '/oficina/comissoes'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */

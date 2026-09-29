@@ -1,8 +1,9 @@
 /**
  * Fechamento da folha (por competência "AAAA-MM").
  *
- * Líquido = salário + comissão − faltas − outros descontos − vales do mês − vale que sobrou do mês anterior.
- * - Comissão: % sobre os serviços e as peças que ele fez nas OS concluídas no mês
+ * Líquido = salário − faltas − outros descontos − vales do mês − vale que sobrou do mês anterior.
+ * A comissão é fechada à parte, por quinzena (lib/commissionClosing.ts) — aqui fica 0.
+ * - (histórico) Comissão: % sobre os serviços e as peças que ele fez nas OS concluídas no mês
  *   (+ % sobre o faturamento da loja, se tiver) — ver lib/commission.ts.
  * - Faltas: salário ÷ 30 × dias.
  * - Vales: tirados no caixa dentro do mês.
@@ -109,14 +110,14 @@ export async function loadPayroll(wid: string, competence: string): Promise<Payr
   return ((mechs.data ?? []) as unknown as ({ id: string; name: string; active: boolean } & CommissionMech)[])
     .map(m => ({ m, calc: commissionFor(m, done.get(m.id), revenue) }))
     // Inativo só entra se teve movimento no mês (comissão ou vale) ou já foi fechado
-    .filter(({ m, calc }) => m.active || closed.has(m.id) || calc.commission > 0 || (valeBy.get(m.id) ?? 0) > 0)
+    .filter(({ m }) => m.active || closed.has(m.id) || (valeBy.get(m.id) ?? 0) > 0)
     .map(({ m, calc }) => {
       return {
         mechanicId: m.id, name: m.name, active: m.active,
         base: salary.get(m.id) ?? 0,
         commissionPct: Number(m.commission_percent ?? 0),
         commissionRule: commissionRule(m),
-        commission: calc.commission,
+        commission: 0,  // paga por quinzena em Fechar comissões
         vales: r2(valeBy.get(m.id) ?? 0),
         carryIn: r2(carry.get(m.id) ?? 0),
         closed: closed.get(m.id) ?? null,

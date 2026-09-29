@@ -37,7 +37,7 @@ export const PAYABLE_GROUPS: { key: PayableGroupKey; label: string; icon: string
   { key: 'fixas', label: 'Fixas', icon: '🏠', badge: 'bg-brand-50 text-brand-700', bar: 'bg-brand-500',
     categories: ['Aluguel', 'Energia', 'Água', 'Internet / telefone', 'Contador', 'Sistemas', 'Seguro'] },
   { key: 'pessoal', label: 'Pessoal', icon: '👷', badge: 'bg-signal-50 text-signal-700', bar: 'bg-signal-500',
-    categories: ['Salários', 'Pró-labore', 'Encargos (INSS/FGTS)', 'Vale-transporte / alimentação'] },
+    categories: ['Salários', 'Comissões', 'Pró-labore', 'Encargos (INSS/FGTS)', 'Vale-transporte / alimentação'] },
   { key: 'fornecedores', label: 'Fornecedores e peças', icon: '🔩', badge: 'bg-steel-100 text-steel-700', bar: 'bg-steel-500',
     categories: ['Fornecedor'] },
   { key: 'impostos', label: 'Impostos', icon: '🧾', badge: 'bg-alert-50 text-alert-700', bar: 'bg-alert-400',

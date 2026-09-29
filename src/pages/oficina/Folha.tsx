@@ -115,7 +115,9 @@ export default function Folha() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">💼 Fechar folha</h1>
-            <p className="text-sm text-steel-500 mt-1">Salário + comissão − faltas − vales. Confira e gere as contas a pagar dos salários.</p>
+            <p className="text-sm text-steel-500 mt-1">
+              Salário − faltas − vales. A comissão é paga à parte, nos dias 15 e 30: <Link to="/oficina/comissoes" className="font-semibold text-brand-700">Fechar comissões →</Link>
+            </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div>
@@ -186,7 +188,9 @@ export default function Folha() {
                       </div>
                     </div>
                     <Cell label="Salário" value={fmtBRL(closed ? closed.base_salary : r.base)} muted={!closed && r.base <= 0} />
-                    <Cell label="Comissão" value={`+ ${fmtBRL(closed ? closed.commission : r.commission)}`} tone="text-signal-700" />
+                    {closed && Number(closed.commission) > 0
+                      ? <Cell label="Comissão" value={`+ ${fmtBRL(closed.commission)}`} tone="text-signal-700" />
+                      : <Cell label="Comissão" value="quinzenal" sub="dias 15 e 30" muted />}
                     <Cell label="Vales" value={`− ${fmtBRL(vales)}`} sub={!closed && r.carryIn > 0 ? `inclui ${fmtBRL(r.carryIn)} do mês anterior` : undefined} tone="text-alert-600" />
                     <div className="text-right">
                       <span className="lg:hidden text-[10px] text-steel-400 uppercase block">Faltas (dias)</span>
@@ -231,7 +235,7 @@ export default function Folha() {
         )}
 
         <p className="text-xs text-steel-400 leading-relaxed">
-          Comissão: % do colaborador sobre a mão de obra das OS que ele concluiu no mês. Faltas: salário ÷ 30 × dias.
+          Comissão: fechada à parte, por quinzena, em Fechar comissões. Faltas: salário ÷ 30 × dias.
           Vales: tirados no Caixa no mês. Se os descontos passam do que há para receber, a diferença é descontada no mês seguinte.
           Mês anterior: <button className="underline" onClick={() => setCompetence(addMonthsISO(`${competence}-01`, -1).slice(0, 7))}>{fmtCompetence(addMonthsISO(`${competence}-01`, -1).slice(0, 7))}</button>
         </p>

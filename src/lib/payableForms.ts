@@ -35,6 +35,8 @@ const F: Record<string, CategoryForm> = {
   'Seguro':              { payee: 'supplier', payeeLabel: 'Seguradora', document: 'Nº da apólice', barcode: true, repeat: 12 },
   // Pessoal
   'Salários':            { payee: 'employee', payeeLabel: 'Colaborador', payeeRequired: true, competence: true, short: 'Salário' },
+  'Comissões':           { payee: 'employee', payeeLabel: 'Colaborador', payeeRequired: true, competence: true, short: 'Comissão',
+                           hint: 'Comissões quinzenais (dias 15 e 30) são geradas em Equipe → Fechar comissões.' },
   'Pró-labore':          { payee: 'text', payeeLabel: 'Sócio', payeePlaceholder: 'Nome do sócio', competence: true, repeat: 12 },
   'Encargos (INSS/FGTS)':{ payee: 'none', competence: true, barcode: true, short: 'INSS/FGTS', hint: 'Guia da folha do mês de competência.' },
   'Vale-transporte / alimentação': { payee: 'employee', payeeLabel: 'Colaborador (vazio = toda a equipe)', competence: true, short: 'Benefícios' },
