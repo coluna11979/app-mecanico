@@ -5,12 +5,22 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
+import NewOsModal from '@/components/os/NewOsModal';
 import { scoreMeta, templateRows, type VehicleCheckup } from '@/lib/checkup';
 import { DEMO_MECHANICS, startDemo } from '@/lib/checkupDemo';
 import type { Customer, Vehicle, WorkshopMechanic } from '@/types/database';
 
 type Row = VehicleCheckup & { mechanic: { name: string } | null };
-type Filter = 'draft' | 'completed';
+type Filter = 'scheduled' | 'draft' | 'completed';
+/** OS de check-up agendada que ainda não virou inspeção */
+type Scheduled = {
+  id: string; number: number | null; scheduled_at: string;
+  customer: { full_name: string } | null;
+  vehicle: { plate: string; make: string; model: string; year: number | null } | null;
+  mechanic: { name: string } | null;
+};
+
+const FILTER_LABEL: Record<Filter, string> = { scheduled: '📅 Agendados', draft: 'Em andamento', completed: 'Finalizados' };
 
 const EMPTY = {
   customer_id: '', vehicle_id: '', workshop_mechanic_id: '',
@@ -47,6 +57,8 @@ export default function WorkshopCheckups() {
   const [saving, setSaving]       = useState(false);
   const [filter, setFilter]       = useState<Filter>('draft');
   const [search, setSearch]       = useState('');
+  const [scheduled, setScheduled] = useState<Scheduled[]>([]);
+  const [scheduling, setScheduling] = useState(false);
 
   useEffect(() => {
     if (!wid || demo) return;
@@ -58,17 +70,29 @@ export default function WorkshopCheckups() {
 
   async function load() {
     setLoading(true);
-    const [c, cu, m] = await Promise.all([
+    const [c, cu, m, s] = await Promise.all([
       supabase.from('vehicle_checkups').select('*, mechanic:workshop_mechanics(name)')
         .eq('workshop_id', wid!).order('created_at', { ascending: false }),
       supabase.from('customers').select('*').eq('workshop_id', wid!).order('full_name'),
       supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', wid!).eq('active', true).order('name'),
+      supabase.from('service_orders')
+        .select('id, number, scheduled_at, customer:customers(full_name), vehicle:vehicles(plate, make, model, year), mechanic:workshop_mechanics!fk_so_workshop_mechanic(name)')
+        .eq('workshop_id', wid!).not('scheduled_at', 'is', null)
+        .not('status', 'in', '(completed,cancelled)')
+        .or('category.eq.Check-up,title.ilike.*check*up*')
+        .order('scheduled_at'),
     ]);
     const rows = (c.data as Row[]) ?? [];
+    const withCheckup = new Set(rows.map(r => r.service_order_id).filter(Boolean));
+    const sched = ((s.data as unknown as Scheduled[]) ?? []).filter(o => !withCheckup.has(o.id));
     setList(rows);
+    setScheduled(sched);
     setCustomers((cu.data as Customer[]) ?? []);
     setMechs(m.data ?? []);
-    if (!rows.some(r => r.status === 'draft') && rows.length) setFilter('completed');
+    if (!rows.some(r => r.status === 'draft')) {
+      if (sched.length) setFilter('scheduled');
+      else if (rows.length) setFilter('completed');
+    }
     setLoading(false);
   }
 
@@ -156,7 +180,12 @@ export default function WorkshopCheckups() {
       .filter(c => c.status === filter)
       .filter(c => !q || [c.plate, c.make, c.model, c.customer_name].some(v => v?.toLowerCase().includes(q)));
   }, [list, filter, search]);
-  const count = (f: Filter) => list.filter(c => c.status === f).length;
+  const shownScheduled = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return scheduled.filter(o => !q || [o.vehicle?.plate, o.vehicle?.make, o.vehicle?.model, o.customer?.full_name]
+      .some(v => v?.toLowerCase().includes(q)));
+  }, [scheduled, search]);
+  const count = (f: Filter) => f === 'scheduled' ? scheduled.length : list.filter(c => c.status === f).length;
 
   return (
     <WorkshopLayout>
@@ -169,7 +198,12 @@ export default function WorkshopCheckups() {
             </p>
           </div>
           {!showNew && (
-            <button onClick={() => setShowNew(true)} className="btn-primary text-sm !py-2.5 shrink-0">+ Novo check-up</button>
+            <div className="flex gap-2 shrink-0">
+              {!demo && (
+                <button onClick={() => setScheduling(true)} className="btn-ghost text-sm !py-2.5 border border-steel-200 bg-white">📅 Agendar</button>
+              )}
+              <button onClick={() => setShowNew(true)} className="btn-primary text-sm !py-2.5">+ Novo check-up</button>
+            </div>
           )}
         </div>
 
@@ -229,11 +263,11 @@ export default function WorkshopCheckups() {
         {!demo && (
           <>
             <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
-              <div className="flex gap-2">
-                {(['draft', 'completed'] as Filter[]).map(f => (
+              <div className="flex gap-2 flex-wrap">
+                {(['scheduled', 'draft', 'completed'] as Filter[]).map(f => (
                   <button key={f} onClick={() => setFilter(f)}
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${filter === f ? 'bg-steel-900 text-white' : 'bg-white border border-steel-200 text-steel-600 hover:bg-steel-50'}`}>
-                    {f === 'draft' ? 'Em andamento' : 'Finalizados'} <span className="opacity-60">({count(f)})</span>
+                    {FILTER_LABEL[f]} <span className="opacity-60">({count(f)})</span>
                   </button>
                 ))}
               </div>
@@ -243,6 +277,22 @@ export default function WorkshopCheckups() {
 
             {loading ? (
               <div className="card text-center text-steel-500 text-sm py-10">Carregando…</div>
+            ) : filter === 'scheduled' ? (
+              shownScheduled.length === 0 ? (
+                <div className="card text-center py-10 space-y-3">
+                  <div className="text-4xl">📅</div>
+                  <div className="font-bold text-steel-800">Nenhum check-up agendado</div>
+                  <p className="text-sm text-steel-500 max-w-md mx-auto">
+                    Agende o check-up do cliente (ex.: oferta de avaliação gratuita). Ele aparece aqui e na agenda de OS;
+                    quando o carro chegar, é só clicar em “Iniciar check-up”.
+                  </p>
+                  <button onClick={() => setScheduling(true)} className="btn-primary text-sm">📅 Agendar check-up</button>
+                </div>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {shownScheduled.map(o => <ScheduledCard key={o.id} o={o} onStart={() => startFromOs(o.id)} />)}
+                </div>
+              )
             ) : list.length === 0 ? (
               <div className="card text-center py-10 space-y-3">
                 <div className="text-4xl">🔍</div>
@@ -263,7 +313,48 @@ export default function WorkshopCheckups() {
           </>
         )}
       </div>
+
+      {scheduling && wid && (
+        <NewOsModal workshopId={wid} preset={{ title: 'Check-up', category: 'Check-up', schedule: true }}
+          onClose={() => setScheduling(false)}
+          onCreated={(id, number, now) => {
+            setScheduling(false);
+            if (now) { startFromOs(id); return; }  // desmarcou o agendamento → inspeção já
+            toast.success(`Check-up agendado ✓ (OS nº ${String(number ?? '').padStart(4, '0')})`);
+            setFilter('scheduled');
+            load();
+          }} />
+      )}
     </WorkshopLayout>
+  );
+}
+
+function ScheduledCard({ o, onStart }: { o: Scheduled; onStart: () => void }) {
+  const [starting, setStarting] = useState(false);
+  const car  = o.vehicle ? [o.vehicle.make, o.vehicle.model, o.vehicle.year].filter(Boolean).join(' ') : 'Veículo';
+  const when = new Date(o.scheduled_at);
+  const today = new Date().toDateString() === when.toDateString();
+  const late  = !today && when.getTime() < Date.now();
+  return (
+    <div className="card flex items-center gap-4">
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex items-center gap-2">
+          {o.vehicle?.plate && <LicensePlate plate={o.vehicle.plate} />}
+          <span className="font-semibold text-steel-800 truncate">{car}</span>
+        </div>
+        <div className={`text-xs font-semibold ${late ? 'text-alert-600' : today ? 'text-brand-600' : 'text-steel-600'}`}>
+          📅 {today ? 'Hoje' : when.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}
+          {' às '}{when.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{late && ' · atrasado'}
+        </div>
+        <div className="text-xs text-steel-500 truncate">
+          {[o.customer?.full_name, o.mechanic?.name && `🔧 ${o.mechanic.name}`].filter(Boolean).join(' · ')}
+          {' · '}<Link to={`/oficina/os/${o.id}`} className="hover:underline">OS nº {String(o.number ?? '').padStart(4, '0')}</Link>
+        </div>
+      </div>
+      <button onClick={() => { setStarting(true); onStart(); }} disabled={starting} className="btn-primary text-xs !py-2 !px-3 shrink-0">
+        {starting ? 'Abrindo…' : 'Iniciar check-up →'}
+      </button>
+    </div>
   );
 }
 
