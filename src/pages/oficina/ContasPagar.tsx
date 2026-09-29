@@ -5,13 +5,15 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
-import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
+import { fmtBRL } from '@/components/os/osHelpers';
 import {
-  PAYABLE_GROUPS, addMonthsISO, daysUntil, fmtDate, groupOf, todayISO, type Payable, type PayableGroupKey, type Supplier,
+  PAYABLE_GROUPS, addMonthsISO, daysUntil, fmtDate, groupOf, todayISO, type Payable, type PayableGroupKey,
 } from '@/lib/purchasing';
 import { Restricted } from './Fornecedores';
+import NewPayableModal from '@/components/payables/NewPayableModal';
+import { fmtBarcode, fmtCompetence } from '@/lib/payableForms';
 
-type Row = Payable & { supplier: { name: string } | null };
+type Row = Payable & { supplier: { name: string } | null; mechanic: { name: string } | null };
 type View = 'abertas' | 'pagas';
 
 export default function ContasPagar() {
@@ -26,22 +28,19 @@ export default function ContasPagar() {
   const [group, setGroup]     = useState<PayableGroupKey | 'all'>('all');
   const [paying, setPaying]   = useState<Row | null>(null);
   const [creating, setCreating] = useState(false);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [hasOpenRegister, setHasOpenRegister] = useState(false);
 
   const load = useCallback(async () => {
     if (!wid) return;
     const since = addMonthsISO(todayISO(), -3);
-    const [open, paid, s, reg] = await Promise.all([
-      supabase.from('payables').select('*, supplier:suppliers(name)').eq('workshop_id', wid)
+    const [open, paid, reg] = await Promise.all([
+      supabase.from('payables').select('*, supplier:suppliers(name), mechanic:workshop_mechanics(name)').eq('workshop_id', wid)
         .is('cancelled_at', null).is('paid_at', null).order('due_date').limit(1000),
-      supabase.from('payables').select('*, supplier:suppliers(name)').eq('workshop_id', wid)
+      supabase.from('payables').select('*, supplier:suppliers(name), mechanic:workshop_mechanics(name)').eq('workshop_id', wid)
         .is('cancelled_at', null).gte('paid_at', since).order('paid_at', { ascending: false }).limit(500),
-      supabase.from('suppliers').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
       supabase.from('cash_registers').select('id').eq('workshop_id', wid).eq('status', 'open').maybeSingle(),
     ]);
     setList([...((open.data as unknown as Row[]) ?? []), ...((paid.data as unknown as Row[]) ?? [])]);
-    setSuppliers((s.data as Supplier[]) ?? []);
     setHasOpenRegister(!!reg.data);
   }, [wid]);
 
@@ -187,6 +186,7 @@ export default function ContasPagar() {
                   <div className="min-w-0">
                     <div className="text-sm font-semibold truncate">{p.description}{p.installment && <span className="text-steel-500 font-normal"> · {p.installment}</span>}</div>
                     <div className="text-xs text-steel-500"><CategoryBadge category={p.category} /> paga {fmtDate(p.paid_at!)} pelo {p.paid_from === 'caixa' ? 'caixa' : 'banco'} · vencia {fmtDate(p.due_date)}</div>
+                    <Details p={p} />
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <span className="text-sm font-bold">{fmtBRL(p.amount)}</span>
@@ -204,7 +204,7 @@ export default function ContasPagar() {
           onClose={() => setPaying(null)} onDone={() => { setPaying(null); load(); }} />
       )}
       {creating && wid && (
-        <NewPayable wid={wid} suppliers={suppliers} onClose={() => setCreating(false)} onDone={() => { setCreating(false); load(); }} />
+        <NewPayableModal wid={wid} onClose={() => setCreating(false)} onDone={() => { setCreating(false); load(); }} />
       )}
     </WorkshopLayout>
   );
@@ -216,6 +216,29 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
       <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">{label}</div>
       <div className={`text-2xl font-bold font-display mt-1 ${tone === 'bad' ? 'text-alert-600' : tone === 'warn' ? 'text-pending-700' : ''}`}>{value}</div>
       {sub && <div className="text-xs text-steel-400 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+/** Favorecido, competência, documento e código de barras (copiar) */
+function Details({ p }: { p: Row }) {
+  const who = p.supplier?.name ?? p.mechanic?.name ?? p.payee;
+  const bits = [
+    who && !p.description.includes(who) ? who : null,
+    p.competence && !p.description.includes(fmtCompetence(p.competence)) ? `competência ${fmtCompetence(p.competence)}` : null,
+    p.document ? `doc. ${p.document}` : null,
+  ].filter(Boolean);
+  if (!bits.length && !p.barcode && !p.notes) return null;
+  return (
+    <div className="text-[11px] text-steel-400 mt-0.5 flex flex-wrap items-center gap-x-2">
+      {bits.length > 0 && <span>{bits.join(' · ')}</span>}
+      {p.barcode && (
+        <button type="button" className="font-semibold text-brand-700 hover:underline" title={fmtBarcode(p.barcode)}
+          onClick={() => { navigator.clipboard?.writeText(p.barcode!).then(() => toast.success('Código de barras copiado ✓'), () => toast.error('Não foi possível copiar')); }}>
+          📋 copiar código de barras
+        </button>
+      )}
+      {p.notes && <span className="italic">“{p.notes}”</span>}
     </div>
   );
 }
@@ -248,6 +271,7 @@ function Group({ title, rows, onPay, onRemove, tone }: {
                   {d < 0 && <span className="text-alert-600 font-semibold"> · há {-d} dia{d === -1 ? '' : 's'}</span>}
                   {d > 0 && d <= 7 && <span> · em {d} dia{d === 1 ? '' : 's'}</span>}
                 </div>
+                <Details p={p} />
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-sm font-bold mr-1">{fmtBRL(p.amount)}</span>
@@ -314,95 +338,6 @@ function PayModal({ payable, sid, hasOpenRegister, onClose, onDone }: {
           <button className="btn-primary" onClick={pay} disabled={busy}>{busy ? 'Pagando…' : '✓ Confirmar pagamento'}</button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function NewPayable({ wid, suppliers, onClose, onDone }: { wid: string; suppliers: Supplier[]; onClose: () => void; onDone: () => void }) {
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Aluguel');
-  const [custom, setCustom] = useState('');
-  const [supplierId, setSupplierId] = useState('');
-  const [amount, setAmount] = useState('');
-  const [due, setDue] = useState(todayISO());
-  const [months, setMonths] = useState(1);
-  const [busy, setBusy] = useState(false);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    const v = parseMoney(amount);
-    if (!description.trim()) return toast.error('Informe a descrição');
-    const cat = category === '__outra' ? custom.trim() : category;
-    if (!cat) return toast.error('Informe o nome da categoria');
-    if (!Number.isFinite(v) || v <= 0) return toast.error('Informe o valor');
-    const rows = Array.from({ length: months }, (_, i) => ({
-      workshop_id: wid, description: description.trim(), category: cat, supplier_id: supplierId || null,
-      amount: v, due_date: addMonthsISO(due, i), installment: months > 1 ? `${i + 1}/${months}` : null,
-    }));
-    setBusy(true);
-    const { error } = await supabase.from('payables').insert(rows);
-    setBusy(false);
-    if (error) return toast.error(error.message);
-    toast.success(months > 1 ? `${months} contas lançadas ✓` : 'Conta lançada ✓');
-    onDone();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-steel-900/60 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
-      <form onSubmit={save} onClick={e => e.stopPropagation()} className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 space-y-4">
-        <h2 className="text-lg font-bold">Nova conta a pagar</h2>
-        <div>
-          <label className="label">Descrição *</label>
-          <input className="input" autoFocus placeholder="Ex.: Aluguel do galpão" value={description} onChange={e => setDescription(e.target.value)} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">Categoria</label>
-            <select className="input" value={category} onChange={e => setCategory(e.target.value)}>
-              {PAYABLE_GROUPS.map(g => (
-                <optgroup key={g.key} label={`${g.icon} ${g.label}`}>
-                  {g.categories.map(c => <option key={c} value={c}>{c}</option>)}
-                </optgroup>
-              ))}
-              <option value="__outra">Outra…</option>
-            </select>
-            {category === '__outra' && (
-              <input className="input mt-2" placeholder="Nome da categoria" value={custom} onChange={e => setCustom(e.target.value)} />
-            )}
-          </div>
-          <div>
-            <label className="label">Fornecedor</label>
-            <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-              <option value="">—</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Valor *</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
-              <input className="input !pl-9" inputMode="decimal" placeholder="0,00" value={amount}
-                onChange={e => setAmount(e.target.value)}
-                onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) setAmount(moneyInput(v)); }} />
-            </div>
-          </div>
-          <div>
-            <label className="label">Vencimento</label>
-            <input type="date" className="input" value={due} onChange={e => setDue(e.target.value || todayISO())} />
-          </div>
-        </div>
-        <div>
-          <label className="label">Repetir</label>
-          <select className="input" value={months} onChange={e => setMonths(Number(e.target.value))}>
-            <option value={1}>Não repetir</option>
-            {[3, 6, 12, 24].map(n => <option key={n} value={n}>Todo mês, por {n} meses</option>)}
-          </select>
-        </div>
-        <div className="flex justify-end gap-2">
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
-          <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Salvando…' : 'Lançar conta'}</button>
-        </div>
-      </form>
     </div>
   );
 }

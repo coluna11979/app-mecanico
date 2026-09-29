@@ -21,6 +21,8 @@ export type Payable = {
   description: string; category: string; installment: string | null; amount: number; due_date: string;
   paid_at: string | null; paid_from: 'banco' | 'caixa' | null; cash_entry_id: string | null;
   created_at: string; cancelled_at: string | null;
+  payee?: string | null; mechanic_id?: string | null; competence?: string | null;
+  document?: string | null; barcode?: string | null; notes?: string | null;
 };
 
 export type StockMovement = {
