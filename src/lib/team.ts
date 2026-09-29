@@ -1,9 +1,97 @@
 import type { EmploymentType, TeamStatus } from '@/types/database';
 
-export const ROLE_TITLES = [
-  'Mecânico', 'Mecânico chefe', 'Eletricista', 'Funileiro', 'Pintor',
-  'Auxiliar', 'Alinhador', 'Atendente', 'Gerente', 'Outro',
+/** Funções da oficina (quem põe a mão no carro) */
+export const SHOP_ROLES = [
+  'Mecânico', 'Mecânico chefe', 'Eletricista', 'Funileiro', 'Pintor', 'Auxiliar', 'Alinhador', 'Lavador',
 ];
+/** Funções de balcão e escritório */
+export const OFFICE_ROLES = [
+  'Atendente', 'Recepcionista', 'Caixa', 'Consultor técnico', 'Financeiro', 'Estoquista / compras', 'Gerente',
+];
+export const ROLE_TITLES = [...SHOP_ROLES, ...OFFICE_ROLES, 'Outro'];
+
+export type RoleArea = 'shop' | 'office' | 'both';
+/** Área da função: define quais especialidades/habilidades fazem sentido */
+export function roleArea(role?: string | null): RoleArea {
+  if (!role || role === 'Outro' || role === 'Gerente' || role === 'Consultor técnico') return 'both';
+  return OFFICE_ROLES.includes(role) ? 'office' : 'shop';
+}
+
+export const QUALIFICATIONS: Record<'shop' | 'office', { label: string; specialties: string[]; skills: string[] }> = {
+  shop: {
+    label: 'Oficina',
+    specialties: ['Motor', 'Elétrica', 'Freios', 'Suspensão', 'Câmbio', 'Funilaria', 'Pintura', 'Ar-condicionado', 'Geral'],
+    skills: ['Motor', 'Freios', 'Suspensão', 'Elétrica', 'Câmbio', 'Ar-condicionado', 'Injeção eletrônica',
+      'Diagnóstico', 'Transmissão', 'Embreagem', 'Funilaria', 'Pintura', 'Alinhamento', 'Balanceamento', 'Diesel', 'Geral'],
+  },
+  office: {
+    label: 'Balcão e escritório',
+    specialties: ['Atendimento / recepção', 'Caixa', 'Orçamentos', 'Financeiro', 'Compras e estoque', 'Gerência', 'Geral'],
+    skills: ['Atendimento ao cliente', 'Abertura de OS', 'Orçamentos', 'Agendamento', 'Caixa / recebimentos',
+      'PIX e maquininha', 'Emissão de nota fiscal', 'Cobrança', 'Contas a pagar', 'Compras de peças',
+      'Controle de estoque', 'Vendas de peças', 'Pós-venda', 'WhatsApp e redes sociais'],
+  },
+};
+
+/* ── Jornada de trabalho ──────────────────────────────────────────────────── */
+
+export const WEEK_DAYS = [
+  { key: 'mon', short: 'Seg', label: 'Segunda' },
+  { key: 'tue', short: 'Ter', label: 'Terça' },
+  { key: 'wed', short: 'Qua', label: 'Quarta' },
+  { key: 'thu', short: 'Qui', label: 'Quinta' },
+  { key: 'fri', short: 'Sex', label: 'Sexta' },
+  { key: 'sat', short: 'Sáb', label: 'Sábado' },
+  { key: 'sun', short: 'Dom', label: 'Domingo' },
+] as const;
+export type WeekDay = typeof WEEK_DAYS[number]['key'];
+/** Um dia de trabalho; intervalo (almoço) é opcional */
+export type ShiftDay = { start: string; end: string; break_start?: string; break_end?: string };
+export type WorkSchedule = { v: 1; days: Partial<Record<WeekDay, ShiftDay>> };
+
+const toMin = (t?: string) => { if (!t) return null; const [h, m] = t.split(':').map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+
+/** Minutos trabalhados no dia (desconta o intervalo) */
+export function shiftMinutes(d?: ShiftDay | null) {
+  if (!d) return 0;
+  const s = toMin(d.start), e = toMin(d.end);
+  if (s == null || e == null || e <= s) return 0;
+  const bs = toMin(d.break_start), be = toMin(d.break_end);
+  const brk = bs != null && be != null && be > bs ? be - bs : 0;
+  return Math.max(0, e - s - brk);
+}
+export const weeklyMinutes = (w: WorkSchedule) => WEEK_DAYS.reduce((t, d) => t + shiftMinutes(w.days[d.key]), 0);
+
+/** Lê o campo work_schedule: JSON estruturado, ou texto livre antigo (null aqui) */
+export function parseSchedule(raw?: string | null): WorkSchedule | null {
+  if (!raw) return null;
+  try {
+    const j = JSON.parse(raw);
+    if (j && j.v === 1 && typeof j.days === 'object') return j as WorkSchedule;
+  } catch { /* texto livre */ }
+  return null;
+}
+
+const hh = (t: string) => t.replace(/^0(\d)/, '$1').replace(':00', 'h').replace(':', 'h');
+const dayText = (d: ShiftDay) => `${hh(d.start)}–${hh(d.end)}`;
+
+/** Resumo legível: "Seg–Sex 8h–18h · Sáb 8h–12h" (agrupa dias seguidos com o mesmo horário) */
+export function scheduleSummary(raw?: string | null): string {
+  const w = parseSchedule(raw);
+  if (!w) return raw?.trim() ?? '';
+  const parts: string[] = [];
+  let i = 0;
+  while (i < WEEK_DAYS.length) {
+    const d = w.days[WEEK_DAYS[i].key];
+    if (!d) { i++; continue; }
+    let j = i;
+    while (j + 1 < WEEK_DAYS.length && w.days[WEEK_DAYS[j + 1].key] && dayText(w.days[WEEK_DAYS[j + 1].key]!) === dayText(d)) j++;
+    const days = i === j ? WEEK_DAYS[i].short : `${WEEK_DAYS[i].short}${j - i === 1 ? ' e ' : '–'}${WEEK_DAYS[j].short}`;
+    parts.push(`${days} ${dayText(d)}`);
+    i = j + 1;
+  }
+  return parts.join(' · ');
+}
 
 export const EMPLOYMENT_TYPES: { value: EmploymentType; label: string }[] = [
   { value: 'clt',          label: 'CLT' },
