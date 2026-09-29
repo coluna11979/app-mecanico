@@ -7,8 +7,8 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  UNITS, fmtPct, fmtQty, loadDefaultMargin, marginOf, needsRestock, priceFromMargin, priceModeOf, salePriceOf,
-  type PriceMode, type WorkshopPart,
+  PART_CATEGORIES, UNITS, fmtPct, fmtQty, loadDefaultMargin, marginOf, needsRestock, partCategory, priceFromMargin,
+  priceModeOf, salePriceOf, type PartCategory, type PriceMode, type WorkshopPart,
 } from '@/lib/parts';
 import { fmtDate, type StockMovement, type Supplier } from '@/lib/purchasing';
 import SupplierPicker from '@/components/parts/SupplierPicker';
@@ -28,6 +28,7 @@ export default function Pecas() {
   const [q, setQ]               = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [onlyRestock, setOnlyRestock] = useState(false);
+  const [cat, setCat]           = useState<PartCategory | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [editing, setEditing]   = useState<WorkshopPart | 'new' | null>(null);
 
@@ -48,12 +49,28 @@ export default function Pecas() {
   const list = useMemo(() => {
     const t = q.trim().toLowerCase();
     const supName = new Map(suppliers.map(x => [x.id, x.name.toLowerCase()]));
-    return (parts ?? []).filter(p => (showInactive || p.active) && (!onlyRestock || needsRestock(p)) && (!t
+    return (parts ?? []).filter(p => (showInactive || p.active) && (!onlyRestock || needsRestock(p))
+      && (!cat || p.category === cat) && (!t
       || p.name.toLowerCase().includes(t) || p.code?.toLowerCase().includes(t)
-      || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supName.get(p.supplier_id)?.includes(t))));
-  }, [parts, q, showInactive, onlyRestock, suppliers]);
+      || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supName.get(p.supplier_id)?.includes(t))
+      || partCategory(p.category).label.toLowerCase().includes(t)));
+  }, [parts, q, showInactive, onlyRestock, cat, suppliers]);
   const supplierName = useMemo(() => new Map(suppliers.map(x => [x.id, x.name])), [suppliers]);
   const restockCount = (parts ?? []).filter(p => p.active && needsRestock(p)).length;
+
+  // Quantas peças e quanto dinheiro parado (custo × estoque) em cada categoria
+  const byCat = useMemo(() => {
+    const m = new Map<string, { count: number; stock: number }>();
+    for (const p of parts ?? []) {
+      if (!p.active) continue;
+      const e = m.get(p.category) ?? { count: 0, stock: 0 };
+      e.count++;
+      e.stock += Math.max(0, Number(p.stock_qty)) * Number(p.cost);
+      m.set(p.category, e);
+    }
+    return PART_CATEGORIES.filter(c => m.has(c.value)).map(c => ({ ...c, ...m.get(c.value)! }));
+  }, [parts]);
+  const stockValue = byCat.reduce((s, c) => s + c.stock, 0);
 
   if (!allowed) {
     return (
@@ -102,6 +119,25 @@ export default function Pecas() {
           )}
         </div>
 
+        {byCat.length > 1 && (
+          <div className="-mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto">
+            <div className="flex gap-2 w-max md:w-auto md:flex-wrap">
+              <button onClick={() => setCat(null)}
+                className={`shrink-0 text-left px-3 py-2 rounded-xl border transition ${cat === null ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 hover:border-steel-300'}`}>
+                <div className="text-sm font-semibold">Todas</div>
+                <div className={`text-[11px] ${cat === null ? 'text-steel-300' : 'text-steel-500'}`}>{fmtBRL(stockValue)} em estoque</div>
+              </button>
+              {byCat.map(c => (
+                <button key={c.value} onClick={() => setCat(cat === c.value ? null : c.value)}
+                  className={`shrink-0 text-left px-3 py-2 rounded-xl border transition ${cat === c.value ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 hover:border-steel-300'}`}>
+                  <div className="text-sm font-semibold whitespace-nowrap">{c.icon} {c.label} <span className={cat === c.value ? 'text-steel-300' : 'text-steel-400'}>({c.count})</span></div>
+                  <div className={`text-[11px] ${cat === c.value ? 'text-steel-300' : 'text-steel-500'}`}>{fmtBRL(c.stock)} em estoque</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {parts === null || margin === null ? (
           <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
         ) : parts.length === 0 ? (
@@ -115,7 +151,9 @@ export default function Pecas() {
             <button className="btn-primary mt-5" onClick={() => setEditing('new')}>+ Cadastrar primeira peça</button>
           </div>
         ) : list.length === 0 ? (
-          <div className="card text-center py-8 text-sm text-steel-500">Nenhuma peça encontrada para “{q}”.</div>
+          <div className="card text-center py-8 text-sm text-steel-500">
+            Nenhuma peça encontrada{q.trim() ? ` para “${q}”` : ''}{cat ? ` em ${partCategory(cat).label}` : ''}.
+          </div>
         ) : (
           <div className="card !p-0 overflow-hidden">
             <div className="hidden md:grid grid-cols-12 gap-2 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
@@ -137,6 +175,7 @@ export default function Pecas() {
                       <div className="col-span-12 md:col-span-4 min-w-0">
                         <div className="text-sm font-semibold truncate">{p.name}{!p.active && <span className="badge bg-steel-100 text-steel-500 ml-2">desativada</span>}</div>
                         <div className="text-xs text-steel-500 truncate">
+                          {!cat && <span className="text-steel-600">{partCategory(p.category).icon} {partCategory(p.category).label} · </span>}
                           {[p.code, p.brand, p.supplier_id && supplierName.get(p.supplier_id)].filter(Boolean).join(' · ') || `por ${p.unit}`}
                         </div>
                       </div>
@@ -221,6 +260,8 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
   const [code, setCode]         = useState(part?.code ?? '');
   const [brand, setBrand]       = useState(part?.brand ?? '');
   const [unit, setUnit]         = useState(part?.unit ?? 'un');
+  // '' = automática: o banco escolhe pelo nome da peça
+  const [category, setCategory] = useState<PartCategory | ''>(part?.category ?? '');
   const [supplierId, setSupplierId] = useState(part?.supplier_id ?? '');
   const [minQty, setMinQty]     = useState(part ? fmtQty(part.min_qty) : '0');
   const [stock, setStock]       = useState(part ? fmtQty(part.stock_qty) : '0');
@@ -262,6 +303,7 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
       code: code.trim() || null,
       brand: brand.trim() || null,
       unit,
+      category: category || null,
       supplier_id: supplierId || null,
       min_qty: min,
       cost: parseMoney(cost || '0'),
@@ -299,6 +341,13 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
           <div>
             <label className="label">Nome da peça *</label>
             <input className="input" autoFocus placeholder="Ex.: Pastilha de freio dianteira" value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Categoria</label>
+            <select className="input" value={category} onChange={e => setCategory(e.target.value as PartCategory | '')}>
+              <option value="">✨ Automática (pelo nome da peça)</option>
+              {PART_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

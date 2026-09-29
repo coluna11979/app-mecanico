@@ -10,9 +10,34 @@ export type WorkshopPart = {
   id: string; workshop_id: string; name: string; code: string | null; brand: string | null;
   unit: string; supplier: string | null; supplier_id: string | null; cost: number;
   margin_percent: number | null; sale_price: number | null;
-  stock_qty: number; min_qty: number;
+  stock_qty: number; min_qty: number; category: PartCategory;
   active: boolean; created_at: string; updated_at: string;
 };
+
+/**
+ * Categoria geral da peça. Mesma lista da migration 0044 (check constraint);
+ * peça salva sem categoria ganha uma pelo nome, no banco (guess_part_category).
+ */
+export const PART_CATEGORIES = [
+  { value: 'freios',          label: 'Freios',             icon: '🛑' },
+  { value: 'suspensao',       label: 'Suspensão e direção', icon: '🔧' },
+  { value: 'motor',           label: 'Motor',              icon: '⚙️' },
+  { value: 'ignicao_injecao', label: 'Ignição e injeção',  icon: '⚡' },
+  { value: 'eletrica',        label: 'Elétrica',           icon: '🔋' },
+  { value: 'oleos_filtros',   label: 'Óleos e filtros',    icon: '🛢️' },
+  { value: 'arrefecimento',   label: 'Arrefecimento',      icon: '🌡️' },
+  { value: 'transmissao',     label: 'Embreagem e câmbio', icon: '🕹️' },
+  { value: 'rodas',           label: 'Rodas e pneus',      icon: '🛞' },
+  { value: 'escapamento',     label: 'Escapamento',        icon: '💨' },
+  { value: 'ar_condicionado', label: 'Ar-condicionado',    icon: '❄️' },
+  { value: 'carroceria',      label: 'Carroceria',         icon: '🚗' },
+  { value: 'outros',          label: 'Outros',             icon: '📦' },
+] as const;
+
+export type PartCategory = typeof PART_CATEGORIES[number]['value'];
+
+export const partCategory = (c: string | null | undefined) =>
+  PART_CATEGORIES.find(x => x.value === c) ?? PART_CATEGORIES[PART_CATEGORIES.length - 1];
 
 export const DEFAULT_MARGIN = 100;
 
