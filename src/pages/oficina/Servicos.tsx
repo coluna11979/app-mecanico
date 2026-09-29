@@ -83,7 +83,7 @@ export default function Servicos() {
     const { error } = await supabase.from('workshop_services').insert(rows);
     setBusy(false);
     if (error) return toast.error('Não foi possível adicionar: ' + error.message);
-    toast.success(`${rows.length} serviços adicionados — agora coloque o preço de cada um`);
+    toast.success(`${rows.length} serviços adicionados ✓`);
     load();
   }
 
@@ -143,9 +143,10 @@ export default function Servicos() {
         ) : (
           <>
             {noPrice > 0 && (
-              <div className="rounded-xl bg-pending-50 border border-pending-200 px-4 py-3 text-sm text-pending-800">
-                ⚠️ {noPrice} serviço{noPrice === 1 ? '' : 's'} sem preço. Clique em cada um para definir quanto a oficina cobra.
-              </div>
+              <p className="text-xs text-steel-500">
+                {noPrice} serviço{noPrice === 1 ? '' : 's'} sem preço fixo — o valor é colocado na OS, caso a caso.
+                Se algum tem preço de tabela (ex.: alinhamento), coloque aqui que ele já vem preenchido.
+              </p>
             )}
 
             <div className="flex flex-wrap items-center gap-3">
@@ -197,7 +198,7 @@ export default function Servicos() {
                         <div className="col-span-6 md:col-span-3 text-right">
                           {Number(s.price) > 0
                             ? <span className="text-sm font-bold">{fmtBRL(Number(s.price))}</span>
-                            : <span className="text-xs font-semibold text-pending-700">definir preço</span>}
+                            : <span className="text-xs text-steel-400">preço na OS</span>}
                         </div>
                         <div className="hidden md:block col-span-1 text-right text-steel-300">›</div>
                       </button>
@@ -273,7 +274,7 @@ function ServiceForm({ wid, service, onClose, onSaved }: {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Preço da mão de obra</label>
+              <label className="label">Preço (opcional)</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
                 <input className="input !pl-9 text-right" inputMode="decimal" placeholder="0,00" value={price}
@@ -291,7 +292,7 @@ function ServiceForm({ wid, service, onClose, onSaved }: {
               </div>
             </div>
           </div>
-          <p className="text-[11px] text-steel-400">O preço vem sugerido na OS e pode ser mudado lá, caso a caso.</p>
+          <p className="text-[11px] text-steel-400">Opcional. Se o preço varia de carro para carro, deixe vazio e coloque na OS. Se tiver preço, ele vem sugerido na OS e dá para mudar lá.</p>
           {service && (
             <label className="flex items-center gap-2 text-sm text-steel-700">
               <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />

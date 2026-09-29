@@ -180,7 +180,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         const s = suggestions.find(x => x.description.toLowerCase() === patch.description!.trim().toLowerCase());
         if (s) {
           next.kind = s.kind;
-          if (!r.unit_price) next.unit_price = moneyInput(s.unit_price);
+          // Serviço da tabela sem preço fixo: o valor é digitado na OS
+          if (!r.unit_price && s.unit_price > 0) next.unit_price = moneyInput(s.unit_price);
           if (s.part_id && s.part_id !== r.part_id) {
             next.part_id = s.part_id;
             next.unit_price = moneyInput(s.unit_price);
@@ -348,7 +349,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       )}
 
       <datalist id={`os-items-sugg-${osId}`}>
-        {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? `Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {fmtBRL(s.unit_price)}</option>)}
+        {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? `Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
       </datalist>
 
       <div className="divide-y divide-steel-100">
