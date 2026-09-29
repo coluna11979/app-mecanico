@@ -30,7 +30,7 @@ const EMPTY = {
   // públicos (workshop_mechanics)
   name: '', phone: '', role_title: '', specialty: '', skills: [] as string[],
   employment_type: '' as EmploymentType | '', hired_at: '', work_schedule: '', status: 'active' as TeamStatus,
-  terminated_at: '', commission: '', commission_parts: '', commission_revenue: '', cnh_category: '', cnh_expires_at: '', notes: '',
+  terminated_at: '', commission: '', commission_parts: '', commission_revenue: '', commission_own: '', cnh_category: '', cnh_expires_at: '', notes: '',
   // sensíveis (workshop_mechanic_private)
   cpf: '', rg: '', birth_date: '', email: '', address: '', emergency_name: '', emergency_phone: '',
   salary: '', pix_key: '', bank_name: '', bank_agency: '', bank_account: '',
@@ -86,6 +86,7 @@ export default function EquipeFicha() {
       commission: x.commission_percent ? String(x.commission_percent).replace('.', ',') : '',
       commission_parts: x.commission_parts_percent ? String(x.commission_parts_percent).replace('.', ',') : '',
       commission_revenue: x.commission_revenue_percent ? String(x.commission_revenue_percent).replace('.', ',') : '',
+      commission_own: x.commission_own_parts_percent != null ? String(x.commission_own_parts_percent).replace('.', ',') : '',
       cnh_category: x.cnh_category ?? '', cnh_expires_at: x.cnh_expires_at ?? '', notes: x.notes ?? '',
       cpf: pv?.cpf ?? '', rg: pv?.rg ?? '', birth_date: pv?.birth_date ?? '', email: pv?.email ?? '', address: pv?.address ?? '',
       emergency_name: pv?.emergency_name ?? '', emergency_phone: pv?.emergency_phone ?? '',
@@ -120,7 +121,9 @@ export default function EquipeFicha() {
     const commission = f.commission ? Number(f.commission.replace(',', '.')) : 0;
     const commissionParts = f.commission_parts ? Number(f.commission_parts.replace(',', '.')) : 0;
     const commissionRevenue = f.commission_revenue ? Number(f.commission_revenue.replace(',', '.')) : 0;
-    if ([commission, commissionParts, commissionRevenue].some(n => !Number.isFinite(n) || n < 0 || n > 100)) {
+    // vazio = usa a mesma % de serviços
+    const commissionOwn = f.commission_own.trim() ? Number(f.commission_own.replace(',', '.')) : null;
+    if ([commission, commissionParts, commissionRevenue, commissionOwn ?? 0].some(n => !Number.isFinite(n) || n < 0 || n > 100)) {
       toast.error('Comissão deve ser entre 0 e 100%'); setTab('contratacao'); return;
     }
     const salary = f.salary ? parseMoney(f.salary) : null;
@@ -136,6 +139,7 @@ export default function EquipeFicha() {
       commission_percent: commission,
       commission_parts_percent: commissionParts,
       commission_revenue_percent: commissionRevenue,
+      commission_own_parts_percent: commissionOwn,
       cnh_category: f.cnh_category.trim().toUpperCase() || null, cnh_expires_at: f.cnh_expires_at || null,
       notes: f.notes.trim() || null,
     };
@@ -250,7 +254,8 @@ export default function EquipeFicha() {
         {/* Comissão: sempre à vista, em qualquer aba */}
         <CommissionBox value={f.commission} onChange={v => { setF(s => ({ ...s, commission: v })); setDirty(true); }}
           parts={f.commission_parts} onParts={v => { setF(s => ({ ...s, commission_parts: v })); setDirty(true); }}
-          revenue={f.commission_revenue} onRevenue={v => { setF(s => ({ ...s, commission_revenue: v })); setDirty(true); }} />
+          revenue={f.commission_revenue} onRevenue={v => { setF(s => ({ ...s, commission_revenue: v })); setDirty(true); }}
+          own={f.commission_own} onOwn={v => { setF(s => ({ ...s, commission_own: v })); setDirty(true); }} />
 
         {/* Abas */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 mb-4">
@@ -449,10 +454,11 @@ const COMMISSION_PRESETS = ['0', '20', '30', '40', '50'];
 const EXAMPLE_LABOR = 200;
 
 /** % de comissão com atalhos e exemplo calculado na hora */
-function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue }: {
+function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, own, onOwn }: {
   value: string; onChange: (v: string) => void;
   parts: string; onParts: (v: string) => void;
   revenue: string; onRevenue: (v: string) => void;
+  own: string; onOwn: (v: string) => void;
 }) {
   const pct = Number(value.replace(',', '.'));
   const valid = value === '' || (Number.isFinite(pct) && pct >= 0 && pct <= 100);
@@ -493,6 +499,8 @@ function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue }: 
       </div>
       <div className="mt-3 pt-3 border-t border-steel-100 grid sm:grid-cols-2 gap-3">
         <PctField label="% sobre as peças" hint="das peças nos itens que ele fizer" value={parts} onChange={onParts} />
+        <PctField label="% sobre o serviço quando o cliente traz a peça" placeholder={value || '0'}
+          hint="na OS marcada “Cliente trouxe a peça” — vazio = mesma % de serviços" value={own} onChange={onOwn} />
         <PctField label="% sobre o faturamento da loja" hint="de tudo que a loja faturar no mês (ex.: gerente 1,5%)" value={revenue} onChange={onRevenue} />
       </div>
       <p className="text-[11px] text-steel-400 mt-2">
@@ -502,14 +510,14 @@ function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue }: 
   );
 }
 
-function PctField({ label, hint, value, onChange }: { label: string; hint: string; value: string; onChange: (v: string) => void }) {
+function PctField({ label, hint, value, onChange, placeholder = '0' }: { label: string; hint: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   const n = Number(value.replace(',', '.'));
   const valid = value === '' || (Number.isFinite(n) && n >= 0 && n <= 100);
   return (
     <label className="flex items-center gap-3">
       <div className="relative w-24 shrink-0">
         <input className={`input !py-1.5 !pr-7 text-sm text-right ${valid ? '' : '!border-alert-500'}`} inputMode="decimal"
-          placeholder="0" value={value} onChange={e => onChange(e.target.value)} />
+          placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} />
         <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-sm">%</span>
       </div>
       <span className="min-w-0">

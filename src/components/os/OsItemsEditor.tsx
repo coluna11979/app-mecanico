@@ -70,10 +70,12 @@ interface Props {
   osMechanicId?: string | null;
   /** Pode dizer quem fez cada item (gestor/caixa) — vale até com a OS concluída */
   canAssign?: boolean;
+  /** Cliente trouxe a peça (comissão da mão de obra usa a % própria) */
+  customerBroughtParts?: boolean;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => items.map(toRow));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -90,6 +92,16 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   }, [workshopId]);
   const teamName = useMemo(() => new Map(team.map(m => [m.id, m.name])), [team]);
   const showWho = team.filter(m => m.active).length > 1 || items.some(i => i.workshop_mechanic_id);
+
+  const [ownParts, setOwnParts] = useState(customerBroughtParts);
+  useEffect(() => { setOwnParts(customerBroughtParts); }, [customerBroughtParts]);
+  async function toggleOwnParts(v: boolean) {
+    setOwnParts(v);
+    const { error } = await supabase.from('service_orders').update({ customer_brought_parts: v }).eq('id', osId);
+    if (error) { setOwnParts(!v); toast.error('Não foi possível salvar: ' + error.message); return; }
+    toast.success(v ? 'Marcado: cliente trouxe a peça' : 'Desmarcado: peça da loja');
+    onSaved();
+  }
 
   /** OS fechada: troca quem fez direto no item (a caixa acerta a comissão na hora de receber) */
   async function assign(r: Row, mechanicId: string) {
@@ -281,6 +293,15 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           </div>
         )}
       </div>
+
+      {(!readOnly || canAssign || ownParts) && (
+        <label className={`mx-5 mb-3 flex items-center gap-2 text-sm ${!readOnly || canAssign ? 'cursor-pointer' : ''}`}>
+          <input type="checkbox" checked={ownParts} disabled={readOnly && !canAssign}
+            onChange={e => toggleOwnParts(e.target.checked)} />
+          <span>📦 <strong>Cliente trouxe a peça</strong></span>
+          <span className="text-xs text-steel-500">— a comissão da mão de obra usa a % de “peça do cliente”</span>
+        </label>
+      )}
 
       {hasLegacyValues && (
         <div className="mx-5 mb-3 text-xs bg-pending-50 border border-pending-200 text-pending-800 rounded-xl px-3 py-2">

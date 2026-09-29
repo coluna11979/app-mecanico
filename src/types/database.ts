@@ -243,6 +243,8 @@ export interface ServiceOrder {
   paid_amount?: number;
   counter_discount?: number;
   paid_at?: string | null;
+  /** Cliente trouxe a peça: a mão de obra paga a % própria de comissão */
+  customer_brought_parts?: boolean;
 }
 
 export type ReworkCause = 'execution' | 'diagnosis' | 'part' | 'customer' | 'other';
@@ -344,6 +346,8 @@ export interface WorkshopMechanic {
   commission_parts_percent?: number;
   /** % sobre o faturamento total da loja (ex.: gerente) */
   commission_revenue_percent?: number;
+  /** % sobre a mão de obra quando o cliente traz a peça; null = igual à de serviços */
+  commission_own_parts_percent?: number | null;
   photo_url?: string | null;
   phone?: string | null;
   /** Função: mecânico, eletricista, auxiliar… */

@@ -460,6 +460,7 @@ export default function OsDetail() {
               showCost={showCost}
               osMechanicId={os.workshop_mechanic_id}
               canAssign={canDo(session, balcao, 'caixa')}
+              customerBroughtParts={!!os.customer_brought_parts}
               osLabel={`OS nº ${os.number != null ? String(os.number).padStart(4, '0') : os.id.slice(0, 8)}`}
               onSaved={load}
             />

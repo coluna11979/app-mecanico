@@ -184,7 +184,7 @@ export function productivity(list: PanelOs[], mechanics: PanelMechanic[], r: Ran
       const m = byId.get(row.id);
       if (!m) continue; // "sem responsável": fica só a produção, sem comissão
       const calc = commissionFor(m, done.get(m.id), shopRevenue);
-      row.labor = calc.labor;
+      row.labor = calc.labor + calc.laborOwn;
       row.parts = calc.parts;
       row.commission = calc.commission;
     }
