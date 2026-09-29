@@ -361,6 +361,16 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   useEffect(() => { op.bind(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
   const role = op.balcao ? op.session?.role ?? null : null;
   const allowed = (to: string) => !role || sessionAllows(op.session!, to);
+  // Permissões alteradas pelo gestor valem sem precisar digitar o PIN de novo
+  useEffect(() => {
+    if (!op.session) return;
+    op.refresh();
+    const onFocus = () => op.refresh();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [op.session?.session_id, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  // No modo balcão só o gestor troca de loja (e a outra loja abre travada, na tela de PIN)
+  const canSwitchStore = !op.balcao || role === 'gestor';
 
   /* Tela fora da função → volta pra tela inicial da função */
   useEffect(() => {
@@ -382,7 +392,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     setOpen(false);
   }
 
-  if (op.balcao && !op.session && op.wid === shopId) return <OperatorLock />;
+  // Loja acabou de mudar e o modo balcão ainda não carregou a trava dela: não mostra nada
+  if (shopId && op.wid !== shopId) return null;
+  if (op.balcao && !op.session) return <OperatorLock />;
 
   const bottomTabs = BOTTOM_TABS.filter(t => allowed(t.to));
 
@@ -504,7 +516,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Seletor de oficina */}
-        {currentWorkshop && (
+        {currentWorkshop && canSwitchStore && (
           <div className="px-3 pt-3">
             <WorkshopSwitcher
               workshops={workshops}
@@ -612,7 +624,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           </button>
 
           {/* Switcher mobile (ocupa o espaço central) */}
-          {currentWorkshop ? (
+          {currentWorkshop && canSwitchStore ? (
             <div className="flex-1 min-w-0">
               <WorkshopSwitcher
                 workshops={workshops}

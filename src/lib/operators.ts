@@ -105,6 +105,21 @@ function save(wid: string, s: DeviceState) {
   try { localStorage.setItem(key(wid), JSON.stringify(s)); } catch { /* ignora */ }
 }
 
+/** Chaves de todas as lojas guardadas neste aparelho */
+function storeKeys(): string[] {
+  try { return Object.keys(localStorage).filter(k => k.startsWith('mec-operator:')); } catch { return []; }
+}
+
+/**
+ * O aparelho está travado no modo balcão em alguma loja?
+ * A trava vale para o aparelho inteiro: trocar de loja nunca pode abrir o sistema sem PIN.
+ */
+function deviceLocked(): boolean {
+  return storeKeys().some(k => {
+    try { return (JSON.parse(localStorage.getItem(k) ?? '{}') as DeviceState).balcao === true; } catch { return false; }
+  });
+}
+
 type Store = {
   wid: string | null;
   balcao: boolean;
@@ -118,6 +133,8 @@ type Store = {
   exitBalcao: () => Promise<void>;
   /** Leva a tela de bloqueio para outra loja: o aparelho continua travado, agora no balcão dela. */
   moveLockTo: (wid: string) => void;
+  /** Relê o acesso de quem está operando: permissões mudadas pelo gestor valem na hora. */
+  refresh: () => Promise<void>;
 };
 
 export const useOperator = create<Store>((set, get) => ({
@@ -130,7 +147,9 @@ export const useOperator = create<Store>((set, get) => ({
 
   bind: (wid) => {
     if (wid === get().wid) return;
-    const s = wid ? load(wid) : { balcao: false, session: null };
+    let s = wid ? load(wid) : { balcao: false, session: null };
+    // Aparelho travado em outra loja: esta também abre na tela de PIN
+    if (wid && !s.balcao && deviceLocked()) { s = { balcao: true, session: null }; save(wid, s); }
     set({ wid, ...s });
   },
 
@@ -158,6 +177,21 @@ export const useOperator = create<Store>((set, get) => ({
     return null;
   },
 
+  refresh: async () => {
+    const { wid, session } = get();
+    if (!wid || !session) return;
+    const { data, error } = await supabase.from('workshop_operators')
+      .select('roles, permissions, active').eq('id', session.operator_id).maybeSingle();
+    if (error) return; // sem conexão: mantém como está
+    const o = data as Pick<WorkshopOperator, 'roles' | 'permissions' | 'active'> | null;
+    // Acesso desativado ou função retirada: volta para a tela de PIN
+    if (!o || !o.active || !o.roles.includes(session.role)) { await get().switchUser(); return; }
+    const same = o.permissions.length === session.permissions.length && o.permissions.every(p => session.permissions.includes(p));
+    if (same || get().session?.session_id !== session.session_id) return;
+    const s = { balcao: true, session: { ...session, permissions: o.permissions } };
+    save(wid, s); set(s);
+  },
+
   switchUser: async () => {
     const { wid, session } = get();
     if (!wid) return;
@@ -171,6 +205,10 @@ export const useOperator = create<Store>((set, get) => ({
     if (!wid) return;
     if (session) await supabase.rpc('operator_logout', { p_session: session.session_id });
     const s = { balcao: false, session: null };
+    // Destrava o aparelho inteiro (todas as lojas)
+    for (const k of storeKeys()) {
+      try { localStorage.setItem(k, JSON.stringify(s)); } catch { /* ignora */ }
+    }
     save(wid, s); set(s);
   },
 }));
