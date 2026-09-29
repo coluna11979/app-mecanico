@@ -61,7 +61,7 @@ export default function Folha() {
         const e = edits[r.mechanicId];
         const c = calc[r.mechanicId];
         const days = num(e.days), other = num(e.other);
-        const notes = breakdown({ base: r.base, commission: r.commission, commissionPct: r.commissionPct, absenceDays: days, absence: c.absence, other, vales: r.vales, carryIn: r.carryIn, net: c.net, carryOut: c.carryOut });
+        const notes = breakdown({ base: r.base, commission: r.commission, commissionPct: r.commissionPct, commissionRule: r.commissionRule, absenceDays: days, absence: c.absence, other, vales: r.vales, carryIn: r.carryIn, net: c.net, carryOut: c.carryOut });
         let payableId: string | null = null;
         if (c.net > 0) {
           const { data, error } = await supabase.from('payables').insert({
@@ -180,8 +180,8 @@ export default function Folha() {
                           <span className="text-signal-700">✓ Fechada{closed.payable_id ? ' · conta gerada' : ' · nada a pagar'} · <button className="underline text-steel-500" onClick={() => reopen(r)}>reabrir</button></span>
                         ) : r.manual ? (
                           <span className="text-steel-500">Salário já lançado à mão em Contas a pagar ({fmtBRL(r.manual.amount)})</span>
-                        ) : r.commissionPct > 0 ? (
-                          <span className="text-steel-400">comissão {r.commissionPct}% da mão de obra</span>
+                        ) : r.commissionRule ? (
+                          <span className="text-steel-400">comissão {r.commissionRule}</span>
                         ) : <span className="text-steel-400">sem comissão</span>}
                       </div>
                     </div>

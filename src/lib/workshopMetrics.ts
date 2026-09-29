@@ -4,10 +4,14 @@
  * Definições:
  * - Venda = OS concluída (status 'completed') no período, pela data de conclusão.
  * - Tempo trabalhado = início → conclusão menos as pausas.
- * - Comissão = % do mecânico sobre a mão de obra (serviços) das OS que ele concluiu.
+ * - Comissão = % sobre os serviços e peças que o colaborador fez (item a item) + % sobre o
+ *   faturamento, quando tiver — ver lib/commission.ts.
  */
 import { workedMinutes } from '@/components/os/osHelpers';
 import type { OsStatus } from '@/types/database';
+import {
+  baseByMechanic, commissionFor, commissionRule, pcts, type CommissionBaseRow, type CommissionMech,
+} from '@/lib/commission';
 
 export type PanelOs = {
   id: string;
@@ -32,7 +36,7 @@ export type PanelOs = {
 };
 
 export type PanelItem = { service_order_id: string; kind: 'part' | 'labor'; description: string; quantity: number; unit_price: number };
-export type PanelMechanic = { id: string; name: string; commission_percent?: number | null; active: boolean };
+export type PanelMechanic = CommissionMech & { id: string; name: string; active: boolean };
 
 export type Range = { from: Date; to: Date };
 
@@ -127,29 +131,39 @@ export function revenueSeries(list: PanelOs[], r: Range) {
   return [...buckets.values()];
 }
 
-/** Produtividade e comissão por mecânico (OS concluídas no período) */
-export function productivity(list: PanelOs[], mechanics: PanelMechanic[], r: Range) {
+/**
+ * Produtividade e comissão por mecânico (OS concluídas no período).
+ * count/revenue/tempo = OS de que ele é o responsável. Com `base` (view os_commission_base),
+ * serviços/peças/comissão seguem quem fez cada item e incluem a % sobre o faturamento.
+ */
+export function productivity(list: PanelOs[], mechanics: PanelMechanic[], r: Range, base?: CommissionBaseRow[]) {
   const byId = new Map(mechanics.map(m => [m.id, m]));
   const rows = new Map<string, {
-    id: string; name: string; commissionPercent: number;
-    count: number; revenue: number; labor: number; commission: number;
+    id: string; name: string; commissionPercent: number; rule: string;
+    count: number; revenue: number; labor: number; parts: number; commission: number;
     workedMin: number; timedCount: number; onTime: number; withEstimate: number; pausedMin: number;
   }>();
-
-  for (const o of salesOf(list, r).sales) {
-    const key = o.workshop_mechanic_id ?? 'none';
-    const m = o.workshop_mechanic_id ? byId.get(o.workshop_mechanic_id) : undefined;
+  const rowOf = (id: string | null) => {
+    const key = id ?? 'none';
     if (!rows.has(key)) {
+      const m = id ? byId.get(id) : undefined;
       rows.set(key, {
-        id: key, name: m?.name ?? 'Sem responsável definido', commissionPercent: Number(m?.commission_percent ?? 0),
-        count: 0, revenue: 0, labor: 0, commission: 0, workedMin: 0, timedCount: 0, onTime: 0, withEstimate: 0, pausedMin: 0,
+        id: key, name: m?.name ?? (id ? 'Colaborador removido' : 'Sem responsável definido'),
+        commissionPercent: Number(m?.commission_percent ?? 0), rule: m ? commissionRule(m) : '',
+        count: 0, revenue: 0, labor: 0, parts: 0, commission: 0, workedMin: 0, timedCount: 0, onTime: 0, withEstimate: 0, pausedMin: 0,
       });
     }
-    const row = rows.get(key)!;
+    return rows.get(key)!;
+  };
+
+  const { sales, revenue: shopRevenue } = salesOf(list, r);
+  for (const o of sales) {
+    const row = rowOf(o.workshop_mechanic_id);
     row.count += 1;
     row.revenue += Number(o.price);
     row.labor += labor(o);
-    row.commission += labor(o) * row.commissionPercent / 100;
+    row.parts += parts(o);
+    if (!base) row.commission += labor(o) * row.commissionPercent / 100;
     const worked = workedMinutes(o.started_at, o.completed_at, o.pauses);
     if (worked != null && o.started_at) {
       row.workedMin += worked;
@@ -160,7 +174,24 @@ export function productivity(list: PanelOs[], mechanics: PanelMechanic[], r: Ran
       }
     }
   }
-  return [...rows.values()].sort((a, b) => b.revenue - a.revenue);
+
+  if (base) {
+    // Serviços/peças por quem fez cada item (só das vendas deste período)
+    const saleIds = new Set(sales.map(o => o.id));
+    const done = baseByMechanic(base.filter(b => saleIds.has(b.service_order_id)));
+    for (const m of mechanics) if (done.has(m.id) || pcts(m).revenue > 0) rowOf(m.id);
+    for (const row of rows.values()) {
+      const m = byId.get(row.id);
+      if (!m) continue; // "sem responsável": fica só a produção, sem comissão
+      const calc = commissionFor(m, done.get(m.id), shopRevenue);
+      row.labor = calc.labor;
+      row.parts = calc.parts;
+      row.commission = calc.commission;
+    }
+  }
+  return [...rows.values()]
+    .filter(x => x.count > 0 || x.commission > 0)
+    .sort((a, b) => b.revenue - a.revenue || b.commission - a.commission);
 }
 
 /** Tempo parado por motivo de pausa (pausas iniciadas no período) */

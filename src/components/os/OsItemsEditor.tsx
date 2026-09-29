@@ -18,7 +18,11 @@ type Row = {
   unit_cost: string;
   /** Peça do cadastro de onde veio */
   part_id: string | null;
+  /** Quem fez (comissão); '' = responsável da OS */
+  mechanic_id: string;
 };
+
+type TeamMember = { id: string; name: string; active: boolean };
 
 type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string };
 
@@ -32,6 +36,7 @@ function toRow(i: ServiceOrderItem): Row {
     key: i.id, id: i.id, kind: i.kind, description: i.description,
     quantity: String(i.quantity).replace('.', ','), unit_price: moneyInput(i.unit_price),
     unit_cost: i.unit_cost != null ? moneyInput(Number(i.unit_cost)) : '', part_id: i.part_id ?? null,
+    mechanic_id: i.workshop_mechanic_id ?? '',
   };
 }
 
@@ -61,10 +66,14 @@ interface Props {
   showCost?: boolean;
   /** "OS nº 0123" — vai na observação da compra feita pelo cadastro rápido de peça */
   osLabel?: string;
+  /** Responsável da OS — é quem fica com o item quando "quem fez" está vazio */
+  osMechanicId?: string | null;
+  /** Pode dizer quem fez cada item (gestor/caixa) — vale até com a OS concluída */
+  canAssign?: boolean;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => items.map(toRow));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -72,6 +81,25 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const [margin, setMargin]     = useState(DEFAULT_MARGIN);
   /** Cadastro rápido de peça: key = linha que vai receber a peça (null = cria linha nova) */
   const [quick, setQuick]       = useState<{ key: string | null; name: string; qty: number } | null>(null);
+  const [team, setTeam]         = useState<TeamMember[]>([]);
+
+  // Equipe, para dizer quem fez cada item (comissão)
+  useEffect(() => {
+    supabase.from('workshop_mechanics').select('id, name, active').eq('workshop_id', workshopId).order('name')
+      .then(({ data }) => setTeam((data as TeamMember[]) ?? []));
+  }, [workshopId]);
+  const teamName = useMemo(() => new Map(team.map(m => [m.id, m.name])), [team]);
+  const showWho = team.filter(m => m.active).length > 1 || items.some(i => i.workshop_mechanic_id);
+
+  /** OS fechada: troca quem fez direto no item (a caixa acerta a comissão na hora de receber) */
+  async function assign(r: Row, mechanicId: string) {
+    if (!r.id) return;
+    setRows(rs => rs.map(x => x.key === r.key ? { ...x, mechanic_id: mechanicId } : x));
+    const { error } = await supabase.from('service_order_items').update({ workshop_mechanic_id: mechanicId || null }).eq('id', r.id);
+    if (error) { toast.error('Não foi possível trocar: ' + error.message); setRows(items.map(toRow)); return; }
+    toast.success('Comissão deste item atualizada ✓');
+    onSaved();
+  }
 
   // Recarrega quando os itens salvos mudam (após salvar)
   useEffect(() => { setRows(items.map(toRow)); }, [items]);
@@ -121,7 +149,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     || Math.abs(disc - (discount ?? 0)) > 0.001;
 
   function addRow(kind: OsItemKind) {
-    setRows(rs => [...rs, { key: newKey(), kind, description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null }]);
+    setRows(rs => [...rs, { key: newKey(), kind, description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '' }]);
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
@@ -194,6 +222,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         unit_price: parseMoney(r.unit_price || '0'),
         unit_cost: r.kind === 'part' && r.unit_cost.trim() ? parseMoney(r.unit_cost) : null,
         part_id: r.kind === 'part' ? r.part_id : null,
+        workshop_mechanic_id: r.mechanic_id || null,
         position: idx,
       }));
       const existing = payload.filter(p => 'id' in p);
@@ -285,7 +314,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             const filled = { description: res.name, part_id: res.part_id, unit_cost: moneyInput(res.cost), unit_price: moneyInput(res.price) };
             setRows(rs => quick.key
               ? rs.map(x => x.key === quick.key ? { ...x, ...filled } : x)
-              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), ...filled }]);
+              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', ...filled }]);
             setQuick(null);
           }} />
       )}
@@ -375,6 +404,25 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {!readOnly && (
               <div className="hidden md:flex col-span-1 justify-end gap-1">
                 <RowActions idx={idx} count={rows.length} onUp={() => move(r.key, -1)} onDown={() => move(r.key, 1)} onRemove={() => remove(r.key)} />
+              </div>
+            )}
+            {/* Quem fez (comissão) */}
+            {showWho && (
+              <div className="col-span-12 -mt-1 flex items-center gap-2 text-xs">
+                <span className="text-steel-500 shrink-0">🔧 Quem fez:</span>
+                {canAssign && (!readOnly || r.id) ? (
+                  <select className="input !py-1 !px-2 !w-auto text-xs" value={r.mechanic_id}
+                    onChange={e => readOnly ? assign(r, e.target.value) : update(r.key, { mechanic_id: e.target.value })}>
+                    <option value="">{osMechanicId && teamName.get(osMechanicId) ? `${teamName.get(osMechanicId)} (responsável da OS)` : 'Responsável da OS'}</option>
+                    {team.filter(m => (m.active || m.id === r.mechanic_id) && m.id !== osMechanicId).map(m => (
+                      <option key={m.id} value={m.id}>{m.name}{m.active ? '' : ' (inativo)'}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="font-semibold text-steel-700">
+                    {(r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'Responsável da OS'}
+                  </span>
+                )}
               </div>
             )}
             {/* Custo e margem da peça (só para quem vê o financeiro) */}

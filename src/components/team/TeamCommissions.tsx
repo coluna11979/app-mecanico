@@ -5,33 +5,37 @@ import { fetchAll } from '@/lib/fetchAll';
 import { fmtBRL, fmtDur } from '@/components/os/osHelpers';
 import { pausesByReason, productivity, type PanelMechanic, type PanelOs } from '@/lib/workshopMetrics';
 import PeriodPicker, { usePeriod } from '@/components/PeriodPicker';
+import { ALL_TIME, COMMISSION_COLS, loadCommissionBase, type CommissionBaseRow } from '@/lib/commission';
 
 /** Produtividade e comissões da equipe + tempo parado (veio do Painel para a área da Equipe) */
 export default function TeamCommissions({ workshopId }: { workshopId: string }) {
   const period = usePeriod('comissoes-periodo', 'month');
   const [os, setOs] = useState<PanelOs[]>([]);
   const [mechs, setMechs] = useState<PanelMechanic[]>([]);
+  const [base, setBase] = useState<CommissionBaseRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [o, m] = await Promise.all([
+      const [o, m, b] = await Promise.all([
         fetchAll((a, b) => supabase.from('service_orders')
           .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, created_at), vehicle:vehicles(make, model, plate), pauses:service_order_pauses(started_at, ended_at, reason)')
           .eq('workshop_id', workshopId).order('id').range(a, b)),
-        supabase.from('workshop_mechanics').select('id, name, commission_percent, active').eq('workshop_id', workshopId),
+        supabase.from('workshop_mechanics').select(`id, name, active, ${COMMISSION_COLS}`).eq('workshop_id', workshopId),
+        loadCommissionBase(workshopId, ALL_TIME.from, ALL_TIME.to),
       ]);
       if (!alive) return;
       setOs(o.data as unknown as PanelOs[]);
-      setMechs((m.data as PanelMechanic[]) ?? []);
+      setMechs((m.data as unknown as PanelMechanic[]) ?? []);
+      setBase(b);
       setLoading(false);
     })();
     return () => { alive = false; };
   }, [workshopId]);
 
-  const team = useMemo(() => productivity(os, mechs, period.range), [os, mechs, period.range]);
+  const team = useMemo(() => productivity(os, mechs, period.range, base), [os, mechs, period.range, base]);
   const pauses = useMemo(() => pausesByReason(os, period.range), [os, period.range]);
   const total = team.reduce((a, r) => a + r.commission, 0);
 
@@ -48,7 +52,7 @@ export default function TeamCommissions({ workshopId }: { workshopId: string }) 
             <div className="card !bg-steel-900 text-white">
               <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">Comissões a pagar</div>
               <div className="text-2xl lg:text-3xl font-bold font-display mt-1">{fmtBRL(total)}</div>
-              <div className="text-xs text-steel-400 mt-1">sobre a mão de obra das OS concluídas</div>
+              <div className="text-xs text-steel-400 mt-1">sobre serviços, peças e faturamento das OS concluídas</div>
             </div>
             <div className="card">
               <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">OS concluídas</div>
@@ -64,7 +68,7 @@ export default function TeamCommissions({ workshopId }: { workshopId: string }) 
           <div className="card !p-0 overflow-hidden">
             <div className="px-5 pt-5 pb-3">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">👷 Produtividade e comissões</div>
-              <p className="text-xs text-steel-400">OS concluídas no período. Tempo trabalhado já desconta as pausas.</p>
+              <p className="text-xs text-steel-400">OS concluídas no período. Tempo trabalhado já desconta as pausas. Serviços e peças contam para quem fez cada item da OS.</p>
             </div>
             {team.length === 0 ? (
               <p className="px-5 pb-5 text-sm text-steel-400">Nenhuma OS concluída no período.</p>
@@ -79,7 +83,8 @@ export default function TeamCommissions({ workshopId }: { workshopId: string }) 
                       <th className="text-right px-3 py-2">Tempo médio</th>
                       <th className="text-right px-3 py-2">No prazo</th>
                       <th className="text-right px-3 py-2">Faturou</th>
-                      <th className="text-right px-3 py-2">Mão de obra</th>
+                      <th className="text-right px-3 py-2">Serviços que fez</th>
+                      <th className="text-right px-3 py-2">Peças</th>
                       <th className="text-right px-5 py-2">Comissão</th>
                     </tr>
                   </thead>
@@ -93,9 +98,10 @@ export default function TeamCommissions({ workshopId }: { workshopId: string }) 
                         <td className="px-3 py-2.5 text-right">{r.withEstimate ? `${Math.round((r.onTime / r.withEstimate) * 100)}%` : '—'}</td>
                         <td className="px-3 py-2.5 text-right">{fmtBRL(r.revenue)}</td>
                         <td className="px-3 py-2.5 text-right">{fmtBRL(r.labor)}</td>
+                        <td className="px-3 py-2.5 text-right">{fmtBRL(r.parts)}</td>
                         <td className="px-5 py-2.5 text-right font-bold">
                           {r.id === 'none' ? '—' : fmtBRL(r.commission)}
-                          {r.id !== 'none' && <div className="text-[10px] font-normal text-steel-400">{r.commissionPercent}% da mão de obra</div>}
+                          {r.id !== 'none' && <div className="text-[10px] font-normal text-steel-400">{r.rule || 'sem comissão'}</div>}
                         </td>
                       </tr>
                     ))}
@@ -104,7 +110,7 @@ export default function TeamCommissions({ workshopId }: { workshopId: string }) 
               </div>
             )}
             <div className="px-5 py-3 bg-steel-50 text-xs text-steel-500 border-t border-steel-100">
-              A % de comissão de cada mecânico é definida em <Link to="/oficina/equipe" className="text-brand-600 font-semibold">👷 Colaboradores</Link> (ficha de cada um).
+              As % de comissão (serviços, peças e faturamento) de cada colaborador ficam em <Link to="/oficina/equipe" className="text-brand-600 font-semibold">👷 Colaboradores</Link> (ficha de cada um).
             </div>
           </div>
 

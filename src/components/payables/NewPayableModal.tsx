@@ -83,7 +83,7 @@ export default function NewPayableModal({ wid, editing, onClose, onDone }: {
       const r = rows.find(x => x.mechanicId === employeeId);
       if (!alive || !r) return;
       const c = calcNet({ base: r.base, commission: r.commission, absenceDays: 0, other: 0, vales: r.vales, carryIn: r.carryIn });
-      const text = breakdown({ base: r.base, commission: r.commission, commissionPct: r.commissionPct, absenceDays: 0, absence: 0, other: 0, vales: r.vales, carryIn: r.carryIn, net: c.net, carryOut: c.carryOut });
+      const text = breakdown({ base: r.base, commission: r.commission, commissionPct: r.commissionPct, commissionRule: r.commissionRule, absenceDays: 0, absence: 0, other: 0, vales: r.vales, carryIn: r.carryIn, net: c.net, carryOut: c.carryOut });
       setPayrollHint(r.base > 0 ? text : 'Sem salário no cadastro do colaborador.');
       if (r.base > 0 && (!amount || autoAmount)) { setAmount(moneyInput(c.net)); setAutoAmount(true); if (!notes || autoAmount) setNotes(text); }
     });

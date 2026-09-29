@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { fmtBRL, fmtDur, fmtPhone, workedMinutes } from '@/components/os/osHelpers';
 import { ABSENCE_REASONS, TEAM_STATUS, employmentLabel, expiryState, fmtDay, returnStatus, tenure, type Absence } from '@/lib/team';
 import AbsenceReport from '@/components/team/AbsenceReport';
+import { ALL_TIME, baseByMechanic, commissionFor, loadCommissionBase, type CommissionBaseRow } from '@/lib/commission';
 import type { MechanicCertification, TeamStatus, WorkshopMechanic } from '@/types/database';
 
 type MonthOs = {
@@ -22,6 +23,7 @@ export default function Equipe() {
   const [list, setList]     = useState<WorkshopMechanic[]>([]);
   const [certs, setCerts]   = useState<MechanicCertification[]>([]);
   const [month, setMonth]   = useState<MonthOs[]>([]);
+  const [commBase, setCommBase] = useState<CommissionBaseRow[]>([]);
   const [photos, setPhotos] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<Filter>('active');
   const [absences, setAbsences] = useState<Absence[]>([]);
@@ -32,7 +34,7 @@ export default function Equipe() {
     let alive = true;
     (async () => {
       const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-      const [m, c, o, ab] = await Promise.all([
+      const [m, c, o, ab, cb] = await Promise.all([
         supabase.from('workshop_mechanics').select('*').eq('workshop_id', wid).order('name'),
         supabase.from('workshop_mechanic_certifications').select('*').eq('workshop_id', wid),
         supabase.from('service_orders')
@@ -40,6 +42,7 @@ export default function Equipe() {
           .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null)
           .gte('completed_at', monthStart.toISOString()),
         supabase.from('workshop_mechanic_absences').select('*').eq('workshop_id', wid).order('started_on', { ascending: false }).limit(1000),
+        loadCommissionBase(wid, monthStart.toISOString(), ALL_TIME.to),
       ]);
       if (!alive) return;
       setAbsences((ab.data as Absence[]) ?? []);
@@ -47,6 +50,7 @@ export default function Equipe() {
       setList(mechs);
       setCerts((c.data as MechanicCertification[]) ?? []);
       setMonth((o.data as unknown as MonthOs[]) ?? []);
+      setCommBase(cb);
       setLoading(false);
       const paths = mechs.filter(x => x.photo_url).map(x => x.photo_url!);
       if (paths.length) {
@@ -81,11 +85,14 @@ export default function Equipe() {
     return out;
   }
 
-  function monthStats(id: string, pct: number) {
-    const os = month.filter(o => o.workshop_mechanic_id === id);
-    const labor = os.reduce((a, o) => a + Number(o.labor_cost ?? 0), 0);
+  // Comissão do mês: serviços/peças que cada um fez (item a item) + % sobre o faturamento
+  const done = useMemo(() => baseByMechanic(commBase), [commBase]);
+  const monthRevenue = useMemo(() => month.reduce((a, o) => a + Number(o.price ?? 0), 0), [month]);
+
+  function monthStats(x: WorkshopMechanic) {
+    const os = month.filter(o => o.workshop_mechanic_id === x.id);
     const worked = os.reduce((a, o) => a + (workedMinutes(o.started_at, o.completed_at, o.pauses) ?? 0), 0);
-    return { count: os.length, worked, commission: labor * pct / 100 };
+    return { count: os.length, worked, commission: commissionFor(x, done.get(x.id), monthRevenue).commission };
   }
 
   const FILTERS: { key: Filter; label: string }[] = [
@@ -133,7 +140,7 @@ export default function Equipe() {
             {shown.map(x => {
               const st = TEAM_STATUS[statusOf(x)];
               const alerts = alertsOf(x);
-              const s = monthStats(x.id, Number(x.commission_percent ?? 0));
+              const s = monthStats(x);
               return (
                 <Link key={x.id} to={`/oficina/equipe/${x.id}`} className="card hover:shadow-md hover:-translate-y-0.5 transition block">
                   <div className="flex items-center gap-3">

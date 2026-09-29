@@ -30,7 +30,7 @@ const EMPTY = {
   // públicos (workshop_mechanics)
   name: '', phone: '', role_title: '', specialty: '', skills: [] as string[],
   employment_type: '' as EmploymentType | '', hired_at: '', work_schedule: '', status: 'active' as TeamStatus,
-  terminated_at: '', commission: '', cnh_category: '', cnh_expires_at: '', notes: '',
+  terminated_at: '', commission: '', commission_parts: '', commission_revenue: '', cnh_category: '', cnh_expires_at: '', notes: '',
   // sensíveis (workshop_mechanic_private)
   cpf: '', rg: '', birth_date: '', email: '', address: '', emergency_name: '', emergency_phone: '',
   salary: '', pix_key: '', bank_name: '', bank_agency: '', bank_account: '',
@@ -84,6 +84,8 @@ export default function EquipeFicha() {
       employment_type: (x.employment_type ?? '') as EmploymentType | '', hired_at: x.hired_at ?? '', work_schedule: x.work_schedule ?? '',
       status: x.status ?? (x.active ? 'active' : 'terminated'), terminated_at: x.terminated_at ?? '',
       commission: x.commission_percent ? String(x.commission_percent).replace('.', ',') : '',
+      commission_parts: x.commission_parts_percent ? String(x.commission_parts_percent).replace('.', ',') : '',
+      commission_revenue: x.commission_revenue_percent ? String(x.commission_revenue_percent).replace('.', ',') : '',
       cnh_category: x.cnh_category ?? '', cnh_expires_at: x.cnh_expires_at ?? '', notes: x.notes ?? '',
       cpf: pv?.cpf ?? '', rg: pv?.rg ?? '', birth_date: pv?.birth_date ?? '', email: pv?.email ?? '', address: pv?.address ?? '',
       emergency_name: pv?.emergency_name ?? '', emergency_phone: pv?.emergency_phone ?? '',
@@ -116,7 +118,11 @@ export default function EquipeFicha() {
     if (!wid) return;
     if (!f.name.trim()) { toast.error('Informe o nome'); setTab('pessoal'); return; }
     const commission = f.commission ? Number(f.commission.replace(',', '.')) : 0;
-    if (!Number.isFinite(commission) || commission < 0 || commission > 100) { toast.error('Comissão deve ser entre 0 e 100%'); setTab('contratacao'); return; }
+    const commissionParts = f.commission_parts ? Number(f.commission_parts.replace(',', '.')) : 0;
+    const commissionRevenue = f.commission_revenue ? Number(f.commission_revenue.replace(',', '.')) : 0;
+    if ([commission, commissionParts, commissionRevenue].some(n => !Number.isFinite(n) || n < 0 || n > 100)) {
+      toast.error('Comissão deve ser entre 0 e 100%'); setTab('contratacao'); return;
+    }
     const salary = f.salary ? parseMoney(f.salary) : null;
     if (salary != null && (!Number.isFinite(salary) || salary < 0)) { toast.error('Salário inválido'); setTab('contratacao'); return; }
 
@@ -128,6 +134,8 @@ export default function EquipeFicha() {
       status: f.status, active: f.status === 'active',
       terminated_at: f.status === 'terminated' ? (f.terminated_at || new Date().toISOString().slice(0, 10)) : null,
       commission_percent: commission,
+      commission_parts_percent: commissionParts,
+      commission_revenue_percent: commissionRevenue,
       cnh_category: f.cnh_category.trim().toUpperCase() || null, cnh_expires_at: f.cnh_expires_at || null,
       notes: f.notes.trim() || null,
     };
@@ -240,7 +248,9 @@ export default function EquipeFicha() {
         )}
 
         {/* Comissão: sempre à vista, em qualquer aba */}
-        <CommissionBox value={f.commission} onChange={v => { setF(s => ({ ...s, commission: v })); setDirty(true); }} />
+        <CommissionBox value={f.commission} onChange={v => { setF(s => ({ ...s, commission: v })); setDirty(true); }}
+          parts={f.commission_parts} onParts={v => { setF(s => ({ ...s, commission_parts: v })); setDirty(true); }}
+          revenue={f.commission_revenue} onRevenue={v => { setF(s => ({ ...s, commission_revenue: v })); setDirty(true); }} />
 
         {/* Abas */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 mb-4">
@@ -439,7 +449,11 @@ const COMMISSION_PRESETS = ['0', '20', '30', '40', '50'];
 const EXAMPLE_LABOR = 200;
 
 /** % de comissão com atalhos e exemplo calculado na hora */
-function CommissionBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue }: {
+  value: string; onChange: (v: string) => void;
+  parts: string; onParts: (v: string) => void;
+  revenue: string; onRevenue: (v: string) => void;
+}) {
   const pct = Number(value.replace(',', '.'));
   const valid = value === '' || (Number.isFinite(pct) && pct >= 0 && pct <= 100);
   const current = value === '' ? '0' : value;
@@ -448,7 +462,7 @@ function CommissionBox({ value, onChange }: { value: string; onChange: (v: strin
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="min-w-[180px]">
           <div className="text-sm font-bold text-steel-900">💰 Comissão</div>
-          <div className="text-xs text-steel-500">% sobre a mão de obra das OS que ele concluir</div>
+          <div className="text-xs text-steel-500">% sobre os serviços que ele fizer</div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {COMMISSION_PRESETS.map(p => (
@@ -473,11 +487,36 @@ function CommissionBox({ value, onChange }: { value: string; onChange: (v: strin
               Ex.: numa OS com {fmtBRL(EXAMPLE_LABOR)} de mão de obra, ele recebe <strong className="text-signal-700">{fmtBRL(EXAMPLE_LABOR * pct / 100)}</strong>
             </span>
           ) : (
-            <span className="text-steel-400">Não recebe comissão</span>
+            <span className="text-steel-400">Não recebe comissão sobre serviços</span>
           )}
         </div>
       </div>
+      <div className="mt-3 pt-3 border-t border-steel-100 grid sm:grid-cols-2 gap-3">
+        <PctField label="% sobre as peças" hint="das peças nos itens que ele fizer" value={parts} onChange={onParts} />
+        <PctField label="% sobre o faturamento da loja" hint="de tudo que a loja faturar no mês (ex.: gerente 1,5%)" value={revenue} onChange={onRevenue} />
+      </div>
+      <p className="text-[11px] text-steel-400 mt-2">
+        As % se somam. Serviços e peças contam para quem fez cada item da OS — dá para trocar item a item na OS.
+      </p>
     </div>
+  );
+}
+
+function PctField({ label, hint, value, onChange }: { label: string; hint: string; value: string; onChange: (v: string) => void }) {
+  const n = Number(value.replace(',', '.'));
+  const valid = value === '' || (Number.isFinite(n) && n >= 0 && n <= 100);
+  return (
+    <label className="flex items-center gap-3">
+      <div className="relative w-24 shrink-0">
+        <input className={`input !py-1.5 !pr-7 text-sm text-right ${valid ? '' : '!border-alert-500'}`} inputMode="decimal"
+          placeholder="0" value={value} onChange={e => onChange(e.target.value)} />
+        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-sm">%</span>
+      </div>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-steel-800">{label}</span>
+        <span className="block text-[11px] text-steel-500">{hint}</span>
+      </span>
+    </label>
   );
 }
 

@@ -262,6 +262,8 @@ export interface ServiceOrderItem {
   unit_cost?: number | null;
   /** Peça do cadastro de onde veio */
   part_id?: string | null;
+  /** Quem fez este item (comissão); null = responsável da OS */
+  workshop_mechanic_id?: string | null;
   position: number;
   created_at: string;
 }
@@ -338,6 +340,10 @@ export interface WorkshopMechanic {
   created_at: string;
   /** Comissão: % sobre a mão de obra das OS concluídas por ele */
   commission_percent?: number;
+  /** % sobre as peças dos itens que ele fez */
+  commission_parts_percent?: number;
+  /** % sobre o faturamento total da loja (ex.: gerente) */
+  commission_revenue_percent?: number;
   photo_url?: string | null;
   phone?: string | null;
   /** Função: mecânico, eletricista, auxiliar… */

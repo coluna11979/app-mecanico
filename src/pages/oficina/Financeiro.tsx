@@ -11,6 +11,7 @@ import { fetchAll } from '@/lib/fetchAll';
 import { daysUntil, type Payable } from '@/lib/purchasing';
 import { change, previousRange, productivity, salesOf, type PanelMechanic } from '@/lib/workshopMetrics';
 import PeriodPicker, { PREV_LABEL, usePeriod } from '@/components/PeriodPicker';
+import { ALL_TIME, COMMISSION_COLS, loadCommissionBase, type CommissionBaseRow } from '@/lib/commission';
 import {
   byMethod, cashFlowOf, closings, expensesByCategory, flowSeries, receivables, valesByMechanic,
   type FinEntry, type FinOs, type FinPayment, type FinRegister,
@@ -29,6 +30,7 @@ export default function Financeiro() {
   const [regs, setRegs]         = useState<FinRegister[]>([]);
   const [os, setOs]             = useState<FinOs[]>([]);
   const [mechs, setMechs]       = useState<PanelMechanic[]>([]);
+  const [commBase, setCommBase] = useState<CommissionBaseRow[]>([]);
   const [ops, setOps]           = useState<Record<string, string>>({});
   const [firstOpen, setFirstOpen] = useState<string | null>(null);
   const [payables, setPayables] = useState<Pick<Payable, 'amount' | 'due_date' | 'paid_at' | 'paid_from'>[]>([]);
@@ -46,7 +48,7 @@ export default function Financeiro() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [e, p, r, o, m, op, first, ci, pay] = await Promise.all([
+      const [e, p, r, o, m, op, first, ci, pay, cb] = await Promise.all([
         fetchAll((a, b) => supabase.from('cash_entries')
           .select('id, kind, method, amount, installments, category, mechanic_id, created_at')
           .eq('workshop_id', wid).is('cancelled_at', null).gte('created_at', fromIso).lt('created_at', toIso)
@@ -62,7 +64,7 @@ export default function Financeiro() {
         fetchAll((a, b) => supabase.from('service_orders')
           .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, paid_amount, counter_discount, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, created_at), vehicle:vehicles(make, model, plate)')
           .eq('workshop_id', wid).eq('status', 'completed').order('id').range(a, b)),
-        supabase.from('workshop_mechanics').select('id, name, commission_percent, active').eq('workshop_id', wid),
+        supabase.from('workshop_mechanics').select(`id, name, active, ${COMMISSION_COLS}`).eq('workshop_id', wid),
         supabase.from('workshop_operators').select('id, name').eq('workshop_id', wid),
         supabase.from('cash_registers').select('opened_at').eq('workshop_id', wid)
           .order('opened_at').limit(1).maybeSingle(),
@@ -75,13 +77,15 @@ export default function Financeiro() {
           .eq('workshop_id', wid).is('cancelled_at', null)
           .or(`paid_at.is.null,paid_at.gte.${fromIso.slice(0, 10)}`)
           .order('id').range(a, b)),
+        loadCommissionBase(wid, ALL_TIME.from, ALL_TIME.to),
       ]);
       if (!alive) return;
       setEntries((e.data as FinEntry[]) ?? []);
       setPayments((p.data as FinPayment[]) ?? []);
       setRegs((r.data as FinRegister[]) ?? []);
       setOs((o.data as unknown as FinOs[]) ?? []);
-      setMechs((m.data as PanelMechanic[]) ?? []);
+      setMechs((m.data as unknown as PanelMechanic[]) ?? []);
+      setCommBase(cb);
       setOps(Object.fromEntries(((op.data as { id: string; name: string }[]) ?? []).map(x => [x.id, x.name])));
       setCostItems((ci.data as typeof costItems) ?? []);
       setPayables((pay.data as typeof payables) ?? []);
@@ -104,7 +108,7 @@ export default function Financeiro() {
     const vales = valesByMechanic(entries, range);
     const names = new Map(mechs.map(x => [x.id, x.name]));
     const team = new Map<string, { id: string; name: string; commission: number; vales: number }>();
-    for (const row of productivity(os, mechs, range)) {
+    for (const row of productivity(os, mechs, range, commBase)) {
       if (row.id === 'none' || row.commission <= 0) continue;
       team.set(row.id, { id: row.id, name: row.name, commission: row.commission, vales: 0 });
     }
@@ -125,7 +129,7 @@ export default function Financeiro() {
       closes: closings(regs, range),
       series: flowSeries(entries, range),
     };
-  }, [entries, payments, regs, os, mechs, range, prev, firstOpen, costItems]);
+  }, [entries, payments, regs, os, mechs, range, prev, firstOpen, costItems, commBase]);
 
   if (!allowed) {
     return (

@@ -2,13 +2,17 @@
  * Fechamento da folha (por competência "AAAA-MM").
  *
  * Líquido = salário + comissão − faltas − outros descontos − vales do mês − vale que sobrou do mês anterior.
- * - Comissão: % do colaborador sobre a mão de obra das OS que ele concluiu no mês.
+ * - Comissão: % sobre os serviços e as peças que ele fez nas OS concluídas no mês
+ *   (+ % sobre o faturamento da loja, se tiver) — ver lib/commission.ts.
  * - Faltas: salário ÷ 30 × dias.
  * - Vales: tirados no caixa dentro do mês.
  * - Se os descontos passam do que há para receber, a diferença vai para o mês seguinte.
  */
 import { supabase } from '@/lib/supabase';
 import { fetchAll } from '@/lib/fetchAll';
+import {
+  COMMISSION_COLS, baseByMechanic, commissionFor, commissionRule, loadCommissionBase, type CommissionMech,
+} from '@/lib/commission';
 
 export type PayrollItem = {
   id: string; mechanic_id: string; competence: string; base_salary: number; commission: number;
@@ -21,7 +25,9 @@ export type PayrollRow = {
   name: string;
   active: boolean;
   base: number;            // salário do cadastro
-  commissionPct: number;
+  commissionPct: number;   // % sobre serviços (a regra completa está em commissionRule)
+  /** "10% serviços + 5% peças + 1,5% faturamento" */
+  commissionRule: string;
   commission: number;      // calculada das OS do mês
   vales: number;           // vales do caixa no mês
   carryIn: number;         // vale que sobrou do mês anterior
@@ -49,11 +55,11 @@ export function calcNet(p: { base: number; commission: number; absenceDays: numb
 }
 
 /** Detalhamento que vai na observação da conta a pagar */
-export function breakdown(p: { base: number; commission: number; commissionPct: number; absenceDays: number; absence: number; other: number; vales: number; carryIn: number; net: number; carryOut: number }) {
+export function breakdown(p: { base: number; commission: number; commissionPct: number; commissionRule?: string; absenceDays: number; absence: number; other: number; vales: number; carryIn: number; net: number; carryOut: number }) {
   const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   return [
     `Salário ${brl(p.base)}`,
-    p.commission > 0 ? `+ comissão ${brl(p.commission)} (${p.commissionPct}%)` : null,
+    p.commission > 0 ? `+ comissão ${brl(p.commission)} (${p.commissionRule || `${p.commissionPct}%`})` : null,
     p.absence > 0 ? `− faltas ${brl(p.absence)} (${p.absenceDays} dia${p.absenceDays === 1 ? '' : 's'})` : null,
     p.other > 0 ? `− outros descontos ${brl(p.other)}` : null,
     p.vales > 0 ? `− vales ${brl(p.vales)}` : null,
@@ -66,12 +72,14 @@ export function breakdown(p: { base: number; commission: number; commissionPct: 
 /** Tudo o que a tela precisa para fechar a folha do mês */
 export async function loadPayroll(wid: string, competence: string): Promise<PayrollRow[]> {
   const { from, to } = monthRange(competence);
-  const [mechs, priv, os, vales, prev, cur, manual] = await Promise.all([
-    supabase.from('workshop_mechanics').select('id, name, commission_percent, active').eq('workshop_id', wid).order('name'),
+  const [mechs, priv, base, sales, vales, prev, cur, manual] = await Promise.all([
+    supabase.from('workshop_mechanics').select(`id, name, active, ${COMMISSION_COLS}`).eq('workshop_id', wid).order('name'),
     supabase.from('workshop_mechanic_private').select('mechanic_id, salary').eq('workshop_id', wid),
-    fetchAll((a, b) => supabase.from('service_orders').select('id, workshop_mechanic_id, labor_cost')
+    loadCommissionBase(wid, from, to),
+    // Faturamento do mês (para quem ganha % sobre o faturamento)
+    fetchAll((a, b) => supabase.from('service_orders').select('id, price')
       .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null)
-      .gte('completed_at', from).lt('completed_at', to).not('workshop_mechanic_id', 'is', null)
+      .gte('completed_at', from).lt('completed_at', to)
       .order('id').range(a, b)),
     fetchAll((a, b) => supabase.from('cash_entries').select('id, mechanic_id, amount')
       .eq('workshop_id', wid).eq('kind', 'vale').is('cancelled_at', null)
@@ -84,10 +92,8 @@ export async function loadPayroll(wid: string, competence: string): Promise<Payr
   ]);
 
   const salary = new Map(((priv.data ?? []) as { mechanic_id: string; salary: number | null }[]).map(p => [p.mechanic_id, Number(p.salary ?? 0)]));
-  const labor = new Map<string, number>();
-  for (const o of (os.data ?? []) as { workshop_mechanic_id: string; labor_cost: number | null }[]) {
-    labor.set(o.workshop_mechanic_id, (labor.get(o.workshop_mechanic_id) ?? 0) + Number(o.labor_cost ?? 0));
-  }
+  const done = baseByMechanic(base);
+  const revenue = ((sales.data ?? []) as { price: number }[]).reduce((a, o) => a + Number(o.price), 0);
   const valeBy = new Map<string, number>();
   for (const v of (vales.data ?? []) as { mechanic_id: string | null; amount: number }[]) {
     if (v.mechanic_id) valeBy.set(v.mechanic_id, (valeBy.get(v.mechanic_id) ?? 0) + Number(v.amount));
@@ -100,16 +106,17 @@ export async function loadPayroll(wid: string, competence: string): Promise<Payr
   const closed = new Map(((cur.data ?? []) as PayrollItem[]).map(i => [i.mechanic_id, i]));
   const manualBy = new Map(((manual.data ?? []) as { id: string; mechanic_id: string; amount: number }[]).map(p => [p.mechanic_id, { id: p.id, amount: Number(p.amount) }]));
 
-  return ((mechs.data ?? []) as { id: string; name: string; commission_percent: number | null; active: boolean }[])
+  return ((mechs.data ?? []) as unknown as ({ id: string; name: string; active: boolean } & CommissionMech)[])
+    .map(m => ({ m, calc: commissionFor(m, done.get(m.id), revenue) }))
     // Inativo só entra se teve movimento no mês (comissão ou vale) ou já foi fechado
-    .filter(m => m.active || closed.has(m.id) || (labor.get(m.id) ?? 0) > 0 || (valeBy.get(m.id) ?? 0) > 0)
-    .map(m => {
-      const pct = Number(m.commission_percent ?? 0);
+    .filter(({ m, calc }) => m.active || closed.has(m.id) || calc.commission > 0 || (valeBy.get(m.id) ?? 0) > 0)
+    .map(({ m, calc }) => {
       return {
         mechanicId: m.id, name: m.name, active: m.active,
         base: salary.get(m.id) ?? 0,
-        commissionPct: pct,
-        commission: r2((labor.get(m.id) ?? 0) * pct / 100),
+        commissionPct: Number(m.commission_percent ?? 0),
+        commissionRule: commissionRule(m),
+        commission: calc.commission,
         vales: r2(valeBy.get(m.id) ?? 0),
         carryIn: r2(carry.get(m.id) ?? 0),
         closed: closed.get(m.id) ?? null,
