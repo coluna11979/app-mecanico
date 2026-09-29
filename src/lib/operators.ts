@@ -4,7 +4,9 @@ import { supabase } from '@/lib/supabase';
 /* ── Funções e permissões ─────────────────────────────────────────────────── */
 
 export type OperatorRole = 'gestor' | 'caixa' | 'atendente' | 'mecanico';
-export type OperatorPerm = 'dar_desconto' | 'cancelar_recebimento' | 'reabrir_caixa' | 'ver_financeiro';
+export type OperatorPerm =
+  | 'dar_desconto' | 'cancelar_recebimento' | 'reabrir_caixa'
+  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha';
 
 export type WorkshopOperator = {
   id: string; workshop_id: string; mechanic_id: string | null; name: string;
@@ -44,8 +46,19 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   dar_desconto:         { label: 'Dar desconto',          desc: 'Conceder desconto no recebimento' },
   cancelar_recebimento: { label: 'Cancelar recebimento',  desc: 'Estornar um recebimento já lançado' },
   reabrir_caixa:        { label: 'Reabrir caixa',         desc: 'Reabrir um caixa já fechado' },
-  ver_financeiro:       { label: 'Ver financeiro',        desc: 'Financeiro, contas a pagar, compras, fornecedores, estoque e custo das peças' },
+  ver_financeiro:       { label: 'Painel financeiro',     desc: 'Saúde do negócio: faturamento, lucro, resultado do mês' },
+  contas_pagar:         { label: 'Contas a pagar',        desc: 'Ver, lançar e dar baixa em contas' },
+  compras:              { label: 'Compras e fornecedores', desc: 'Notas de compra e cadastro de fornecedores' },
+  pecas_estoque:        { label: 'Peças e estoque',       desc: 'Catálogo, estoque e custo das peças' },
+  folha:                { label: 'Fechar folha',          desc: 'Salários, comissões, vales e faltas da equipe' },
 };
+
+/** Permissões agrupadas por módulo, para a tela de Acessos */
+export const PERM_GROUPS: { label: string; perms: OperatorPerm[] }[] = [
+  { label: 'Caixa',              perms: ['dar_desconto', 'cancelar_recebimento', 'reabrir_caixa'] },
+  { label: 'Financeiro',         perms: ['ver_financeiro', 'contas_pagar', 'folha'] },
+  { label: 'Compras e estoque',  perms: ['compras', 'pecas_estoque'] },
+];
 
 /** A rota está liberada para a função? */
 export function roleAllows(role: OperatorRole, path: string) {
@@ -55,7 +68,11 @@ export function roleAllows(role: OperatorRole, path: string) {
 
 /** Telas extras liberadas por permissão, além das da função */
 const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
-  ver_financeiro: ['/oficina/financeiro', '/oficina/contas-a-pagar', '/oficina/folha', '/oficina/pecas', '/oficina/compras', '/oficina/fornecedores'],
+  ver_financeiro: ['/oficina/financeiro'],
+  contas_pagar:   ['/oficina/contas-a-pagar'],
+  compras:        ['/oficina/compras', '/oficina/fornecedores'],
+  pecas_estoque:  ['/oficina/pecas'],
+  folha:          ['/oficina/folha'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */
@@ -99,10 +116,17 @@ type Store = {
   switchUser: () => Promise<void>;
   /** Desliga o modo balcão neste aparelho (só a partir de uma sessão de gestor ou ao sair da conta). */
   exitBalcao: () => Promise<void>;
+  /** Leva a tela de bloqueio para outra loja: o aparelho continua travado, agora no balcão dela. */
+  moveLockTo: (wid: string) => void;
 };
 
 export const useOperator = create<Store>((set, get) => ({
   wid: null, balcao: false, session: null,
+
+  moveLockTo: (wid) => {
+    const s = { balcao: true, session: null };
+    save(wid, s); set({ wid, ...s });
+  },
 
   bind: (wid) => {
     if (wid === get().wid) return;

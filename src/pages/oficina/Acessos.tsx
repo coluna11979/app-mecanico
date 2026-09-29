@@ -4,7 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { PERMS, ROLES, ROLE_ORDER, type OperatorPerm, type OperatorRole, type WorkshopOperator } from '@/lib/operators';
+import { PERM_GROUPS, PERMS, ROLES, ROLE_ORDER, type OperatorPerm, type OperatorRole, type WorkshopOperator } from '@/lib/operators';
 import type { WorkshopMechanic } from '@/types/database';
 
 /** Uma linha da lista: o dono ou um colaborador da Equipe, com o acesso (se já tiver). */
@@ -228,15 +228,22 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
         {isGestor ? (
           <div className="text-xs text-steel-500 rounded-xl bg-steel-50 px-3 py-2.5">A função Gestor já pode fazer tudo.</div>
         ) : (
-          <div className="grid sm:grid-cols-2 gap-2">
-            {(Object.keys(PERMS) as OperatorPerm[]).map(p => (
-              <label key={p} className="flex items-start gap-2 rounded-xl border border-steel-200 px-3 py-2 cursor-pointer">
-                <input type="checkbox" className="mt-1" checked={perms.includes(p)} onChange={() => togglePerm(p)} />
-                <div>
-                  <div className="text-sm font-semibold">{PERMS[p].label}</div>
-                  <div className="text-[11px] text-steel-500">{PERMS[p].desc}</div>
+          <div className="space-y-3">
+            {PERM_GROUPS.map(g => (
+              <div key={g.label}>
+                <div className="text-[11px] font-semibold text-steel-400 mb-1.5">{g.label}</div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {g.perms.map(p => (
+                    <label key={p} className={`flex items-start gap-2 rounded-xl border px-3 py-2 cursor-pointer transition ${perms.includes(p) ? 'border-brand-300 bg-brand-50/40' : 'border-steel-200'}`}>
+                      <input type="checkbox" className="mt-1" checked={perms.includes(p)} onChange={() => togglePerm(p)} />
+                      <div>
+                        <div className="text-sm font-semibold">{PERMS[p].label}</div>
+                        <div className="text-[11px] text-steel-500">{PERMS[p].desc}</div>
+                      </div>
+                    </label>
+                  ))}
                 </div>
-              </label>
+              </div>
             ))}
           </div>
         )}

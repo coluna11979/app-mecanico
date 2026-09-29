@@ -21,7 +21,7 @@ export default function Pecas() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const { balcao, session } = useOperator();
-  const allowed = canDo(session, balcao, 'ver_financeiro');
+  const allowed = canDo(session, balcao, 'pecas_estoque');
 
   const [parts, setParts]       = useState<WorkshopPart[] | null>(null);
   const [margin, setMargin]     = useState<number | null>(null);
@@ -78,7 +78,7 @@ export default function Pecas() {
         <div className="max-w-md mx-auto card text-center py-12">
           <div className="text-4xl mb-2">🔒</div>
           <h1 className="text-lg font-bold">Peças e preços restrito</h1>
-          <p className="text-sm text-steel-500 mt-1">Esta tela mostra o custo das peças. Peça ao gestor a permissão “Ver financeiro” em Acessos e funções.</p>
+          <p className="text-sm text-steel-500 mt-1">Esta tela mostra o custo das peças. Peça ao gestor a permissão “Peças e estoque” em Acessos e funções.</p>
         </div>
       </WorkshopLayout>
     );

@@ -14,7 +14,7 @@ export default function Fornecedores() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const { balcao, session } = useOperator();
-  const allowed = canDo(session, balcao, 'ver_financeiro');
+  const allowed = canDo(session, balcao, 'compras');
 
   const [list, setList]       = useState<Supplier[] | null>(null);
   const [totals, setTotals]   = useState<Totals>({});
@@ -129,7 +129,7 @@ export function Restricted() {
       <div className="max-w-md mx-auto card text-center py-12">
         <div className="text-4xl mb-2">🔒</div>
         <h1 className="text-lg font-bold">Área restrita</h1>
-        <p className="text-sm text-steel-500 mt-1">Compras, fornecedores e contas a pagar pedem a permissão “Ver financeiro”. Peça ao gestor em Acessos e funções.</p>
+        <p className="text-sm text-steel-500 mt-1">Fornecedores pedem a permissão “Compras e fornecedores”. Peça ao gestor em Acessos e funções.</p>
       </div>
     </WorkshopLayout>
   );

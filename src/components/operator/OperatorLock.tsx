@@ -7,8 +7,10 @@ import { ROLES, ROLE_ORDER, useOperator, type OperatorRole, type WorkshopOperato
 
 /** Tela de bloqueio do modo balcão: escolhe quem vai operar, a função e digita o PIN. */
 export default function OperatorLock() {
-  const { currentWorkshop, signOut } = useAuth();
-  const { login, exitBalcao } = useOperator();
+  const { currentWorkshop, workshops, setCurrentWorkshop, signOut } = useAuth();
+  const multiStore = workshops.length > 1;
+  const { login, exitBalcao, moveLockTo } = useOperator();
+  const [storeMenu, setStoreMenu] = useState(false);
   const nav = useNavigate();
   const wid = currentWorkshop?.id ?? null;
 
@@ -69,12 +71,48 @@ export default function OperatorLock() {
     <div className="fixed inset-0 z-[90] bg-steel-900 text-white overflow-y-auto">
       <div className="min-h-full flex flex-col items-center px-4 py-8">
         <Logo light />
-        <div className="mt-2 text-sm text-steel-400">{currentWorkshop?.business_name}</div>
+        {currentWorkshop && (
+          <div className="mt-5 flex flex-col items-center text-center">
+            <div className="inline-flex items-center gap-2 rounded-full bg-brand-500/15 border border-brand-500/40 px-4 py-1.5">
+              <span aria-hidden>📍</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-brand-300">Loja</span>
+              <span className="text-lg font-bold text-white">{currentWorkshop.business_name}</span>
+            </div>
+            {(currentWorkshop.neighborhood || currentWorkshop.address) && (
+              <div className="text-xs text-steel-400 mt-1.5">
+                {[currentWorkshop.neighborhood, currentWorkshop.city].filter(Boolean).join(' · ') || currentWorkshop.address}
+              </div>
+            )}
+            {multiStore && (
+              <button onClick={() => setStoreMenu(v => !v)} className="mt-2 text-xs font-semibold text-brand-300 hover:text-brand-200">
+                ⇄ Trocar loja
+              </button>
+            )}
+            {multiStore && storeMenu && (
+              <div className="mt-2 flex flex-wrap justify-center gap-2">
+                {workshops.filter(w => w.id !== currentWorkshop.id).map(w => (
+                  <button key={w.id}
+                    onClick={() => { moveLockTo(w.id); setCurrentWorkshop(w); setStoreMenu(false); setPicked(null); setOps(null); }}
+                    className="rounded-xl bg-steel-800 hover:bg-steel-700 px-4 py-2 text-left transition">
+                    <div className="text-sm font-semibold">📍 {w.business_name}</div>
+                    {(w.neighborhood || w.city) && <div className="text-[11px] text-steel-400">{[w.neighborhood, w.city].filter(Boolean).join(' · ')}</div>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {!picked ? (
           <div className="w-full max-w-2xl mt-10">
             <h1 className="text-2xl font-bold text-center">Quem vai usar o sistema?</h1>
             <p className="text-sm text-steel-400 text-center mt-1">Toque no seu nome e digite o seu PIN.</p>
+            {multiStore && (
+              <p className="text-xs text-steel-500 text-center mt-2">
+                Só aparece a equipe da <strong className="text-steel-300">{currentWorkshop?.business_name}</strong>.
+                Seu nome não está aqui? Toque em <strong className="text-steel-300">⇄ Trocar loja</strong> lá em cima.
+              </p>
+            )}
 
             {ops === null ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-8">

@@ -25,7 +25,7 @@ export default function OsDetail() {
   const { id } = useParams();
   const { currentWorkshop } = useAuth();
   const { balcao, session } = useOperator();
-  const showCost = canDo(session, balcao, 'ver_financeiro');
+  const showCost = canDo(session, balcao, 'ver_financeiro') || canDo(session, balcao, 'pecas_estoque');
   const [os, setOs]         = useState<OsRow | null>(null);
   const [items, setItems]   = useState<ServiceOrderItem[]>([]);
   const [loading, setLoading] = useState(true);

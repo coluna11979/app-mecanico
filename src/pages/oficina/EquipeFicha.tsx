@@ -6,9 +6,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { resizeImage } from '@/lib/imageResize';
 import AbsencePanel from '@/components/team/AbsencePanel';
+import ScheduleEditor from '@/components/team/ScheduleEditor';
 import { fmtBRL, fmtDur, moneyInput, osNumber, parseMoney, workedMinutes } from '@/components/os/osHelpers';
 import {
-  DOCUMENT_KINDS, EMPLOYMENT_TYPES, ROLE_TITLES, TEAM_STATUS, expiryLabel, tenure,
+  DOCUMENT_KINDS, EMPLOYMENT_TYPES, OFFICE_ROLES, QUALIFICATIONS, SHOP_ROLES, TEAM_STATUS, expiryLabel, roleArea, scheduleSummary, tenure,
 } from '@/lib/team';
 import type {
   EmploymentType, MechanicCertification, MechanicDocument, MechanicPrivate, TeamStatus, WorkshopMechanic,
@@ -24,10 +25,6 @@ const TABS: { key: Tab; label: string; needsId?: boolean }[] = [
   { key: 'pagamento',     label: '💳 Pagamento' },
   { key: 'desempenho',    label: '📈 Desempenho', needsId: true },
 ];
-
-const SKILLS = ['Motor', 'Freios', 'Suspensão', 'Elétrica', 'Câmbio', 'Ar-condicionado', 'Injeção eletrônica',
-  'Diagnóstico', 'Transmissão', 'Embreagem', 'Funilaria', 'Alinhamento', 'Balanceamento', 'Diesel', 'Geral'];
-const SPECIALTIES = ['Motor', 'Elétrica', 'Freios', 'Suspensão', 'Câmbio', 'Funilaria', 'Ar-condicionado', 'Geral'];
 
 const EMPTY = {
   // públicos (workshop_mechanics)
@@ -227,6 +224,7 @@ export default function EquipeFicha() {
             <div className="flex items-center gap-2 mt-1">
               <span className={`badge text-[10px] ${st.badge}`}>{st.label}</span>
               {f.hired_at && <span className="text-xs text-steel-400">na oficina há {tenure(f.hired_at, f.status === 'terminated' ? f.terminated_at : null)}</span>}
+              {scheduleSummary(f.work_schedule) && <span className="text-xs text-steel-400">· 🕒 {scheduleSummary(f.work_schedule)}</span>}
             </div>
           </div>
           <div className="flex gap-2 items-center">
@@ -279,7 +277,12 @@ export default function EquipeFicha() {
               <Field label="Função">
                 <select className="input" value={f.role_title} onChange={set('role_title')}>
                   <option value="">— Selecionar —</option>
-                  {ROLE_TITLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  <optgroup label="Oficina">{SHOP_ROLES.map(r => <option key={r} value={r}>{r}</option>)}</optgroup>
+                  <optgroup label="Balcão e escritório">{OFFICE_ROLES.map(r => <option key={r} value={r}>{r}</option>)}</optgroup>
+                  <option value="Outro">Outro</option>
+                  {f.role_title && !SHOP_ROLES.includes(f.role_title) && !OFFICE_ROLES.includes(f.role_title) && f.role_title !== 'Outro' && (
+                    <option value={f.role_title}>{f.role_title}</option>
+                  )}
                 </select>
               </Field>
               <Field label="Vínculo">
@@ -289,7 +292,6 @@ export default function EquipeFicha() {
                 </select>
               </Field>
               <Field label="Data de admissão"><input className="input" type="date" value={f.hired_at} onChange={set('hired_at')} /></Field>
-              <Field label="Horário de trabalho"><input className="input" value={f.work_schedule} onChange={set('work_schedule')} placeholder="Ex.: seg–sex 8h–18h, sáb 8h–12h" /></Field>
               <Field label="Salário fixo (R$)" sensitive>
                 <input className="input" inputMode="decimal" value={f.salary} onChange={set('salary')} placeholder="0,00"
                   onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) setF(s => ({ ...s, salary: moneyInput(v) })); }} />
@@ -315,6 +317,10 @@ export default function EquipeFicha() {
               {f.status === 'terminated' && (
                 <Field label="Data de desligamento"><input className="input" type="date" value={f.terminated_at} onChange={set('terminated_at')} /></Field>
               )}
+              <Field label="Jornada de trabalho" className="sm:col-span-2">
+                <ScheduleEditor value={f.work_schedule} isClt={f.employment_type === 'clt'}
+                  onChange={v => { setF(s => ({ ...s, work_schedule: v })); setDirty(true); }} />
+              </Field>
               <Field label="Observações" className="sm:col-span-2"><textarea className="input" rows={3} value={f.notes} onChange={set('notes')} /></Field>
             </div>
           )}
@@ -322,27 +328,9 @@ export default function EquipeFicha() {
           {tab === 'qualificacoes' && (
             <div className="space-y-6">
               <div className="grid sm:grid-cols-2 gap-4">
-                <Field label="Especialidade principal">
-                  <select className="input" value={f.specialty} onChange={set('specialty')}>
-                    <option value="">— Selecionar —</option>
-                    {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </Field>
-                <div />
-                <Field label="Habilidades" className="sm:col-span-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {SKILLS.map(s => {
-                      const on = f.skills.includes(s);
-                      return (
-                        <button type="button" key={s}
-                          onClick={() => { setF(x => ({ ...x, skills: on ? x.skills.filter(y => y !== s) : [...x.skills, s] })); setDirty(true); }}
-                          className={`text-xs px-3 py-1.5 rounded-full border transition ${on ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200'}`}>
-                          {on ? '✓ ' : ''}{s}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Field>
+                <Qualifications role={f.role_title} specialty={f.specialty} skills={f.skills}
+                  onSpecialty={v => { setF(x => ({ ...x, specialty: v })); setDirty(true); }}
+                  onSkills={v => { setF(x => ({ ...x, skills: v })); setDirty(true); }} />
                 <Field label="CNH — categoria"><input className="input uppercase" value={f.cnh_category} onChange={set('cnh_category')} placeholder="Ex.: AB" /></Field>
                 <Field label="CNH — validade">
                   <input className="input" type="date" value={f.cnh_expires_at} onChange={set('cnh_expires_at')} />
@@ -385,6 +373,65 @@ function Field({ label, children, className = '', sensitive = false }: {
       <label className="label">{label}{sensitive && <span className="ml-1 text-steel-400" title="Dado sensível — só o dono vê">🔒</span>}</label>
       {children}
     </div>
+  );
+}
+
+/** Especialidade e habilidades conforme a função (oficina x balcão/escritório) */
+function Qualifications({ role, specialty, skills, onSpecialty, onSkills }: {
+  role: string; specialty: string; skills: string[]; onSpecialty: (v: string) => void; onSkills: (v: string[]) => void;
+}) {
+  const area = roleArea(role);
+  const groups = area === 'both' ? (['shop', 'office'] as const) : [area];
+  const known = new Set(groups.flatMap(g => QUALIFICATIONS[g].skills));
+  // habilidades marcadas antes (ex.: de outra função) continuam visíveis para poder desmarcar
+  const extra = skills.filter(s => !known.has(s));
+  const knownSpecs = groups.flatMap(g => QUALIFICATIONS[g].specialties);
+  const toggle = (s: string) => onSkills(skills.includes(s) ? skills.filter(y => y !== s) : [...skills, s]);
+  const chip = (s: string) => {
+    const on = skills.includes(s);
+    return (
+      <button type="button" key={s} onClick={() => toggle(s)}
+        className={`text-xs px-3 py-1.5 rounded-full border transition ${on ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'}`}>
+        {on ? '✓ ' : ''}{s}
+      </button>
+    );
+  };
+
+  return (
+    <>
+      <Field label="Especialidade principal">
+        <select className="input" value={specialty} onChange={e => onSpecialty(e.target.value)}>
+          <option value="">— Selecionar —</option>
+          {groups.length > 1
+            ? groups.map(g => (
+                <optgroup key={g} label={QUALIFICATIONS[g].label}>
+                  {QUALIFICATIONS[g].specialties.map(s => <option key={`${g}-${s}`} value={s}>{s}</option>)}
+                </optgroup>
+              ))
+            : QUALIFICATIONS[groups[0]].specialties.map(s => <option key={s} value={s}>{s}</option>)}
+          {specialty && !knownSpecs.includes(specialty) && <option value={specialty}>{specialty}</option>}
+        </select>
+      </Field>
+      <div className="self-end text-xs text-steel-500 pb-2">
+        {role ? <>Opções para <strong>{role}</strong>.</> : <>Escolha a função em <strong>Contratação</strong> para ver só as opções dela.</>}
+      </div>
+      <Field label="Habilidades" className="sm:col-span-2">
+        <div className="space-y-3">
+          {groups.map(g => (
+            <div key={g}>
+              {groups.length > 1 && <div className="text-[11px] font-semibold text-steel-400 mb-1.5">{QUALIFICATIONS[g].label}</div>}
+              <div className="flex flex-wrap gap-1.5">{QUALIFICATIONS[g].skills.map(chip)}</div>
+            </div>
+          ))}
+          {extra.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold text-steel-400 mb-1.5">Marcadas antes</div>
+              <div className="flex flex-wrap gap-1.5">{extra.map(chip)}</div>
+            </div>
+          )}
+        </div>
+      </Field>
+    </>
   );
 }
 
