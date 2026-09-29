@@ -22,7 +22,7 @@ export type Payable = {
   paid_at: string | null; paid_from: 'banco' | 'caixa' | null; cash_entry_id: string | null;
   created_at: string; cancelled_at: string | null;
   payee?: string | null; mechanic_id?: string | null; competence?: string | null;
-  document?: string | null; barcode?: string | null; notes?: string | null;
+  document?: string | null; barcode?: string | null; notes?: string | null; series_id?: string | null;
 };
 
 export type StockMovement = {

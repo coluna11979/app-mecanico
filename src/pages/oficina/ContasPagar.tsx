@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL } from '@/components/os/osHelpers';
 import {
-  PAYABLE_GROUPS, addMonthsISO, daysUntil, fmtDate, groupOf, todayISO, type Payable, type PayableGroupKey,
+  PAYABLE_GROUPS, addDaysISO, addMonthsISO, daysUntil, fmtDate, groupOf, todayISO, type Payable, type PayableGroupKey,
 } from '@/lib/purchasing';
 import { Restricted } from './Fornecedores';
 import NewPayableModal from '@/components/payables/NewPayableModal';
@@ -15,6 +15,31 @@ import { fmtBarcode, fmtCompetence } from '@/lib/payableForms';
 
 type Row = Payable & { supplier: { name: string } | null; mechanic: { name: string } | null };
 type View = 'abertas' | 'pagas';
+type PeriodKey = 'all' | 'month' | 'next' | '30d' | 'last' | 'custom';
+
+const PERIODS: { key: PeriodKey; label: string }[] = [
+  { key: 'all',    label: 'Todo período' },
+  { key: 'month',  label: 'Este mês' },
+  { key: 'next',   label: 'Próximo mês' },
+  { key: '30d',    label: 'Próximos 30 dias' },
+  { key: 'last',   label: 'Mês passado' },
+  { key: 'custom', label: 'Personalizado' },
+];
+
+/** Intervalo "AAAA-MM-DD" (inclusivo) do período; null = sem filtro */
+function periodRange(p: PeriodKey, custom: { from: string; to: string }): { from: string; to: string } | null {
+  const today = todayISO();
+  const first = `${today.slice(0, 7)}-01`;
+  const lastOf = (d: string) => addDaysISO(addMonthsISO(`${d.slice(0, 7)}-01`, 1), -1);
+  switch (p) {
+    case 'month': return { from: first, to: lastOf(first) };
+    case 'next':  { const f = addMonthsISO(first, 1); return { from: f, to: lastOf(f) }; }
+    case '30d':   return { from: today, to: addDaysISO(today, 30) };
+    case 'last':  { const f = addMonthsISO(first, -1); return { from: f, to: lastOf(f) }; }
+    case 'custom': return custom.from <= custom.to ? custom : { from: custom.to, to: custom.from };
+    default: return null;
+  }
+}
 
 export default function ContasPagar() {
   const { currentWorkshop } = useAuth();
@@ -26,13 +51,16 @@ export default function ContasPagar() {
   const [list, setList]       = useState<Row[] | null>(null);
   const [view, setView]       = useState<View>('abertas');
   const [group, setGroup]     = useState<PayableGroupKey | 'all'>('all');
+  const [period, setPeriod]   = useState<PeriodKey>('all');
+  const [custom, setCustom]   = useState({ from: todayISO(), to: addMonthsISO(todayISO(), 1) });
+  const [editing, setEditing] = useState<Row | null>(null);
   const [paying, setPaying]   = useState<Row | null>(null);
   const [creating, setCreating] = useState(false);
   const [hasOpenRegister, setHasOpenRegister] = useState(false);
 
   const load = useCallback(async () => {
     if (!wid) return;
-    const since = addMonthsISO(todayISO(), -3);
+    const since = addMonthsISO(todayISO(), -12);
     const [open, paid, reg] = await Promise.all([
       supabase.from('payables').select('*, supplier:suppliers(name), mechanic:workshop_mechanics(name)').eq('workshop_id', wid)
         .is('cancelled_at', null).is('paid_at', null).order('due_date').limit(1000),
@@ -62,9 +90,12 @@ export default function ContasPagar() {
   const monthTotal = byGroup.reduce((a, g) => a + g.month, 0);
 
   const k = useMemo(() => {
+    const range = periodRange(period, custom);
+    const inRange = (d: string) => !range || (d >= range.from && d <= range.to);
     const scoped = (list ?? []).filter(p => group === 'all' || groupOf(p.category).key === group);
-    const open = scoped.filter(p => !p.paid_at);
-    const paid = scoped.filter(p => p.paid_at);
+    // Em aberto pelo vencimento; pagas pela data do pagamento
+    const open = scoped.filter(p => !p.paid_at && inRange(p.due_date));
+    const paid = scoped.filter(p => p.paid_at && inRange(p.paid_at));
     const sum = (xs: Row[]) => xs.reduce((a, p) => a + Number(p.amount), 0);
     const overdue = open.filter(p => daysUntil(p.due_date) < 0);
     const today = open.filter(p => daysUntil(p.due_date) === 0);
@@ -76,7 +107,7 @@ export default function ContasPagar() {
       overdueTotal: sum(overdue), weekTotal: sum([...today, ...week]), openTotal: sum(open),
       paidMonth: sum(paid.filter(p => p.paid_at!.startsWith(month))),
     };
-  }, [list, group]);
+  }, [list, group, period, custom]);
 
   async function remove(p: Row) {
     if (!confirm(`Excluir a conta "${p.description}" de ${fmtBRL(p.amount)}?`)) return;
@@ -154,30 +185,46 @@ export default function ContasPagar() {
           ))}
         </div>
 
-        <div className="flex gap-2">
-          {([['abertas', `Em aberto (${k.open.length})`], ['pagas', 'Pagas (últimos 3 meses)']] as [View, string][]).map(([v, l]) => (
-            <button key={v} onClick={() => setView(v)}
-              className={`text-sm font-semibold px-4 py-2 rounded-full border transition ${view === v ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
-              {l}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-2">
+            {([['abertas', `Em aberto (${k.open.length})`], ['pagas', `Pagas (${k.paid.length})`]] as [View, string][]).map(([v, l]) => (
+              <button key={v} onClick={() => setView(v)}
+                className={`text-sm font-semibold px-4 py-2 rounded-full border transition ${view === v ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {/* Período: vencimento (em aberto) ou pagamento (pagas) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-steel-500">{view === 'abertas' ? 'Vencimento:' : 'Pagamento:'}</span>
+            <select className="input !py-1.5 !w-auto text-sm" value={period} onChange={e => setPeriod(e.target.value as PeriodKey)}>
+              {PERIODS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+            {period === 'custom' && (
+              <>
+                <input type="date" className="input !py-1.5 !w-auto text-sm" value={custom.from} onChange={e => setCustom(c => ({ ...c, from: e.target.value || c.from }))} />
+                <span className="text-steel-400 text-sm">a</span>
+                <input type="date" className="input !py-1.5 !w-auto text-sm" value={custom.to} onChange={e => setCustom(c => ({ ...c, to: e.target.value || c.to }))} />
+              </>
+            )}
+          </div>
         </div>
 
         {list === null ? (
           <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
         ) : view === 'abertas' ? (
           k.open.length === 0 ? (
-            <div className="card text-center py-10 text-sm text-steel-500">Nenhuma conta em aberto. 👏</div>
+            <div className="card text-center py-10 text-sm text-steel-500">Nenhuma conta em aberto no período. 👏</div>
           ) : (
             <div className="space-y-4">
-              <Group title="⚠️ Vencidas" rows={k.overdue} onPay={setPaying} onRemove={remove} tone="bad" />
-              <Group title="📅 Vencem hoje" rows={k.today} onPay={setPaying} onRemove={remove} tone="warn" />
-              <Group title="Próximos 7 dias" rows={k.week} onPay={setPaying} onRemove={remove} />
-              <Group title="Depois" rows={k.later} onPay={setPaying} onRemove={remove} />
+              <Group onEdit={setEditing} title="⚠️ Vencidas" rows={k.overdue} onPay={setPaying} onRemove={remove} tone="bad" />
+              <Group onEdit={setEditing} title="📅 Vencem hoje" rows={k.today} onPay={setPaying} onRemove={remove} tone="warn" />
+              <Group onEdit={setEditing} title="Próximos 7 dias" rows={k.week} onPay={setPaying} onRemove={remove} />
+              <Group onEdit={setEditing} title="Depois" rows={k.later} onPay={setPaying} onRemove={remove} />
             </div>
           )
         ) : k.paid.length === 0 ? (
-          <div className="card text-center py-10 text-sm text-steel-500">Nenhuma conta paga nos últimos 3 meses.</div>
+          <div className="card text-center py-10 text-sm text-steel-500">Nenhuma conta paga no período.</div>
         ) : (
           <div className="card !p-0 overflow-hidden">
             <ul className="divide-y divide-steel-100">
@@ -205,6 +252,9 @@ export default function ContasPagar() {
       )}
       {creating && wid && (
         <NewPayableModal wid={wid} onClose={() => setCreating(false)} onDone={() => { setCreating(false); load(); }} />
+      )}
+      {editing && wid && (
+        <NewPayableModal wid={wid} editing={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} />
       )}
     </WorkshopLayout>
   );
@@ -248,8 +298,8 @@ function CategoryBadge({ category }: { category: string }) {
   return <span className={`badge text-[10px] mr-1 ${g.badge}`}>{g.icon} {category}</span>;
 }
 
-function Group({ title, rows, onPay, onRemove, tone }: {
-  title: string; rows: Row[]; onPay: (p: Row) => void; onRemove: (p: Row) => void; tone?: 'bad' | 'warn';
+function Group({ title, rows, onPay, onRemove, onEdit, tone }: {
+  title: string; rows: Row[]; onPay: (p: Row) => void; onRemove: (p: Row) => void; onEdit: (p: Row) => void; tone?: 'bad' | 'warn';
 }) {
   if (!rows.length) return null;
   const total = rows.reduce((a, p) => a + Number(p.amount), 0);
@@ -275,8 +325,15 @@ function Group({ title, rows, onPay, onRemove, tone }: {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-sm font-bold mr-1">{fmtBRL(p.amount)}</span>
-                {!p.invoice_id && (
-                  <button className="h-8 w-8 rounded-lg grid place-items-center text-xs bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600" title="Excluir" onClick={() => onRemove(p)}>✕</button>
+                {!p.invoice_id ? (
+                  <>
+                    <button className="h-8 w-8 rounded-lg grid place-items-center text-xs bg-steel-100 hover:bg-steel-200 text-steel-600" title="Editar" onClick={() => onEdit(p)}>✏️</button>
+                    <button className="h-8 w-8 rounded-lg grid place-items-center text-xs bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600" title="Excluir" onClick={() => onRemove(p)}>✕</button>
+                  </>
+                ) : (
+                  <Link to={`/oficina/compras?nota=${p.invoice_id}`} className="h-8 px-2 rounded-lg grid place-items-center text-[11px] font-semibold bg-steel-100 hover:bg-steel-200 text-steel-600" title="Parcela de nota de compra">
+                    ver nota
+                  </Link>
                 )}
                 <button className="btn-primary !py-1.5 text-sm" onClick={() => onPay(p)}>Pagar</button>
               </div>

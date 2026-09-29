@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
-import { PAYABLE_GROUPS, addMonthsISO, fmtDate, todayISO, type PayableGroupKey, type Supplier } from '@/lib/purchasing';
+import { PAYABLE_CATEGORIES, PAYABLE_GROUPS, addMonthsISO, fmtDate, groupOf, todayISO, type Payable, type PayableGroupKey, type Supplier } from '@/lib/purchasing';
 import { addMonthsCompetence, autoDescription, fmtCompetence, formOf } from '@/lib/payableForms';
 import SupplierPicker from '@/components/parts/SupplierPicker';
 
@@ -11,25 +11,44 @@ type Employee = { id: string; name: string };
 
 const REPEAT_OPTIONS = [1, 2, 3, 6, 10, 12, 24];
 
-/** Lançamento de conta a pagar com os campos certos para cada categoria */
-export default function NewPayableModal({ wid, onClose, onDone }: { wid: string; onClose: () => void; onDone: () => void }) {
-  const [group, setGroup]         = useState<PayableGroupKey>('fixas');
-  const [category, setCategory]   = useState('Aluguel');
-  const [custom, setCustom]       = useState('');
-  const [supplier, setSupplier]   = useState<Supplier | null>(null);
-  const [employeeId, setEmployeeId] = useState('');
-  const [payeeText, setPayeeText] = useState('');
-  const [competence, setCompetence] = useState(todayISO().slice(0, 7));
-  const [document, setDocument]   = useState('');
-  const [barcode, setBarcode]     = useState('');
-  const [amount, setAmount]       = useState('');
-  const [due, setDue]             = useState(todayISO());
-  const [months, setMonths]       = useState(12);
-  const [description, setDescription] = useState('');
-  const [descTouched, setDescTouched] = useState(false);
-  const [notes, setNotes]         = useState('');
+/** Conta existente aberta para edição */
+export type EditablePayable = Payable & { supplier?: { name: string } | null; mechanic?: { name: string } | null };
+type NextInSeries = { id: string; due_date: string };
+
+/** Lançamento (ou edição) de conta a pagar com os campos certos para cada categoria */
+export default function NewPayableModal({ wid, editing, onClose, onDone }: {
+  wid: string; editing?: EditablePayable | null; onClose: () => void; onDone: () => void;
+}) {
+  const e0 = editing ?? null;
+  const known = !!e0 && PAYABLE_CATEGORIES.includes(e0.category);
+  const [group, setGroup]         = useState<PayableGroupKey>(e0 ? groupOf(e0.category).key : 'fixas');
+  const [category, setCategory]   = useState(e0 ? (known ? e0.category : '__outra') : 'Aluguel');
+  const [custom, setCustom]       = useState(e0 && !known ? e0.category : '');
+  const [supplier, setSupplier]   = useState<Supplier | null>(e0?.supplier_id ? ({ id: e0.supplier_id, name: e0.supplier?.name ?? '' } as Supplier) : null);
+  const [employeeId, setEmployeeId] = useState(e0?.mechanic_id ?? '');
+  const [payeeText, setPayeeText] = useState(e0?.payee ?? '');
+  const [competence, setCompetence] = useState(e0?.competence ?? todayISO().slice(0, 7));
+  const [document, setDocument]   = useState(e0?.document ?? '');
+  const [barcode, setBarcode]     = useState(e0?.barcode ?? '');
+  const [amount, setAmount]       = useState(e0 ? moneyInput(Number(e0.amount)) : '');
+  const [due, setDue]             = useState(e0?.due_date ?? todayISO());
+  const [months, setMonths]       = useState(e0 ? 1 : 12);
+  const [description, setDescription] = useState(e0?.description ?? '');
+  const [descTouched, setDescTouched] = useState(!!e0);
+  const [notes, setNotes]         = useState(e0?.notes ?? '');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [busy, setBusy]           = useState(false);
+  const [next, setNext]           = useState<NextInSeries[]>([]);
+  const [applyNext, setApplyNext] = useState(false);
+  const firstRun = useRef(true);
+
+  // Edição de conta em série: próximas parcelas em aberto
+  useEffect(() => {
+    if (!e0?.series_id) return;
+    supabase.from('payables').select('id, due_date').eq('series_id', e0.series_id)
+      .gt('due_date', e0.due_date).is('paid_at', null).is('cancelled_at', null).order('due_date')
+      .then(({ data }) => setNext((data as NextInSeries[]) ?? []));
+  }, [e0?.series_id, e0?.due_date]);
 
   useEffect(() => {
     supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', wid).eq('active', true).order('name')
@@ -41,9 +60,10 @@ export default function NewPayableModal({ wid, onClose, onDone }: { wid: string;
   const form = formOf(isCustom ? '' : category);
   const groupInfo = PAYABLE_GROUPS.find(g => g.key === group)!;
 
-  // Troca de categoria: repetição sugerida e campos limpos
+  // Troca de categoria: repetição sugerida e campos limpos (não na abertura da edição)
   useEffect(() => {
-    setMonths(form.repeat ?? 1);
+    if (firstRun.current) { firstRun.current = false; if (e0) return; }
+    if (!e0) setMonths(form.repeat ?? 1);
     setSupplier(null); setEmployeeId(''); setPayeeText(''); setDocument(''); setBarcode('');
     setDescTouched(false);
   }, [category]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -67,29 +87,61 @@ export default function NewPayableModal({ wid, onClose, onDone }: { wid: string;
     setCategory(PAYABLE_GROUPS.find(g => g.key === k)!.categories[0]);
   }
 
+  const fields = (comp: string | null, desc: string) => ({
+    category: catName,
+    description: desc,
+    amount: value,
+    supplier_id: form.payee === 'supplier' ? supplier?.id ?? null : null,
+    mechanic_id: form.payee === 'employee' ? employeeId || null : null,
+    payee: form.payee === 'text' ? payeeText.trim() || null : null,
+    competence: comp,
+    document: document.trim() || null,
+    barcode: barcode.replace(/\D/g, '') || null,
+    notes: notes.trim() || null,
+  });
+  const descFor = (comp: string | null) => (descTouched || !form.competence ? description.trim() : autoDescription(catName, payeeName, comp));
+
+  async function saveEdit() {
+    if (!e0) return;
+    setBusy(true);
+    try {
+      const comp = form.competence ? competence : null;
+      const { error } = await supabase.from('payables').update({ ...fields(comp, descFor(comp)), due_date: due }).eq('id', e0.id);
+      if (error) throw error;
+      if (applyNext) {
+        // Próximas da série: mesmo dia de vencimento e competência avançando mês a mês
+        for (const [i, n] of next.entries()) {
+          const c = comp ? addMonthsCompetence(comp, i + 1) : null;
+          const { error: e2 } = await supabase.from('payables')
+            .update({ ...fields(c, descFor(c)), due_date: addMonthsISO(due, i + 1) }).eq('id', n.id);
+          if (e2) throw e2;
+        }
+      }
+      toast.success(applyNext && next.length ? `Conta e ${next.length} próxima${next.length === 1 ? '' : 's'} atualizada${next.length === 1 ? '' : 's'} ✓` : 'Conta atualizada ✓');
+      onDone();
+    } catch (err: unknown) {
+      toast.error('Não foi possível salvar: ' + ((err as { message?: string })?.message ?? 'erro'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (isCustom && !custom.trim()) return toast.error('Informe o nome da categoria');
     if (form.payeeRequired && !payeeName) return toast.error(`Informe: ${form.payeeLabel}`);
     if (!valid) return toast.error('Informe o valor');
     if (!description.trim()) return toast.error('Informe a descrição');
+    if (e0) return saveEdit();
+
+    const seriesId = months > 1 ? crypto.randomUUID() : null;
 
     const rows = plan.map((p, i) => ({
       workshop_id: wid,
-      category: catName,
-      description: descTouched || !form.competence
-        ? description.trim()
-        : autoDescription(catName, payeeName, p.competence),
-      amount: value,
+      ...fields(p.competence, descFor(p.competence)),
       due_date: p.due_date,
       installment: months > 1 ? `${i + 1}/${months}` : null,
-      supplier_id: form.payee === 'supplier' ? supplier?.id ?? null : null,
-      mechanic_id: form.payee === 'employee' ? employeeId || null : null,
-      payee: form.payee === 'text' ? payeeText.trim() || null : null,
-      competence: p.competence,
-      document: document.trim() || null,
-      barcode: barcode.replace(/\D/g, '') || null,
-      notes: notes.trim() || null,
+      series_id: seriesId,
     }));
     setBusy(true);
     const { error } = await supabase.from('payables').insert(rows);
@@ -106,8 +158,10 @@ export default function NewPayableModal({ wid, onClose, onDone }: { wid: string;
         {/* Cabeçalho */}
         <div className="px-6 pt-5 pb-4 border-b border-steel-100 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold">Nova conta a pagar</h2>
-            <p className="text-sm text-steel-500">Escolha o tipo de despesa: os campos se ajustam à categoria.</p>
+            <h2 className="text-xl font-bold">{e0 ? 'Editar conta' : 'Nova conta a pagar'}</h2>
+            <p className="text-sm text-steel-500">
+              {e0 ? <>{e0.installment ? `Parcela ${e0.installment} · ` : ''}altere o que precisar e salve.</> : 'Escolha o tipo de despesa: os campos se ajustam à categoria.'}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="h-9 w-9 rounded-lg grid place-items-center text-steel-500 hover:bg-steel-100 shrink-0">✕</button>
         </div>
@@ -217,12 +271,28 @@ export default function NewPayableModal({ wid, onClose, onDone }: { wid: string;
                 <label className="label">{months > 1 ? '1º vencimento' : 'Vencimento'}</label>
                 <input type="date" className="input" value={due} onChange={e => setDue(e.target.value || todayISO())} />
               </div>
-              <div>
-                <label className="label">Recorrência</label>
-                <select className="input" value={months} onChange={e => setMonths(Number(e.target.value))}>
-                  {REPEAT_OPTIONS.map(n => <option key={n} value={n}>{n === 1 ? 'Pagamento único' : `Mensal · ${n} meses`}</option>)}
-                </select>
-              </div>
+              {e0 ? (
+                <div>
+                  <label className="label">Parcela</label>
+                  <div className="input !bg-steel-50 text-steel-600">{e0.installment ?? 'Pagamento único'}</div>
+                </div>
+              ) : (
+                <div>
+                  <label className="label">Recorrência</label>
+                  <select className="input" value={months} onChange={e => setMonths(Number(e.target.value))}>
+                    {REPEAT_OPTIONS.map(n => <option key={n} value={n}>{n === 1 ? 'Pagamento único' : `Mensal · ${n} meses`}</option>)}
+                  </select>
+                </div>
+              )}
+              {e0 && next.length > 0 && (
+                <label className="sm:col-span-3 flex items-start gap-2 rounded-xl border border-brand-200 bg-brand-50 p-3 cursor-pointer">
+                  <input type="checkbox" className="mt-1" checked={applyNext} onChange={e => setApplyNext(e.target.checked)} />
+                  <span className="text-sm">
+                    <strong>Aplicar também às {next.length} próxima{next.length === 1 ? '' : 's'} parcela{next.length === 1 ? '' : 's'} em aberto desta série</strong>
+                    <span className="block text-xs text-steel-600">Mesmo valor e dados; vencimento no mesmo dia dos meses seguintes ({fmtDate(addMonthsISO(due, 1))} a {fmtDate(addMonthsISO(due, next.length))}).</span>
+                  </span>
+                </label>
+              )}
               <div className="sm:col-span-3">
                 <label className="label">Observação</label>
                 <input className="input" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)} />
@@ -248,7 +318,7 @@ export default function NewPayableModal({ wid, onClose, onDone }: { wid: string;
           <div className="flex gap-2 shrink-0">
             <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? 'Lançando…' : months > 1 ? `Lançar ${months} contas` : 'Lançar conta'}
+              {busy ? 'Salvando…' : e0 ? (applyNext && next.length ? `Salvar esta e as ${next.length} próximas` : 'Salvar alterações') : months > 1 ? `Lançar ${months} contas` : 'Lançar conta'}
             </button>
           </div>
         </div>
