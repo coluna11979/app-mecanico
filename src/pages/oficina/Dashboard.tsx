@@ -328,9 +328,10 @@ export default function WorkshopDashboard() {
   }, [form.title, modal, currentWorkshop?.state]);
 
   const estimated = Number(form.price_per_hour) * Number(form.max_hours);
-  const filteredMechanics = mechanics.filter(m =>
-    m.name.toLowerCase().includes(mechSearch.toLowerCase())
-  );
+  // Preferidos no topo; dentro de cada grupo mantém a ordem por nota do fetch
+  const filteredMechanics = mechanics
+    .filter(m => m.name.toLowerCase().includes(mechSearch.toLowerCase()))
+    .sort((a, b) => Number(favorites.has(b.id)) - Number(favorites.has(a.id)));
 
   return (
     <WorkshopLayout>
