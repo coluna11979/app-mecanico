@@ -88,6 +88,35 @@ export default function WorkshopCheckupRun() {
     if (error) { setItems(prev); toast.error('Não salvou — verifique a conexão'); }
   }
 
+  /** Item fora do checklist padrão, só neste check-up (item_key começa com "extra_") */
+  async function addItem(system: string, label: string) {
+    if (!checkup) return false;
+    const row = {
+      checkup_id: checkup.id,
+      system,
+      item_key:   `extra_${Date.now().toString(36)}`,
+      label,
+      position:   items.reduce((m, i) => Math.max(m, i.position), 0) + 1,
+    };
+    if (demo) {
+      setItems(list => [...list, { ...row, id: row.item_key, status: null, measurement: null, note: null, photo_path: null }]);
+      return true;
+    }
+    const { data, error } = await supabase.from('checkup_items').insert(row).select('*').single();
+    if (error) { toast.error('Não foi possível incluir o item'); return false; }
+    setItems(list => [...list, data as CheckupItem]);
+    return true;
+  }
+
+  async function removeItem(item: CheckupItem) {
+    if (!confirm(`Remover “${item.label}” deste check-up?`)) return;
+    const prev = items;
+    setItems(list => list.filter(i => i.id !== item.id));
+    if (demo) return;
+    const { error } = await supabase.from('checkup_items').delete().eq('id', item.id);
+    if (error) { setItems(prev); toast.error('Não foi possível remover'); }
+  }
+
   async function markSystemOk(system: string) {
     const ids = items.filter(i => i.system === system && !i.status).map(i => i.id);
     if (!ids.length) return;
@@ -249,8 +278,10 @@ export default function WorkshopCheckupRun() {
                       )}
                       {list.map(item => (
                         <ItemRow key={item.id} item={item} checkupId={checkup.id} workshopId={checkup.workshop_id}
-                          demo={demo} onPatch={p => patchItem(item, p)} />
+                          demo={demo} onPatch={p => patchItem(item, p)}
+                          onRemove={item.item_key.startsWith('extra_') ? () => removeItem(item) : undefined} />
                       ))}
+                      <AddItem system={system} onAdd={label => addItem(system, label)} />
                     </div>
                   )}
                 </div>
@@ -277,9 +308,48 @@ export default function WorkshopCheckupRun() {
   );
 }
 
+/* ─── Incluir item fora do checklist ───────────────────────── */
+function AddItem({ system, onAdd }: { system: string; onAdd: (label: string) => Promise<boolean> }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const l = label.trim();
+    if (!l) return;
+    setSaving(true);
+    const ok = await onAdd(l);
+    setSaving(false);
+    if (ok) { setLabel(''); setOpen(false); }
+  }
+
+  if (!open) {
+    return (
+      <div className="px-5 py-2.5">
+        <button onClick={() => setOpen(true)} className="text-xs font-semibold text-brand-600 hover:underline">
+          + Incluir item em {system}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={submit} className="px-5 py-3 flex gap-2 bg-brand-50/40">
+      <input autoFocus value={label} onChange={e => setLabel(e.target.value)} maxLength={80}
+        placeholder="Ex.: Bomba de combustível, junta da tampa de válvula…" className="input !py-2 flex-1 min-w-0" />
+      <button type="submit" disabled={saving || !label.trim()} className="btn-primary !py-2 text-sm shrink-0">
+        {saving ? 'Incluindo…' : 'Incluir'}
+      </button>
+      <button type="button" onClick={() => { setOpen(false); setLabel(''); }} className="btn-ghost !py-2 text-sm shrink-0">Cancelar</button>
+    </form>
+  );
+}
+
 /* ─── Item do checklist ────────────────────────────────────── */
-function ItemRow({ item, checkupId, workshopId, demo, onPatch }: {
+function ItemRow({ item, checkupId, workshopId, demo, onPatch, onRemove }: {
   item: CheckupItem; checkupId: string; workshopId: string; demo: boolean; onPatch: (p: Patch) => void;
+  /** Só itens incluídos à mão podem ser removidos */
+  onRemove?: () => void;
 }) {
   const tpl = TEMPLATE_BY_KEY[item.item_key];
   const flagged = item.status === 'warn' || item.status === 'urgent';
@@ -354,6 +424,9 @@ function ItemRow({ item, checkupId, workshopId, demo, onPatch }: {
             </button>
             {item.photo_path && (
               <button onClick={() => onPatch({ photo_path: null })} className="text-xs text-steel-500 px-2 hover:text-alert-600">Remover</button>
+            )}
+            {onRemove && (
+              <button onClick={onRemove} className="ml-auto text-xs text-steel-400 px-2 hover:text-alert-600">🗑 Remover item</button>
             )}
           </div>
         </div>
