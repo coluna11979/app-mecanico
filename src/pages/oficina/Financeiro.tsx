@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
+import PaymentsList from '@/components/cash/PaymentsList';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { canDo, useOperator } from '@/lib/operators';
@@ -378,6 +379,10 @@ export default function Financeiro() {
                 )}
               </div>
             </div>
+
+            {/* Extrato: cada recebimento com a OS de origem */}
+            <PaymentsList filter={{ workshopId: wid!, from: range.from.toISOString(), to: range.to.toISOString() }}
+              title="🧾 Recebimentos de OS no período" empty="Nenhum recebimento no período." />
           </>
         )}
       </div>

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
+import NewOsModal from '@/components/os/NewOsModal';
+import PaymentsList from '@/components/cash/PaymentsList';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
@@ -20,7 +23,25 @@ type Tab = 'receber' | 'movimentos' | 'fechar';
 
 const osNum = (o: { id: string; number: number | null }) => (o.number != null ? String(o.number).padStart(4, '0') : o.id.slice(0, 8));
 const remainingOf = (o: OpenOs) => Math.round((o.price - o.counter_discount - o.paid_amount) * 100) / 100;
-const STATUS_LABEL: Record<string, string> = { approved: 'Aprovada', in_progress: 'Em execução', completed: 'Concluída' };
+/* Filtro por data: concluída em (ou aberta em, se ainda não concluiu) */
+type DatePeriod = 'today' | '7d' | '30d' | 'all' | 'custom';
+const DATE_PERIODS: [DatePeriod, string][] = [['today', 'Hoje'], ['7d', '7 dias'], ['30d', '30 dias'], ['all', 'Todas'], ['custom', '📅 Escolher datas']];
+const osDate = (o: { completed_at: string | null; created_at: string }) => new Date(o.completed_at ?? o.created_at).getTime();
+
+function periodRange(p: DatePeriod, from: string, to: string): [number | null, number | null] {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = 86400000;
+  if (p === 'today') return [today.getTime(), null];
+  if (p === '7d') return [today.getTime() - 6 * day, null];
+  if (p === '30d') return [today.getTime() - 29 * day, null];
+  if (p === 'custom') return [
+    from ? new Date(`${from}T00:00:00`).getTime() : null,
+    to ? new Date(`${to}T00:00:00`).getTime() + day : null,
+  ];
+  return [null, null];
+}
+
+const STATUS_LABEL: Record<string, string> = { open: 'Aberta', approved: 'Aprovada', in_progress: 'Em execução', completed: 'Concluída' };
 
 export default function Caixa() {
   const { currentWorkshop } = useAuth();
@@ -36,6 +57,8 @@ export default function Caixa() {
   const [ops, setOps]         = useState<Record<string, string>>({});
   const [team, setTeam]       = useState<WorkshopMechanic[]>([]);
   const [tab, setTab]         = useState<Tab>('receber');
+  const [params, setParams]   = useSearchParams();
+  const focusOs = params.get('os');
 
   const load = useCallback(async () => {
     if (!wid) return;
@@ -104,7 +127,10 @@ export default function Caixa() {
               ))}
             </div>
 
-            {tab === 'receber' && <ReceiveTab wid={wid!} sid={sid} canDiscount={can('dar_desconto')} onDone={load} />}
+            {tab === 'receber' && (
+              <ReceiveTab wid={wid!} sid={sid} registerId={reg.id} entriesCount={entries.length} canDiscount={can('dar_desconto')} onDone={load}
+                focusOs={focusOs} onFocusUsed={() => setParams({}, { replace: true })} />
+            )}
             {tab === 'movimentos' && (
               <MovementsTab wid={wid!} sid={sid} entries={entries} ops={ops} team={team}
                 canCancel={can('cancelar_recebimento')} onDone={load} />
@@ -193,15 +219,20 @@ function Line({ label, value, cls = '' }: { label: string; value: string; cls?: 
 
 /* ── Receber OS ──────────────────────────────────────────────────────────── */
 
-function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: string | null; canDiscount: boolean; onDone: () => void }) {
+function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, focusOs, onFocusUsed }: {
+  wid: string; sid: string | null; registerId: string; entriesCount: number; canDiscount: boolean; onDone: () => void;
+  focusOs: string | null; onFocusUsed: () => void;
+}) {
+  const nav = useNavigate();
   const [list, setList]   = useState<OpenOs[] | null>(null);
   const [q, setQ]         = useState('');
   const [picked, setPicked] = useState<OpenOs | null>(null);
+  const [newOs, setNewOs] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('service_orders')
       .select('id, number, title, price, paid_amount, counter_discount, status, completed_at, created_at, customer:customers(full_name), vehicle:vehicles(plate, make, model)')
-      .eq('workshop_id', wid).in('status', ['approved', 'in_progress', 'completed'])
+      .eq('workshop_id', wid).in('status', ['open', 'approved', 'in_progress', 'completed'])
       .order('created_at', { ascending: false }).limit(500);
     const rows = ((data as unknown as OpenOs[]) ?? []).filter(o => remainingOf(o) > 0.004);
     rows.sort((a, b) => (a.status === 'completed' ? 0 : 1) - (b.status === 'completed' ? 0 : 1));
@@ -210,19 +241,57 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
 
   useEffect(() => { load(); }, [load]);
 
+  /* Veio da tela da OS ("Receber no caixa"): já abre o recebimento dela */
+  useEffect(() => {
+    if (!focusOs || !list) return;
+    const o = list.find(x => x.id === focusOs);
+    if (o) setPicked(o);
+    else toast.info('Essa OS não tem valor em aberto para receber.');
+    onFocusUsed();
+  }, [focusOs, list]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [period, setPeriod] = useState<DatePeriod>('all');
+  const [from, setFrom] = useState('');
+  const [to, setTo]     = useState('');
+
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase().replace(/[^a-z0-9à-ú ]/g, '');
-    if (!t || !list) return list ?? [];
-    return list.filter(o =>
+    const [start, end] = periodRange(period, from, to);
+    const inDate = (o: OpenOs) => {
+      const d = osDate(o);
+      return (!start || d >= start) && (!end || d < end);
+    };
+    if (!list) return [];
+    return list.filter(o => inDate(o) && (!t ||
       osNum(o).includes(t) ||
       (o.customer?.full_name ?? '').toLowerCase().includes(t) ||
       (o.vehicle?.plate ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(t.replace(/ /g, '')) ||
-      o.title.toLowerCase().includes(t));
-  }, [list, q]);
+      o.title.toLowerCase().includes(t)));
+  }, [list, q, period, from, to]);
 
   return (
     <div>
-      <input className="input mb-3" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+      <div className="flex gap-2 mb-3">
+        <input className="input flex-1" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <button onClick={() => setNewOs(true)} className="btn-secondary shrink-0">+ Nova OS</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {DATE_PERIODS.map(([k, l]) => (
+          <button key={k} onClick={() => setPeriod(k)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+              period === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+            {l}
+          </button>
+        ))}
+        {period === 'custom' && (
+          <div className="flex items-center gap-1.5 text-xs text-steel-500">
+            <input type="date" className="input !py-1.5 !text-xs w-auto" value={from} onChange={e => setFrom(e.target.value)} />
+            até
+            <input type="date" className="input !py-1.5 !text-xs w-auto" value={to} onChange={e => setTo(e.target.value)} />
+          </div>
+        )}
+        {list && <span className="text-xs text-steel-400 ml-auto">{shown.length} OS · {brl(shown.reduce((a, o) => a + remainingOf(o), 0))} em aberto</span>}
+      </div>
       {list === null ? (
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
       ) : shown.length === 0 ? (
@@ -244,6 +313,9 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
                   </div>
                   <div className="flex gap-1 mt-1">
                     <span className={`badge text-[10px] ${o.status === 'completed' ? 'bg-signal-100 text-signal-700' : 'bg-steel-100 text-steel-600'}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
+                    <span className="text-[10px] text-steel-400 self-center">
+                      {o.completed_at ? 'concluída' : 'aberta'} em {new Date(osDate(o)).toLocaleDateString('pt-BR')}
+                    </span>
                     {o.paid_amount > 0 && <span className="badge text-[10px] bg-pending-100 text-pending-800">Parcialmente paga</span>}
                   </div>
                 </div>
@@ -256,6 +328,22 @@ function ReceiveTab({ wid, sid, canDiscount, onDone }: { wid: string; sid: strin
             );
           })}
         </div>
+      )}
+
+      <div className="mt-6">
+        <PaymentsList filter={{ registerId }} reloadKey={entriesCount} title="✅ Recebidas neste caixa" empty="Nenhuma OS recebida neste caixa ainda." />
+      </div>
+
+      {newOs && (
+        <NewOsModal
+          workshopId={wid}
+          onClose={() => setNewOs(false)}
+          onCreated={(id, number) => {
+            setNewOs(false);
+            toast.success(`OS nº ${String(number ?? '').padStart(4, '0')} aberta ✓ — lance as peças e serviços e toque em Receber no caixa`);
+            nav(`/oficina/os/${id}`);
+          }}
+        />
       )}
 
       {picked && (
@@ -396,7 +484,16 @@ function MovementsTab({ wid, sid, entries, ops, team, canCancel, onDone }: {
   canCancel: boolean; onDone: () => void;
 }) {
   const [kind, setKind] = useState<EntryKind | null>(null);
+  const [payOs, setPayOs] = useState<Record<string, string>>({});
   const teamName = (id: string | null) => team.find(t => t.id === id)?.name;
+
+  /* recebimento → OS de origem */
+  useEffect(() => {
+    const ids = [...new Set(entries.map(e => e.payment_id).filter(Boolean))] as string[];
+    if (!ids.length) return;
+    supabase.from('os_payments').select('id, service_order_id').in('id', ids)
+      .then(({ data }) => setPayOs(Object.fromEntries(((data as { id: string; service_order_id: string }[]) ?? []).map(x => [x.id, x.service_order_id]))));
+  }, [entries]);
 
   async function cancel(e: CashEntry) {
     const what = e.payment_id ? 'o recebimento inteiro desta OS (todas as formas de pagamento)' : 'este lançamento';
@@ -442,6 +539,9 @@ function MovementsTab({ wid, sid, entries, ops, team, canCancel, onDone }: {
                     {e.category && ` · ${e.category}`}
                   </div>
                   <div className="text-xs text-steel-500 truncate">
+                    {e.kind === 'recebimento' && e.payment_id && payOs[e.payment_id] && (
+                      <Link to={`/oficina/os/${payOs[e.payment_id]}`} className="text-brand-600 font-semibold hover:underline mr-1">ver OS ›</Link>
+                    )}
                     {[e.description, e.operator_id && ops[e.operator_id] ? `por ${ops[e.operator_id]}` : null,
                       cancelled ? `estornado: ${e.cancel_reason}` : null].filter(Boolean).join(' · ')}
                   </div>

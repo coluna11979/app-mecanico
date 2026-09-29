@@ -239,6 +239,10 @@ export interface ServiceOrder {
   /** Mecânico responsável pelo serviço original (preenchido por trigger) */
   rework_mechanic_id?: string | null;
   rework_notes?: string | null;
+  /** Caixa: quanto já foi recebido, desconto dado no balcão e quando foi quitada */
+  paid_amount?: number;
+  counter_discount?: number;
+  paid_at?: string | null;
 }
 
 export type ReworkCause = 'execution' | 'diagnosis' | 'part' | 'customer' | 'other';
