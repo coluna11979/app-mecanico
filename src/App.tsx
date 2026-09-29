@@ -43,6 +43,7 @@ import WorkshopPainel from './pages/oficina/Painel';
 import WorkshopEquipe from './pages/oficina/Equipe';
 import WorkshopEquipeFicha from './pages/oficina/EquipeFicha';
 import WorkshopAcessos from './pages/oficina/Acessos';
+import MinhasComissoes from './pages/oficina/MinhasComissoes';
 import WorkshopCaixa from './pages/oficina/Caixa';
 import WorkshopFinanceiro from './pages/oficina/Financeiro';
 import WorkshopPecas from './pages/oficina/Pecas';
@@ -131,6 +132,7 @@ export default function App() {
       <Route path="/oficina/compras/nova" element={<ProtectedRoute allow={['workshop']}><WorkshopCompraNova /></ProtectedRoute>} />
       <Route path="/oficina/contas-a-pagar" element={<ProtectedRoute allow={['workshop']}><WorkshopContasPagar /></ProtectedRoute>} />
       <Route path="/oficina/folha" element={<ProtectedRoute allow={['workshop']}><WorkshopFolha /></ProtectedRoute>} />
+      <Route path="/oficina/minhas-comissoes" element={<ProtectedRoute allow={['workshop']}><MinhasComissoes /></ProtectedRoute>} />
       <Route path="/oficina/acessos" element={<ProtectedRoute allow={['workshop']}><WorkshopAcessos /></ProtectedRoute>} />
       <Route path="/oficina/desempenho" element={<ProtectedRoute allow={['workshop']}><WorkshopDesempenho /></ProtectedRoute>} />
       <Route path="/oficina/vip" element={<ProtectedRoute allow={['workshop']}><WorkshopPlanoVip /></ProtectedRoute>} />      <Route path="/admin/vip" element={<ProtectedRoute allow={['admin']}><AdminVip /></ProtectedRoute>} />

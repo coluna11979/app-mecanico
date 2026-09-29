@@ -75,8 +75,12 @@ const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
   folha:          ['/oficina/folha'],
 };
 
+/** Tela do próprio colaborador: comissões dele no mês (qualquer função) */
+export const MY_COMMISSIONS_ROUTE = '/oficina/minhas-comissoes';
+
 /** A rota está liberada para quem está operando (função + permissões extras)? */
 export function sessionAllows(session: OperatorSession, path: string) {
+  if (path === MY_COMMISSIONS_ROUTE) return true;
   if (roleAllows(session.role, path)) return true;
   return session.permissions.some(p =>
     (PERM_ROUTES[p] ?? []).some(r => path === r || path.startsWith(`${r}/`)));
@@ -124,6 +128,8 @@ type Store = {
   wid: string | null;
   balcao: boolean;
   session: OperatorSession | null;
+  /** Colaborador (da Equipe) de quem está operando e o % de comissão dele */
+  me: { mechanicId: string; commissionPct: number } | null | undefined; // undefined = ainda carregando
   bind: (wid: string | null) => void;
   enterBalcao: () => void;
   login: (operatorId: string, pin: string, role: OperatorRole) => Promise<string | null>;
@@ -138,11 +144,11 @@ type Store = {
 };
 
 export const useOperator = create<Store>((set, get) => ({
-  wid: null, balcao: false, session: null,
+  wid: null, balcao: false, session: null, me: undefined,
 
   moveLockTo: (wid) => {
     const s = { balcao: true, session: null };
-    save(wid, s); set({ wid, ...s });
+    save(wid, s); set({ wid, ...s, me: undefined });
   },
 
   bind: (wid) => {
@@ -150,7 +156,7 @@ export const useOperator = create<Store>((set, get) => ({
     let s = wid ? load(wid) : { balcao: false, session: null };
     // Aparelho travado em outra loja: esta também abre na tela de PIN
     if (wid && !s.balcao && deviceLocked()) { s = { balcao: true, session: null }; save(wid, s); }
-    set({ wid, ...s });
+    set({ wid, ...s, me: undefined });
   },
 
   enterBalcao: () => {
@@ -158,7 +164,7 @@ export const useOperator = create<Store>((set, get) => ({
     if (!wid) return;
     if (session) supabase.rpc('operator_logout', { p_session: session.session_id }).then(() => {});
     const s = { balcao: true, session: null };
-    save(wid, s); set(s);
+    save(wid, s); set({ ...s, me: undefined });
   },
 
   login: async (operatorId, pin, role) => {
@@ -173,7 +179,7 @@ export const useOperator = create<Store>((set, get) => ({
       role: r.role, permissions: r.permissions ?? [],
     };
     const s = { balcao: true, session };
-    save(wid, s); set(s);
+    save(wid, s); set({ ...s, me: undefined });
     return null;
   },
 
@@ -181,11 +187,14 @@ export const useOperator = create<Store>((set, get) => ({
     const { wid, session } = get();
     if (!wid || !session) return;
     const { data, error } = await supabase.from('workshop_operators')
-      .select('roles, permissions, active').eq('id', session.operator_id).maybeSingle();
+      .select('roles, permissions, active, mechanic_id, mechanic:workshop_mechanics(commission_percent)')
+      .eq('id', session.operator_id).maybeSingle();
     if (error) return; // sem conexão: mantém como está
-    const o = data as Pick<WorkshopOperator, 'roles' | 'permissions' | 'active'> | null;
+    const o = data as (Pick<WorkshopOperator, 'roles' | 'permissions' | 'active' | 'mechanic_id'> & { mechanic: { commission_percent: number | null } | null }) | null;
     // Acesso desativado ou função retirada: volta para a tela de PIN
     if (!o || !o.active || !o.roles.includes(session.role)) { await get().switchUser(); return; }
+    if (get().session?.session_id !== session.session_id) return;
+    set({ me: o.mechanic_id ? { mechanicId: o.mechanic_id, commissionPct: Number(o.mechanic?.commission_percent ?? 0) } : null });
     const same = o.permissions.length === session.permissions.length && o.permissions.every(p => session.permissions.includes(p));
     if (same || get().session?.session_id !== session.session_id) return;
     const s = { balcao: true, session: { ...session, permissions: o.permissions } };
@@ -197,7 +206,7 @@ export const useOperator = create<Store>((set, get) => ({
     if (!wid) return;
     if (session) await supabase.rpc('operator_logout', { p_session: session.session_id });
     const s = { balcao: true, session: null };
-    save(wid, s); set(s);
+    save(wid, s); set({ ...s, me: undefined });
   },
 
   exitBalcao: async () => {
@@ -209,7 +218,7 @@ export const useOperator = create<Store>((set, get) => ({
     for (const k of storeKeys()) {
       try { localStorage.setItem(k, JSON.stringify(s)); } catch { /* ignora */ }
     }
-    save(wid, s); set(s);
+    save(wid, s); set({ ...s, me: undefined });
   },
 }));
 

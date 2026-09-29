@@ -8,7 +8,7 @@ import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
-import { ROLES, sessionAllows, useOperator } from '@/lib/operators';
+import { MY_COMMISSIONS_ROUTE, ROLES, sessionAllows, useOperator } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
 
 type ArrivalAlert = { jobId: string; title: string };
@@ -44,6 +44,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     { to: '/oficina/equipe',     icon: '👷', label: 'Colaboradores'        },
     { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho e comissões' },
     { to: '/oficina/folha',      icon: '💼', label: 'Fechar folha'         },
+    { to: MY_COMMISSIONS_ROUTE,  icon: '💸', label: 'Minhas comissões'     },
     { to: '/oficina/acessos',    icon: '🔐', label: 'Acessos e funções'    },
   ] },
   { title: 'Plataforma', items: [
@@ -361,6 +362,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   useEffect(() => { op.bind(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
   const role = op.balcao ? op.session?.role ?? null : null;
   const allowed = (to: string) => !role || sessionAllows(op.session!, to);
+  // "Minhas comissões" só aparece no modo balcão, para quem tem comissão
+  const inMenu = (to: string) => (to === MY_COMMISSIONS_ROUTE ? !!role && (op.me?.commissionPct ?? 0) > 0 : allowed(to));
   // Permissões alteradas pelo gestor valem sem precisar digitar o PIN de novo
   useEffect(() => {
     if (!op.session) return;
@@ -529,13 +532,13 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
-          {SECTIONS.filter(sec => sec.items.some(i => allowed(i.to))).map(sec => (
+          {SECTIONS.filter(sec => sec.items.some(i => inMenu(i.to))).map(sec => (
             <div key={sec.title}>
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-1.5">
                 {sec.title}
               </div>
               <div className="space-y-0.5">
-                {sec.items.filter(i => allowed(i.to)).map(item => (
+                {sec.items.filter(i => inMenu(i.to)).map(item => (
                   <SideItem
                     key={item.to}
                     {...item}
