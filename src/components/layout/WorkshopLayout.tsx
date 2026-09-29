@@ -37,6 +37,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   ] },
   { title: 'Operação', items: [
     { to: '/oficina/os',         icon: '📋', label: 'Ordens de Serviço'    },
+    { to: '/oficina/servicos',   icon: '🛠️', label: 'Tabela de serviços'   },
     { to: '/oficina/checkup',    icon: '🩺', label: 'Check-up'             },
     { to: '/oficina/importar',   icon: '📷', label: 'Importar orçamentos'  },
   ] },

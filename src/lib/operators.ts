@@ -49,7 +49,7 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   ver_financeiro:       { label: 'Painel financeiro',     desc: 'Saúde do negócio: faturamento, lucro, resultado do mês' },
   contas_pagar:         { label: 'Contas a pagar',        desc: 'Ver, lançar e dar baixa em contas' },
   compras:              { label: 'Compras e fornecedores', desc: 'Notas de compra e cadastro de fornecedores' },
-  pecas_estoque:        { label: 'Peças e estoque',       desc: 'Catálogo, estoque e custo das peças' },
+  pecas_estoque:        { label: 'Peças e estoque',       desc: 'Catálogo, estoque e custo das peças; tabela de serviços' },
   folha:                { label: 'Fechar folha',          desc: 'Salários, comissões, vales e faltas da equipe' },
 };
 
@@ -71,7 +71,7 @@ const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
   ver_financeiro: ['/oficina/financeiro'],
   contas_pagar:   ['/oficina/contas-a-pagar'],
   compras:        ['/oficina/compras', '/oficina/fornecedores'],
-  pecas_estoque:  ['/oficina/pecas'],
+  pecas_estoque:  ['/oficina/pecas', '/oficina/servicos'],
   folha:          ['/oficina/folha'],
 };
 
