@@ -16,7 +16,7 @@ export default function Compras() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const { balcao, session } = useOperator();
-  const allowed = canDo(session, balcao, 'ver_financeiro');
+  const allowed = canDo(session, balcao, 'compras');
   const [params, setParams] = useSearchParams();
   const open = params.get('nota');
 

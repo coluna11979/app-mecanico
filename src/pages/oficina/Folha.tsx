@@ -19,7 +19,7 @@ export default function Folha() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const { balcao, session } = useOperator();
-  const allowed = canDo(session, balcao, 'ver_financeiro');
+  const allowed = canDo(session, balcao, 'folha');
 
   const [competence, setCompetence] = useState(todayISO().slice(0, 7));
   // Vencimento padrão: dia 5 do mês seguinte à competência

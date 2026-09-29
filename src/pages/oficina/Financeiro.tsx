@@ -133,7 +133,7 @@ export default function Financeiro() {
         <div className="max-w-md mx-auto card text-center py-12">
           <div className="text-4xl mb-2">🔒</div>
           <h1 className="text-lg font-bold">Financeiro restrito</h1>
-          <p className="text-sm text-steel-500 mt-1">Sua função não tem a permissão “Ver financeiro”. Peça ao gestor para liberar em Acessos e funções.</p>
+          <p className="text-sm text-steel-500 mt-1">Sua função não tem a permissão “Painel financeiro”. Peça ao gestor para liberar em Acessos e funções.</p>
         </div>
       </WorkshopLayout>
     );
