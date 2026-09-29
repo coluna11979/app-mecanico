@@ -7,9 +7,10 @@ import { ROLES, ROLE_ORDER, useOperator, type OperatorRole, type WorkshopOperato
 
 /** Tela de bloqueio do modo balcão: escolhe quem vai operar, a função e digita o PIN. */
 export default function OperatorLock() {
-  const { currentWorkshop, workshops, signOut } = useAuth();
+  const { currentWorkshop, workshops, setCurrentWorkshop, signOut } = useAuth();
   const multiStore = workshops.length > 1;
-  const { login, exitBalcao } = useOperator();
+  const { login, exitBalcao, moveLockTo } = useOperator();
+  const [storeMenu, setStoreMenu] = useState(false);
   const nav = useNavigate();
   const wid = currentWorkshop?.id ?? null;
 
@@ -82,6 +83,23 @@ export default function OperatorLock() {
                 {[currentWorkshop.neighborhood, currentWorkshop.city].filter(Boolean).join(' · ') || currentWorkshop.address}
               </div>
             )}
+            {multiStore && (
+              <button onClick={() => setStoreMenu(v => !v)} className="mt-2 text-xs font-semibold text-brand-300 hover:text-brand-200">
+                ⇄ Trocar loja
+              </button>
+            )}
+            {multiStore && storeMenu && (
+              <div className="mt-2 flex flex-wrap justify-center gap-2">
+                {workshops.filter(w => w.id !== currentWorkshop.id).map(w => (
+                  <button key={w.id}
+                    onClick={() => { moveLockTo(w.id); setCurrentWorkshop(w); setStoreMenu(false); setPicked(null); setOps(null); }}
+                    className="rounded-xl bg-steel-800 hover:bg-steel-700 px-4 py-2 text-left transition">
+                    <div className="text-sm font-semibold">📍 {w.business_name}</div>
+                    {(w.neighborhood || w.city) && <div className="text-[11px] text-steel-400">{[w.neighborhood, w.city].filter(Boolean).join(' · ')}</div>}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -92,7 +110,7 @@ export default function OperatorLock() {
             {multiStore && (
               <p className="text-xs text-steel-500 text-center mt-2">
                 Só aparece a equipe da <strong className="text-steel-300">{currentWorkshop?.business_name}</strong>.
-                Seu nome não está aqui? O gestor entra e troca a loja no menu antes de ativar o modo balcão.
+                Seu nome não está aqui? Toque em <strong className="text-steel-300">⇄ Trocar loja</strong> lá em cima.
               </p>
             )}
 

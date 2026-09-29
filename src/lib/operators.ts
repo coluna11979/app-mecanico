@@ -99,10 +99,17 @@ type Store = {
   switchUser: () => Promise<void>;
   /** Desliga o modo balcão neste aparelho (só a partir de uma sessão de gestor ou ao sair da conta). */
   exitBalcao: () => Promise<void>;
+  /** Leva a tela de bloqueio para outra loja: o aparelho continua travado, agora no balcão dela. */
+  moveLockTo: (wid: string) => void;
 };
 
 export const useOperator = create<Store>((set, get) => ({
   wid: null, balcao: false, session: null,
+
+  moveLockTo: (wid) => {
+    const s = { balcao: true, session: null };
+    save(wid, s); set({ wid, ...s });
+  },
 
   bind: (wid) => {
     if (wid === get().wid) return;
