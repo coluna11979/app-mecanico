@@ -301,30 +301,6 @@ export default function ServiceOrders() {
       {tab === 'os' && (
         <div className="space-y-5">
 
-          {/* ── Banner Check-up Gratuito ── */}
-          <div className="rounded-2xl overflow-hidden border border-signal-200 bg-gradient-to-r from-signal-50 to-brand-50">
-            <div className="px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="text-4xl shrink-0">🎁</div>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-steel-800 text-base">Check-up Gratuito — Estratégia de captação</div>
-                <p className="text-sm text-steel-500 mt-0.5">
-                  Ofereça uma avaliação gratuita do veículo para atrair novos clientes.
-                  Pode ser executado por mecânico interno ou profissional do marketplace.
-                </p>
-              </div>
-              <div className="flex gap-2 shrink-0 flex-wrap">
-                <button onClick={() => setNewOs({ title: 'Check-up gratuito', category: 'Check-up', free: true })}
-                  className="btn-primary text-sm !py-2 !px-4">
-                  ⚡ Agora
-                </button>
-                <button onClick={() => setNewOs({ title: 'Check-up gratuito', category: 'Check-up', free: true, schedule: true })}
-                  className="btn-secondary text-sm !py-2 !px-4">
-                  📅 Agendar
-                </button>
-              </div>
-            </div>
-          </div>
-
           {topCats.length > 0 && (
             <div className="card">
               <h2 className="font-bold text-steel-800 mb-4">Serviços mais realizados</h2>
@@ -587,10 +563,17 @@ export default function ServiceOrders() {
           preset={newOs}
           onClose={() => setNewOs(null)}
           onManageTeam={() => { setNewOs(null); openNewMech(); }}
-          onCreated={(id, number) => {
+          onCreated={(id, number, isCheckup) => {
             setNewOs(null);
-            toast.success(`OS nº ${String(number ?? '').padStart(4, '0')} aberta ✓ — lance as peças e serviços`);
-            nav(`/oficina/os/${id}`);
+            const n = String(number ?? '').padStart(4, '0');
+            if (isCheckup) {
+              // Check-up sempre vira inspeção com relatório (a tela de check-up cria o dela ligado à OS)
+              toast.success(`OS nº ${n} aberta ✓ — faça o check-up`);
+              nav(`/oficina/checkup?os=${id}`);
+            } else {
+              toast.success(`OS nº ${n} aberta ✓ — lance as peças e serviços`);
+              nav(`/oficina/os/${id}`);
+            }
           }}
         />
       )}

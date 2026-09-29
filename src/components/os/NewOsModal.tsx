@@ -46,7 +46,8 @@ interface Props {
   workshopId: string;
   preset?: NewOsPreset;
   onClose: () => void;
-  onCreated: (osId: string, number: number | null) => void;
+  /** isCheckup = OS de check-up para fazer agora (não agendada) → quem chamou pode abrir o checklist */
+  onCreated: (osId: string, number: number | null, isCheckup: boolean) => void;
   /** Abre o cadastro de colaboradores (aba Equipe) */
   onManageTeam?: () => void;
 }
@@ -322,7 +323,9 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
       })));
       if (itErr) console.warn('[NewOsModal] itens não criados:', itErr.message);
 
-      onCreated(os.id, os.number);
+      const isCheckup = !(schedule && when)
+        && (category === 'Check-up' || allServices.some(s => /check-?up/i.test(s)));
+      onCreated(os.id, os.number, isCheckup);
     } catch (err: any) {
       console.error('[NewOsModal] erro:', err);
       toast.error('Não foi possível abrir a OS: ' + (err?.message ?? 'erro'));
