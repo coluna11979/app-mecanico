@@ -9,6 +9,7 @@ import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
 import { MY_COMMISSIONS_ROUTE, ROLES, sessionAllows, useOperator } from '@/lib/operators';
+import { hasCommission } from '@/lib/commission';
 import OperatorLock from '@/components/operator/OperatorLock';
 
 type ArrivalAlert = { jobId: string; title: string };
@@ -363,7 +364,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const role = op.balcao ? op.session?.role ?? null : null;
   const allowed = (to: string) => !role || sessionAllows(op.session!, to);
   // "Minhas comissões" só aparece no modo balcão, para quem tem comissão
-  const inMenu = (to: string) => (to === MY_COMMISSIONS_ROUTE ? !!role && (op.me?.commissionPct ?? 0) > 0 : allowed(to));
+  const inMenu = (to: string) => (to === MY_COMMISSIONS_ROUTE ? !!role && !!op.me && hasCommission(op.me.commission) : allowed(to));
   // Permissões alteradas pelo gestor valem sem precisar digitar o PIN de novo
   useEffect(() => {
     if (!op.session) return;

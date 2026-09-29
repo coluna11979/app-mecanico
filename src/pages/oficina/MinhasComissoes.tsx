@@ -8,8 +8,10 @@ import { fetchAll } from '@/lib/fetchAll';
 import { monthRange, type PayrollItem } from '@/lib/payroll';
 import { addMonthsCompetence } from '@/lib/payableForms';
 import { fmtBRL, osNumber } from '@/components/os/osHelpers';
+import { commissionFor, commissionRule, pcts } from '@/lib/commission';
 
-type Os = { id: string; number: number | null; title: string; labor_cost: number | null; completed_at: string; vehicle: { plate: string | null } | null };
+/** OS do mês com a parte que foi feita por este colaborador */
+type Os = { id: string; number: number | null; title: string; completed_at: string; plate: string | null; labor: number; parts: number };
 
 const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 const monthLabel = (c: string) => {
@@ -26,6 +28,7 @@ export default function MinhasComissoes() {
   const [competence, setCompetence] = useState(thisMonth());
   const [list, setList]     = useState<Os[] | null>(null);
   const [vales, setVales]   = useState(0);
+  const [revenue, setRevenue] = useState(0);
   const [closed, setClosed] = useState<PayrollItem | null>(null);
 
   const mechanicId = me?.mechanicId ?? null;
@@ -35,18 +38,41 @@ export default function MinhasComissoes() {
     let alive = true;
     setList(null);
     const { from, to } = monthRange(competence);
+    const rules = pcts(me!.commission);
     Promise.all([
-      fetchAll((a, b) => supabase.from('service_orders')
-        .select('id, number, title, labor_cost, completed_at, vehicle:vehicles(plate)')
-        .eq('workshop_id', wid).eq('workshop_mechanic_id', mechanicId).eq('status', 'completed').is('quote_status', null)
-        .gte('completed_at', from).lt('completed_at', to).order('completed_at', { ascending: false }).range(a, b)),
+      // Base de comissão já dividida por quem fez cada item (mesma da folha)
+      fetchAll((a, b) => supabase.from('os_commission_base').select('service_order_id, labor, parts')
+        .eq('workshop_id', wid).eq('mechanic_id', mechanicId).eq('status', 'completed').is('quote_status', null)
+        .gte('completed_at', from).lt('completed_at', to).order('service_order_id').range(a, b)),
+      // Faturamento da loja: só para quem ganha % sobre ele
+      rules.revenue > 0
+        ? fetchAll((a, b) => supabase.from('service_orders').select('id, price')
+            .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null)
+            .gte('completed_at', from).lt('completed_at', to).order('id').range(a, b))
+        : Promise.resolve({ data: [] as { price: number }[] }),
       fetchAll((a, b) => supabase.from('cash_entries').select('id, amount')
         .eq('workshop_id', wid).eq('mechanic_id', mechanicId).eq('kind', 'vale').is('cancelled_at', null)
         .gte('created_at', from).lt('created_at', to).order('id').range(a, b)),
       supabase.from('payroll_items').select('*').eq('workshop_id', wid).eq('mechanic_id', mechanicId).eq('competence', competence).maybeSingle(),
-    ]).then(([o, v, p]) => {
+    ]).then(async ([b, sales, v, p]) => {
+      const base = new Map<string, { labor: number; parts: number }>();
+      for (const x of (b.data ?? []) as { service_order_id: string; labor: number; parts: number }[]) {
+        const e = base.get(x.service_order_id) ?? { labor: 0, parts: 0 };
+        e.labor += Number(x.labor); e.parts += Number(x.parts);
+        base.set(x.service_order_id, e);
+      }
+      const ids = [...base.keys()];
+      const info = new Map<string, { number: number | null; title: string; completed_at: string; vehicle: { plate: string | null } | null }>();
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await supabase.from('service_orders').select('id, number, title, completed_at, vehicle:vehicles(plate)').in('id', ids.slice(i, i + 200));
+        for (const o of (data ?? []) as any[]) info.set(o.id, o);
+      }
       if (!alive) return;
-      setList((o.data ?? []) as unknown as Os[]);
+      setList(ids.map(id => {
+        const o = info.get(id);
+        return { id, number: o?.number ?? null, title: o?.title ?? 'OS', completed_at: o?.completed_at ?? '', plate: o?.vehicle?.plate ?? null, ...base.get(id)! };
+      }).sort((x, y) => y.completed_at.localeCompare(x.completed_at)));
+      setRevenue(((sales.data ?? []) as { price: number }[]).reduce((t, x) => t + Number(x.price), 0));
       setVales(((v.data ?? []) as { amount: number }[]).reduce((t, x) => t + Number(x.amount), 0));
       setClosed((p.data as PayrollItem | null) ?? null);
     });
@@ -81,10 +107,15 @@ export default function MinhasComissoes() {
     );
   }
 
-  const pct = me.commissionPct;
-  const labor = (list ?? []).reduce((t, o) => t + Number(o.labor_cost ?? 0), 0);
+  const p = pcts(me.commission);
+  const rule = commissionRule(me.commission);
+  const calc = commissionFor(me.commission, {
+    labor: (list ?? []).reduce((t, o) => t + o.labor, 0),
+    parts: (list ?? []).reduce((t, o) => t + o.parts, 0),
+  }, revenue);
   // Mês já fechado: vale o que foi fechado na folha
-  const commission = closed ? Number(closed.commission) : Math.round(labor * pct) / 100;
+  const commission = closed ? Number(closed.commission) : calc.commission;
+  const osCommission = (o: Os) => o.labor * p.labor / 100 + o.parts * p.parts / 100;
   const isCurrent = competence === thisMonth();
 
   return (
@@ -92,7 +123,7 @@ export default function MinhasComissoes() {
       <div className="max-w-3xl mx-auto">
         <h1 className="text-3xl font-bold tracking-tight">💸 Minhas comissões</h1>
         <p className="text-sm text-steel-500 mt-1">
-          {session.name} · {pct > 0 ? <><strong>{String(pct).replace('.', ',')}%</strong> da mão de obra das OS que você concluir</> : 'sem comissão cadastrada'}
+          {session.name} · {rule ? <>sua regra: <strong>{rule}</strong></> : 'sem comissão cadastrada'}
         </p>
 
         <div className="flex items-center justify-between gap-2 mt-5 mb-4">
@@ -112,8 +143,8 @@ export default function MinhasComissoes() {
             <div className="text-2xl font-bold mt-1">{list ? list.length : '…'}</div>
           </div>
           <div className="card !p-4">
-            <div className="text-[11px] text-steel-500">Mão de obra</div>
-            <div className="text-2xl font-bold mt-1">{list ? fmtBRL(labor) : '…'}</div>
+            <div className="text-[11px] text-steel-500">{p.parts > 0 ? 'Serviços + peças que você fez' : 'Serviços que você fez'}</div>
+            <div className="text-2xl font-bold mt-1">{list ? fmtBRL(calc.labor + (p.parts > 0 ? calc.parts : 0)) : '…'}</div>
           </div>
           <div className="card !p-4">
             <div className="text-[11px] text-steel-500">Vales no mês</div>
@@ -121,6 +152,11 @@ export default function MinhasComissoes() {
           </div>
         </div>
 
+        {p.revenue > 0 && list && (
+          <p className="text-xs text-steel-500 mt-3">
+            Inclui {fmtBRL(Math.round(calc.revenue * p.revenue) / 100)} dos {String(p.revenue).replace('.', ',')}% sobre o faturamento da loja.
+          </p>
+        )}
         {closed && (
           <div className="card mt-3 !py-3 bg-signal-50 border-signal-200 text-sm text-signal-800">
             ✓ Folha deste mês fechada · valor líquido <strong>{fmtBRL(Number(closed.net))}</strong>
@@ -137,20 +173,21 @@ export default function MinhasComissoes() {
           {list === null ? (
             <div className="h-24 animate-pulse bg-steel-50" />
           ) : list.length === 0 ? (
-            <p className="text-sm text-steel-400 px-4 py-6 text-center">Nenhuma OS concluída por você neste mês.</p>
+            <p className="text-sm text-steel-400 px-4 py-6 text-center">Nenhum serviço seu em OS concluída neste mês.</p>
           ) : (
             <ul className="divide-y divide-steel-100">
               {list.map(o => {
-                const l = Number(o.labor_cost ?? 0);
+                const c = osCommission(o);
                 return (
                   <li key={o.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
                     <div className="min-w-0">
                       <div className="font-semibold truncate">OS {osNumber(o)} · {o.title}</div>
                       <div className="text-xs text-steel-500">
-                        {new Date(o.completed_at).toLocaleDateString('pt-BR')}{o.vehicle?.plate ? ` · ${o.vehicle.plate}` : ''} · mão de obra {fmtBRL(l)}
+                        {o.completed_at && new Date(o.completed_at).toLocaleDateString('pt-BR')}{o.plate ? ` · ${o.plate}` : ''}
+                        {o.labor > 0 && ` · serviços ${fmtBRL(o.labor)}`}{p.parts > 0 && o.parts > 0 && ` · peças ${fmtBRL(o.parts)}`}
                       </div>
                     </div>
-                    <div className={`shrink-0 font-bold ${l > 0 ? 'text-signal-700' : 'text-steel-400'}`}>{fmtBRL(l * pct / 100)}</div>
+                    <div className={`shrink-0 font-bold ${c > 0 ? 'text-signal-700' : 'text-steel-400'}`}>{fmtBRL(c)}</div>
                   </li>
                 );
               })}

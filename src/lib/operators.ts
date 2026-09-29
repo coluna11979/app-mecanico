@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
+import { COMMISSION_COLS, type CommissionMech } from '@/lib/commission';
 
 /* ── Funções e permissões ─────────────────────────────────────────────────── */
 
@@ -129,7 +130,7 @@ type Store = {
   balcao: boolean;
   session: OperatorSession | null;
   /** Colaborador (da Equipe) de quem está operando e o % de comissão dele */
-  me: { mechanicId: string; commissionPct: number } | null | undefined; // undefined = ainda carregando
+  me: { mechanicId: string; commission: CommissionMech } | null | undefined; // undefined = ainda carregando
   bind: (wid: string | null) => void;
   enterBalcao: () => void;
   login: (operatorId: string, pin: string, role: OperatorRole) => Promise<string | null>;
@@ -187,14 +188,14 @@ export const useOperator = create<Store>((set, get) => ({
     const { wid, session } = get();
     if (!wid || !session) return;
     const { data, error } = await supabase.from('workshop_operators')
-      .select('roles, permissions, active, mechanic_id, mechanic:workshop_mechanics(commission_percent)')
+      .select(`roles, permissions, active, mechanic_id, mechanic:workshop_mechanics(id, ${COMMISSION_COLS})`)
       .eq('id', session.operator_id).maybeSingle();
     if (error) return; // sem conexão: mantém como está
-    const o = data as (Pick<WorkshopOperator, 'roles' | 'permissions' | 'active' | 'mechanic_id'> & { mechanic: { commission_percent: number | null } | null }) | null;
+    const o = data as (Pick<WorkshopOperator, 'roles' | 'permissions' | 'active' | 'mechanic_id'> & { mechanic: CommissionMech | null }) | null;
     // Acesso desativado ou função retirada: volta para a tela de PIN
     if (!o || !o.active || !o.roles.includes(session.role)) { await get().switchUser(); return; }
     if (get().session?.session_id !== session.session_id) return;
-    set({ me: o.mechanic_id ? { mechanicId: o.mechanic_id, commissionPct: Number(o.mechanic?.commission_percent ?? 0) } : null });
+    set({ me: o.mechanic_id && o.mechanic ? { mechanicId: o.mechanic_id, commission: o.mechanic } : null });
     const same = o.permissions.length === session.permissions.length && o.permissions.every(p => session.permissions.includes(p));
     if (same || get().session?.session_id !== session.session_id) return;
     const s = { balcao: true, session: { ...session, permissions: o.permissions } };
