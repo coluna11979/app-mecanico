@@ -6,7 +6,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
-import { DEFAULT_MARGIN, UNITS, fmtQty, loadDefaultMargin, priceModeOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import {
+  DEFAULT_MARGIN, UNITS, fmtQty, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
+} from '@/lib/parts';
 import { addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
 
@@ -73,6 +75,30 @@ export default function CompraNova() {
 
   const instTotal = insts.reduce((a, i) => a + num(i.amount), 0);
   const instOk = insts.length > 0 && Math.abs(instTotal - total) < 0.01;
+
+  // O que falta para poder lançar (texto do botão enquanto não dá)
+  const missing = !supplierId ? 'Escolha o fornecedor'
+    : !rows.some(r => r.name.trim()) ? 'Adicione as peças da nota'
+    : total <= 0 ? 'Informe o custo das peças'
+    : '';
+  const ready = !missing;
+
+  // Categoria que a peça nova vai ganhar — a mesma regra do banco (guess_part_category)
+  const [guess, setGuess] = useState<Record<string, PartCategory>>({});
+  const newNames = rows.filter(r => !r.part_id && r.name.trim().length >= 3).map(r => r.name.trim());
+  const pending = newNames.filter(n => !(n in guess)).join('\n');
+  useEffect(() => {
+    if (!pending) return;
+    const t = setTimeout(async () => {
+      const found: Record<string, PartCategory> = {};
+      await Promise.all(pending.split('\n').map(async n => {
+        const { data } = await supabase.rpc('guess_part_category', { p_name: n });
+        if (data) found[n] = data as PartCategory;
+      }));
+      setGuess(g => ({ ...g, ...found }));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [pending]);
 
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
@@ -153,8 +179,14 @@ export default function CompraNova() {
 
         {/* Itens */}
         <div className="card !p-0 overflow-hidden">
-          <div className="px-5 pt-5 pb-3 flex items-center justify-between">
-            <h2 className="font-bold text-lg">Peças da nota</h2>
+          <div className="px-5 pt-5 pb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-lg">Peças da nota</h2>
+              <p className="text-xs text-steel-500">
+                Comece a digitar e escolha da lista. Peça que ainda não existe? Digite o nome completo — ela é
+                <strong className="text-brand-700"> cadastrada automaticamente</strong> ao lançar a nota.
+              </p>
+            </div>
             <button type="button" onClick={() => setRows(rs => [...rs, newRow()])}
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700">+ Peça</button>
           </div>
@@ -176,7 +208,7 @@ export default function CompraNova() {
               return (
                 <div key={r.key} className="px-5 py-3 grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-12 md:col-span-5">
-                    <input className="input !py-2 text-sm" list="compra-pecas" placeholder="Digite o nome (do cadastro ou nova)"
+                    <input className="input !py-2 text-sm" list="compra-pecas" placeholder="Nome da peça (do cadastro ou uma nova)"
                       value={r.name} onChange={e => update(r.key, { name: e.target.value })} />
                   </div>
                   <div className="col-span-4 md:col-span-2 flex gap-1">
@@ -211,7 +243,11 @@ export default function CompraNova() {
                           )}
                         </span>
                       ) : (
-                        <span className="text-brand-700">✨ Peça nova: será cadastrada com a margem padrão ({margin}%) → venda {fmtBRL(salePriceOf({ cost: newCost, margin_percent: null, sale_price: null }, margin))}</span>
+                        <span className="text-brand-700">
+                          ✨ <strong>Peça nova</strong> — será cadastrada
+                          {guess[r.name.trim()] && <> em <strong>{partCategory(guess[r.name.trim()]).icon} {partCategory(guess[r.name.trim()]).label}</strong></>}
+                          {' '}com a margem padrão ({margin}%) → venda {fmtBRL(salePriceOf({ cost: newCost, margin_percent: null, sale_price: null }, margin))}
+                        </span>
                       )}
                     </div>
                   )}
@@ -274,7 +310,9 @@ export default function CompraNova() {
 
         <div className="flex justify-end gap-2 pb-6">
           <Link to="/oficina/compras" className="btn-ghost">Cancelar</Link>
-          <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Lançando…' : `✓ Lançar nota de ${fmtBRL(total)}`}</button>
+          <button className="btn-primary" onClick={save} disabled={saving || !ready} title={ready ? undefined : missing}>
+            {saving ? 'Lançando…' : ready ? `✓ Lançar nota de ${fmtBRL(total)}` : missing}
+          </button>
         </div>
       </div>
 
