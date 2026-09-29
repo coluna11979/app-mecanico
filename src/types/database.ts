@@ -222,12 +222,6 @@ export interface ServiceOrder {
   /** Número sequencial por oficina (OS nº 0001). Preenchido por trigger. */
   number: number | null;
   discount: number;
-  /** Quanto já foi recebido no Caixa */
-  paid_amount?: number;
-  /** Desconto dado no balcão, na hora de receber */
-  counter_discount?: number;
-  /** Quitada em */
-  paid_at?: string | null;
   /** 'declined' = orçamento que o cliente não aprovou (status fica 'cancelled') */
   quote_status?: 'declined' | null;
   /** 'app' | 'paper_import' */
@@ -245,6 +239,10 @@ export interface ServiceOrder {
   /** Mecânico responsável pelo serviço original (preenchido por trigger) */
   rework_mechanic_id?: string | null;
   rework_notes?: string | null;
+  /** Caixa: quanto já foi recebido, desconto dado no balcão e quando foi quitada */
+  paid_amount?: number;
+  counter_discount?: number;
+  paid_at?: string | null;
 }
 
 export type ReworkCause = 'execution' | 'diagnosis' | 'part' | 'customer' | 'other';

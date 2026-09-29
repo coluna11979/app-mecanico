@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
+import PaymentsList from '@/components/cash/PaymentsList';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { canDo, useOperator } from '@/lib/operators';
@@ -8,7 +9,6 @@ import { METHODS, brl, hhmm } from '@/lib/cash';
 import { osNumber } from '@/components/os/osHelpers';
 import { fetchAll } from '@/lib/fetchAll';
 import { daysUntil, type Payable } from '@/lib/purchasing';
-import ReceivedPayments from '@/components/cash/ReceivedPayments';
 import { change, previousRange, productivity, salesOf, type PanelMechanic } from '@/lib/workshopMetrics';
 import PeriodPicker, { PREV_LABEL, usePeriod } from '@/components/PeriodPicker';
 import {
@@ -271,14 +271,6 @@ export default function Financeiro() {
               </div>
             </div>
 
-            {/* OS recebidas */}
-            {wid && (
-              <div className="card">
-                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">🧾 OS recebidas no período</div>
-                <ReceivedPayments wid={wid} from={range.from} to={range.to} ops={ops} compact />
-              </div>
-            )}
-
             {/* Contas a pagar */}
             <PayablesCard payables={payables} from={range.from} to={range.to} />
 
@@ -387,6 +379,10 @@ export default function Financeiro() {
                 )}
               </div>
             </div>
+
+            {/* Extrato: cada recebimento com a OS de origem */}
+            <PaymentsList filter={{ workshopId: wid!, from: range.from.toISOString(), to: range.to.toISOString() }}
+              title="🧾 Recebimentos de OS no período" empty="Nenhum recebimento no período." />
           </>
         )}
       </div>

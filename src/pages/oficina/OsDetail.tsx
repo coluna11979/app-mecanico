@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,10 +7,10 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
-import { METHODS, brl, type PayMethod } from '@/lib/cash';
 import OsEditModal from '@/components/os/OsEditModal';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
+import PaymentsList from '@/components/cash/PaymentsList';
 import {
   durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber, fmtPhone,
   statusChange, APPROVAL_CHANNELS, PAUSE_REASONS, openPause, workedMinutes,
@@ -23,7 +23,6 @@ type OsLink = { id: string; number: number | null; title: string; created_at: st
 
 export default function OsDetail() {
   const { id } = useParams();
-  const fromCaixa = useSearchParams()[0].get('caixa') === '1';
   const { currentWorkshop } = useAuth();
   const { balcao, session } = useOperator();
   const showCost = canDo(session, balcao, 'ver_financeiro');
@@ -248,6 +247,8 @@ export default function OsDetail() {
 
   const wa = waNumber(os.customer?.phone);
   const tel = os.customer?.phone?.replace(/\D/g, '');
+  const osOpenAmount = Math.round((os.price - Number(os.counter_discount ?? 0) - Number(os.paid_amount ?? 0)) * 100) / 100;
+  const canReceive = osOpenAmount > 0.004 && ['open', 'approved', 'in_progress', 'completed'].includes(os.status);
   const dur = os.completed_at ? workedMinutes(os.started_at, os.completed_at, os.pauses) : null;
   // Concluída ou cancelada fica travada: para mudar, é preciso reabrir (protege o histórico)
   const closed = os.status === 'cancelled' || os.status === 'completed';
@@ -255,16 +256,7 @@ export default function OsDetail() {
   return (
     <WorkshopLayout>
       <div className="max-w-6xl mx-auto">
-        <Link to={fromCaixa ? '/oficina/caixa' : '/oficina/os'} className="text-sm text-steel-500 hover:text-steel-800">← {fromCaixa ? 'Caixa' : 'Ordens de Serviço'}</Link>
-
-        {fromCaixa && os.status !== 'cancelled' && (
-          <div className="mt-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-brand-900">
-              <strong>Venda no balcão:</strong> lance as peças e serviços com os valores e clique em <strong>Salvar itens</strong>. Depois é só receber.
-            </p>
-            <Link to={`/oficina/caixa?os=${os.id}`} className="btn-primary text-sm !py-2">💰 Receber agora</Link>
-          </div>
-        )}
+        <Link to="/oficina/os" className="text-sm text-steel-500 hover:text-steel-800">← Ordens de Serviço</Link>
 
         {/* ── Cabeçalho ── */}
         <div className="card mt-3 mb-5">
@@ -281,6 +273,11 @@ export default function OsDetail() {
             <div className="text-left lg:text-right shrink-0">
               <div className="text-[10px] text-steel-400 uppercase tracking-wider">Total</div>
               <div className="text-3xl font-bold font-display text-steel-900">{fmtBRL(os.price)}</div>
+              {Number(os.paid_amount ?? 0) > 0 && (
+                <div className={`text-xs font-semibold mt-0.5 ${os.paid_at ? 'text-signal-700' : 'text-pending-800'}`}>
+                  {os.paid_at ? '✓ Paga' : `Pago ${fmtBRL(Number(os.paid_amount))} · falta ${fmtBRL(osOpenAmount)}`}
+                </div>
+              )}
             </div>
           </div>
 
@@ -295,6 +292,11 @@ export default function OsDetail() {
           )}
 
           <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap gap-2">
+            {canReceive && (
+              <button onClick={() => nav(`/oficina/caixa?os=${os.id}`)} className="btn-primary text-sm !py-2 !bg-signal-500">
+                💰 Receber no caixa · {fmtBRL(osOpenAmount)}
+              </button>
+            )}
             {os.status === 'open' && (
               <>
                 <button onClick={sendForApproval} disabled={busy} className="btn-primary text-sm !py-2">📤 Enviar orçamento para aprovação</button>
@@ -460,6 +462,10 @@ export default function OsDetail() {
               onSaved={load}
             />
 
+            {/* Pagamentos recebidos no caixa: quando, como e quem recebeu */}
+            <PaymentsList filter={{ serviceOrderId: os.id }} showOs={false} empty={null} reloadKey={os.paid_amount}
+              title="💰 Pagamentos desta OS" />
+
             {(os.description || os.notes) && (
               <div className="grid sm:grid-cols-2 gap-4">
                 {os.description && (
@@ -480,8 +486,6 @@ export default function OsDetail() {
 
           {/* ── Lateral ── */}
           <div className="space-y-4">
-            {os.status !== 'cancelled' && <PaymentCard osId={os.id} price={Number(os.price)} paid={Number(os.paid_amount ?? 0)} counterDiscount={Number(os.counter_discount ?? 0)} />}
-
             {/* Cliente */}
             <div className="card">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-2">Cliente</div>
@@ -701,59 +705,3 @@ function EmptyLink({ text, onClick }: { text: string; onClick?: () => void }) {
     </div>
   );
 }
-
-type OsPayment = {
-  id: string; amount: number; discount: number; change_given: number; created_at: string;
-  parts: { method: PayMethod; amount: number; installments: number; cancelled_at: string | null }[];
-};
-
-/** Situação do pagamento da OS (recebimentos lançados no Caixa) */
-function PaymentCard({ osId, price, paid, counterDiscount }: { osId: string; price: number; paid: number; counterDiscount: number }) {
-  const [pays, setPays] = useState<OsPayment[] | null>(null);
-  useEffect(() => {
-    supabase.from('os_payments')
-      .select('id, amount, discount, change_given, created_at, parts:cash_entries(method, amount, installments, cancelled_at)')
-      .eq('service_order_id', osId).is('cancelled_at', null).order('created_at')
-      .then(({ data }) => setPays((data as unknown as OsPayment[]) ?? []));
-  }, [osId, paid]);
-
-  const open = Math.round((price - counterDiscount - paid) * 100) / 100;
-  const state = paid <= 0.004 ? 'none' : open > 0.009 ? 'partial' : 'paid';
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Pagamento</div>
-        <span className={`badge ${state === 'paid' ? 'bg-signal-100 text-signal-700' : state === 'partial' ? 'bg-pending-100 text-pending-800' : 'bg-steel-100 text-steel-600'}`}>
-          {state === 'paid' ? '✓ Paga' : state === 'partial' ? 'Pago em parte' : 'Não recebida'}
-        </span>
-      </div>
-      <div className="text-sm space-y-1">
-        <div className="flex justify-between"><span className="text-steel-600">Recebido</span><strong>{brl(paid)}</strong></div>
-        {counterDiscount > 0 && <div className="flex justify-between text-steel-500"><span>Desconto no balcão</span><span>{brl(counterDiscount)}</span></div>}
-        {open > 0.009 && <div className="flex justify-between text-pending-800"><span>Falta receber</span><strong>{brl(open)}</strong></div>}
-      </div>
-      {pays && pays.length > 0 && (
-        <ul className="mt-3 pt-3 border-t border-steel-100 space-y-2">
-          {pays.map(p => (
-            <li key={p.id} className="text-xs">
-              <div className="flex justify-between font-semibold text-steel-700">
-                <span>{new Date(p.created_at).toLocaleDateString('pt-BR')} {new Date(p.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                <span>{brl(p.amount)}</span>
-              </div>
-              <div className="text-steel-500">
-                {p.parts.filter(x => !x.cancelled_at).map((x, i) => (
-                  <span key={i} className="mr-2">{METHODS[x.method]?.icon} {METHODS[x.method]?.label ?? x.method} {brl(x.amount)}{x.installments > 1 ? ` (${x.installments}x)` : ''}</span>
-                ))}
-                {Number(p.change_given) > 0 && <span className="mr-2">troco {brl(p.change_given)}</span>}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {state !== 'paid' && (
-        <Link to={`/oficina/caixa?os=${osId}`} className="block text-center text-xs font-semibold text-brand-700 mt-3">💰 Receber no Caixa →</Link>
-      )}
-    </div>
-  );
-}
-

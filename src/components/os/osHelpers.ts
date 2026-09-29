@@ -144,7 +144,8 @@ export function fmtDateTime(iso: string) {
 }
 
 export function fmtBRL(v: number | null | undefined) {
-  return `R$ ${(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+  // max 2 casas: sem isso o toLocaleString mostra até 3 (ex.: "R$ 7.452,917")
+  return `R$ ${(v ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** "11997341182" → "(11) 99734-1182"; "1134567890" → "(11) 3456-7890". Outros formatos ficam como estão. */

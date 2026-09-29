@@ -210,7 +210,7 @@ export default function ClienteFicha() {
           )}
           {ins && ins.openOs > 0 && (
             <div className="mt-3 text-sm text-brand-800 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2">
-              🔧 {ins.openOs} OS em aberto agora — veja no histórico abaixo.
+              🔧 {ins.openOs} OS em aberto agora{ins.openValue > 0 ? ` · ${fmtBRL(ins.openValue)} a entrar quando concluir` : ''} — veja na linha do tempo abaixo.
             </div>
           )}
         </div>
