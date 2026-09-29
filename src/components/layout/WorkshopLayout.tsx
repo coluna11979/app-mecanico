@@ -43,6 +43,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'Equipe', items: [
     { to: '/oficina/equipe',     icon: '👷', label: 'Colaboradores'        },
     { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho e comissões' },
+    { to: '/oficina/folha',      icon: '💼', label: 'Fechar folha'         },
     { to: '/oficina/acessos',    icon: '🔐', label: 'Acessos e funções'    },
   ] },
   { title: 'Plataforma', items: [

@@ -136,6 +136,7 @@ export default function ContasPagar() {
             <p className="text-sm text-steel-500 mt-1">Parcelas das notas de compra entram sozinhas. Aluguel, luz e salários você lança aqui.</p>
           </div>
           <div className="flex gap-2">
+            <Link to="/oficina/folha" className="btn-ghost border border-steel-200">💼 Fechar folha</Link>
             <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200">🧾 Lançar nota</Link>
             <button className="btn-primary" onClick={() => setCreating(true)}>+ Nova conta</button>
           </div>

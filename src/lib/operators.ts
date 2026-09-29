@@ -55,7 +55,7 @@ export function roleAllows(role: OperatorRole, path: string) {
 
 /** Telas extras liberadas por permissão, além das da função */
 const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
-  ver_financeiro: ['/oficina/financeiro', '/oficina/contas-a-pagar', '/oficina/pecas', '/oficina/compras', '/oficina/fornecedores'],
+  ver_financeiro: ['/oficina/financeiro', '/oficina/contas-a-pagar', '/oficina/folha', '/oficina/pecas', '/oficina/compras', '/oficina/fornecedores'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */

@@ -6,6 +6,7 @@ import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import { PAYABLE_CATEGORIES, PAYABLE_GROUPS, addMonthsISO, fmtDate, groupOf, todayISO, type Payable, type PayableGroupKey, type Supplier } from '@/lib/purchasing';
 import { addMonthsCompetence, autoDescription, fmtCompetence, formOf } from '@/lib/payableForms';
 import SupplierPicker from '@/components/parts/SupplierPicker';
+import { breakdown, calcNet, loadPayroll } from '@/lib/payroll';
 
 type Employee = { id: string; name: string };
 
@@ -41,6 +42,8 @@ export default function NewPayableModal({ wid, editing, onClose, onDone }: {
   const [next, setNext]           = useState<NextInSeries[]>([]);
   const [applyNext, setApplyNext] = useState(false);
   const firstRun = useRef(true);
+  const [autoAmount, setAutoAmount] = useState(false);
+  const [payrollHint, setPayrollHint] = useState('');
 
   // Edição de conta em série: próximas parcelas em aberto
   useEffect(() => {
@@ -71,6 +74,21 @@ export default function NewPayableModal({ wid, editing, onClose, onDone }: {
   const payeeName = form.payee === 'supplier' ? supplier?.name ?? ''
     : form.payee === 'employee' ? employees.find(e => e.id === employeeId)?.name ?? ''
     : form.payee === 'text' ? payeeText : '';
+
+  // Salário: ao escolher o colaborador, o valor vem do fechamento (salário + comissão − vales do mês)
+  useEffect(() => {
+    if (e0 || category !== 'Salários' || !employeeId) { setPayrollHint(''); return; }
+    let alive = true;
+    loadPayroll(wid, competence).then(rows => {
+      const r = rows.find(x => x.mechanicId === employeeId);
+      if (!alive || !r) return;
+      const c = calcNet({ base: r.base, commission: r.commission, absenceDays: 0, other: 0, vales: r.vales, carryIn: r.carryIn });
+      const text = breakdown({ base: r.base, commission: r.commission, commissionPct: r.commissionPct, absenceDays: 0, absence: 0, other: 0, vales: r.vales, carryIn: r.carryIn, net: c.net, carryOut: c.carryOut });
+      setPayrollHint(r.base > 0 ? text : 'Sem salário no cadastro do colaborador.');
+      if (r.base > 0 && (!amount || autoAmount)) { setAmount(moneyInput(c.net)); setAutoAmount(true); if (!notes || autoAmount) setNotes(text); }
+    });
+    return () => { alive = false; };
+  }, [employeeId, competence, category]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const auto = autoDescription(catName || 'Conta', payeeName, form.competence ? competence : null);
   useEffect(() => { if (!descTouched) setDescription(auto); }, [auto, descTouched]);
@@ -257,13 +275,19 @@ export default function NewPayableModal({ wid, editing, onClose, onDone }: {
           {/* 3. Valor e vencimento */}
           <section>
             <SectionTitle n={3} title="Valor e vencimento" />
+            {payrollHint && (
+              <div className="mb-4 rounded-xl bg-signal-50 border border-signal-200 px-3 py-2 text-xs text-signal-900">
+                💼 <strong>Cálculo do mês:</strong> {payrollHint}
+                <span className="block text-signal-700 mt-0.5">Faltas e outros descontos entram pelo <Link to="/oficina/folha" className="font-semibold underline" onClick={onClose}>Fechar folha</Link>.</span>
+              </div>
+            )}
             <div className="grid sm:grid-cols-3 gap-4">
               <div>
                 <label className="label">Valor {months > 1 ? 'mensal' : ''} *</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
                   <input className="input !pl-9 text-right font-semibold" inputMode="decimal" placeholder="0,00" value={amount}
-                    onChange={e => setAmount(e.target.value)}
+                    onChange={e => { setAmount(e.target.value); setAutoAmount(false); }}
                     onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) setAmount(moneyInput(v)); }} />
                 </div>
               </div>
