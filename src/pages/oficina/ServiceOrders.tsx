@@ -384,11 +384,10 @@ export default function ServiceOrders() {
               <EmptyState
                 icon="📋"
                 title="Nenhuma OS ainda"
-                description="Crie a sua primeira ordem de serviço ou ofereça um check-up gratuito para captar clientes."
+                description="Crie a sua primeira ordem de serviço."
                 actions={
                   <>
                     <button onClick={() => setNewOs({})} className="btn-primary text-sm !py-2">+ Nova OS</button>
-                    <button onClick={() => setNewOs({ title: 'Check-up gratuito', category: 'Check-up', free: true })} className="btn-ghost text-sm !py-2 border border-steel-200">🎁 Check-up gratuito</button>
                   </>
                 }
               />
