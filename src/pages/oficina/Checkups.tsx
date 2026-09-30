@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import NewOsModal from '@/components/os/NewOsModal';
-import { scoreMeta, templateRows, type VehicleCheckup } from '@/lib/checkup';
+import { saleStage, scoreMeta, templateRows, type VehicleCheckup } from '@/lib/checkup';
 import { DEMO_MECHANICS, startDemo } from '@/lib/checkupDemo';
 import type { Customer, Vehicle, WorkshopMechanic } from '@/types/database';
 
@@ -28,6 +28,16 @@ const EMPTY = {
 };
 
 const SCORE_TEXT = { signal: 'text-signal-600', pending: 'text-pending-600', alert: 'text-alert-600' };
+
+/** Etapa da venda no card (mesmo funil do Comercial) */
+const STAGE_LABEL: Record<ReturnType<typeof saleStage>, JSX.Element | null> = {
+  draft:    null,
+  quote:    <span className="text-steel-400">💰 Falta enviar o orçamento</span>,
+  sent:     <span className="text-steel-500">📤 Enviado ao cliente</span>,
+  viewed:   <span className="text-pending-700">👀 Cliente viu — sem resposta</span>,
+  answered: <span className="text-steel-500">❌ Não aprovou agora</span>,
+  won:      <span className="text-signal-700">✅ Aprovado — virou OS</span>,
+};
 
 /** Cria o check-up + itens do checklist e devolve o id. */
 async function createCheckup(payload: Partial<VehicleCheckup> & { workshop_id: string }) {
@@ -372,6 +382,7 @@ function CheckupCard({ c }: { c: Row }) {
           {[c.customer_name, c.mechanic?.name && `🔧 ${c.mechanic.name}`,
             new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })].filter(Boolean).join(' · ')}
         </div>
+        {c.status === 'completed' && <div className="text-[11px] font-semibold">{STAGE_LABEL[saleStage(c)]}</div>}
       </div>
       {c.status === 'completed' && meta ? (
         <div className="text-right shrink-0">

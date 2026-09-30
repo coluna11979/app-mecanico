@@ -23,6 +23,7 @@ interface SoonDept { dept: string; items: SoonItem[] }
 const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'Vendas', items: [
     { to: '/oficina/painel',     icon: '📊', label: 'Painel de vendas'     },
+    { to: '/oficina/comercial',  icon: '💼', label: 'Comercial'            },
     { to: '/oficina/clientes',   icon: '👥', label: 'Clientes'             },
   ] },
   { title: 'Financeiro', items: [
