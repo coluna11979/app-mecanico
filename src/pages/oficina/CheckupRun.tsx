@@ -6,10 +6,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import {
-  CHECKUP_TEMPLATE, SYSTEM_ICON, STATUS_META, TEMPLATE_BY_KEY,
-  checkupPhotoUrl, computeScore, publicReportUrl, scoreMeta, uploadCheckupPhoto, whatsappLink,
+  CHECKUP_TEMPLATE, DECISION_META, SYSTEM_ICON, STATUS_META, TEMPLATE_BY_KEY,
+  checkupPhotoUrl, computeScore, itemQuote, publicReportUrl, scoreMeta, uploadCheckupPhoto, whatsappLink,
   type CheckupItem, type CheckupItemStatus, type VehicleCheckup,
 } from '@/lib/checkup';
+import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
+import { loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { DEMO_ID, DEMO_MECHANICS, demoDraft, saveDemoResult } from '@/lib/checkupDemo';
 import type { WorkshopMechanic } from '@/types/database';
 
@@ -21,7 +23,8 @@ const STATUS_ON: Record<CheckupItemStatus, string> = {
 };
 const SCORE_TEXT = { signal: 'text-signal-600', pending: 'text-pending-600', alert: 'text-alert-600' };
 
-type Patch = Partial<Pick<CheckupItem, 'status' | 'measurement' | 'note' | 'photo_path'>>;
+type Patch = Partial<Pick<CheckupItem, 'status' | 'measurement' | 'note' | 'photo_path'
+  | 'quote_service' | 'quote_labor' | 'quote_part' | 'quote_part_id' | 'quote_parts'>>;
 type Row = VehicleCheckup & { os: { number: number | null } | null };
 
 export default function WorkshopCheckupRun() {
@@ -245,7 +248,8 @@ export default function WorkshopCheckupRun() {
         </div>
 
         {done ? (
-          <CompletedView checkup={checkup} items={items} workshopName={currentWorkshop?.business_name}
+          <CompletedView checkup={checkup} items={items} workshopName={currentWorkshop?.business_name} demo={demo}
+            onPatchItem={patchItem} onSent={() => patchCheckup({ quote_sent_at: new Date().toISOString() })}
             onReopen={() => patchCheckup({ status: 'draft' })} onDelete={remove} />
         ) : (
           <>
@@ -435,54 +439,174 @@ function ItemRow({ item, checkupId, workshopId, demo, onPatch, onRemove }: {
   );
 }
 
-/* ─── Finalizado ───────────────────────────────────────────── */
-function CompletedView({ checkup, items, workshopName, onReopen, onDelete }: {
-  checkup: VehicleCheckup; items: CheckupItem[]; workshopName?: string;
+/* ─── Finalizado: orçamento + envio + resposta do cliente ─── */
+function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent, onReopen, onDelete }: {
+  checkup: VehicleCheckup & { os?: { number: number | null } | null }; items: CheckupItem[]; workshopName?: string; demo: boolean;
+  onPatchItem: (item: CheckupItem, p: Patch) => void; onSent: () => void;
   onReopen: () => void; onDelete: () => void;
 }) {
   const url = publicReportUrl(checkup.public_token);
   const flagged = items.filter(i => i.status === 'urgent' || i.status === 'warn')
     .sort((a, b) => (a.status === 'urgent' ? 0 : 1) - (b.status === 'urgent' ? 0 : 1));
+  const total = flagged.reduce((a, i) => a + itemQuote(i), 0);
+  const answered = !!checkup.customer_responded_at;
+
+  // Sugestões: Tabela de serviços e cadastro de peças (preço de venda)
+  const [services, setServices] = useState<{ name: string; price: number }[]>([]);
+  const [parts, setParts] = useState<{ id: string; name: string; price: number }[]>([]);
+  useEffect(() => {
+    if (demo) return;
+    (async () => {
+      const [s, p, m] = await Promise.all([
+        supabase.from('workshop_services').select('name, price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name'),
+        supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name'),
+        loadDefaultMargin(checkup.workshop_id),
+      ]);
+      setServices(((s.data ?? []) as { name: string; price: number }[]).map(x => ({ name: x.name, price: Number(x.price) })));
+      setParts(((p.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'cost' | 'margin_percent' | 'sale_price'>[])
+        .map(x => ({ id: x.id, name: x.name, price: salePriceOf(x, m) })));
+    })();
+  }, [checkup.workshop_id, demo]);
 
   async function copy() {
     try { await navigator.clipboard.writeText(url); toast.success('Link copiado'); }
     catch { toast.error('Não foi possível copiar'); }
   }
 
+  const stepCls = (on: boolean) => `flex-1 text-center text-[11px] font-semibold rounded-lg px-2 py-1.5 ${on ? 'bg-signal-100 text-signal-800' : 'bg-steel-100 text-steel-400'}`;
+  const fmtWhen = (iso?: string | null) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+
   return (
     <>
-      <div className="card space-y-3">
-        <div className="font-bold text-steel-800">📤 Enviar relatório ao cliente</div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <a href={whatsappLink(checkup, workshopName)} target="_blank" rel="noreferrer"
-            className="btn-primary !bg-[#25D366] text-center flex-1">Enviar pelo WhatsApp</a>
-          <button onClick={copy} className="btn-ghost border border-steel-200">Copiar link</button>
-          <a href={url} target="_blank" rel="noreferrer" className="btn-ghost border border-steel-200 text-center">Ver relatório</a>
+      {/* Funil: enviado → cliente viu → respondeu → virou OS */}
+      <div className="card space-y-2">
+        <div className="flex gap-1.5">
+          <span className={stepCls(!!checkup.quote_sent_at)}>📤 Enviado</span>
+          <span className={stepCls(!!checkup.customer_viewed_at)}>👀 Cliente viu</span>
+          <span className={stepCls(answered)}>💬 Respondeu</span>
+          <span className={stepCls(!!checkup.sale_os_id)}>🧾 Virou OS</span>
+        </div>
+        <div className="text-xs text-steel-500">
+          {checkup.sale_os_id ? (
+            <>✅ Cliente aprovou{checkup.customer_scheduled_at && <> e agendou para <strong className="text-steel-800">{fmtWhen(checkup.customer_scheduled_at)}</strong></>}
+              {' · '}<Link to={`/oficina/os/${checkup.sale_os_id}`} className="font-semibold text-brand-600 hover:underline">abrir a OS</Link></>
+          ) : answered ? 'Cliente respondeu sem aprovar nenhum item agora. O que ele pediu para lembrar foi para a ficha dele.'
+            : checkup.customer_viewed_at ? `Cliente abriu o link em ${fmtWhen(checkup.customer_viewed_at)} e ainda não respondeu — vale uma ligação.`
+            : checkup.quote_sent_at ? `Enviado em ${fmtWhen(checkup.quote_sent_at)} · aguardando o cliente abrir.`
+            : total > 0 ? 'Orçamento pronto — envie para o cliente aprovar pelo link.' : 'Coloque o valor de cada item e envie para o cliente aprovar.'}
         </div>
       </div>
 
+      {/* Orçamento */}
       {flagged.length > 0 && (
-        <div className="card space-y-2">
-          <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Serviços recomendados</div>
-          {flagged.map(i => (
-            <div key={i.id} className="flex items-start gap-2 text-sm py-1">
-              <span>{STATUS_META[i.status!].dot}</span>
-              <div className="flex-1 min-w-0">
-                <div className="text-steel-800">{i.label}{i.measurement && <span className="text-steel-500"> · {i.measurement}</span>}</div>
-                {i.note && <div className="text-xs text-steel-500">{i.note}</div>}
-              </div>
-            </div>
-          ))}
-          <p className="text-xs text-steel-400 pt-2 border-t border-steel-100">
-            Em breve: transformar estes itens em orçamento na Mesa Comercial.
-          </p>
+        <div className="card !p-0 overflow-hidden">
+          <div className="px-5 pt-5 pb-3">
+            <div className="font-bold text-steel-800">💰 Orçamento dos itens</div>
+            <p className="text-xs text-steel-500">
+              {answered ? 'Resposta do cliente em cada item.' : 'Serviço e peça de cada item. O cliente vê os valores no link e aprova o que quiser fazer.'}
+            </p>
+          </div>
+          <datalist id="ck-services">{services.map(x => <option key={x.name} value={x.name}>{x.price > 0 ? fmtBRL(x.price) : 'preço na hora'}</option>)}</datalist>
+          <datalist id="ck-parts">{parts.map(x => <option key={x.id} value={x.name}>{fmtBRL(x.price)}</option>)}</datalist>
+          <div className="divide-y divide-steel-100">
+            {flagged.map(i => (
+              <QuoteRow key={i.id} item={i} readOnly={answered} services={services} parts={parts} onPatch={p => onPatchItem(i, p)} />
+            ))}
+          </div>
+          <div className="px-5 py-3 bg-steel-50 border-t border-steel-100 flex justify-between items-center">
+            <span className="text-sm font-semibold text-steel-600">Total orçado</span>
+            <span className="text-xl font-bold font-display">{fmtBRL(total)}</span>
+          </div>
         </div>
       )}
 
+      <div className="card space-y-3">
+        <div className="font-bold text-steel-800">📤 Enviar ao cliente</div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <a href={whatsappLink(checkup, workshopName, total)} target="_blank" rel="noreferrer" onClick={onSent}
+            className="btn-primary !bg-[#25D366] text-center flex-1">
+            {total > 0 ? 'Enviar orçamento pelo WhatsApp' : 'Enviar relatório pelo WhatsApp'}
+          </a>
+          <button onClick={() => { copy(); onSent(); }} className="btn-ghost border border-steel-200">Copiar link</button>
+          <a href={url} target="_blank" rel="noreferrer" className="btn-ghost border border-steel-200 text-center">Ver como o cliente</a>
+        </div>
+        {total > 0 && !answered && (
+          <p className="text-[11px] text-steel-400">No link o cliente aprova item por item e escolhe o horário para trazer o carro. O que ele aprovar vira OS agendada.</p>
+        )}
+      </div>
+
       <div className="flex gap-2">
-        <button onClick={onReopen} className="btn-ghost text-sm border border-steel-200">✏️ Editar</button>
+        {!answered && <button onClick={onReopen} className="btn-ghost text-sm border border-steel-200">✏️ Editar inspeção</button>}
         <button onClick={onDelete} className="btn-ghost text-sm text-steel-500 hover:text-alert-600">Excluir</button>
       </div>
     </>
+  );
+}
+
+function QuoteRow({ item, readOnly, services, parts, onPatch }: {
+  item: CheckupItem; readOnly: boolean;
+  services: { name: string; price: number }[]; parts: { id: string; name: string; price: number }[];
+  onPatch: (p: Patch) => void;
+}) {
+  const [svc, setSvc]     = useState(item.quote_service ?? '');
+  const [labor, setLabor] = useState(item.quote_labor != null ? moneyInput(Number(item.quote_labor)) : '');
+  const [part, setPart]   = useState(item.quote_part ?? '');
+  const [pval, setPval]   = useState(item.quote_parts != null ? moneyInput(Number(item.quote_parts)) : '');
+  const money = (v: string) => { const n = parseMoney(v); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null; };
+  const d = item.customer_decision ? DECISION_META[item.customer_decision] : null;
+
+  function pickService(v: string) {
+    setSvc(v);
+    const s = services.find(x => x.name.toLowerCase() === v.trim().toLowerCase());
+    if (s && s.price > 0 && !labor) { setLabor(moneyInput(s.price)); onPatch({ quote_service: s.name, quote_labor: s.price }); }
+  }
+  function pickPart(v: string) {
+    setPart(v);
+    const p = parts.find(x => x.name.toLowerCase() === v.trim().toLowerCase());
+    if (p) { setPval(moneyInput(p.price)); onPatch({ quote_part: p.name, quote_part_id: p.id, quote_parts: p.price }); }
+  }
+
+  return (
+    <div className="px-5 py-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <span>{STATUS_META[item.status!].dot}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-steel-800">{item.label}{item.measurement && <span className="font-normal text-steel-500"> · {item.measurement}</span>}</div>
+          {item.note && <div className="text-xs text-steel-500">{item.note}</div>}
+        </div>
+        {readOnly
+          ? <span className={`text-xs font-bold shrink-0 ${d?.tone ?? 'text-steel-400'}`}>{d ? `${d.icon} ${d.short}` : 'sem resposta'}</span>
+          : <span className="text-sm font-bold shrink-0">{itemQuote(item) > 0 ? fmtBRL(itemQuote(item)) : ''}</span>}
+      </div>
+      {readOnly ? (
+        (item.quote_service || item.quote_part) && (
+          <div className="text-xs text-steel-500 pl-6">
+            {[item.quote_service && `${item.quote_service} ${fmtBRL(Number(item.quote_labor ?? 0))}`,
+              item.quote_part && `${item.quote_part} ${fmtBRL(Number(item.quote_parts ?? 0))}`].filter(Boolean).join(' + ')}
+          </div>
+        )
+      ) : (
+        <div className="grid grid-cols-12 gap-2 pl-6">
+          <input className="input !py-1.5 text-sm col-span-8" list="ck-services" placeholder="Serviço (ex.: Troca das buchas)"
+            value={svc} onChange={e => pickService(e.target.value)}
+            onBlur={() => svc.trim() !== (item.quote_service ?? '') && onPatch({ quote_service: svc.trim() || null })} />
+          <div className="relative col-span-4">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+            <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" placeholder="mão de obra" value={labor}
+              onChange={e => setLabor(e.target.value)}
+              onBlur={() => { const n = money(labor); setLabor(n != null ? moneyInput(n) : ''); if (n !== (item.quote_labor ?? null)) onPatch({ quote_labor: n }); }} />
+          </div>
+          <input className="input !py-1.5 text-sm col-span-8" list="ck-parts" placeholder="Peça (opcional)"
+            value={part} onChange={e => pickPart(e.target.value)}
+            onBlur={() => { if (part.trim() !== (item.quote_part ?? '')) onPatch({ quote_part: part.trim() || null, quote_part_id: parts.find(x => x.name === part.trim())?.id ?? null }); }} />
+          <div className="relative col-span-4">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+            <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" placeholder="peça" value={pval}
+              onChange={e => setPval(e.target.value)}
+              onBlur={() => { const n = money(pval); setPval(n != null ? moneyInput(n) : ''); if (n !== (item.quote_parts ?? null)) onPatch({ quote_parts: n }); }} />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

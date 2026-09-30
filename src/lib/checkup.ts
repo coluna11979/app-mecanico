@@ -25,6 +25,12 @@ export interface VehicleCheckup {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  /** Funil de venda (migration 0052) */
+  quote_sent_at?: string | null;
+  customer_viewed_at?: string | null;
+  customer_responded_at?: string | null;
+  customer_scheduled_at?: string | null;
+  sale_os_id?: string | null;
 }
 
 export interface CheckupItem {
@@ -38,6 +44,37 @@ export interface CheckupItem {
   measurement: string | null;
   note: string | null;
   photo_path: string | null;
+  /** Orçamento do item (serviço + peça) */
+  quote_service?: string | null;
+  quote_labor?: number | null;
+  quote_part?: string | null;
+  quote_part_id?: string | null;
+  quote_parts?: number | null;
+  /** Resposta do cliente no link */
+  customer_decision?: CustomerDecision | null;
+  remind_on?: string | null;
+}
+
+export type CustomerDecision = 'approve' | 'remind' | 'decline';
+
+export const DECISION_META: Record<CustomerDecision, { label: string; short: string; icon: string; tone: string }> = {
+  approve: { label: 'Pode fazer',        short: 'Aprovado',  icon: '✅', tone: 'text-signal-700' },
+  remind:  { label: 'Me lembra depois',  short: 'Lembrar',   icon: '⏰', tone: 'text-pending-700' },
+  decline: { label: 'Agora não',         short: 'Recusado',  icon: '❌', tone: 'text-steel-500' },
+};
+
+/** Valor orçado do item (serviço + peça) */
+export const itemQuote = (i: { quote_labor?: number | null; quote_parts?: number | null }) =>
+  Number(i.quote_labor ?? 0) + Number(i.quote_parts ?? 0);
+
+/** Em que ponto da venda o check-up está */
+export function saleStage(c: Pick<VehicleCheckup, 'status' | 'quote_sent_at' | 'customer_viewed_at' | 'customer_responded_at' | 'sale_os_id'>) {
+  if (c.status !== 'completed') return 'draft' as const;
+  if (c.sale_os_id) return 'won' as const;
+  if (c.customer_responded_at) return 'answered' as const;
+  if (c.customer_viewed_at) return 'viewed' as const;
+  if (c.quote_sent_at) return 'sent' as const;
+  return 'quote' as const;
 }
 
 /* ─── Checklist padrão ─────────────────────────────────────────
@@ -163,6 +200,7 @@ export function publicReportUrl(token: string) {
 export function whatsappLink(
   c: Pick<VehicleCheckup, 'customer_name' | 'customer_phone' | 'plate' | 'make' | 'model' | 'score' | 'public_token'>,
   workshopName?: string,
+  quoteTotal = 0,
 ) {
   const first = c.customer_name?.trim().split(' ')[0];
   const car   = [c.make, c.model].filter(Boolean).join(' ') || 'seu veículo';
@@ -171,7 +209,9 @@ export function whatsappLink(
     `Olá${first ? ` ${first}` : ''}! Aqui é da ${workshopName || 'oficina'}. ` +
     `Fizemos o check-up do ${car}${plate}. ` +
     `Nota de saúde: ${c.score ?? '—'}/100.\n\n` +
-    `Veja o relatório completo com fotos: ${publicReportUrl(c.public_token)}`;
+    (quoteTotal > 0
+      ? `Separamos o orçamento do que precisa de atenção. No link você vê as fotos, aprova o que quiser fazer e já escolhe o melhor horário para trazer o carro: ${publicReportUrl(c.public_token)}`
+      : `Veja o relatório completo com fotos: ${publicReportUrl(c.public_token)}`);
   const digits = (c.customer_phone ?? '').replace(/\D/g, '');
   const phone  = digits ? (digits.length <= 11 ? `55${digits}` : digits) : '';
   return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
