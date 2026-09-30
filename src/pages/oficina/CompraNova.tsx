@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
@@ -11,6 +11,7 @@ import {
 } from '@/lib/parts';
 import { addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
+import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '@/lib/invoiceImport';
 
 type Row = { key: string; part_id: string | null; name: string; unit: string; quantity: string; unit_cost: string };
 type Inst = { due_date: string; amount: string };
@@ -18,6 +19,9 @@ type Inst = { due_date: string; amount: string };
 let seq = 0;
 const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, name: '', unit: 'un', quantity: '1', unit_cost: '' });
 const num = (s: string) => { const n = parseMoney(s); return Number.isFinite(n) ? n : 0; };
+/** Custo unitário com até 4 casas (nota de autopeças costuma ter centavos quebrados) */
+const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
 
 export default function CompraNova() {
   const { currentWorkshop } = useAuth();
@@ -42,6 +46,14 @@ export default function CompraNova() {
   const [insts, setInsts]         = useState<Inst[]>([]);
   const [newSupplier, setNewSupplier] = useState(false);
   const [saving, setSaving]       = useState(false);
+  // Importar arquivo da nota (XML sem IA; PDF com IA, se liberado)
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [reading, setReading]     = useState<null | 'xml' | 'ia'>(null);
+  const [imported, setImported]   = useState<InvoiceData | null>(null);
+  const [missingSupplier, setMissingSupplier] = useState<InvoiceData['supplier'] | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  /** Parcelas que vieram na nota — usadas enquanto batem com o total e o 1º vencimento */
+  const importedInsts = useRef<{ due: string; amount: number }[] | null>(null);
 
   useEffect(() => {
     if (!wid || !allowed) return;
@@ -55,6 +67,7 @@ export default function CompraNova() {
       setParts((p.data as WorkshopPart[]) ?? []);
       setMargin(m);
     })();
+    hasAiInvoice(wid).then(setAiEnabled);
   }, [wid, allowed]);
 
   const supplier = suppliers.find(s => s.id === supplierId) ?? null;
@@ -68,6 +81,12 @@ export default function CompraNova() {
   useEffect(() => { setFirstDue(addDaysISO(date, supplier?.payment_days ?? 0)); }, [date, supplier?.payment_days]);
   // Parcelas refeitas quando muda total, quantidade ou 1º vencimento
   useEffect(() => {
+    const fromNote = importedInsts.current;
+    if (fromNote && fromNote.length === count && fromNote[0]?.due === firstDue
+      && Math.abs(fromNote.reduce((a, i) => a + i.amount, 0) - total) < 0.011) {
+      setInsts(fromNote.map(i => ({ due_date: i.due, amount: moneyInput(i.amount) })));
+      return;
+    }
     setInsts(total > 0
       ? splitInstallments(total, count, firstDue).map(i => ({ due_date: i.due_date, amount: moneyInput(i.amount) }))
       : []);
@@ -118,6 +137,76 @@ export default function CompraNova() {
     }));
   }
 
+  /** Preenche a tela com o que veio do arquivo da nota */
+  function applyInvoice(d: InvoiceData) {
+    // Fornecedor: pelo CNPJ; senão pelo nome
+    const cnpj = onlyDigits(d.supplier.cnpj);
+    const sup = (cnpj && suppliers.find(s => onlyDigits(s.cnpj) === cnpj))
+      || suppliers.find(s => s.name.trim().toLowerCase() === d.supplier.name.trim().toLowerCase());
+    if (sup) { setSupplierId(sup.id); setMissingSupplier(null); }
+    else { setSupplierId(''); setMissingSupplier(d.supplier.name ? d.supplier : null); }
+    if (d.number) setNumber(d.number);
+    if (d.date) setDate(d.date);
+    // Peças: pelo código do fornecedor; senão pelo nome; senão peça nova
+    const byCode = new Map(parts.filter(p => p.code).map(p => [p.code!.trim().toLowerCase(), p]));
+    setRows(d.items.length ? d.items.map(it => {
+      const p = (it.code && byCode.get(it.code.toLowerCase())) || byName.get(it.name.toLowerCase());
+      return {
+        key: `r${++seq}`, part_id: p?.id ?? null, name: p ? p.name : it.name, unit: p ? p.unit : it.unit,
+        quantity: String(it.qty).replace('.', ','), unit_cost: costInput(it.unitCost),
+      };
+    }) : [newRow()]);
+    setFreight(d.freight ? moneyInput(d.freight) : '');
+    setDiscount(d.discount ? moneyInput(d.discount) : '');
+    if (d.installments.length) {
+      importedInsts.current = d.installments;
+      setCount(Math.min(12, d.installments.length));
+      setFirstDue(d.installments[0].due);
+    } else {
+      importedInsts.current = null;
+    }
+    setImported(d);
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !wid) return;
+    const isXml = file.name.toLowerCase().endsWith('.xml') || file.type.includes('xml');
+    try {
+      if (isXml) {
+        setReading('xml');
+        const d = parseNfeXml(await file.text());
+        if (!d) throw new Error('Este XML não parece uma NF-e. Confira se é o XML da nota do fornecedor.');
+        applyInvoice(d);
+        toast.success(`Nota importada do XML ✓ ${d.items.length} ite${d.items.length === 1 ? 'm' : 'ns'} — confira e lance`);
+      } else {
+        if (!aiEnabled) throw new Error('A leitura do PDF com IA não está liberada para esta loja. Use o arquivo XML da nota.');
+        setReading('ia');
+        const d = await readInvoiceWithAi(wid, file);
+        applyInvoice(d);
+        toast.success(`Nota lida pela IA ✓ ${d.items.length} ite${d.items.length === 1 ? 'm' : 'ns'} — confira antes de lançar`);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Não foi possível ler o arquivo');
+    } finally {
+      setReading(null);
+    }
+  }
+
+  async function createMissingSupplier() {
+    if (!wid || !missingSupplier) return;
+    const { data, error } = await supabase.from('suppliers').insert({
+      workshop_id: wid, name: missingSupplier.name, cnpj: missingSupplier.cnpj || null, phone: missingSupplier.phone || null,
+    }).select('*').single();
+    if (error) return toast.error('Não foi possível cadastrar o fornecedor: ' + error.message);
+    const s = data as Supplier;
+    setSuppliers(xs => [...xs, s].sort((a, b) => a.name.localeCompare(b.name)));
+    setSupplierId(s.id);
+    setMissingSupplier(null);
+    toast.success(`Fornecedor ${s.name} cadastrado ✓`);
+  }
+
   async function save() {
     if (!supplierId) return toast.error('Escolha o fornecedor');
     const items = rows.filter(r => r.name.trim());
@@ -153,6 +242,37 @@ export default function CompraNova() {
           <h1 className="text-3xl font-bold tracking-tight mt-1">🧾 Lançar nota de compra</h1>
           <p className="text-sm text-steel-500 mt-1">Ao lançar, as peças entram no estoque, o custo é atualizado e as parcelas vão para as contas a pagar.</p>
         </div>
+
+        {/* Importar arquivo da nota */}
+        <div className="card flex flex-col sm:flex-row sm:items-center gap-3 !bg-brand-50/60 border border-brand-100">
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-steel-900">📎 Importar arquivo da nota</div>
+            <p className="text-xs text-steel-600 mt-0.5">
+              <strong>XML</strong> da NF-e (o fornecedor manda por e-mail): preenche tudo, exato.
+              {aiEnabled
+                ? <> <strong>PDF</strong> (DANFE) ou foto: a <strong>IA ✨</strong> lê e preenche — confira antes de lançar.</>
+                : <> Leitura de PDF com IA: peça para liberar na sua loja.</>}
+            </p>
+          </div>
+          <input ref={fileRef} type="file" className="hidden" onChange={onFile}
+            accept={aiEnabled ? '.xml,text/xml,application/xml,.pdf,application/pdf,image/*' : '.xml,text/xml,application/xml'} />
+          <button type="button" className="btn-primary shrink-0" disabled={!!reading} onClick={() => fileRef.current?.click()}>
+            {reading === 'ia' ? '✨ Lendo a nota com IA…' : reading === 'xml' ? 'Lendo XML…' : aiEnabled ? 'Escolher XML ou PDF' : 'Escolher XML'}
+          </button>
+        </div>
+
+        {imported && (
+          <ImportSummary d={imported} itemsTotal={itemsTotal} freight={num(freight)} discount={num(discount)} />
+        )}
+        {missingSupplier && (
+          <div className="rounded-xl bg-pending-50 border border-pending-200 px-4 py-3 text-sm flex flex-wrap items-center gap-3">
+            <span className="flex-1 min-w-0">
+              Fornecedor da nota não está cadastrado: <strong>{missingSupplier.name}</strong>
+              {missingSupplier.cnpj && <span className="text-steel-500"> · CNPJ {missingSupplier.cnpj}</span>}
+            </span>
+            <button type="button" className="btn-primary !py-1.5 text-sm" onClick={createMissingSupplier}>+ Cadastrar e usar</button>
+          </div>
+        )}
 
         {/* Fornecedor e nota */}
         <div className="card grid sm:grid-cols-4 gap-3">
@@ -334,6 +454,34 @@ function MoneyLine({ label, value, onChange, minus }: { label: string; value: st
           onChange={e => onChange(e.target.value)}
           onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) onChange(v ? moneyInput(v) : ''); }} />
       </div>
+    </div>
+  );
+}
+
+/** Resumo do que veio do arquivo: confere a soma com o total impresso na nota */
+function ImportSummary({ d, itemsTotal, freight, discount }: { d: InvoiceData; itemsTotal: number; freight: number; discount: number }) {
+  const formTotal = Math.round((itemsTotal + freight - discount) * 100) / 100;
+  const diff = d.total != null ? Math.round((d.total - formTotal) * 100) / 100 : 0;
+  const ok = d.total == null || Math.abs(diff) < 0.05;
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm space-y-1 ${ok ? 'bg-signal-50 border-signal-200' : 'bg-pending-50 border-pending-200'}`}>
+      <div className="font-semibold">
+        {d.source === 'xml' ? '✓ Nota importada do XML' : '✨ Nota lida pela IA — confira os itens'}
+        {' · '}{d.items.length} ite{d.items.length === 1 ? 'm' : 'ns'}
+        {d.installments.length > 0 && ` · ${d.installments.length} parcela${d.installments.length === 1 ? '' : 's'}`}
+      </div>
+      {d.total != null && (
+        ok
+          ? <div className="text-steel-600">Total da nota {fmtBRL(d.total)} confere com a soma lançada.</div>
+          : <div className="text-pending-800">
+              ⚠️ Total impresso na nota {fmtBRL(d.total)}, soma lançada {fmtBRL(formTotal)} (diferença {fmtBRL(diff)}).
+              Confira quantidades e valores{d.source === 'ia' ? ' — IPI ou ST podem estar fora dos itens' : ''}.
+            </div>
+      )}
+      {d.source === 'xml' && <div className="text-xs text-steel-500">IPI, ST e outras despesas da nota já estão no custo de cada peça.</div>}
+      {d.uncertain.length > 0 && (
+        <div className="text-xs text-pending-800">A IA ficou em dúvida em: {d.uncertain.join(', ')}.</div>
+      )}
     </div>
   );
 }
