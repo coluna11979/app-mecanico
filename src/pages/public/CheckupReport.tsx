@@ -350,8 +350,9 @@ function QuoteSection({ token, data, onDone, onZoom }: {
               <div className="text-xs font-bold">{STATUS_META[i.status].dot} {STATUS_META[i.status].label}<span className="font-normal text-steel-500"> · {i.system}</span></div>
               <div className="font-semibold text-sm mt-0.5">{i.label}{i.measurement && <span className="font-normal text-steel-500"> · {i.measurement}</span>}</div>
               {i.note && <div className="text-sm text-steel-600 mt-0.5">{i.note}</div>}
-              <div className="text-xs text-steel-500 mt-1">
-                {[i.quote_service, i.quote_part].filter(Boolean).join(' + ')}
+              <div className="text-xs text-steel-500 mt-1.5 space-y-0.5">
+                {Number(i.quote_labor ?? 0) > 0 && <div>🔧 Mão de obra{i.quote_service ? ` · ${i.quote_service}` : ''} <strong className="text-steel-700">{fmtBRL(Number(i.quote_labor))}</strong></div>}
+                {Number(i.quote_parts ?? 0) > 0 && <div>🔩 Peça{i.quote_part ? ` · ${i.quote_part}` : ''} <strong className="text-steel-700">{fmtBRL(Number(i.quote_parts))}</strong></div>}
               </div>
             </div>
             <div className="text-right shrink-0 font-bold">{fmtBRL(itemQuote(i))}</div>

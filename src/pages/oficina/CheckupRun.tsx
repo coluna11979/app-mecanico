@@ -581,30 +581,38 @@ function QuoteRow({ item, readOnly, services, parts, onPatch }: {
       </div>
       {readOnly ? (
         (item.quote_service || item.quote_part) && (
-          <div className="text-xs text-steel-500 pl-6">
-            {[item.quote_service && `${item.quote_service} ${fmtBRL(Number(item.quote_labor ?? 0))}`,
-              item.quote_part && `${item.quote_part} ${fmtBRL(Number(item.quote_parts ?? 0))}`].filter(Boolean).join(' + ')}
+          <div className="text-xs text-steel-500 pl-6 space-y-0.5">
+            {Number(item.quote_labor ?? 0) > 0 && <div>🔧 Mão de obra{item.quote_service ? ` — ${item.quote_service}` : ''}: {fmtBRL(Number(item.quote_labor))}</div>}
+            {Number(item.quote_parts ?? 0) > 0 && <div>🔩 Peça{item.quote_part ? ` — ${item.quote_part}` : ''}: {fmtBRL(Number(item.quote_parts))}</div>}
           </div>
         )
       ) : (
-        <div className="grid grid-cols-12 gap-2 pl-6">
-          <input className="input !py-1.5 text-sm col-span-8" list="ck-services" placeholder="Serviço (ex.: Troca das buchas)"
-            value={svc} onChange={e => pickService(e.target.value)}
-            onBlur={() => svc.trim() !== (item.quote_service ?? '') && onPatch({ quote_service: svc.trim() || null })} />
-          <div className="relative col-span-4">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
-            <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" placeholder="mão de obra" value={labor}
-              onChange={e => setLabor(e.target.value)}
-              onBlur={() => { const n = money(labor); setLabor(n != null ? moneyInput(n) : ''); if (n !== (item.quote_labor ?? null)) onPatch({ quote_labor: n }); }} />
+        <div className="pl-6 space-y-2">
+          {/* Mão de obra */}
+          <div className="flex items-center gap-2">
+            <span className="w-28 shrink-0 text-xs font-semibold text-steel-600">🔧 Mão de obra</span>
+            <input className="input !py-1.5 text-sm flex-1 min-w-0" list="ck-services" placeholder="Qual serviço? (ex.: Troca das pastilhas)"
+              value={svc} onChange={e => pickService(e.target.value)}
+              onBlur={() => svc.trim() !== (item.quote_service ?? '') && onPatch({ quote_service: svc.trim() || null })} />
+            <div className="relative w-32 shrink-0">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+              <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={labor}
+                onChange={e => setLabor(e.target.value)}
+                onBlur={() => { const n = money(labor); setLabor(n != null ? moneyInput(n) : ''); if (n !== (item.quote_labor ?? null)) onPatch({ quote_labor: n }); }} />
+            </div>
           </div>
-          <input className="input !py-1.5 text-sm col-span-8" list="ck-parts" placeholder="Peça (opcional)"
-            value={part} onChange={e => pickPart(e.target.value)}
-            onBlur={() => { if (part.trim() !== (item.quote_part ?? '')) onPatch({ quote_part: part.trim() || null, quote_part_id: parts.find(x => x.name === part.trim())?.id ?? null }); }} />
-          <div className="relative col-span-4">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
-            <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" placeholder="peça" value={pval}
-              onChange={e => setPval(e.target.value)}
-              onBlur={() => { const n = money(pval); setPval(n != null ? moneyInput(n) : ''); if (n !== (item.quote_parts ?? null)) onPatch({ quote_parts: n }); }} />
+          {/* Peça */}
+          <div className="flex items-center gap-2">
+            <span className="w-28 shrink-0 text-xs font-semibold text-steel-600">🔩 Peça</span>
+            <input className="input !py-1.5 text-sm flex-1 min-w-0" list="ck-parts" placeholder="Qual peça? (vazio se não precisar)"
+              value={part} onChange={e => pickPart(e.target.value)}
+              onBlur={() => { if (part.trim() !== (item.quote_part ?? '')) onPatch({ quote_part: part.trim() || null, quote_part_id: parts.find(x => x.name === part.trim())?.id ?? null }); }} />
+            <div className="relative w-32 shrink-0">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+              <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={pval}
+                onChange={e => setPval(e.target.value)}
+                onBlur={() => { const n = money(pval); setPval(n != null ? moneyInput(n) : ''); if (n !== (item.quote_parts ?? null)) onPatch({ quote_parts: n }); }} />
+            </div>
           </div>
         </div>
       )}
