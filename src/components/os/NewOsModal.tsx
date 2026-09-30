@@ -38,6 +38,8 @@ export interface NewOsPreset {
   category?: string;
   free?: boolean;       // check-up gratuito
   schedule?: boolean;   // abrir já em "Agendar"
+  when?: string;        // data/hora do agendamento já escolhida (AAAA-MM-DDTHH:mm), ex.: clicou no horário da Agenda
+  mechanicId?: string;  // responsável já escolhido
   customerId?: string;  // abrir com o cliente já escolhido (ex.: vindo da ficha do cliente)
   vehicleId?: string | null;
 }
@@ -84,10 +86,10 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
 
   // 3. Execução
   const [mechs, setMechs]       = useState<WorkshopMechanic[]>([]);
-  const [mechId, setMechId]     = useState('');
+  const [mechId, setMechId]     = useState(preset?.mechanicId ?? '');
   const [km, setKm]             = useState('');
   const [schedule, setSchedule] = useState(!!preset?.schedule);
-  const [when, setWhen]         = useState('');
+  const [when, setWhen]         = useState(preset?.when ?? '');
   const [saving, setSaving]     = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 

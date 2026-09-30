@@ -36,6 +36,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     { to: '/oficina/fornecedores', icon: '🚚', label: 'Fornecedores'       },
   ] },
   { title: 'Operação', items: [
+    { to: '/oficina/agenda',     icon: '📅', label: 'Agenda'               },
     { to: '/oficina/os',         icon: '📋', label: 'Ordens de Serviço'    },
     { to: '/oficina/servicos',   icon: '🛠️', label: 'Tabela de serviços'   },
     { to: '/oficina/checkup',    icon: '🩺', label: 'Check-up'             },
