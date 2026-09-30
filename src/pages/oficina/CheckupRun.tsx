@@ -53,7 +53,8 @@ export default function WorkshopCheckupRun() {
       c = { ...d.checkup, os: null }; list = d.items; setMechs(DEMO_MECHANICS);
     } else {
       const [r1, r2] = await Promise.all([
-        supabase.from('vehicle_checkups').select('*, os:service_orders!vehicle_checkups_service_order_id_fkey(number)')  // 2 FKs p/ OS (origem e sale_os_id): dizer qual.eq('id', id!).maybeSingle(),
+        // 2 FKs para OS (origem e sale_os_id): o embed precisa dizer qual
+        supabase.from('vehicle_checkups').select('*, os:service_orders!vehicle_checkups_service_order_id_fkey(number)').eq('id', id!).maybeSingle(),
         supabase.from('checkup_items').select('*').eq('checkup_id', id!).order('position'),
       ]);
       c = r1.data as Row | null; list = (r2.data as CheckupItem[]) ?? [];
