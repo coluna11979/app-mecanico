@@ -8,6 +8,7 @@ import LicensePlate from '@/components/os/LicensePlate';
 import NewOsModal from '@/components/os/NewOsModal';
 import { MECHANIC_STAGE_META, mechanicStage, saleStage, scoreMeta, templateRows, type VehicleCheckup } from '@/lib/checkup';
 import { DEMO_MECHANICS, startDemo } from '@/lib/checkupDemo';
+import { useOperator } from '@/lib/operators';
 import type { Customer, Vehicle, WorkshopMechanic } from '@/types/database';
 
 type Row = VehicleCheckup & { mechanic: { name: string } | null };
@@ -67,6 +68,9 @@ export default function WorkshopCheckups() {
   const [saving, setSaving]       = useState(false);
   const [filter, setFilter]       = useState<Filter>('draft');
   const [search, setSearch]       = useState('');
+  // Caixa/atendente no modo balcão: cria e manda para o mecânico (não faz a inspeção)
+  const { balcao, session } = useOperator();
+  const dispatchOnly = !demo && balcao && (session?.role === 'caixa' || session?.role === 'atendente');
   const [scheduled, setScheduled] = useState<Scheduled[]>([]);
   const [scheduling, setScheduling] = useState(false);
 
@@ -265,7 +269,7 @@ export default function WorkshopCheckups() {
 
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => { setShowNew(false); setForm(EMPTY); }} className="btn-ghost text-sm border border-steel-200">Cancelar</button>
-              <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Criando…' : 'Começar inspeção →'}</button>
+              <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Criando…' : dispatchOnly ? 'Criar e enviar ao mecânico →' : 'Começar inspeção →'}</button>
             </div>
           </form>
         )}

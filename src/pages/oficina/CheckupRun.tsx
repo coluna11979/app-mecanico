@@ -11,6 +11,7 @@ import {
   type CheckupItem, type VehicleCheckup,
 } from '@/lib/checkup';
 import { AddItem, ItemRow } from '@/components/checkup/ChecklistItem';
+import { useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import { loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { DEMO_ID, DEMO_MECHANICS, demoDraft, saveDemoResult } from '@/lib/checkupDemo';
@@ -41,6 +42,9 @@ export default function WorkshopCheckupRun() {
   useEffect(() => { if ((currentWorkshop || demo) && id) load(); }, [currentWorkshop?.id, id]);
 
   // Enviado ao celular do mecânico: acompanha o preenchimento sem recarregar a página
+  // Caixa/atendente no modo balcão: abre, escolhe o mecânico e envia o link — não preenche a inspeção
+  const { balcao, session } = useOperator();
+  const dispatchOnly = !demo && balcao && (session?.role === 'caixa' || session?.role === 'atendente');
   const linkSent = !demo && checkup?.status === 'draft' && !!checkup.mechanic_link_sent_at;
   useEffect(() => {
     if (!linkSent || !checkup) return;
@@ -292,7 +296,9 @@ export default function WorkshopCheckupRun() {
         {done ? (
           <CompletedView checkup={checkup} items={items} workshopName={currentWorkshop?.business_name} demo={demo}
             onPatchItem={patchItem} onSent={() => patchCheckup({ quote_sent_at: new Date().toISOString() })}
-            onReopen={() => patchCheckup({ status: 'draft' })} onDelete={remove} />
+            onReopen={dispatchOnly ? undefined : () => patchCheckup({ status: 'draft' })} onDelete={remove} />
+        ) : dispatchOnly ? (
+          <DispatchView items={items} hasMechanic={!!checkup.workshop_mechanic_id} sent={!!checkup.mechanic_link_sent_at} onDelete={remove} />
         ) : (
           <>
             {CHECKUP_TEMPLATE.map(({ system }) => {
@@ -356,6 +362,42 @@ export default function WorkshopCheckupRun() {
 }
 
 
+/* ─── Caixa/atendente: só acompanha (quem preenche é o mecânico) ─── */
+function DispatchView({ items, hasMechanic, sent, onDelete }: {
+  items: CheckupItem[]; hasMechanic: boolean; sent: boolean; onDelete: () => void;
+}) {
+  const flagged = items.filter(i => i.status === 'warn' || i.status === 'urgent');
+  return (
+    <>
+      <div className="card space-y-2">
+        <div className="font-bold text-steel-800">📲 Quem faz a inspeção é o mecânico, pelo celular dele</div>
+        <p className="text-sm text-steel-600">
+          {!hasMechanic ? '1. Escolha o mecânico em “Inspecionado por”.  2. Toque em “Enviar para o mecânico”.'
+            : !sent ? 'Toque em “Enviar para o mecânico” acima para mandar o link pelo WhatsApp.'
+            : 'Link enviado. Esta tela acompanha o preenchimento sozinha e avisa quando ele finalizar.'}
+        </p>
+      </div>
+      {flagged.length > 0 && (
+        <div className="card space-y-2">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">Encontrado até agora</div>
+          {flagged.map(i => (
+            <div key={i.id} className="flex items-start gap-2 text-sm">
+              <span>{STATUS_META[i.status!].dot}</span>
+              <div className="min-w-0">
+                <div className="text-steel-800">{i.label}{i.measurement && <span className="text-steel-500"> · {i.measurement}</span>}</div>
+                {i.note && <div className="text-xs text-steel-500">{i.note}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex justify-end">
+        <button onClick={onDelete} className="btn-ghost text-sm text-steel-500 hover:text-alert-600">Excluir check-up</button>
+      </div>
+    </>
+  );
+}
+
 /* ─── Enviar para o celular do mecânico ───────────────────── */
 function MechanicLinkBar({ checkup, onSend, onCopy }: {
   checkup: VehicleCheckup; onSend: () => void; onCopy: () => void;
@@ -399,7 +441,8 @@ function MechanicLinkBar({ checkup, onSend, onCopy }: {
 function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent, onReopen, onDelete }: {
   checkup: VehicleCheckup & { os?: { number: number | null } | null }; items: CheckupItem[]; workshopName?: string; demo: boolean;
   onPatchItem: (item: CheckupItem, p: Patch) => void; onSent: () => void;
-  onReopen: () => void; onDelete: () => void;
+  /** undefined = quem está operando não pode reabrir a inspeção (caixa/atendente) */
+  onReopen?: () => void; onDelete: () => void;
 }) {
   const url = publicReportUrl(checkup.public_token);
   const flagged = items.filter(i => i.status === 'urgent' || i.status === 'warn')
@@ -492,7 +535,7 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
       </div>
 
       <div className="flex gap-2">
-        {!answered && <button onClick={onReopen} className="btn-ghost text-sm border border-steel-200">✏️ Editar inspeção</button>}
+        {!answered && onReopen && <button onClick={onReopen} className="btn-ghost text-sm border border-steel-200">✏️ Editar inspeção</button>}
         <button onClick={onDelete} className="btn-ghost text-sm text-steel-500 hover:text-alert-600">Excluir</button>
       </div>
     </>
