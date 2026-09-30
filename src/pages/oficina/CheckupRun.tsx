@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
@@ -6,21 +6,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import {
-  CHECKUP_TEMPLATE, DECISION_META, SYSTEM_ICON, STATUS_META, TEMPLATE_BY_KEY,
-  checkupPhotoUrl, computeScore, itemQuote, publicReportUrl, scoreMeta, uploadCheckupPhoto, whatsappLink,
-  type CheckupItem, type CheckupItemStatus, type VehicleCheckup,
+  CHECKUP_TEMPLATE, DECISION_META, MECHANIC_STAGE_META, SYSTEM_ICON, STATUS_META,
+  computeScore, itemQuote, mechanicLinkUrl, mechanicStage, mechanicWhatsappLink, publicReportUrl, scoreMeta, uploadCheckupPhoto, whatsappLink,
+  type CheckupItem, type VehicleCheckup,
 } from '@/lib/checkup';
+import { AddItem, ItemRow } from '@/components/checkup/ChecklistItem';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import { loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { DEMO_ID, DEMO_MECHANICS, demoDraft, saveDemoResult } from '@/lib/checkupDemo';
 import type { WorkshopMechanic } from '@/types/database';
 
-const STATUS_ON: Record<CheckupItemStatus, string> = {
-  ok:     'bg-signal-500 text-white border-signal-500',
-  warn:   'bg-pending-500 text-steel-900 border-pending-500',
-  urgent: 'bg-alert-500 text-white border-alert-500',
-  na:     'bg-steel-500 text-white border-steel-500',
-};
 const SCORE_TEXT = { signal: 'text-signal-600', pending: 'text-pending-600', alert: 'text-alert-600' };
 
 type Patch = Partial<Pick<CheckupItem, 'status' | 'measurement' | 'note' | 'photo_path'
@@ -44,6 +39,27 @@ export default function WorkshopCheckupRun() {
   const [finishing, setFinishing] = useState(false);
 
   useEffect(() => { if ((currentWorkshop || demo) && id) load(); }, [currentWorkshop?.id, id]);
+
+  // Enviado ao celular do mecânico: acompanha o preenchimento sem recarregar a página
+  const linkSent = !demo && checkup?.status === 'draft' && !!checkup.mechanic_link_sent_at;
+  useEffect(() => {
+    if (!linkSent || !checkup) return;
+    const cid = checkup.id;
+    const t = setInterval(async () => {
+      if (document.hidden) return;
+      const [r1, r2] = await Promise.all([
+        supabase.from('vehicle_checkups')
+          .select('status, mechanic_opened_at, mechanic_started_at, mechanic_finished_at').eq('id', cid).maybeSingle(),
+        supabase.from('checkup_items').select('*').eq('checkup_id', cid).order('position'),
+      ]);
+      const fresh = r1.data as Pick<VehicleCheckup, 'status' | 'mechanic_opened_at' | 'mechanic_started_at' | 'mechanic_finished_at'> | null;
+      if (!fresh) return;
+      if (fresh.status === 'completed') { toast.success('O mecânico finalizou o check-up ✓'); load(); return; }
+      setCheckup(c => c && c.id === cid ? { ...c, ...fresh } : c);
+      if (r2.data) setItems(r2.data as CheckupItem[]);
+    }, 15000);
+    return () => clearInterval(t);
+  }, [linkSent, checkup?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     setLoading(true);
@@ -153,6 +169,27 @@ export default function WorkshopCheckupRun() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  async function sendToMechanic() {
+    if (!checkup) return;
+    if (!checkup.workshop_mechanic_id) { toast.error('Escolha o mecânico em “Inspecionado por” primeiro'); return; }
+    // Abre a aba já no clique: depois do await o navegador do celular bloquearia o pop-up
+    const win = window.open('', '_blank');
+    const { data, error } = await supabase.rpc('checkup_send_to_mechanic', { p_checkup: checkup.id });
+    if (error || !data) { win?.close(); toast.error(error?.message ?? 'Não foi possível gerar o link'); return; }
+    const link = data as { token: string; mechanic_name: string | null; mechanic_phone: string | null; has_pin: boolean };
+    const url = mechanicWhatsappLink(checkup, link);
+    if (win) win.location.href = url; else window.location.href = url;
+    setCheckup(c => c && ({ ...c, mechanic_token: link.token, mechanic_link_sent_at: new Date().toISOString() }));
+    if (!link.has_pin) toast.warning(`${link.mechanic_name ?? 'O mecânico'} ainda não tem PIN: o link abre sem senha. Cadastre em Acessos e funções.`, 8000);
+    else if (!link.mechanic_phone) toast.info('Mecânico sem celular na Equipe: escolha o contato no WhatsApp.', 6000);
+  }
+
+  async function copyMechanicLink() {
+    if (!checkup?.mechanic_token) return;
+    try { await navigator.clipboard.writeText(mechanicLinkUrl(checkup.mechanic_token)); toast.success('Link copiado'); }
+    catch { toast.error('Não foi possível copiar'); }
+  }
+
   async function remove() {
     if (!checkup || !confirm('Excluir este check-up? Não dá pra desfazer.')) return;
     if (demo) { toast.info('Demonstração — nada foi excluído'); return; }
@@ -246,6 +283,10 @@ export default function WorkshopCheckupRun() {
               </div>
             )}
           </div>
+
+          {!done && !demo && (
+            <MechanicLinkBar checkup={checkup} onSend={sendToMechanic} onCopy={copyMechanicLink} />
+          )}
         </div>
 
         {done ? (
@@ -282,8 +323,9 @@ export default function WorkshopCheckupRun() {
                         </div>
                       )}
                       {list.map(item => (
-                        <ItemRow key={item.id} item={item} checkupId={checkup.id} workshopId={checkup.workshop_id}
-                          demo={demo} onPatch={p => patchItem(item, p)}
+                        <ItemRow key={item.id} item={item} onPatch={p => patchItem(item, p)}
+                          uploadPhoto={(file, key) => demo ? Promise.resolve(URL.createObjectURL(file))
+                            : uploadCheckupPhoto(file, checkup.workshop_id, checkup.id, key)}
                           onRemove={item.item_key.startsWith('extra_') ? () => removeItem(item) : undefined} />
                       ))}
                       <AddItem system={system} onAdd={label => addItem(system, label)} />
@@ -313,129 +355,42 @@ export default function WorkshopCheckupRun() {
   );
 }
 
-/* ─── Incluir item fora do checklist ───────────────────────── */
-function AddItem({ system, onAdd }: { system: string; onAdd: (label: string) => Promise<boolean> }) {
-  const [open, setOpen] = useState(false);
-  const [label, setLabel] = useState('');
-  const [saving, setSaving] = useState(false);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const l = label.trim();
-    if (!l) return;
-    setSaving(true);
-    const ok = await onAdd(l);
-    setSaving(false);
-    if (ok) { setLabel(''); setOpen(false); }
-  }
-
-  if (!open) {
-    return (
-      <div className="px-5 py-2.5">
-        <button onClick={() => setOpen(true)} className="text-xs font-semibold text-brand-600 hover:underline">
-          + Incluir item em {system}
-        </button>
-      </div>
-    );
-  }
-  return (
-    <form onSubmit={submit} className="px-5 py-3 flex gap-2 bg-brand-50/40">
-      <input autoFocus value={label} onChange={e => setLabel(e.target.value)} maxLength={80}
-        placeholder="Ex.: Bomba de combustível, junta da tampa de válvula…" className="input !py-2 flex-1 min-w-0" />
-      <button type="submit" disabled={saving || !label.trim()} className="btn-primary !py-2 text-sm shrink-0">
-        {saving ? 'Incluindo…' : 'Incluir'}
-      </button>
-      <button type="button" onClick={() => { setOpen(false); setLabel(''); }} className="btn-ghost !py-2 text-sm shrink-0">Cancelar</button>
-    </form>
-  );
-}
-
-/* ─── Item do checklist ────────────────────────────────────── */
-function ItemRow({ item, checkupId, workshopId, demo, onPatch, onRemove }: {
-  item: CheckupItem; checkupId: string; workshopId: string; demo: boolean; onPatch: (p: Patch) => void;
-  /** Só itens incluídos à mão podem ser removidos */
-  onRemove?: () => void;
+/* ─── Enviar para o celular do mecânico ───────────────────── */
+function MechanicLinkBar({ checkup, onSend, onCopy }: {
+  checkup: VehicleCheckup; onSend: () => void; onCopy: () => void;
 }) {
-  const tpl = TEMPLATE_BY_KEY[item.item_key];
-  const flagged = item.status === 'warn' || item.status === 'urgent';
-  const [expanded, setExpanded] = useState(false);
-  const [measurement, setMeasurement] = useState(item.measurement ?? '');
-  const [note, setNote] = useState(item.note ?? '');
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const showDetails = expanded || flagged;
-
-  async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/') && file.type !== '') { toast.error('Envie uma imagem'); return; }
-    if (demo) { onPatch({ photo_path: URL.createObjectURL(file) }); return; }
-    setUploading(true);
-    try {
-      onPatch({ photo_path: await uploadCheckupPhoto(file, workshopId, checkupId, item.item_key) });
-    } catch {
-      toast.error('Erro ao enviar a foto');
-    } finally {
-      setUploading(false);
-    }
-  }
-
+  const stage = mechanicStage(checkup);
+  const steps = ['sent', 'opened', 'started', 'finished'] as const;
+  const at = stage ? steps.indexOf(stage) : -1;
   return (
-    <div className="px-5 py-3.5 space-y-2.5">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
-        <button onClick={() => setExpanded(v => !v)} className="text-sm text-steel-800 text-left flex-1 min-w-0">
-          {item.label}
-          {(item.photo_path || item.note) && <span className="ml-1.5 text-[11px]">{item.photo_path ? '📷' : ''}{item.note ? '📝' : ''}</span>}
-        </button>
-        <div className="flex gap-1.5 shrink-0">
-          {(['ok', 'warn', 'urgent'] as const).map(s => (
-            <button key={s} onClick={() => onPatch({ status: item.status === s ? null : s })}
-              className={`px-3 py-2 rounded-xl text-xs font-bold border transition active:scale-95 flex-1 sm:flex-none ${
-                item.status === s ? STATUS_ON[s] : 'border-steel-200 text-steel-600 bg-white hover:bg-steel-50'
-              }`}>
-              {STATUS_META[s].dot} {STATUS_META[s].short}
-            </button>
-          ))}
-          <button onClick={() => onPatch({ status: item.status === 'na' ? null : 'na' })}
-            className={`px-2.5 py-2 rounded-xl text-[11px] font-semibold border ${item.status === 'na' ? STATUS_ON.na : 'border-steel-200 text-steel-400 bg-white'}`}>
-            N/A
-          </button>
-        </div>
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-3 border-t border-steel-100">
+      <div className="flex-1 min-w-0">
+        {stage ? (
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+            {steps.map((s, i) => (
+              <span key={s} className="flex items-center gap-1.5">
+                {i > 0 && <span className="text-steel-300">→</span>}
+                <span className={i <= at ? (i === at ? 'font-bold text-brand-700' : 'font-semibold text-steel-700') : 'text-steel-400'}>
+                  {MECHANIC_STAGE_META[s].icon} {MECHANIC_STAGE_META[s].short}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-steel-500">
+            O mecânico pode fazer este check-up pelo celular dele. Envie o link pelo WhatsApp.
+          </div>
+        )}
       </div>
-
-      {showDetails && (
-        <div className="space-y-2 bg-steel-50 rounded-xl p-3">
-          <div className="flex gap-2">
-            {tpl?.measure && (
-              <input value={measurement} onChange={e => setMeasurement(e.target.value)}
-                onBlur={() => measurement !== (item.measurement ?? '') && onPatch({ measurement: measurement.trim() || null })}
-                placeholder={tpl.measure} className="input !py-2 w-32" />
-            )}
-            <input value={note} onChange={e => setNote(e.target.value)}
-              onBlur={() => note !== (item.note ?? '') && onPatch({ note: note.trim() || null })}
-              placeholder="Observação (ex.: trocar em 30 dias)" className="input !py-2 flex-1 min-w-0" />
-          </div>
-          <div className="flex items-center gap-2">
-            {item.photo_path && (
-              <a href={checkupPhotoUrl(item.photo_path)} target="_blank" rel="noreferrer" className="shrink-0">
-                <img src={checkupPhotoUrl(item.photo_path)} alt="" className="h-14 w-14 rounded-lg object-cover border border-steel-200" />
-              </a>
-            )}
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onPhoto} className="hidden" />
-            <button onClick={() => fileRef.current?.click()} disabled={uploading}
-              className="btn-ghost text-xs !py-2 border border-steel-200 bg-white">
-              {uploading ? 'Enviando…' : item.photo_path ? '📷 Trocar foto' : '📷 Adicionar foto'}
-            </button>
-            {item.photo_path && (
-              <button onClick={() => onPatch({ photo_path: null })} className="text-xs text-steel-500 px-2 hover:text-alert-600">Remover</button>
-            )}
-            {onRemove && (
-              <button onClick={onRemove} className="ml-auto text-xs text-steel-400 px-2 hover:text-alert-600">🗑 Remover item</button>
-            )}
-          </div>
-        </div>
-      )}
+      <div className="flex gap-2 shrink-0">
+        {checkup.mechanic_token && stage && (
+          <button onClick={onCopy} className="btn-ghost text-sm !py-2 border border-steel-200">🔗 Copiar link</button>
+        )}
+        <button onClick={onSend} className="btn-primary text-sm !py-2">
+          📲 {stage ? 'Reenviar' : 'Enviar para o mecânico'}
+        </button>
+      </div>
     </div>
   );
 }

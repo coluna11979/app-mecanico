@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import NewOsModal from '@/components/os/NewOsModal';
-import { saleStage, scoreMeta, templateRows, type VehicleCheckup } from '@/lib/checkup';
+import { MECHANIC_STAGE_META, mechanicStage, saleStage, scoreMeta, templateRows, type VehicleCheckup } from '@/lib/checkup';
 import { DEMO_MECHANICS, startDemo } from '@/lib/checkupDemo';
 import type { Customer, Vehicle, WorkshopMechanic } from '@/types/database';
 
@@ -371,6 +371,7 @@ function ScheduledCard({ o, onStart }: { o: Scheduled; onStart: () => void }) {
 function CheckupCard({ c }: { c: Row }) {
   const car  = [c.make, c.model, c.year].filter(Boolean).join(' ') || 'Veículo';
   const meta = c.score != null ? scoreMeta(c.score) : null;
+  const mStage = c.status === 'draft' ? mechanicStage(c) : null;
   return (
     <Link to={`/oficina/checkup/${c.id}`} className="card flex items-center gap-4 hover:shadow-md transition">
       <div className="flex-1 min-w-0 space-y-1">
@@ -383,6 +384,11 @@ function CheckupCard({ c }: { c: Row }) {
             new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })].filter(Boolean).join(' · ')}
         </div>
         {c.status === 'completed' && <div className="text-[11px] font-semibold">{STAGE_LABEL[saleStage(c)]}</div>}
+        {mStage && (
+          <div className="text-[11px] font-semibold text-brand-700">
+            {MECHANIC_STAGE_META[mStage].icon} {MECHANIC_STAGE_META[mStage].label} · pelo celular
+          </div>
+        )}
       </div>
       {c.status === 'completed' && meta ? (
         <div className="text-right shrink-0">

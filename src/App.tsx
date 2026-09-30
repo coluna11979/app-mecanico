@@ -16,6 +16,7 @@ import Privacy from './pages/public/Privacy';
 import ForgotPassword from './pages/public/ForgotPassword';
 import ResetPassword from './pages/public/ResetPassword';
 import CheckupReport from './pages/public/CheckupReport';
+import MechanicCheckup from './pages/public/MechanicCheckup';
 
 import MechanicDashboard from './pages/mecanico/Dashboard';
 import MechanicJob from './pages/mecanico/JobDetail';
@@ -107,6 +108,7 @@ export default function App() {
       <Route path="/recuperar-senha"    element={<ForgotPassword />} />
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
       <Route path="/checkup/:token"     element={<CheckupReport />} />
+      <Route path="/m/checkup/:token"   element={<MechanicCheckup />} />
       {/* Pré-visualização do check-up com dados fictícios — só em dev */}
       {import.meta.env.DEV && <Route path="/demo/checkup" element={<WorkshopCheckups />} />}
       {import.meta.env.DEV && <Route path="/demo/checkup/:id" element={<WorkshopCheckupRun />} />}

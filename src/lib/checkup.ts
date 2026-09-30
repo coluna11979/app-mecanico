@@ -31,6 +31,13 @@ export interface VehicleCheckup {
   customer_responded_at?: string | null;
   customer_scheduled_at?: string | null;
   sale_os_id?: string | null;
+  /** Link do mecânico (migration 0054) */
+  mechanic_token?: string | null;
+  mechanic_token_expires_at?: string | null;
+  mechanic_link_sent_at?: string | null;
+  mechanic_opened_at?: string | null;
+  mechanic_started_at?: string | null;
+  mechanic_finished_at?: string | null;
 }
 
 export interface CheckupItem {
@@ -76,6 +83,22 @@ export function saleStage(c: Pick<VehicleCheckup, 'status' | 'quote_sent_at' | '
   if (c.quote_sent_at) return 'sent' as const;
   return 'quote' as const;
 }
+
+/** Onde está o check-up enviado ao celular do mecânico (null = não foi enviado) */
+export function mechanicStage(c: Pick<VehicleCheckup, 'status' | 'mechanic_link_sent_at' | 'mechanic_opened_at' | 'mechanic_started_at' | 'mechanic_finished_at'>) {
+  if (!c.mechanic_link_sent_at) return null;
+  if (c.mechanic_finished_at || c.status === 'completed') return 'finished' as const;
+  if (c.mechanic_started_at) return 'started' as const;
+  if (c.mechanic_opened_at) return 'opened' as const;
+  return 'sent' as const;
+}
+
+export const MECHANIC_STAGE_META = {
+  sent:     { label: 'Enviado ao mecânico', short: 'Enviado',      icon: '📲' },
+  opened:   { label: 'Mecânico abriu',      short: 'Aberto',       icon: '👀' },
+  started:  { label: 'Em andamento',        short: 'Em andamento', icon: '🔧' },
+  finished: { label: 'Finalizado',          short: 'Finalizado',   icon: '✅' },
+} as const;
 
 /* ─── Checklist padrão ─────────────────────────────────────────
    `measure` = placeholder do campo de medição (quando faz sentido). */
@@ -187,6 +210,19 @@ export async function uploadCheckupPhoto(file: File, workshopId: string, checkup
   return path;
 }
 
+/** Foto enviada pelo link do mecânico (sem login): a pasta m-{upload_key} autoriza o envio. */
+export async function uploadMechanicPhoto(file: File, workshopId: string, checkupId: string, uploadKey: string, itemKey: string) {
+  const ext  = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const path = `${workshopId}/${checkupId}/m-${uploadKey}/${itemKey}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
+    contentType: file.type || 'image/jpeg',
+    cacheControl: '3600',
+    upsert: false,
+  });
+  if (error) throw error;
+  return path;
+}
+
 export function checkupPhotoUrl(path: string) {
   if (path.startsWith('blob:')) return path; // pré-visualização local (demo)
   return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
@@ -213,6 +249,26 @@ export function whatsappLink(
       ? `Separamos o orçamento do que precisa de atenção. No link você vê as fotos, aprova o que quiser fazer e já escolhe o melhor horário para trazer o carro: ${publicReportUrl(c.public_token)}`
       : `Veja o relatório completo com fotos: ${publicReportUrl(c.public_token)}`);
   const digits = (c.customer_phone ?? '').replace(/\D/g, '');
+  const phone  = digits ? (digits.length <= 11 ? `55${digits}` : digits) : '';
+  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+}
+
+/* ─── Link do mecânico ───────────────────────────────────────── */
+export function mechanicLinkUrl(token: string) {
+  return `${window.location.origin}/m/checkup/${token}`;
+}
+
+export function mechanicWhatsappLink(
+  c: Pick<VehicleCheckup, 'plate' | 'make' | 'model'>,
+  link: { token: string; mechanic_name: string | null; mechanic_phone: string | null },
+) {
+  const first = link.mechanic_name?.trim().split(' ')[0];
+  const car   = [c.make, c.model].filter(Boolean).join(' ') || 'carro';
+  const plate = c.plate ? ` ${c.plate}` : '';
+  const text =
+    `${first ? `${first}, ` : ''}check-up do ${car}${plate} pra você fazer. ` +
+    `Abre no celular, marca os itens e tira as fotos: ${mechanicLinkUrl(link.token)}`;
+  const digits = (link.mechanic_phone ?? '').replace(/\D/g, '');
   const phone  = digits ? (digits.length <= 11 ? `55${digits}` : digits) : '';
   return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 }
