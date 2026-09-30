@@ -3,7 +3,7 @@
 // O XML da NF-e é lido no navegador, sem IA — esta função é só para PDF/imagem.
 //
 // Só para oficinas com o recurso 'ai_invoice' em workshop_features.
-// Nada fixo no código: chave, modelo e esforço vêm de app_settings
+// Nada fixo no código: chave, modelo (ai_invoice_model) e esforço vêm de app_settings
 // (painel admin → Configurações → Inteligência Artificial).
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
@@ -113,12 +113,13 @@ Deno.serve(async (req) => {
     if (!feat) return json({ error: 'Leitura de nota com IA não liberada para esta oficina' }, 403);
 
     const { data: rows } = await admin.from('app_settings').select('key, value')
-      .in('key', ['anthropic_api_key', 'ai_vision_model', 'ai_vision_effort', 'ai_refusal_fallback']);
+      .in('key', ['anthropic_api_key', 'ai_invoice_model', 'ai_vision_model', 'ai_vision_effort', 'ai_refusal_fallback']);
     const cfg: Record<string, string> = {};
     for (const r of rows ?? []) cfg[r.key] = (r.value ?? '').trim();
     if (!cfg.anthropic_api_key) return json({ error: 'A leitura por IA ainda não foi configurada. Avise o suporte.' }, 503);
-    if (!cfg.ai_vision_model) return json({ error: 'Modelo da IA não configurado no painel admin.' }, 503);
-    model = cfg.ai_vision_model;
+    // Modelo próprio para notas (ex.: Sonnet, mais barato); vazio = o mesmo da leitura de fotos
+    model = cfg.ai_invoice_model || cfg.ai_vision_model;
+    if (!model) return json({ error: 'Modelo da IA não configurado no painel admin.' }, 503);
 
     const client = new Anthropic({ apiKey: cfg.anthropic_api_key });
     const fallback = cfg.ai_refusal_fallback;
