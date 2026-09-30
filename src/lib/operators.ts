@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 export type OperatorRole = 'gestor' | 'caixa' | 'atendente' | 'mecanico';
 export type OperatorPerm =
   | 'dar_desconto' | 'cancelar_recebimento' | 'reabrir_caixa'
-  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha';
+  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe';
 
 export type WorkshopOperator = {
   id: string; workshop_id: string; mechanic_id: string | null; name: string;
@@ -26,17 +26,17 @@ export const ROLES: Record<OperatorRole, {
   },
   caixa: {
     label: 'Caixa', icon: '💰', desc: 'Abre e fecha o caixa, recebe as OS, lança vales, despesas e sangrias.',
-    routes: ['/oficina/caixa', '/oficina/os', '/oficina/agenda', '/oficina/clientes', '/oficina/avisos'], home: '/oficina/caixa',
+    routes: ['/oficina/caixa', '/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/importar', '/oficina/clientes', '/oficina/avisos'], home: '/oficina/caixa',
   },
   atendente: {
     label: 'Atendente', icon: '🧑‍💼', desc: 'Abre e acompanha OS, cadastra clientes e responde mensagens.',
-    routes: ['/oficina/dashboard', '/oficina/os', '/oficina/agenda', '/oficina/clientes', '/oficina/mensagens',
+    routes: ['/oficina/dashboard', '/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/clientes', '/oficina/mensagens',
              '/oficina/buscar', '/oficina/job', '/oficina/importar', '/oficina/avisos'],
     home: '/oficina/os',
   },
   mecanico: {
     label: 'Mecânico', icon: '🔧', desc: 'Vê e atualiza as ordens de serviço.',
-    routes: ['/oficina/os', '/oficina/agenda', '/oficina/avisos'], home: '/oficina/os',
+    routes: ['/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/avisos'], home: '/oficina/os',
   },
 };
 
@@ -50,13 +50,15 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   contas_pagar:         { label: 'Contas a pagar',        desc: 'Ver, lançar e dar baixa em contas' },
   compras:              { label: 'Compras e fornecedores', desc: 'Notas de compra e cadastro de fornecedores' },
   pecas_estoque:        { label: 'Peças e estoque',       desc: 'Catálogo, estoque e custo das peças; tabela de serviços' },
-  folha:                { label: 'Fechar folha',          desc: 'Salários, comissões, vales e faltas da equipe' },
+  folha:                { label: 'Fechar comissões e folha', desc: 'Fechar comissões, salários, vales e faltas da equipe' },
+  equipe:               { label: 'Equipe',                desc: 'Colaboradores (ficha, salário, documentos) e Desempenho e comissões' },
 };
 
 /** Permissões agrupadas por módulo, para a tela de Acessos */
 export const PERM_GROUPS: { label: string; perms: OperatorPerm[] }[] = [
   { label: 'Caixa',              perms: ['dar_desconto', 'cancelar_recebimento', 'reabrir_caixa'] },
   { label: 'Financeiro',         perms: ['ver_financeiro', 'contas_pagar', 'folha'] },
+  { label: 'Equipe',             perms: ['equipe'] },
   { label: 'Compras e estoque',  perms: ['compras', 'pecas_estoque'] },
 ];
 
@@ -73,6 +75,7 @@ const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
   compras:        ['/oficina/compras', '/oficina/fornecedores'],
   pecas_estoque:  ['/oficina/pecas', '/oficina/servicos'],
   folha:          ['/oficina/folha', '/oficina/comissoes'],
+  equipe:         ['/oficina/equipe', '/oficina/desempenho'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */
