@@ -26,7 +26,26 @@ type OsRow = ServiceOrder & {
 };
 
 type MainTab   = 'os' | 'agendados' | 'mecanicos';
-type PeriodFilter = 'all' | 'today' | 'week' | 'month';
+type PeriodFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+const PERIODS: [PeriodFilter, string][] = [
+  ['all', 'Todo período'], ['today', 'Hoje'], ['yesterday', 'Ontem'], ['week', '7 dias'], ['month', '30 dias'], ['custom', '📅 Escolher datas'],
+];
+const PERIOD_LABEL: Record<PeriodFilter, string> = Object.fromEntries(PERIODS) as Record<PeriodFilter, string>;
+
+/** Período escolhido → [início, fim) em ms; null = sem limite */
+function periodRange(p: PeriodFilter, from: string, to: string): [number | null, number | null] {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const t = today.getTime(), day = 86400000;
+  if (p === 'today') return [t, null];
+  if (p === 'yesterday') return [t - day, t];
+  if (p === 'week') return [t - 6 * day, null];
+  if (p === 'month') return [t - 29 * day, null];
+  if (p === 'custom') return [
+    from ? new Date(`${from}T00:00:00`).getTime() : null,
+    to ? new Date(`${to}T00:00:00`).getTime() + day : null,
+  ];
+  return [null, null];
+}
 
 /* ─── constantes ────────────────────────────────────────────── */
 const STATUSES: readonly OsStatus[] = OS_STATUS_FLOW;
@@ -66,6 +85,8 @@ export default function ServiceOrders() {
   const [filterStatus, setFilterStatus]   = useState<OsStatus|'all'>('all');
   const [filterMech, setFilterMech]       = useState('all');
   const [filterPeriod, setFilterPeriod]   = useState<PeriodFilter>('all');
+  const [periodFrom, setPeriodFrom]       = useState('');
+  const [periodTo, setPeriodTo]           = useState('');
   const [search, setSearch]               = useState('');
   const [newOs, setNewOs]                 = useState<NewOsPreset | null>(null);
   /* ── links antigos (?os=<id>) → página da OS ── */
@@ -97,7 +118,7 @@ export default function ServiceOrders() {
         const p = JSON.parse(raw);
         if (p.filterStatus) setFilterStatus(p.filterStatus);
         if (p.filterMech)   setFilterMech(p.filterMech);
-        if (p.filterPeriod) setFilterPeriod(p.filterPeriod);
+        if (p.filterPeriod && PERIOD_LABEL[p.filterPeriod as PeriodFilter]) setFilterPeriod(p.filterPeriod);
       }
     } catch { /* ignore */ }
     // só ao carregar a oficina
@@ -194,8 +215,19 @@ export default function ServiceOrders() {
   );
   const revenueMonth = thisMonth.reduce((a, o) => a + o.price, 0);
 
+  /* ─── período (vale para a lista e para "Serviços mais realizados") ─── */
+  const [pStart, pEnd] = periodRange(filterPeriod, periodFrom, periodTo);
+  // A OS entra se foi aberta, concluída ou paga dentro do período
+  const inPeriod = (o: OsRow) => (pStart === null && pEnd === null)
+    || [o.created_at, o.completed_at, o.paid_at].some(d => {
+      if (!d) return false;
+      const x = new Date(d).getTime();
+      return (pStart === null || x >= pStart) && (pEnd === null || x < pEnd);
+    });
+  const periodList = list.filter(inPeriod);
+
   const catMap: Record<string, { count: number; revenue: number; durations: number[] }> = {};
-  list.forEach(o => {
+  periodList.forEach(o => {
     const cat = o.category || 'Sem categoria';
     if (!catMap[cat]) catMap[cat] = { count: 0, revenue: 0, durations: [] };
     catMap[cat].count++;
@@ -220,19 +252,6 @@ export default function ServiceOrders() {
   const avgDur  = allDurs.length ? Math.round(allDurs.reduce((a,b) => a+b,0) / allDurs.length) : null;
 
   /* ─── listas filtradas ───────────────────────────────────── */
-  const periodCutoff = (() => {
-    if (filterPeriod === 'all') return null;
-    const d = new Date();
-    if (filterPeriod === 'today') { d.setHours(0, 0, 0, 0); return d.getTime(); }
-    if (filterPeriod === 'week')  { d.setDate(d.getDate() - 7);   return d.getTime(); }
-    if (filterPeriod === 'month') { d.setMonth(d.getMonth() - 1); return d.getTime(); }
-    return null;
-  })();
-
-  // Período: a OS entra se foi aberta, concluída ou paga dentro dele
-  const inPeriod = (o: OsRow) => periodCutoff === null
-    || [o.created_at, o.completed_at, o.paid_at].some(d => d && new Date(d).getTime() >= periodCutoff);
-
   // Filtros de período, mecânico e busca (sem o de status) — os contadores dos chips usam esta base
   const base = list.filter(o => {
     if (filterMech !== 'all' && (o.workshop_mechanic_id ?? 'none') !== filterMech) return false;
@@ -301,9 +320,29 @@ export default function ServiceOrders() {
       {tab === 'os' && (
         <div className="space-y-5">
 
-          {topCats.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {PERIODS.map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setFilterPeriod(k)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+                  filterPeriod === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200 hover:border-steel-300'}`}>
+                {l}
+              </button>
+            ))}
+            {filterPeriod === 'custom' && (
+              <div className="flex items-center gap-1.5 text-xs text-steel-500">
+                <input type="date" className="input !py-1.5 !text-xs !w-auto" value={periodFrom} onChange={e => setPeriodFrom(e.target.value)} />
+                até
+                <input type="date" className="input !py-1.5 !text-xs !w-auto" value={periodTo} onChange={e => setPeriodTo(e.target.value)} />
+              </div>
+            )}
+          </div>
+          {(topCats.length > 0 || filterPeriod !== 'all') && (
             <div className="card">
-              <h2 className="font-bold text-steel-800 mb-4">Serviços mais realizados</h2>
+              <div className="flex items-baseline justify-between gap-2 mb-4">
+                <h2 className="font-bold text-steel-800">Serviços mais realizados</h2>
+                {filterPeriod !== 'all' && <span className="text-xs text-steel-500">{PERIOD_LABEL[filterPeriod]}{filterPeriod === 'custom' && (periodFrom || periodTo) ? `: ${[periodFrom, periodTo].filter(Boolean).map(d => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')).join(' até ')}` : ''}</span>}
+              </div>
+              {topCats.length === 0 && <p className="text-sm text-steel-400">Nenhuma OS neste período.</p>}
               <div className="space-y-3">
                 {topCats.map(([cat, info]) => {
                   const avgD = info.durations.length ? Math.round(info.durations.reduce((a,b)=>a+b,0)/info.durations.length) : null;
@@ -347,16 +386,6 @@ export default function ServiceOrders() {
                   onChange={e => setSearch(e.target.value)}
                 />
               </div>
-              <select
-                className="input max-w-[140px] text-sm"
-                value={filterPeriod}
-                onChange={e => setFilterPeriod(e.target.value as PeriodFilter)}
-              >
-                <option value="all">Todo período</option>
-                <option value="today">Hoje</option>
-                <option value="week">Última semana</option>
-                <option value="month">Último mês</option>
-              </select>
               {internalMechs.length > 0 && (
                 <select className="input max-w-[180px] text-sm" value={filterMech}
                   onChange={e => setFilterMech(e.target.value)}>
@@ -368,7 +397,7 @@ export default function ServiceOrders() {
               {(filterStatus !== 'all' || filterMech !== 'all' || filterPeriod !== 'all' || search) && (
                 <button
                   type="button"
-                  onClick={() => { setFilterStatus('all'); setFilterMech('all'); setFilterPeriod('all'); setSearch(''); }}
+                  onClick={() => { setFilterStatus('all'); setFilterMech('all'); setFilterPeriod('all'); setPeriodFrom(''); setPeriodTo(''); setSearch(''); }}
                   className="text-xs font-semibold text-steel-500 hover:text-steel-800 underline"
                 >
                   Limpar filtros
