@@ -12,7 +12,7 @@
 import { supabase } from '@/lib/supabase';
 import { fetchAll } from '@/lib/fetchAll';
 import {
-  COMMISSION_COLS, baseByMechanic, commissionFor, commissionRule, loadCommissionBase, type CommissionMech,
+  COMMISSION_COLS, baseByMechanic, commissionFor, commissionRule, loadCommissionBase, workedIn, type CommissionMech,
 } from '@/lib/commission';
 
 export type PayrollItem = {
@@ -116,7 +116,7 @@ export async function loadPayroll(wid: string, competence: string): Promise<Payr
         mechanicId: m.id, name: m.name, active: m.active,
         base: salary.get(m.id) ?? 0,
         commissionPct: Number(m.commission_percent ?? 0),
-        commissionRule: commissionRule(m),
+        commissionRule: commissionRule(m, { worked: workedIn(calc), manual: calc.manual > 0 }),
         commission: 0,  // paga por quinzena em Fechar comissões
         vales: r2(valeBy.get(m.id) ?? 0),
         carryIn: r2(carry.get(m.id) ?? 0),
