@@ -70,7 +70,7 @@ export default function Financeiro() {
           .eq('workshop_id', wid).eq('status', 'closed').gte('closed_at', fromIso).lt('closed_at', toIso)
           .order('closed_at', { ascending: false }),
         fetchAll((a, b) => supabase.from('service_orders')
-          .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, paid_amount, counter_discount, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, created_at), vehicle:vehicles(make, model, plate)')
+          .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, paid_amount, counter_discount, pay_later_due, pay_later_note, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, created_at), vehicle:vehicles(make, model, plate)')
           .eq('workshop_id', wid).eq('status', 'completed').order('id').range(a, b)),
         supabase.from('workshop_mechanics').select(`id, name, active, ${COMMISSION_COLS}`).eq('workshop_id', wid),
         supabase.from('workshop_operators').select('id, name').eq('workshop_id', wid),
@@ -292,7 +292,8 @@ export default function Financeiro() {
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">📥 A receber — OS concluídas sem quitar</div>
                 <div className="text-sm">
                   <strong>{brl(f.toReceive.total)}</strong>
-                  {f.toReceive.overdueTotal > 0 && <span className="text-alert-600"> · {brl(f.toReceive.overdueTotal)} há mais de 7 dias</span>}
+                  {f.toReceive.laterTotal > 0 && <span className="text-brand-700"> · 🕒 {brl(f.toReceive.laterTotal)} para pagar depois</span>}
+                  {f.toReceive.overdueTotal > 0 && <span className="text-alert-600"> · {brl(f.toReceive.overdueTotal)} vencido</span>}
                 </div>
               </div>
               {!firstOpen ? (
@@ -301,7 +302,7 @@ export default function Financeiro() {
                 <p className="text-sm text-steel-400">Tudo recebido. Nenhuma OS concluída com saldo em aberto. 👏</p>
               ) : (
                 <ul className="divide-y divide-steel-100">
-                  {f.toReceive.rows.slice(0, 12).map(({ os: o, open, days, partial }) => (
+                  {f.toReceive.rows.slice(0, 12).map(({ os: o, open, days, partial, dueIn, overdue }) => (
                     <li key={o.id}>
                       <Link to={`/oficina/os/${o.id}`} className="flex items-center justify-between gap-3 py-2 hover:bg-steel-50 -mx-2 px-2 rounded-lg">
                         <div className="min-w-0">
@@ -313,8 +314,10 @@ export default function Financeiro() {
                         </div>
                         <div className="text-right shrink-0">
                           <div className="text-sm font-bold">{brl(open)}</div>
-                          <div className={`text-[11px] ${days > 7 ? 'text-alert-600 font-semibold' : 'text-steel-400'}`}>
-                            {days === 0 ? 'concluída hoje' : `há ${days} dia${days === 1 ? '' : 's'}`}
+                          <div className={`text-[11px] ${overdue ? 'text-alert-600 font-semibold' : dueIn != null ? 'text-brand-700' : 'text-steel-400'}`}>
+                            {dueIn != null
+                              ? `🕒 ${dueIn < 0 ? `vencido há ${-dueIn} dia${dueIn === -1 ? '' : 's'}` : dueIn === 0 ? 'vence hoje' : `vence ${new Date(`${o.pay_later_due}T12:00:00`).toLocaleDateString('pt-BR')}`}`
+                              : days === 0 ? 'concluída hoje' : `há ${days} dia${days === 1 ? '' : 's'}`}
                           </div>
                         </div>
                       </Link>
