@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import NewOsModal from '@/components/os/NewOsModal';
-import PaymentsList from '@/components/cash/PaymentsList';
+import PaymentsList, { paidResponsibles, type PaidOs } from '@/components/cash/PaymentsList';
+import CallMechanicModal, { type CallMechanicOs } from '@/components/cash/CallMechanicModal';
+import { AssignmentsModal, ReceiveAssignments, useReceiveAssignments } from '@/components/cash/ReceiveAssignments';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { canDo, useOperator, type WorkshopOperator } from '@/lib/operators';
+import { canDo, sessionAllows, useOperator, type WorkshopOperator } from '@/lib/operators';
 import {
   EXPENSE_CATEGORIES, KINDS, METHODS, RECEIVE_METHODS, brl, hhmm, moneyStr, parseMoney,
   type CashEntry, type CashRegister, type CashSummary, type EntryKind, type PayMethod,
@@ -16,6 +18,7 @@ import type { WorkshopMechanic } from '@/types/database';
 type OpenOs = {
   id: string; number: number | null; title: string; price: number; paid_amount: number; counter_discount: number;
   status: string; completed_at: string | null; created_at: string;
+  executor: 'workshop' | 'platform' | null; workshop_mechanic_id: string | null;
   customer: { full_name: string } | null; vehicle: { plate: string | null; make: string | null; model: string | null } | null;
 };
 
@@ -49,6 +52,8 @@ export default function Caixa() {
   const { balcao, session } = useOperator();
   const sid = balcao ? session?.session_id ?? null : null;
   const can = (p: Parameters<typeof canDo>[2]) => canDo(session, balcao, p);
+  /* Chamar mecânico publica demanda: só quem tem acesso à tela de Demandas */
+  const canCallMechanic = !balcao || (!!session && sessionAllows(session, '/oficina/dashboard'));
 
   const [reg, setReg]         = useState<CashRegister | null | undefined>(undefined);
   const [lastClosed, setLastClosed] = useState<CashRegister | null>(null);
@@ -128,7 +133,7 @@ export default function Caixa() {
             </div>
 
             {tab === 'receber' && (
-              <ReceiveTab wid={wid!} sid={sid} registerId={reg.id} entriesCount={entries.length} canDiscount={can('dar_desconto')} onDone={load}
+              <ReceiveTab wid={wid!} sid={sid} registerId={reg.id} entriesCount={entries.length} canDiscount={can('dar_desconto')} canCallMechanic={canCallMechanic} team={team} onDone={load}
                 focusOs={focusOs} onFocusUsed={() => setParams({}, { replace: true })} />
             )}
             {tab === 'movimentos' && (
@@ -219,8 +224,9 @@ function Line({ label, value, cls = '' }: { label: string; value: string; cls?: 
 
 /* ── Receber OS ──────────────────────────────────────────────────────────── */
 
-function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, focusOs, onFocusUsed }: {
-  wid: string; sid: string | null; registerId: string; entriesCount: number; canDiscount: boolean; onDone: () => void;
+function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMechanic, team, onDone, focusOs, onFocusUsed }: {
+  wid: string; sid: string | null; registerId: string; entriesCount: number; canDiscount: boolean; canCallMechanic: boolean;
+  team: WorkshopMechanic[]; onDone: () => void;
   focusOs: string | null; onFocusUsed: () => void;
 }) {
   const nav = useNavigate();
@@ -228,10 +234,14 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, f
   const [q, setQ]         = useState('');
   const [picked, setPicked] = useState<OpenOs | null>(null);
   const [newOs, setNewOs] = useState(false);
+  const [calling, setCalling] = useState<CallMechanicOs | null>(null);
+  /* OS já recebida: definir/corrigir responsável (e chamar mecânico da plataforma) */
+  const [setting, setSetting] = useState<PaidOs | null>(null);
+  const [paidKey, setPaidKey] = useState(0);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('service_orders')
-      .select('id, number, title, price, paid_amount, counter_discount, status, completed_at, created_at, customer:customers(full_name), vehicle:vehicles(plate, make, model)')
+      .select('id, number, title, price, paid_amount, counter_discount, status, completed_at, created_at, executor, workshop_mechanic_id, customer:customers(full_name), vehicle:vehicles(plate, make, model)')
       .eq('workshop_id', wid).in('status', ['open', 'approved', 'in_progress', 'completed'])
       .order('created_at', { ascending: false }).limit(500);
     const rows = ((data as unknown as OpenOs[]) ?? []).filter(o => remainingOf(o) > 0.004);
@@ -323,7 +333,13 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, f
                   <div className="font-bold">{brl(rem)}</div>
                   {o.paid_amount > 0 && <div className="text-[11px] text-steel-400">de {brl(o.price)}</div>}
                 </div>
-                <button onClick={() => setPicked(o)} className="btn-primary text-sm shrink-0">Receber</button>
+                <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                  <Link to={`/oficina/os/${o.id}`} className="btn-secondary text-sm text-center" title="Serviços, valores, quem fez e agendamento">✏️ Editar OS</Link>
+                  {canCallMechanic && o.status !== 'completed' && (
+                    <button onClick={() => setCalling(o)} className="btn-secondary text-sm" title="Publicar demanda com os serviços desta OS">🔧 Chamar mecânico</button>
+                  )}
+                  <button onClick={() => setPicked(o)} className="btn-primary text-sm">Receber</button>
+                </div>
               </div>
             );
           })}
@@ -331,7 +347,18 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, f
       )}
 
       <div className="mt-6">
-        <PaymentsList filter={{ registerId }} reloadKey={entriesCount} title="✅ Recebidas neste caixa" empty="Nenhuma OS recebida neste caixa ainda." />
+        <PaymentsList filter={{ registerId }} reloadKey={`${entriesCount}-${paidKey}`} title="✅ Recebidas neste caixa" empty="Nenhuma OS recebida neste caixa ainda."
+          action={os => (
+            <div className="flex flex-col sm:flex-row gap-1.5">
+              <Link to={`/oficina/os/${os.id}`} className="btn-secondary text-xs !px-3 !py-1.5 whitespace-nowrap text-center">✏️ Editar OS</Link>
+              {canCallMechanic && os.items?.some(i => i.kind === 'labor' && i.executor === 'platform') && (
+                <button onClick={() => setCalling(os)} className="btn-secondary text-xs !px-3 !py-1.5 whitespace-nowrap">🔧 Chamar mecânico</button>
+              )}
+              <button onClick={() => setSetting(os)} className="btn-secondary text-xs !px-3 !py-1.5 whitespace-nowrap">
+                {paidResponsibles(os).missing ? '⚠️ Definir responsáveis' : '👥 Responsáveis'}
+              </button>
+            </div>
+          )} />
       </div>
 
       {newOs && (
@@ -346,10 +373,27 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, f
         />
       )}
 
+      {calling && <CallMechanicModal wid={wid} os={calling} onClose={() => setCalling(null)} />}
+
+      {setting && (
+        <AssignmentsModal os={setting} team={team} title={`OS nº ${osNum(setting)}`}
+          onClose={() => setSetting(null)}
+          onSaved={callPlatform => {
+            const os = setting;
+            setSetting(null); setPaidKey(k => k + 1);
+            if (callPlatform && canCallMechanic) setCalling(os);
+          }} />
+      )}
+
       {picked && (
-        <ReceiveModal os={picked} wid={wid} sid={sid} canDiscount={canDiscount}
+        <ReceiveModal os={picked} wid={wid} sid={sid} canDiscount={canDiscount} team={team}
           onClose={() => setPicked(null)}
-          onDone={() => { setPicked(null); load(); onDone(); }} />
+          onDone={callPlatform => {
+            const os = picked;
+            setPicked(null); load(); onDone();
+            // Escolheu "mecânico da plataforma" agora: já abre a chamada com os serviços da OS
+            if (callPlatform && canCallMechanic) setCalling(os);
+          }} />
       )}
     </div>
   );
@@ -357,10 +401,12 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, onDone, f
 
 type Part = { method: PayMethod; amount: string; installments: number };
 
-function ReceiveModal({ os, wid, sid, canDiscount, onClose, onDone }: {
-  os: OpenOs; wid: string; sid: string | null; canDiscount: boolean; onClose: () => void; onDone: () => void;
+function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
+  os: OpenOs; wid: string; sid: string | null; canDiscount: boolean; team: WorkshopMechanic[];
+  onClose: () => void; onDone: (callPlatform: boolean) => void;
 }) {
   const open = remainingOf(os);
+  const who = useReceiveAssignments(os, team);
   const [discount, setDiscount] = useState('');
   const [parts, setParts] = useState<Part[]>([{ method: 'dinheiro', amount: moneyStr(open), installments: 1 }]);
   const [given, setGiven] = useState('');
@@ -382,11 +428,14 @@ function ReceiveModal({ os, wid, sid, canDiscount, onClose, onDone }: {
   }
 
   async function confirmReceive() {
+    if (!who.valid) return toast.error('Informe quem fez cada serviço: mecânico da loja ou da plataforma');
     if (total <= 0) return toast.error('Informe o valor recebido');
     if (missing < -0.004) return toast.error('O total passa do valor em aberto');
     if (given && givenN < cashPart) return toast.error('O valor entregue é menor que a parte em dinheiro');
     if (missing > 0.004 && !confirm(`Vai ficar faltando ${brl(missing)} nesta OS. Confirmar recebimento parcial?`)) return;
     setBusy(true);
+    const { error: rErr } = await who.save();
+    if (rErr) { setBusy(false); return toast.error('Não consegui salvar quem fez: ' + rErr.message); }
     const { error } = await supabase.rpc('cash_receive_os', {
       p_workshop: wid, p_session: sid, p_os: os.id,
       p_parts: parts.filter(p => parseMoney(p.amount) > 0).map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
@@ -395,7 +444,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, onClose, onDone }: {
     setBusy(false);
     if (error) return toast.error(error.message);
     toast.success(change > 0 ? `Recebido! Troco: ${brl(change)}` : 'Recebimento registrado');
-    onDone();
+    onDone(who.callPlatform);
   }
 
   return (
@@ -418,6 +467,11 @@ function ReceiveModal({ os, wid, sid, canDiscount, onClose, onDone }: {
             <span className="font-semibold">A receber</span><span className="font-bold">{brl(due)}</span>
           </div>
         </div>
+
+        <ReceiveAssignments a={who} team={team} />
+        {who.callPlatform && (
+          <p className="text-[11px] text-steel-500 mt-1">Depois de confirmar, abre a chamada do mecânico da plataforma com esses serviços.</p>
+        )}
 
         {canDiscount && (
           <div className="mt-3">
@@ -466,7 +520,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, onClose, onDone }: {
 
         <div className="flex gap-2 mt-6">
           <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
-          <button onClick={confirmReceive} disabled={busy || total <= 0 || missing < -0.004} className="btn-primary flex-[2] btn-lg">
+          <button onClick={confirmReceive} disabled={busy || !who.valid || total <= 0 || missing < -0.004} className="btn-primary flex-[2] btn-lg">
             {busy ? 'Registrando…' : `Confirmar ${brl(total)}`}
           </button>
         </div>

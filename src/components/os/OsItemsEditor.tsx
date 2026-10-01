@@ -18,9 +18,17 @@ type Row = {
   unit_cost: string;
   /** Peça do cadastro de onde veio */
   part_id: string | null;
-  /** Quem fez (comissão); '' = responsável da OS */
+  /** Quem fez (comissão); '' = responsável da OS · PLATFORM_ITEM = mecânico da plataforma */
   mechanic_id: string;
+  /** Só peças: key da linha do serviço em que foi usada ('' = nenhum) — a comissão da peça segue quem fez esse serviço */
+  used_in: string;
 };
+
+/** Valor do "Quem fez" para item feito por mecânico da plataforma (sem comissão da equipe) */
+const PLATFORM_ITEM = 'platform';
+const whoPatch = (v: string) => (v === PLATFORM_ITEM
+  ? { workshop_mechanic_id: null, executor: 'platform' }
+  : { workshop_mechanic_id: v || null, executor: v ? 'workshop' : null });
 
 type TeamMember = { id: string; name: string; active: boolean };
 
@@ -36,7 +44,8 @@ function toRow(i: ServiceOrderItem): Row {
     key: i.id, id: i.id, kind: i.kind, description: i.description,
     quantity: String(i.quantity).replace('.', ','), unit_price: moneyInput(i.unit_price),
     unit_cost: i.unit_cost != null ? moneyInput(Number(i.unit_cost)) : '', part_id: i.part_id ?? null,
-    mechanic_id: i.workshop_mechanic_id ?? '',
+    mechanic_id: i.executor === 'platform' ? PLATFORM_ITEM : i.workshop_mechanic_id ?? '',
+    used_in: i.used_in_item_id ?? '',
   };
 }
 
@@ -91,7 +100,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       .then(({ data }) => setTeam((data as TeamMember[]) ?? []));
   }, [workshopId]);
   const teamName = useMemo(() => new Map(team.map(m => [m.id, m.name])), [team]);
-  const showWho = team.filter(m => m.active).length > 1 || items.some(i => i.workshop_mechanic_id);
+  // Com a opção "mecânico da plataforma", vale mostrar mesmo com um só colaborador
+  const showWho = !!canAssign || team.filter(m => m.active).length > 1 || items.some(i => i.workshop_mechanic_id || i.executor === 'platform');
 
   const [ownParts, setOwnParts] = useState(customerBroughtParts);
   useEffect(() => { setOwnParts(customerBroughtParts); }, [customerBroughtParts]);
@@ -103,13 +113,32 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     onSaved();
   }
 
+  /** Serviço que leva a peça por padrão: o único serviço da OS (com mais de um, a caixa escolhe) */
+  function soleService(rs: Row[]) {
+    const labor = rs.filter(r => r.kind === 'labor');
+    return labor.length === 1 ? labor[0].key : '';
+  }
+  const whoLabel = (r: Row) => r.mechanic_id === PLATFORM_ITEM ? '🌐 plataforma'
+    : (r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'responsável da OS';
+
+  /** OS fechada: liga a peça a um serviço direto no item */
+  async function linkPart(r: Row, key: string) {
+    if (!r.id) return;
+    const target = rows.find(x => x.key === key && x.id);
+    setRows(rs => rs.map(x => x.key === r.key ? { ...x, used_in: key } : x));
+    const { error } = await supabase.from('service_order_items').update({ used_in_item_id: target?.id ?? null }).eq('id', r.id);
+    if (error) { toast.error('Não foi possível ligar a peça: ' + error.message); setRows(items.map(toRow)); return; }
+    toast.success('Peça ligada ao serviço ✓');
+    onSaved();
+  }
+
   /** OS fechada: troca quem fez direto no item (a caixa acerta a comissão na hora de receber) */
   async function assign(r: Row, mechanicId: string) {
     if (!r.id) return;
     setRows(rs => rs.map(x => x.key === r.key ? { ...x, mechanic_id: mechanicId } : x));
-    const { error } = await supabase.from('service_order_items').update({ workshop_mechanic_id: mechanicId || null }).eq('id', r.id);
+    const { error } = await supabase.from('service_order_items').update(whoPatch(mechanicId)).eq('id', r.id);
     if (error) { toast.error('Não foi possível trocar: ' + error.message); setRows(items.map(toRow)); return; }
-    toast.success('Comissão deste item atualizada ✓');
+    toast.success(mechanicId === PLATFORM_ITEM ? 'Item marcado para o mecânico da plataforma ✓' : 'Comissão deste item atualizada ✓');
     onSaved();
   }
 
@@ -168,7 +197,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     || Math.abs(disc - (discount ?? 0)) > 0.001;
 
   function addRow(kind: OsItemKind) {
-    setRows(rs => [...rs, { key: newKey(), kind, description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '' }]);
+    setRows(rs => [...rs, { key: newKey(), kind, description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: kind === 'part' ? soleService(rs) : '' }]);
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
@@ -232,8 +261,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         if (error) throw error;
       }
 
+      // Linha nova já ganha id aqui, para a peça poder apontar para um serviço que ainda vai ser criado
+      const idOf = new Map(rows.map(r => [r.key, r.id ?? crypto.randomUUID()]));
+      const laborKeys = new Set(rows.filter(r => r.kind === 'labor').map(r => r.key));
       const payload = rows.map((r, idx) => ({
-        ...(r.id ? { id: r.id } : {}),
+        id: idOf.get(r.key)!,
         service_order_id: osId,
         workshop_id: workshopId, // o banco confere pela OS (trigger)
         kind: r.kind,
@@ -242,17 +274,20 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         unit_price: parseMoney(r.unit_price || '0'),
         unit_cost: r.kind === 'part' && r.unit_cost.trim() ? parseMoney(r.unit_cost) : null,
         part_id: r.kind === 'part' ? r.part_id : null,
-        workshop_mechanic_id: r.mechanic_id || null,
+        ...whoPatch(r.kind === 'labor' ? r.mechanic_id : ''),
+        used_in_item_id: r.kind === 'part' && laborKeys.has(r.used_in) ? idOf.get(r.used_in)! : null,
         position: idx,
       }));
-      const existing = payload.filter(p => 'id' in p);
-      const created  = payload.filter(p => !('id' in p));
-      if (existing.length) {
-        const { error } = await supabase.from('service_order_items').upsert(existing);
-        if (error) throw error;
-      }
+      const savedIds = new Set(rows.filter(r => r.id).map(r => r.id!));
+      const created  = payload.filter(p => !savedIds.has(p.id));
+      const existing = payload.filter(p => savedIds.has(p.id));
+      // Novos primeiro: uma peça já salva pode passar a apontar para um serviço novo
       if (created.length) {
         const { error } = await supabase.from('service_order_items').insert(created);
+        if (error) throw error;
+      }
+      if (existing.length) {
+        const { error } = await supabase.from('service_order_items').upsert(existing);
         if (error) throw error;
       }
 
@@ -307,8 +342,24 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           <input type="checkbox" checked={ownParts} disabled={readOnly && !canAssign}
             onChange={e => toggleOwnParts(e.target.checked)} />
           <span>📦 <strong>Cliente trouxe a peça</strong></span>
-          <span className="text-xs text-steel-500">— a comissão da mão de obra usa a % de “peça do cliente”</span>
+          <span className="text-xs text-steel-500">— a comissão da mão de obra usa a % de “só serviço”</span>
         </label>
+      )}
+
+      {/* Marcou "cliente trouxe a peça" mas a OS ainda cobra peças: a caixa decide se tira */}
+      {ownParts && !readOnly && rows.some(r => r.kind === 'part') && (
+        <div className="mx-5 mb-3 rounded-xl bg-pending-50 border border-pending-200 px-3 py-2.5 text-sm text-pending-900">
+          <div>
+            ⚠️ O cliente trouxe a peça, mas esta OS ainda cobra{' '}
+            <strong>{rows.filter(r => r.kind === 'part').map(r => r.description.trim() || 'peça').join(', ')}</strong>{' '}
+            ({fmtBRL(rows.filter(r => r.kind === 'part').reduce((a, r) => a + rowTotal(r), 0))}).
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <button type="button" onClick={() => setRows(rs => rs.filter(r => r.kind !== 'part'))}
+              className="btn-primary text-xs !py-1.5">Tirar as peças da OS</button>
+            <span className="text-xs text-pending-800">Se alguma peça foi da loja, mantenha só ela e tire as outras no ✕.</span>
+          </div>
+        </div>
       )}
 
       {hasLegacyValues && (
@@ -343,7 +394,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             const filled = { description: res.name, part_id: res.part_id, unit_cost: moneyInput(res.cost), unit_price: moneyInput(res.price) };
             setRows(rs => quick.key
               ? rs.map(x => x.key === quick.key ? { ...x, ...filled } : x)
-              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', ...filled }]);
+              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', used_in: soleService(rs), ...filled }]);
             setQuick(null);
           }} />
       )}
@@ -435,8 +486,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 <RowActions idx={idx} count={rows.length} onUp={() => move(r.key, -1)} onDown={() => move(r.key, 1)} onRemove={() => remove(r.key)} />
               </div>
             )}
-            {/* Quem fez (comissão) */}
-            {showWho && (
+            {/* Quem fez (comissão) — só em serviço; peça conta para o responsável da OS */}
+            {showWho && r.kind === 'labor' && (
               <div className="col-span-12 -mt-1 flex items-center gap-2 text-xs">
                 <span className="text-steel-500 shrink-0">🔧 Quem fez:</span>
                 {canAssign && (!readOnly || r.id) ? (
@@ -446,10 +497,31 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                     {team.filter(m => (m.active || m.id === r.mechanic_id) && m.id !== osMechanicId).map(m => (
                       <option key={m.id} value={m.id}>{m.name}{m.active ? '' : ' (inativo)'}</option>
                     ))}
+                    <option value={PLATFORM_ITEM}>🌐 Mecânico da plataforma</option>
                   </select>
                 ) : (
                   <span className="font-semibold text-steel-700">
-                    {(r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'Responsável da OS'}
+                    {r.mechanic_id === PLATFORM_ITEM ? '🌐 Mecânico da plataforma'
+                      : (r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'Responsável da OS'}
+                  </span>
+                )}
+              </div>
+            )}
+            {/* Peça: em qual serviço foi usada (a comissão da peça segue quem fez esse serviço) */}
+            {r.kind === 'part' && rows.some(x => x.kind === 'labor') && (
+              <div className="col-span-12 -mt-1 flex items-center gap-2 text-xs">
+                <span className="text-steel-500 shrink-0">🔗 Usada em:</span>
+                {!readOnly || (canAssign && r.id) ? (
+                  <select className={`input !py-1 !px-2 !w-auto text-xs ${r.used_in ? '' : 'text-steel-400'}`} value={r.used_in}
+                    onChange={e => readOnly ? linkPart(r, e.target.value) : update(r.key, { used_in: e.target.value })}>
+                    <option value="">Nenhum serviço específico</option>
+                    {rows.filter(x => x.kind === 'labor' && (!readOnly || x.id)).map(x => (
+                      <option key={x.key} value={x.key}>{x.description.trim() || 'Serviço sem nome'} · {whoLabel(x)}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="font-semibold text-steel-700">
+                    {(() => { const x = rows.find(y => y.key === r.used_in); return x ? `${x.description} · ${whoLabel(x)}` : 'Nenhum serviço específico'; })()}
                   </span>
                 )}
               </div>

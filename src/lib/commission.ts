@@ -5,10 +5,15 @@
  * - commission_percent          → sobre os serviços (mão de obra) que fez
  * - commission_parts_percent    → sobre as peças dos itens que fez
  * - commission_revenue_percent  → sobre o faturamento total da loja (ex.: gerente 1,5%)
- * Quando o cliente traz a peça (service_orders.customer_brought_parts), a mão de obra daquela OS
- * usa commission_own_parts_percent (vazio = a mesma % de serviços).
+ * Mão de obra "só serviço" usa commission_own_parts_percent (vazio = a mesma % de serviços):
+ * - serviço sem peça da loja ligada a ele ("Usada em") — vale para OS concluídas a partir de 01/10/2026 (labor_only);
+ * - ou a OS inteira quando o cliente trouxe a peça (service_orders.customer_brought_parts).
  *
  * "Quem fez" é por item da OS (service_order_items.workshop_mechanic_id); vazio = responsável da OS.
+ * Serviço da plataforma não gera comissão para a equipe; peça segue o serviço em que foi usada.
+ *
+ * Quando conta: no momento em que o serviço é FINALIZADO (done_at da view) — o "Terminou" do relógio
+ * do responsável na OS; sem isso, a conclusão da OS. Não precisa estar pago. OS cancelada não conta.
  * A view os_commission_base já entrega a OS dividida por colaborador.
  */
 import { supabase } from '@/lib/supabase';
@@ -26,6 +31,10 @@ export type CommissionBaseRow = {
   service_order_id: string; mechanic_id: string | null; labor: number; parts: number;
   /** OS em que o cliente trouxe a peça */
   customer_brought_parts?: boolean;
+  /** Mão de obra de serviços sem peça da loja ("só serviço") */
+  labor_only?: number;
+  /** Quando esse trabalho conta para a comissão (serviço finalizado) */
+  done_at?: string | null;
 };
 
 /** O que o colaborador fez no período: mão de obra normal, mão de obra com peça do cliente e peças */
@@ -54,14 +63,14 @@ export const hasCommission = (m: CommissionMech) => {
   return p.labor > 0 || p.own > 0 || p.parts > 0 || p.revenue > 0;
 };
 
-/** Base de comissão das OS concluídas (vendas) no período, já dividida por quem fez */
+/** Base de comissão dos serviços finalizados no período, já dividida por quem fez */
 export async function loadCommissionBase(wid: string, from: string, to: string): Promise<CommissionBaseRow[]> {
   const { data } = await fetchAll((a, b) => supabase.from('os_commission_base')
-    .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts')
-    .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null)
-    .gte('completed_at', from).lt('completed_at', to)
-    .order('service_order_id').order('mechanic_id', { nullsFirst: true }).range(a, b));
-  return ((data ?? []) as CommissionBaseRow[]).map(r => ({ ...r, labor: Number(r.labor), parts: Number(r.parts) }));
+    .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts, labor_only, done_at')
+    .eq('workshop_id', wid).not('done_at', 'is', null)
+    .gte('done_at', from).lt('done_at', to)
+    .order('service_order_id').order('mechanic_id', { nullsFirst: true }).order('done_at').range(a, b));
+  return ((data ?? []) as CommissionBaseRow[]).map(r => ({ ...r, labor: Number(r.labor), parts: Number(r.parts), labor_only: Number(r.labor_only ?? 0) }));
 }
 
 /** Soma o que cada colaborador fez (serviços e peças) */
@@ -70,7 +79,9 @@ export function baseByMechanic(rows: CommissionBaseRow[]) {
   for (const r of rows) {
     if (!r.mechanic_id) continue;
     const e = map.get(r.mechanic_id) ?? { labor: 0, laborOwn: 0, parts: 0 };
-    if (r.customer_brought_parts) e.laborOwn += r.labor; else e.labor += r.labor;
+    const only = Math.min(r.labor, Number(r.labor_only ?? 0));
+    if (r.customer_brought_parts) e.laborOwn += r.labor;
+    else { e.laborOwn += only; e.labor += r.labor - only; }
     e.parts += r.parts;
     map.set(r.mechanic_id, e);
   }
@@ -97,7 +108,7 @@ export function commissionRule(m: CommissionMech) {
   const p = pcts(m);
   return [
     p.labor > 0 && `${pctStr(p.labor)} serviços`,
-    m.commission_own_parts_percent != null && p.own !== p.labor && `${pctStr(p.own)} serviço c/ peça do cliente`,
+    m.commission_own_parts_percent != null && p.own !== p.labor && `${pctStr(p.own)} só serviço`,
     p.parts > 0 && `${pctStr(p.parts)} peças`,
     p.revenue > 0 && `${pctStr(p.revenue)} faturamento`,
   ].filter(Boolean).join(' + ');

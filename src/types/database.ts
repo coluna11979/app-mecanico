@@ -125,6 +125,8 @@ export interface Job {
   cancellation_refund: number | null;
   stripe_refund_id: string | null;
   audience: 'public' | 'favorites';
+  /** OS de onde a demanda saiu ("Chamar mecânico" no Caixa) */
+  service_order_id?: string | null;
   created_at: string;
 }
 
@@ -204,6 +206,8 @@ export interface ServiceOrder {
   vehicle_id: string | null;
   customer_id: string | null;
   workshop_mechanic_id: string | null;
+  /** Quem executou: equipe da loja ou mecânico da plataforma (null = ainda não informado) */
+  executor?: 'workshop' | 'platform' | null;
   title: string;
   description: string | null;
   mechanic_name: string | null;
@@ -266,6 +270,10 @@ export interface ServiceOrderItem {
   part_id?: string | null;
   /** Quem fez este item (comissão); null = responsável da OS */
   workshop_mechanic_id?: string | null;
+  /** 'platform' = feito por mecânico da plataforma (sem comissão da equipe) */
+  executor?: 'workshop' | 'platform' | null;
+  /** Só peças: serviço (item da OS) em que foi usada — a comissão da peça segue quem fez esse serviço */
+  used_in_item_id?: string | null;
   position: number;
   created_at: string;
 }

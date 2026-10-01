@@ -56,7 +56,7 @@ export default function Comissoes() {
         const c = r.calc;
         const notes = [
           c.labor > 0 && `serviços ${fmtBRL(c.labor)}`,
-          c.laborOwn > 0 && `serviços c/ peça do cliente ${fmtBRL(c.laborOwn)}`,
+          c.laborOwn > 0 && `só serviço ${fmtBRL(c.laborOwn)}`,
           c.parts > 0 && `peças ${fmtBRL(c.parts)}`,
           c.revenue > 0 && `faturamento da loja ${fmtBRL(c.revenue)}`,
         ].filter(Boolean).join(' · ') + ` → ${r.rule} = ${fmtBRL(c.commission)}`;
