@@ -19,6 +19,8 @@ const TAB_STATUS: Record<Tab, PaperImportStatus[]> = {
 };
 
 const PARALLEL = 2; // leituras simultâneas
+const MAX_PDF_MB = 15;
+const isPdfPath = (path: string) => path.toLowerCase().endsWith('.pdf');
 
 export default function ImportarOrcamentos() {
   const { currentWorkshop } = useAuth();
@@ -82,7 +84,9 @@ export default function ImportarOrcamentos() {
   }
 
   async function onFiles(e: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []).filter(f => f.type.startsWith('image/'));
+    const all = Array.from(e.target.files ?? []);
+    const files = all.filter(f => f.type.startsWith('image/') || f.type === 'application/pdf');
+    if (files.length < all.length) toast.error('Só dá para enviar foto ou PDF');
     e.target.value = '';
     if (!wid || !files.length) return;
 
@@ -91,10 +95,12 @@ export default function ImportarOrcamentos() {
     const ids: string[] = [];
     for (const file of files) {
       try {
-        const blob = await resizeImage(file);
-        const path = `${wid}/imports/${crypto.randomUUID()}.jpg`;
+        const pdf = file.type === 'application/pdf';
+        if (pdf && file.size > MAX_PDF_MB * 1024 * 1024) throw new Error(`PDF maior que ${MAX_PDF_MB} MB`);
+        const blob = pdf ? file : await resizeImage(file);
+        const path = `${wid}/imports/${crypto.randomUUID()}.${pdf ? 'pdf' : 'jpg'}`;
         const { error: upErr } = await supabase.storage.from('os-attachments')
-          .upload(path, blob, { contentType: 'image/jpeg' });
+          .upload(path, blob, { contentType: pdf ? 'application/pdf' : 'image/jpeg' });
         if (upErr) throw upErr;
         const { data, error } = await supabase.from('paper_imports')
           .insert({ workshop_id: wid, image_path: path }).select('id').single();
@@ -122,7 +128,7 @@ export default function ImportarOrcamentos() {
     }));
     await load();
     if (firstError) toast.error('Algumas fotos não foram lidas: ' + firstError);
-    else if (ids.length) { toast.success(`${ids.length} ${ids.length === 1 ? 'foto lida' : 'fotos lidas'} ✓ — confira os dados`); setTab('review'); }
+    else if (ids.length) { toast.success(`${ids.length} ${ids.length === 1 ? 'nota lida' : 'notas lidas'} ✓ — confira os dados`); setTab('review'); }
   }
 
   async function retry(imp: PaperImport) {
@@ -154,23 +160,24 @@ export default function ImportarOrcamentos() {
   return (
     <WorkshopLayout>
       <div className="max-w-5xl mx-auto">
-        <h1 className="text-3xl font-bold tracking-tight">📷 Importar orçamentos em papel</h1>
+        <h1 className="text-3xl font-bold tracking-tight">📷 Importar notas e orçamentos</h1>
         <p className="text-steel-500 mt-1 max-w-2xl">
-          Fotografe os orçamentos e notas antigas do bloquinho. A inteligência artificial lê cliente, telefone, carro,
-          serviços e valores — você só confere. Cada foto vira cliente, veículo e histórico de serviço no sistema.
+          Envie as notas antigas — foto do bloquinho ou PDF — do mês ou do ano inteiro. A inteligência artificial lê cliente,
+          carro, serviços e valores; você confere e informa quem fez e como foi pago. Tudo entra nos relatórios,
+          no Financeiro e na comissão <strong>com a data da nota</strong>.
         </p>
 
         {/* Envio */}
         <div className="card mt-5 border-2 border-dashed border-brand-200 !bg-brand-50/40 text-center py-8">
           <div className="text-4xl mb-2">🧾</div>
-          <div className="font-bold text-steel-900">Envie fotos de um ou vários orçamentos</div>
-          <div className="text-sm text-steel-500 mt-1">Dica: foto de cima, com boa luz e o papel inteiro aparecendo.</div>
+          <div className="font-bold text-steel-900">Envie fotos ou PDFs de uma ou várias notas</div>
+          <div className="text-sm text-steel-500 mt-1">Dica: foto de cima, com boa luz e o papel inteiro aparecendo. PDF: uma nota por arquivo.</div>
           <div className="flex flex-wrap gap-3 justify-center mt-5">
             <button onClick={() => cameraRef.current?.click()} disabled={!!uploading} className="btn-primary">📸 Tirar foto</button>
-            <button onClick={() => galleryRef.current?.click()} disabled={!!uploading} className="btn-ghost border border-steel-300 bg-white">🖼️ Escolher da galeria</button>
+            <button onClick={() => galleryRef.current?.click()} disabled={!!uploading} className="btn-ghost border border-steel-300 bg-white">🖼️ Escolher fotos ou PDF</button>
           </div>
           <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFiles} />
-          <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={onFiles} />
+          <input ref={galleryRef} type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={onFiles} />
           {uploading && (
             <div className="mt-4 text-sm text-brand-700 font-semibold">
               Enviando {uploading.done}/{uploading.total}…
@@ -205,12 +212,14 @@ export default function ImportarOrcamentos() {
               return (
                 <div key={r.id} className="card !p-0 overflow-hidden flex flex-col">
                   <div className="h-40 bg-steel-100 overflow-hidden">
-                    {urls[r.id] && <img src={urls[r.id]} alt="" className="w-full h-full object-cover" />}
+                    {urls[r.id] && (isPdfPath(r.image_path)
+                      ? <div className="w-full h-full grid place-items-center text-steel-500"><div className="text-center"><div className="text-4xl">📄</div><div className="text-xs font-semibold mt-1">PDF</div></div></div>
+                      : <img src={urls[r.id]} alt="" className="w-full h-full object-cover" />)}
                   </div>
                   <div className="p-4 flex-1 flex flex-col">
                     {r.status === 'pending' || r.status === 'processing' ? (
                       <div className="flex items-center gap-2 text-sm text-brand-700 font-semibold">
-                        <span className="h-3 w-3 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" /> Lendo a foto…
+                        <span className="h-3 w-3 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" /> Lendo a nota…
                       </div>
                     ) : r.status === 'failed' ? (
                       <div className="text-sm text-alert-700">⚠️ {r.error ?? 'Não foi possível ler'}</div>
@@ -256,6 +265,7 @@ export default function ImportarOrcamentos() {
         <ImportReview
           imp={reviewing}
           imageUrl={urls[reviewing.id] ?? null}
+          isPdf={isPdfPath(reviewing.image_path)}
           onClose={() => setReviewing(null)}
           onDone={() => { setReviewing(null); load(); }}
         />
