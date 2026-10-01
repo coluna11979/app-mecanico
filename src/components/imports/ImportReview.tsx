@@ -155,7 +155,9 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
 
   const laborRows = items.filter(r => r.tipo === 'labor');
   const whoOf = (r: ItemRow) => r.who || osWho;
-  const needWho = done && team.length > 0;
+  // Nota só de peças (venda de balcão): não tem serviço, ninguém ganha comissão — não pede quem fez
+  const onlyParts = items.length > 0 && laborRows.length === 0;
+  const needWho = done && team.length > 0 && !onlyParts;
   const whoMissing = needWho && (laborRows.length ? laborRows.some(r => !whoOf(r)) : !osWho);
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
@@ -481,7 +483,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
             </section>
 
             {/* Quem fez — comissão e desempenho no mês da nota */}
-            {done && team.length > 0 && (
+            {needWho && (
               <section className="space-y-2">
                 <div>
                   <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Quem fez o serviço <span className="text-alert-600">*</span></div>
