@@ -268,6 +268,17 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
   const [from, setFrom] = useState('');
   const [to, setTo]     = useState('');
 
+  // Recebidas: no período escolhido (qualquer caixa); em "Todas", só as deste caixa
+  const [pStart, pEnd] = periodRange(period, from, to);
+  const periodName = DATE_PERIODS.find(([k]) => k === period)?.[1] ?? '';
+  const paidFilter = pStart === null && pEnd === null
+    ? { registerId }
+    // sem fim = até a meia-noite de amanhã (valor fixo no dia, para a lista não recarregar a cada render)
+    : { workshopId: wid, from: new Date(pStart ?? 0).toISOString(), to: new Date(pEnd ?? (() => { const d = new Date(); d.setHours(24, 0, 0, 0); return d.getTime(); })()).toISOString() };
+  const paidTitle = 'registerId' in paidFilter
+    ? '✅ Recebidas neste caixa'
+    : `✅ Recebidas · ${period === 'custom' ? [from, to].filter(Boolean).map(d => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')).join(' até ') : periodName}`;
+
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase().replace(/[^a-z0-9à-ú ]/g, '');
     const [start, end] = periodRange(period, from, to);
@@ -352,7 +363,7 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
       )}
 
       <div className="mt-6">
-        <PaymentsList filter={{ registerId }} reloadKey={`${entriesCount}-${paidKey}`} title="✅ Recebidas neste caixa" empty="Nenhuma OS recebida neste caixa ainda."
+        <PaymentsList filter={paidFilter} reloadKey={`${entriesCount}-${paidKey}`} title={paidTitle} empty={paidFilter && 'registerId' in paidFilter ? 'Nenhuma OS recebida neste caixa ainda.' : 'Nenhuma OS recebida neste período.'}
           action={os => (
             <div className="flex flex-col sm:flex-row gap-1.5">
               <Link to={`/oficina/os/${os.id}`} className="btn-secondary text-xs !px-3 !py-1.5 whitespace-nowrap text-center">✏️ Editar OS</Link>
