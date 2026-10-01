@@ -48,6 +48,8 @@ export default function OsDetail() {
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
   /** Concluir escolhendo a data (OS de outro dia, ex.: nota importada ou reaberta para corrigir) */
   const [concluding, setConcluding] = useState(false);
+  /** Abre a correção do pagamento (sem mudar o status da OS) */
+  const [fixPay, setFixPay] = useState(0);
   const nav = useNavigate();
 
   // OS importada de orçamento em papel → mostra a foto original
@@ -381,6 +383,10 @@ export default function OsDetail() {
             )}
             <Link to={`/oficina/checkup?os=${os.id}`} className="btn-ghost text-sm !py-2 border border-brand-200 text-brand-700 hover:bg-brand-50">🔍 Check-up do veículo</Link>
             <Link to={`/oficina/os/${os.id}/imprimir`} className="btn-ghost text-sm !py-2 border border-steel-200">🖨️ Imprimir / PDF</Link>
+            {os.status === 'completed' && Number(os.paid_amount ?? 0) > 0 && canDo(session, balcao, 'cancelar_recebimento') && (
+              <button onClick={() => setFixPay(n => n + 1)} className="btn-ghost text-sm !py-2 border border-steel-200"
+                title="Trocar ou dividir a forma de pagamento sem reabrir a OS">💳 Corrigir pagamento</button>
+            )}
             {wa && (
               <a href={`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText())}`} target="_blank" rel="noopener noreferrer"
                 className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700">
@@ -520,7 +526,7 @@ export default function OsDetail() {
 
             {/* Pagamentos recebidos no caixa: quando, como e quem recebeu */}
             <PaymentsList filter={{ serviceOrderId: os.id }} showOs={false} empty={null} reloadKey={os.paid_amount}
-              title="💰 Pagamentos desta OS"
+              title="💰 Pagamentos desta OS" openFix={fixPay}
               fix={canDo(session, balcao, 'cancelar_recebimento') ? { wid: os.workshop_id, sid: balcao ? session?.session_id ?? null : null } : undefined} />
 
             {/* Comissões desta OS: pela regra, com opção de alterar/incluir pessoas */}

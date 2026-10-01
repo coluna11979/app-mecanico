@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { METHODS, RECEIVE_METHODS, brl, moneyStr, parseMoney, type PayMethod } from '@/lib/cash';
@@ -50,7 +50,7 @@ const osNum = (o: { id: string; number: number | null }) => (o.number != null ? 
  * Histórico de recebimentos de OS: de qual OS veio, cliente, placa, formas de
  * pagamento, quem recebeu e quando. Cada linha leva para a OS.
  */
-export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum recebimento ainda.', reloadKey, title, action, fix }: {
+export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum recebimento ainda.', reloadKey, title, action, fix, openFix }: {
   filter: Filter; showOs?: boolean; empty?: string | null; reloadKey?: unknown;
   /** Botão ao lado da linha (ex.: Caixa → definir responsável / chamar mecânico) */
   action?: (os: PaidOs) => ReactNode;
@@ -58,7 +58,10 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
   title?: string;
   /** Mostra "✏️ Corrigir" em cada pagamento (trocar a forma sem reabrir a OS) */
   fix?: { wid: string; sid: string | null };
+  /** Muda de valor → abre a correção (um pagamento só) ou rola até a lista para escolher */
+  openFix?: number;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
   const [fixing, setFixing] = useState<PaymentRow | null>(null);
   const [bump, setBump] = useState(0);
   const [rows, setRows] = useState<PaymentRow[] | null>(null);
@@ -89,6 +92,14 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
     return () => { alive = false; };
   }, [fkey, reloadKey, bump]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!openFix || !rows) return;
+    const active = rows.filter(r => !r.cancelled_at);
+    if (active.length === 1) setFixing(active[0]);
+    else if (active.length === 0) toast.info('Esta OS ainda não tem pagamento lançado — receba pelo Caixa.');
+    else { boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); toast.info('Toque em ✏️ Corrigir no pagamento que quer mudar.'); }
+  }, [openFix]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (rows === null) return empty === null ? null : <div className="space-y-2">{[1, 2].map(i => <div key={i} className="h-14 bg-white rounded-2xl animate-pulse" />)}</div>;
   if (rows.length === 0) {
     if (empty === null) return null;
@@ -97,7 +108,7 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
 
   const valid = rows.filter(r => !r.cancelled_at);
   return (
-    <div>
+    <div ref={boxRef}>
     {title && (
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
         <h2 className="text-sm font-bold text-steel-700">{title}</h2>
