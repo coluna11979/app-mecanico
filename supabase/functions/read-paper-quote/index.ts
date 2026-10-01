@@ -1,4 +1,4 @@
-// Lê a foto de um orçamento em papel (bloquinho de oficina) com a IA da Anthropic
+// Lê a foto (ou PDF) de um orçamento/nota (bloquinho de oficina) com a IA da Anthropic
 // e grava os dados extraídos em paper_imports.extracted para a oficina conferir.
 //
 // Nada fixo no código: chave, modelo e esforço vêm de app_settings
@@ -26,7 +26,7 @@ const SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['legivel', 'cliente', 'veiculo', 'data', 'numero_documento', 'servico_resumo',
-    'observacoes', 'recomendacoes', 'itens', 'desconto', 'total', 'campos_incertos'],
+    'observacoes', 'recomendacoes', 'itens', 'desconto', 'total', 'pagamentos', 'mecanico', 'campos_incertos'],
   properties: {
     legivel: { type: 'boolean', description: 'false se a imagem não for um orçamento/nota de serviço ou estiver ilegível' },
     cliente: {
@@ -66,6 +66,20 @@ const SCHEMA = {
     },
     desconto: nullable({ type: 'number' }),
     total: nullable({ type: 'number' }),
+    pagamentos: {
+      type: 'array',
+      description: 'Formas de pagamento escritas na nota. Lista vazia se não houver.',
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['forma', 'valor', 'parcelas'],
+        properties: {
+          forma: { type: 'string', enum: ['dinheiro', 'pix', 'debito', 'credito'] },
+          valor: nullable({ type: 'number' }),
+          parcelas: { type: 'integer' },
+        },
+      },
+    },
+    mecanico: { ...str, description: 'Nome do mecânico/responsável pelo serviço, se escrito na nota' },
     campos_incertos: {
       type: 'array', items: { type: 'string' },
       description: 'Campos com leitura duvidosa, ex.: ["cliente.telefone", "itens[2].valor_unitario"]',
@@ -73,7 +87,7 @@ const SCHEMA = {
   },
 };
 
-const PROMPT = `Esta é a foto de um orçamento ou nota de serviço de uma oficina mecânica brasileira, geralmente escrito à mão em bloquinho.
+const PROMPT = `Esta é a foto (ou PDF) de um orçamento ou nota de serviço de uma oficina mecânica brasileira — escrito à mão em bloquinho ou impresso por sistema.
 
 Extraia os dados exatamente como estão escritos:
 - O cabeçalho impresso (nome, CNPJ, endereço e telefone no topo) é da PRÓPRIA OFICINA que emitiu o talão. Nunca use esses dados como dados do cliente. O cliente é quem aparece nos campos preenchidos (Cliente, Telefone, Veículo…).
@@ -90,6 +104,9 @@ Extraia os dados exatamente como estão escritos:
   Na dúvida, inclua o item em campos_incertos.
 - Se só existir um valor total sem itens discriminados, crie um item "labor" com a descrição do serviço e esse valor.
 - recomendacoes: serviços que a oficina recomendou fazer no futuro (ex.: "Recomendada avaliação das bieletas na próxima revisão" → "Avaliar bieletas"). Um por item. Lista vazia se não houver.
+- pagamentos: forma de pagamento se estiver escrita ("PIX", "cartão de crédito 3x", "dinheiro", "débito"). Cartão sem dizer qual → "credito" e inclua em campos_incertos. Parcelas = 1 quando não houver. Valor null quando não estiver separado por forma. Lista vazia se a nota não diz como foi pago.
+- mecanico: nome do mecânico ou responsável pelo serviço, se escrito (ex.: "Mecânico: João" → "João"). Vazio se não houver.
+- PDF com várias páginas: é uma nota só; junte os itens de todas as páginas.
 - Liste em campos_incertos tudo que tiver leitura duvidosa, para a oficina conferir.
 - Se a imagem não for um orçamento/nota ou estiver ilegível, marque legivel = false.`;
 
@@ -134,10 +151,14 @@ Deno.serve(async (req) => {
 
     // Foto
     const { data: blob, error: dlErr } = await admin.storage.from('os-attachments').download(imp.image_path);
-    if (dlErr || !blob) throw new Error('não foi possível abrir a foto');
+    if (dlErr || !blob) throw new Error('não foi possível abrir o arquivo');
+    const isPdf = blob.type === 'application/pdf' || imp.image_path.toLowerCase().endsWith('.pdf');
     const mediaType = (['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(blob.type) ? blob.type : 'image/jpeg') as
       'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
-    const imageData = encodeBase64(new Uint8Array(await blob.arrayBuffer()));
+    const fileData = encodeBase64(new Uint8Array(await blob.arrayBuffer()));
+    const fileBlock = isPdf
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData } }
+      : { type: 'image', source: { type: 'base64', media_type: mediaType, data: fileData } };
 
     const client = new Anthropic({ apiKey: cfg.anthropic_api_key });
     const model  = cfg.ai_vision_model;
@@ -155,7 +176,7 @@ Deno.serve(async (req) => {
       messages: [{
         role: 'user',
         content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageData } },
+          fileBlock,
           { type: 'text', text: PROMPT },
         ],
       }],
