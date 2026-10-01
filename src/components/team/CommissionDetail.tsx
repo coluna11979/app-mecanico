@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { fetchAll } from '@/lib/fetchAll';
 import { fmtBRL } from '@/components/os/osHelpers';
 import {
-  COMMISSION_COLS, commissionRule, loadCommissionBase, pcts, type CommissionBaseRow, type CommissionMech,
+  COMMISSION_COLS, baseByMechanic, commissionFor, commissionRule, loadCommissionBase, pcts,
+  type CommissionBaseRow, type CommissionMech,
 } from '@/lib/commission';
 
 type Mech = { id: string; name: string; active: boolean } & CommissionMech;
@@ -13,7 +14,10 @@ type OsInfo = {
   customer: { full_name: string } | null; vehicle: { plate: string | null } | null;
 };
 
-type Line = { os: OsInfo | undefined; osId: string; labor: number; parts: number; own: boolean; commission: number };
+type Line = { os: OsInfo | undefined; osId: string; labor: number; parts: number; own: boolean; commission: number; doneAt: string | null };
+/** Linha da view com a data em que o trabalho conta (serviço finalizado ou OS concluída) */
+type BaseRow = CommissionBaseRow & { done_at?: string | null };
+const OS_COLS = 'id, number, title, price, completed_at, customer:customers(full_name), vehicle:vehicles(plate)';
 type Person = {
   mech: Mech; rule: string; lines: Line[];
   labor: number; parts: number; revenueShare: number; commission: number;
@@ -33,6 +37,7 @@ export default function CommissionDetail({ wid, from, to }: { wid: string; from:
   const [mechs, setMechs] = useState<Mech[]>([]);
   const [osById, setOsById] = useState<Map<string, OsInfo>>(new Map());
   const [revenue, setRevenue] = useState(0);
+  const [revenueCount, setRevenueCount] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const fromIso = from.toISOString();
   const toIso = to.toISOString();
@@ -45,14 +50,24 @@ export default function CommissionDetail({ wid, from, to }: { wid: string; from:
         loadCommissionBase(wid, fromIso, toIso),
         supabase.from('workshop_mechanics').select(`id, name, active, ${COMMISSION_COLS}`).eq('workshop_id', wid).order('name'),
         fetchAll((a, z) => supabase.from('service_orders')
-          .select('id, number, title, price, completed_at, customer:customers(full_name), vehicle:vehicles(plate)')
+          .select(OS_COLS)
           .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null)
           .gte('completed_at', fromIso).lt('completed_at', toIso).order('id').range(a, z)),
       ]);
       if (!alive) return;
       const list = (sales.data ?? []) as unknown as OsInfo[];
-      setOsById(new Map(list.map(o => [o.id, o])));
+      const map = new Map(list.map(o => [o.id, o]));
+      // Serviço finalizado em OS ainda em andamento: busca os dados dessa OS também
+      const missing = [...new Set(b.map(r => r.service_order_id))].filter(id => !map.has(id));
+      for (let i = 0; i < missing.length; i += 200) {
+        const { data } = await supabase.from('service_orders').select(OS_COLS).in('id', missing.slice(i, i + 200));
+        for (const o of (data ?? []) as unknown as OsInfo[]) map.set(o.id, o);
+      }
+      if (!alive) return;
+      setOsById(map);
+      // Faturamento da loja (para quem ganha % sobre ele): só OS concluídas no período
       setRevenue(r2(list.reduce((a, o) => a + Number(o.price), 0)));
+      setRevenueCount(list.length);
       setMechs((m.data ?? []) as unknown as Mech[]);
       setBase(b);
     })();
@@ -68,11 +83,20 @@ export default function CommissionDetail({ wid, from, to }: { wid: string; from:
     }
     return mechs.map(mech => {
       const p = pcts(mech);
-      const lines: Line[] = (byMech.get(mech.id) ?? []).map(r => {
-        const own = !!r.customer_brought_parts;
-        const commission = r2(r.labor * (own ? p.own : p.labor) / 100 + r.parts * p.parts / 100);
-        return { os: osById.get(r.service_order_id), osId: r.service_order_id, labor: r.labor, parts: r.parts, own, commission };
-      }).sort((a, b) => (b.os?.completed_at ?? '').localeCompare(a.os?.completed_at ?? ''));
+      // Uma linha por OS (o mesmo mecânico pode ter finalizado em horários diferentes)
+      const perOs = new Map<string, BaseRow[]>();
+      for (const r of (byMech.get(mech.id) ?? []) as BaseRow[]) perOs.set(r.service_order_id, [...(perOs.get(r.service_order_id) ?? []), r]);
+      const lines: Line[] = [...perOs.entries()].map(([osId, rows]) => {
+        // Mesma regra do Fechar comissões (lib/commission.ts)
+        const commission = commissionFor(mech, baseByMechanic(rows).get(mech.id), 0).commission;
+        const doneAt = rows.map(r => r.done_at ?? null).filter(Boolean).sort().pop() ?? osById.get(osId)?.completed_at ?? null;
+        return {
+          os: osById.get(osId), osId, doneAt, commission,
+          labor: r2(rows.reduce((a, r) => a + r.labor, 0)),
+          parts: r2(rows.reduce((a, r) => a + r.parts, 0)),
+          own: rows.some(r => r.customer_brought_parts),
+        };
+      }).sort((a, b) => (b.doneAt ?? '').localeCompare(a.doneAt ?? ''));
       const revenueShare = p.revenue > 0 ? r2(revenue * p.revenue / 100) : 0;
       return {
         mech, rule: commissionRule(mech), lines,
@@ -90,14 +114,14 @@ export default function CommissionDetail({ wid, from, to }: { wid: string; from:
   if (base === null) return <div className="space-y-2">{[1, 2].map(i => <div key={i} className="h-12 bg-steel-50 rounded-xl animate-pulse" />)}</div>;
 
   if (!people.length) {
-    return <p className="text-sm text-steel-400">Nenhuma OS concluída com comissão no período. O % de cada um é definido na ficha do colaborador.</p>;
+    return <p className="text-sm text-steel-400">Nenhum serviço finalizado com comissão no período. O % de cada um é definido na ficha do colaborador.</p>;
   }
 
   return (
     <div>
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
         <div className="text-sm text-steel-600">
-          {osById.size} OS concluída{osById.size === 1 ? '' : 's'} · faturamento {fmtBRL(revenue)}
+          {revenueCount} OS concluída{revenueCount === 1 ? "" : "s"} · faturamento {fmtBRL(revenue)}
         </div>
         <div className="text-sm">Total de comissões <strong className="text-base">{fmtBRL(total)}</strong></div>
       </div>
@@ -144,7 +168,8 @@ export default function CommissionDetail({ wid, from, to }: { wid: string; from:
                               </Link>
                               <div className="text-steel-500">
                                 {l.os?.customer?.full_name ?? 'Sem cliente'}{l.os?.vehicle?.plate ? ` · ${l.os.vehicle.plate}` : ''}
-                                {l.os?.completed_at && ` · ${new Date(l.os.completed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+                                {l.doneAt && ` · ${new Date(l.doneAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+                                {l.os && !l.os.completed_at && <span className="text-brand-700"> · serviço finalizado (OS em andamento)</span>}
                                 {l.own && <span className="text-pending-700"> · peça do cliente</span>}
                               </div>
                             </td>
