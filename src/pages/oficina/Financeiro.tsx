@@ -12,6 +12,7 @@ import { daysUntil, type Payable } from '@/lib/purchasing';
 import { change, previousRange, productivity, salesOf, type PanelMechanic } from '@/lib/workshopMetrics';
 import PeriodPicker, { PREV_LABEL, usePeriod } from '@/components/PeriodPicker';
 import { ALL_TIME, COMMISSION_COLS, loadCommissionBase, type CommissionBaseRow } from '@/lib/commission';
+import CommissionDetail from '@/components/team/CommissionDetail';
 import {
   byMethod, cashFlowOf, closings, expensesByCategory, flowSeries, receivables, valesByMechanic,
   type FinEntry, type FinOs, type FinPayment, type FinRegister,
@@ -25,6 +26,13 @@ export default function Financeiro() {
 
   const period = usePeriod('financeiro-periodo');
   const { preset, range } = period;
+  // Comissões detalhadas: hoje (padrão) ou o período escolhido no topo
+  const [commScope, setCommScope] = useState<'hoje' | 'periodo'>('hoje');
+  const todayRange = useMemo(() => {
+    const f = new Date(); f.setHours(0, 0, 0, 0);
+    const t = new Date(f); t.setDate(t.getDate() + 1);
+    return { from: f, to: t };
+  }, []);
   const [entries, setEntries]   = useState<FinEntry[]>([]);
   const [payments, setPayments] = useState<FinPayment[]>([]);
   const [regs, setRegs]         = useState<FinRegister[]>([]);
@@ -318,6 +326,28 @@ export default function Financeiro() {
                 <p className="text-xs text-steel-500 mt-2">+ {f.toReceive.rows.length - 12} OS. As mais antigas aparecem primeiro.</p>
               )}
             </div>
+
+            {/* Comissões detalhadas por colaborador */}
+            {wid && (
+              <div className="card">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">
+                    🏅 Comissões {commScope === 'hoje' ? 'de hoje' : 'do período'} por colaborador
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {([['hoje', 'Hoje'], ['periodo', 'Período do topo']] as const).map(([k, l]) => (
+                      <button key={k} onClick={() => setCommScope(k)}
+                        className={`text-xs font-semibold px-3 py-1 rounded-full border transition ${commScope === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                        {l}
+                      </button>
+                    ))}
+                    <Link to="/oficina/comissoes" className="text-xs font-semibold text-brand-700 ml-1">Fechar comissões →</Link>
+                  </div>
+                </div>
+                <CommissionDetail wid={wid} from={commScope === 'hoje' ? todayRange.from : range.from} to={commScope === 'hoje' ? todayRange.to : range.to} />
+                <p className="text-[11px] text-steel-400 mt-2">Toque no colaborador para ver cada OS: o que ele fez em serviços e peças × a % dele. Só OS concluídas.</p>
+              </div>
+            )}
 
             {/* Equipe + fechamentos */}
             <div className="grid lg:grid-cols-2 gap-4">
