@@ -11,7 +11,10 @@ export const STATUS_ON: Record<CheckupItemStatus, string> = {
   na:     'bg-steel-500 text-white border-steel-500',
 };
 
-export type ItemPatch = Partial<Pick<CheckupItem, 'status' | 'measurement' | 'note' | 'photo_path'>>;
+export type ItemPatch = Partial<Pick<CheckupItem, 'status' | 'measurement' | 'note' | 'photo_path' | 'quote_part' | 'quote_service'>>;
+
+/** Nomes do cadastro de peças e da tabela de serviços, para o mecânico apontar (sem preço) */
+export type CatalogNames = { parts: string[]; services: string[] };
 
 /* ─── Incluir item fora do checklist ───────────────────────── */
 export function AddItem({ system, onAdd }: { system: string; onAdd: (label: string) => Promise<boolean> }) {
@@ -51,8 +54,9 @@ export function AddItem({ system, onAdd }: { system: string; onAdd: (label: stri
 }
 
 /* ─── Item do checklist ────────────────────────────────────── */
-export function ItemRow({ item, uploadPhoto, onPatch, onRemove }: {
+export function ItemRow({ item, uploadPhoto, onPatch, onRemove, catalog }: {
   item: CheckupItem;
+  catalog?: CatalogNames;
   /** Envia a foto e devolve o path salvo (ou uma URL blob: na demonstração) */
   uploadPhoto: (file: File, itemKey: string) => Promise<string>;
   onPatch: (p: ItemPatch) => void;
@@ -64,6 +68,8 @@ export function ItemRow({ item, uploadPhoto, onPatch, onRemove }: {
   const [expanded, setExpanded] = useState(false);
   const [measurement, setMeasurement] = useState(item.measurement ?? '');
   const [note, setNote] = useState(item.note ?? '');
+  const [part, setPart] = useState(item.quote_part ?? '');
+  const [service, setService] = useState(item.quote_service ?? '');
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const showDetails = expanded || flagged;
@@ -108,6 +114,30 @@ export function ItemRow({ item, uploadPhoto, onPatch, onRemove }: {
 
       {showDetails && (
         <div className="space-y-2 bg-steel-50 rounded-xl p-3">
+          {/* Item com problema: o mecânico aponta o que trocar — vai direto para o orçamento do comercial */}
+          {flagged && (
+            <div className="rounded-lg bg-white border border-steel-200 p-2.5 space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">O que precisa (vai para o orçamento)</div>
+              {catalog && (
+                <>
+                  <datalist id={`ck-p-${item.id}`}>{catalog.parts.map(n => <option key={n} value={n} />)}</datalist>
+                  <datalist id={`ck-s-${item.id}`}>{catalog.services.map(n => <option key={n} value={n} />)}</datalist>
+                </>
+              )}
+              <div className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-xs font-semibold text-steel-600">🔩 Peça a trocar</span>
+                <input value={part} onChange={e => setPart(e.target.value)} list={catalog ? `ck-p-${item.id}` : undefined}
+                  onBlur={() => part.trim() !== (item.quote_part ?? '') && onPatch({ quote_part: part.trim() || null })}
+                  placeholder="Ex.: Pastilha dianteira (vazio se não precisa)" className="input !py-2 flex-1 min-w-0" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-xs font-semibold text-steel-600">🔧 Serviço</span>
+                <input value={service} onChange={e => setService(e.target.value)} list={catalog ? `ck-s-${item.id}` : undefined}
+                  onBlur={() => service.trim() !== (item.quote_service ?? '') && onPatch({ quote_service: service.trim() || null })}
+                  placeholder="Ex.: Troca de pastilhas" className="input !py-2 flex-1 min-w-0" />
+              </div>
+            </div>
+          )}
           <div className="flex gap-2">
             {tpl?.measure && (
               <input value={measurement} onChange={e => setMeasurement(e.target.value)}

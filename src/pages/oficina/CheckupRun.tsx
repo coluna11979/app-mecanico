@@ -10,7 +10,7 @@ import {
   computeScore, itemQuote, mechanicLinkUrl, mechanicStage, mechanicWhatsappLink, publicReportUrl, scoreMeta, uploadCheckupPhoto, whatsappLink,
   type CheckupItem, type VehicleCheckup,
 } from '@/lib/checkup';
-import { AddItem, ItemRow } from '@/components/checkup/ChecklistItem';
+import { AddItem, ItemRow, type CatalogNames } from '@/components/checkup/ChecklistItem';
 import { useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import { loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
@@ -45,6 +45,19 @@ export default function WorkshopCheckupRun() {
   // Caixa/atendente no modo balcão: abre, escolhe o mecânico e envia o link — não preenche a inspeção
   const { balcao, session } = useOperator();
   const dispatchOnly = !demo && balcao && (session?.role === 'caixa' || session?.role === 'atendente');
+  // Nomes do cadastro de peças e da tabela de serviços, para apontar o que trocar
+  const [catalog, setCatalog] = useState<CatalogNames | undefined>(undefined);
+  useEffect(() => {
+    if (demo || !currentWorkshop?.id) return;
+    Promise.all([
+      supabase.from('workshop_parts').select('name').eq('workshop_id', currentWorkshop.id).eq('active', true).order('name'),
+      supabase.from('workshop_services').select('name').eq('workshop_id', currentWorkshop.id).eq('active', true).order('name'),
+    ]).then(([p, s]) => setCatalog({
+      parts: ((p.data ?? []) as { name: string }[]).map(x => x.name),
+      services: ((s.data ?? []) as { name: string }[]).map(x => x.name),
+    }));
+  }, [currentWorkshop?.id, demo]);
+
   const linkSent = !demo && checkup?.status === 'draft' && !!checkup.mechanic_link_sent_at;
   useEffect(() => {
     if (!linkSent || !checkup) return;
@@ -329,7 +342,7 @@ export default function WorkshopCheckupRun() {
                         </div>
                       )}
                       {list.map(item => (
-                        <ItemRow key={item.id} item={item} onPatch={p => patchItem(item, p)}
+                        <ItemRow key={item.id} item={item} catalog={catalog} onPatch={p => patchItem(item, p)}
                           uploadPhoto={(file, key) => demo ? Promise.resolve(URL.createObjectURL(file))
                             : uploadCheckupPhoto(file, checkup.workshop_id, checkup.id, key)}
                           onRemove={item.item_key.startsWith('extra_') ? () => removeItem(item) : undefined} />
@@ -553,6 +566,19 @@ function QuoteRow({ item, readOnly, services, parts, onPatch }: {
   const [pval, setPval]   = useState(item.quote_parts != null ? moneyInput(Number(item.quote_parts)) : '');
   const money = (v: string) => { const n = parseMoney(v); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null; };
   const d = item.customer_decision ? DECISION_META[item.customer_decision] : null;
+
+  // O mecânico apontou a peça/serviço no check-up: puxa o preço do cadastro (se ainda não tem)
+  useEffect(() => {
+    if (readOnly) return;
+    const patch: Patch = {};
+    const p = item.quote_part && item.quote_parts == null
+      ? parts.find(x => x.name.toLowerCase() === item.quote_part!.trim().toLowerCase()) : undefined;
+    if (p) { patch.quote_parts = p.price; patch.quote_part_id = p.id; setPval(moneyInput(p.price)); }
+    const sv = item.quote_service && item.quote_labor == null
+      ? services.find(x => x.name.toLowerCase() === item.quote_service!.trim().toLowerCase()) : undefined;
+    if (sv && sv.price > 0) { patch.quote_labor = sv.price; setLabor(moneyInput(sv.price)); }
+    if (Object.keys(patch).length) onPatch(patch);
+  }, [parts, services]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function pickService(v: string) {
     setSvc(v);
