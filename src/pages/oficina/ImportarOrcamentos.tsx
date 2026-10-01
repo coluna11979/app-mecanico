@@ -19,6 +19,25 @@ const TAB_STATUS: Record<Tab, PaperImportStatus[]> = {
 };
 
 const PARALLEL = 2; // leituras simultâneas
+
+/** Filtro pela data de importação (quando a nota foi enviada) */
+type Period = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+const PERIODS: [Period, string][] = [
+  ['all', 'Todas'], ['today', 'Hoje'], ['yesterday', 'Ontem'], ['week', '7 dias'], ['month', '30 dias'], ['custom', '📅 Escolher datas'],
+];
+function periodRange(p: Period, from: string, to: string): [string | null, string | null] {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = 86400000, iso = (ms: number) => new Date(ms).toISOString(), t = today.getTime();
+  if (p === 'today') return [iso(t), null];
+  if (p === 'yesterday') return [iso(t - day), iso(t)];
+  if (p === 'week') return [iso(t - 6 * day), null];
+  if (p === 'month') return [iso(t - 29 * day), null];
+  if (p === 'custom') return [
+    from ? new Date(`${from}T00:00:00`).toISOString() : null,
+    to ? iso(new Date(`${to}T00:00:00`).getTime() + day) : null,
+  ];
+  return [null, null];
+}
 const MAX_PDF_MB = 15;
 const isPdfPath = (path: string) => path.toLowerCase().endsWith('.pdf');
 
@@ -31,14 +50,20 @@ export default function ImportarOrcamentos() {
   const [uploading, setUploading] = useState<{ done: number; total: number } | null>(null);
   const [reviewing, setReviewing] = useState<PaperImport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod]   = useState<Period>('all');
+  const [from, setFrom]       = useState('');
+  const [to, setTo]           = useState('');
+  const [start, end]          = periodRange(period, from, to);
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef  = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!wid) return;
-    const { data } = await supabase.from('paper_imports').select('*')
-      .eq('workshop_id', wid).neq('status', 'discarded')
-      .order('created_at', { ascending: false }).limit(300);
+    let query = supabase.from('paper_imports').select('*')
+      .eq('workshop_id', wid).neq('status', 'discarded');
+    if (start) query = query.gte('created_at', start);
+    if (end) query = query.lt('created_at', end);
+    const { data } = await query.order('created_at', { ascending: false }).limit(1000);
     const rows = (data as PaperImport[]) ?? [];
     setList(rows);
     setLoading(false);
@@ -56,7 +81,7 @@ export default function ImportarOrcamentos() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wid]);
+  }, [wid, start, end]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -91,6 +116,8 @@ export default function ImportarOrcamentos() {
     if (!wid || !files.length) return;
 
     setUploading({ done: 0, total: files.length });
+    // As novas são de hoje: o filtro de outro período as esconderia
+    if (period !== 'all' && period !== 'today') setPeriod('all');
     setTab('reading');
     const ids: string[] = [];
     for (const file of files) {
@@ -185,8 +212,27 @@ export default function ImportarOrcamentos() {
           )}
         </div>
 
+        {/* Período da importação */}
+        <div className="flex flex-wrap items-center gap-2 mt-6">
+          <span className="text-xs font-semibold text-steel-500">Importadas em:</span>
+          {PERIODS.map(([k, l]) => (
+            <button key={k} onClick={() => setPeriod(k)}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+                period === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200 hover:border-steel-300'}`}>
+              {l}
+            </button>
+          ))}
+          {period === 'custom' && (
+            <div className="flex items-center gap-1.5 text-xs text-steel-500">
+              <input type="date" className="input !py-1.5 !text-xs !w-auto" value={from} onChange={e => setFrom(e.target.value)} />
+              até
+              <input type="date" className="input !py-1.5 !text-xs !w-auto" value={to} onChange={e => setTo(e.target.value)} />
+            </div>
+          )}
+        </div>
+
         {/* Abas */}
-        <div className="flex flex-wrap gap-2 mt-6 mb-4">
+        <div className="flex flex-wrap gap-2 mt-3 mb-4">
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`text-sm font-semibold px-3.5 py-2 rounded-full border transition ${
@@ -203,7 +249,7 @@ export default function ImportarOrcamentos() {
             {tab === 'review' && 'Nada para conferir agora. Envie fotos acima para começar.'}
             {tab === 'reading' && 'Nenhuma foto sendo lida.'}
             {tab === 'failed' && 'Nenhuma foto com problema. 👏'}
-            {tab === 'done' && 'Nenhum orçamento importado ainda.'}
+            {tab === 'done' && (period === 'all' ? 'Nenhuma nota importada ainda.' : 'Nenhuma nota importada neste período.')}
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -231,7 +277,7 @@ export default function ImportarOrcamentos() {
                         </div>
                         <div className="text-xs text-steel-500 truncate mt-0.5">{x?.servico_resumo ?? ''}</div>
                         <div className="flex justify-between items-center mt-2 text-sm">
-                          <span className="text-steel-400">{x?.data ? new Date(`${x.data}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem data'}</span>
+                          <span className="text-steel-400">{x?.data ? `Nota de ${new Date(`${x.data}T12:00:00`).toLocaleDateString('pt-BR')}` : 'Sem data'}</span>
                           {x?.total != null && <strong>{fmtBRL(x.total)}</strong>}
                         </div>
                         {(x?.campos_incertos?.length ?? 0) > 0 && r.status === 'extracted' && (
@@ -239,6 +285,7 @@ export default function ImportarOrcamentos() {
                         )}
                       </>
                     )}
+                    <div className="text-[11px] text-steel-400 mt-1">Importada em {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</div>
                     <div className="mt-auto pt-3 flex gap-2">
                       {r.status === 'extracted' && (
                         <button onClick={() => setReviewing(r)} className="btn-primary text-sm !py-2 flex-1">Conferir →</button>
