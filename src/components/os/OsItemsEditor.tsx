@@ -22,7 +22,31 @@ type Row = {
   mechanic_id: string;
   /** Só peças: key da linha do serviço em que foi usada ('' = nenhum) — a comissão da peça segue quem fez esse serviço */
   used_in: string;
+  /** Só serviços: 'servico' (leva peças → 4% sobre serviço + peças) · 'mao_de_obra' (sem peça → 10%) */
+  stype: '' | 'servico' | 'mao_de_obra';
 };
+
+/** Peças pertencem ao serviço imediatamente acima delas (até o próximo serviço/mão de obra) */
+function groupOf(rs: Row[]): Map<string, Row | null> {
+  const g = new Map<string, Row | null>();
+  let cur: Row | null = null;
+  for (const r of rs) {
+    if (r.kind === 'labor') cur = r;
+    else g.set(r.key, cur);
+  }
+  return g;
+}
+
+/** Serviço sem tipo (OS antiga): com peça logo abaixo vira "Serviço", sem peça vira "Mão de obra" */
+function withTypes(rs: Row[]): Row[] {
+  return rs.map((r, i) => {
+    if (r.kind !== 'labor' || r.stype) return r;
+    let hasPart = false;
+    for (let j = i + 1; j < rs.length && rs[j].kind !== 'labor'; j++) hasPart = true;
+    return { ...r, stype: hasPart ? 'servico' : 'mao_de_obra' };
+  });
+}
+const initRows = (items: ServiceOrderItem[]): Row[] => withTypes(items.map(toRow));
 
 /** Valor do "Quem fez" para item feito por mecânico da plataforma (sem comissão da equipe) */
 const PLATFORM_ITEM = 'platform';
@@ -35,6 +59,7 @@ type TeamMember = { id: string; name: string; active: boolean };
 type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
+const rowLabel = (r: Pick<Row, 'kind' | 'stype'>) => (r.kind === 'part' ? 'Peça' : r.stype === 'mao_de_obra' ? 'Mão de obra' : 'Serviço');
 
 let keySeq = 0;
 const newKey = () => `new-${++keySeq}`;
@@ -46,6 +71,7 @@ function toRow(i: ServiceOrderItem): Row {
     unit_cost: i.unit_cost != null ? moneyInput(Number(i.unit_cost)) : '', part_id: i.part_id ?? null,
     mechanic_id: i.executor === 'platform' ? PLATFORM_ITEM : i.workshop_mechanic_id ?? '',
     used_in: i.used_in_item_id ?? '',
+    stype: i.kind === 'labor' ? i.service_type ?? '' : '',
   };
 }
 
@@ -85,7 +111,7 @@ interface Props {
 }
 
 export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, onSaved }: Props) {
-  const [rows, setRows]         = useState<Row[]>(() => items.map(toRow));
+  const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
   const [suggestions, setSugg]  = useState<Suggestion[]>([]);
@@ -113,37 +139,22 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     onSaved();
   }
 
-  /** Serviço que leva a peça por padrão: o único serviço da OS (com mais de um, a caixa escolhe) */
-  function soleService(rs: Row[]) {
-    const labor = rs.filter(r => r.kind === 'labor');
-    return labor.length === 1 ? labor[0].key : '';
-  }
   const whoLabel = (r: Row) => r.mechanic_id === PLATFORM_ITEM ? '🌐 plataforma'
     : (r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'responsável da OS';
-
-  /** OS fechada: liga a peça a um serviço direto no item */
-  async function linkPart(r: Row, key: string) {
-    if (!r.id) return;
-    const target = rows.find(x => x.key === key && x.id);
-    setRows(rs => rs.map(x => x.key === r.key ? { ...x, used_in: key } : x));
-    const { error } = await supabase.from('service_order_items').update({ used_in_item_id: target?.id ?? null }).eq('id', r.id);
-    if (error) { toast.error('Não foi possível ligar a peça: ' + error.message); setRows(items.map(toRow)); return; }
-    toast.success('Peça ligada ao serviço ✓');
-    onSaved();
-  }
+  const groups = useMemo(() => groupOf(rows), [rows]);
 
   /** OS fechada: troca quem fez direto no item (a caixa acerta a comissão na hora de receber) */
   async function assign(r: Row, mechanicId: string) {
     if (!r.id) return;
     setRows(rs => rs.map(x => x.key === r.key ? { ...x, mechanic_id: mechanicId } : x));
     const { error } = await supabase.from('service_order_items').update(whoPatch(mechanicId)).eq('id', r.id);
-    if (error) { toast.error('Não foi possível trocar: ' + error.message); setRows(items.map(toRow)); return; }
+    if (error) { toast.error('Não foi possível trocar: ' + error.message); setRows(initRows(items)); return; }
     toast.success(mechanicId === PLATFORM_ITEM ? 'Item marcado para o mecânico da plataforma ✓' : 'Comissão deste item atualizada ✓');
     onSaved();
   }
 
   // Recarrega quando os itens salvos mudam (após salvar)
-  useEffect(() => { setRows(items.map(toRow)); }, [items]);
+  useEffect(() => { setRows(initRows(items)); }, [items]);
   useEffect(() => { setDisc(discount ? moneyInput(discount) : ''); }, [discount]);
 
   // Sugestões: peças do cadastro (preço de venda atual) e itens que a oficina já usou (último preço cobrado)
@@ -192,12 +203,13 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const partsCost = costed.reduce((a, r) => a + (rowCost(r) ?? 0), 0);
   const costedSale = costed.reduce((a, r) => a + rowTotal(r), 0);
 
-  const original = useMemo(() => JSON.stringify(items.map(toRow)), [items]);
+  const original = useMemo(() => JSON.stringify(initRows(items)), [items]);
   const dirty = JSON.stringify(rows) !== original
     || Math.abs(disc - (discount ?? 0)) > 0.001;
 
-  function addRow(kind: OsItemKind) {
-    setRows(rs => [...rs, { key: newKey(), kind, description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: kind === 'part' ? soleService(rs) : '' }]);
+  function addRow(kind: OsItemKind | 'mao_de_obra') {
+    setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
+      stype: kind === 'mao_de_obra' ? 'mao_de_obra' : kind === 'labor' ? 'servico' : '' }]);
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
@@ -264,6 +276,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       // Linha nova já ganha id aqui, para a peça poder apontar para um serviço que ainda vai ser criado
       const idOf = new Map(rows.map(r => [r.key, r.id ?? crypto.randomUUID()]));
       const laborKeys = new Set(rows.filter(r => r.kind === 'labor').map(r => r.key));
+      const grp = groupOf(rows);
       const payload = rows.map((r, idx) => ({
         id: idOf.get(r.key)!,
         service_order_id: osId,
@@ -275,7 +288,13 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         unit_cost: r.kind === 'part' && r.unit_cost.trim() ? parseMoney(r.unit_cost) : null,
         part_id: r.kind === 'part' ? r.part_id : null,
         ...whoPatch(r.kind === 'labor' ? r.mechanic_id : ''),
-        used_in_item_id: r.kind === 'part' && laborKeys.has(r.used_in) ? idOf.get(r.used_in)! : null,
+        // Peça → serviço logo acima (só se for "Serviço"; abaixo de "Mão de obra" fica sem serviço)
+        used_in_item_id: (() => {
+          if (r.kind !== 'part') return null;
+          const svc = grp.get(r.key);
+          return svc && svc.stype === 'servico' && laborKeys.has(svc.key) ? idOf.get(svc.key)! : null;
+        })(),
+        service_type: r.kind === 'labor' ? r.stype || 'servico' : null,
         position: idx,
       }));
       const savedIds = new Set(rows.filter(r => r.id).map(r => r.id!));
@@ -332,6 +351,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             <button type="button" onClick={() => addRow('labor')}
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 transition">
               + Serviço
+            </button>
+            <button type="button" onClick={() => addRow('mao_de_obra')}
+              className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 transition">
+              + Mão de obra
             </button>
           </div>
         )}
@@ -394,7 +417,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             const filled = { description: res.name, part_id: res.part_id, unit_cost: moneyInput(res.cost), unit_price: moneyInput(res.price) };
             setRows(rs => quick.key
               ? rs.map(x => x.key === quick.key ? { ...x, ...filled } : x)
-              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', used_in: soleService(rs), ...filled }]);
+              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', used_in: '', stype: '', ...filled }]);
             setQuick(null);
           }} />
       )}
@@ -409,12 +432,15 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Tipo */}
             <div className="col-span-6 md:col-span-2">
               {readOnly ? (
-                <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{KIND_LABEL[r.kind]}</span>
+                <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{rowLabel(r)}</span>
               ) : (
-                <select className="input !py-2 !px-2 text-sm" value={r.kind}
-                  onChange={e => update(r.key, { kind: e.target.value as OsItemKind })}>
+                <select className="input !py-2 !px-2 text-sm" value={r.kind === 'part' ? 'part' : r.stype === 'mao_de_obra' ? 'mao_de_obra' : 'servico'}
+                  onChange={e => update(r.key, e.target.value === 'part'
+                    ? { kind: 'part', stype: '' }
+                    : { kind: 'labor', stype: e.target.value as 'servico' | 'mao_de_obra' })}>
+                  <option value="servico">Serviço</option>
                   <option value="part">Peça</option>
-                  <option value="labor">Serviço</option>
+                  <option value="mao_de_obra">Mão de obra</option>
                 </select>
               )}
             </div>
@@ -507,25 +533,19 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 )}
               </div>
             )}
-            {/* Peça: em qual serviço foi usada (a comissão da peça segue quem fez esse serviço) */}
-            {r.kind === 'part' && rows.some(x => x.kind === 'labor') && (
-              <div className="col-span-12 -mt-1 flex items-center gap-2 text-xs">
-                <span className="text-steel-500 shrink-0">🔗 Usada em:</span>
-                {!readOnly || (canAssign && r.id) ? (
-                  <select className={`input !py-1 !px-2 !w-auto text-xs ${r.used_in ? '' : 'text-steel-400'}`} value={r.used_in}
-                    onChange={e => readOnly ? linkPart(r, e.target.value) : update(r.key, { used_in: e.target.value })}>
-                    <option value="">Nenhum serviço específico</option>
-                    {rows.filter(x => x.kind === 'labor' && (!readOnly || x.id)).map(x => (
-                      <option key={x.key} value={x.key}>{x.description.trim() || 'Serviço sem nome'} · {whoLabel(x)}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="font-semibold text-steel-700">
-                    {(() => { const x = rows.find(y => y.key === r.used_in); return x ? `${x.description} · ${whoLabel(x)}` : 'Nenhum serviço específico'; })()}
-                  </span>
-                )}
-              </div>
-            )}
+            {/* Peça: pertence ao serviço logo acima (a comissão segue quem fez esse serviço) */}
+            {r.kind === 'part' && rows.some(x => x.kind === 'labor') && (() => {
+              const svc = groups.get(r.key);
+              return svc && svc.stype === 'servico' ? (
+                <div className="col-span-12 -mt-1 text-xs text-steel-500">
+                  ↳ peça do serviço <strong className="text-steel-700">{svc.description.trim() || 'sem nome'}</strong> · {whoLabel(svc)}
+                </div>
+              ) : (
+                <div className="col-span-12 -mt-1 text-xs text-pending-800">
+                  ⚠️ {svc ? `Peça abaixo de uma “Mão de obra”` : 'Peça fora de um serviço'} — use as setas ↑↓ para colocá-la logo abaixo do “Serviço” em que foi usada{svc ? ', ou mude a mão de obra para “Serviço”' : ''}.
+                </div>
+              );
+            })()}
             {/* Custo e margem da peça (só para quem vê o financeiro) */}
             {showCost && r.kind === 'part' && (
               <CostLine row={r} readOnly={readOnly} onCost={v => update(r.key, { unit_cost: v })} onPrice={v => update(r.key, { unit_price: v })} />
@@ -588,7 +608,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         <div className="sticky bottom-20 lg:bottom-0 bg-white border-t border-brand-200 px-5 py-3 flex items-center justify-between gap-3 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.15)]">
           <span className="text-xs text-steel-500">Alterações não salvas</span>
           <div className="flex gap-2">
-            <button type="button" onClick={() => { setRows(items.map(toRow)); setDisc(discount ? moneyInput(discount) : ''); }}
+            <button type="button" onClick={() => { setRows(initRows(items)); setDisc(discount ? moneyInput(discount) : ''); }}
               className="btn-ghost text-sm !py-2" disabled={saving}>
               Descartar
             </button>

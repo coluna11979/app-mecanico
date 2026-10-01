@@ -59,8 +59,13 @@ export const RULE = { service: 4, labor: 10 } as const;
  * Regra anterior: mão de obra normal, "só serviço" e peças (× % da ficha).
  * Regra atual: svc = serviço + peças (× 4%) e mo = mão de obra sem peça (× 10%).
  */
-export type Done = { labor: number; laborOwn: number; parts: number; svc: number; mo: number };
+export type Done = {
+  labor: number; laborOwn: number; parts: number; svc: number; mo: number;
+  /** Regra atual: totais de mão de obra e peças só para mostrar (a comissão sai de svc/mo) */
+  vLabor?: number; vParts?: number;
+};
 
+/** labor/parts = totais que o colaborador fez (para mostrar); svc/mo = bases da regra atual */
 export type CommissionCalc = {
   labor: number; laborOwn: number; parts: number; svc: number; mo: number; revenue: number; commission: number;
 };
@@ -106,6 +111,8 @@ export function baseByMechanic(rows: CommissionBaseRow[]) {
     if (r.rule_v2) {
       e.svc += Number(r.svc_base ?? 0);
       e.mo += Number(r.mo_base ?? 0);
+      e.vLabor = (e.vLabor ?? 0) + r.labor;
+      e.vParts = (e.vParts ?? 0) + r.parts;
       map.set(r.mechanic_id, e);
       continue;
     }
@@ -128,7 +135,7 @@ export function commissionFor(m: CommissionMech, done: Done | undefined, revenue
   const mo = r2(done?.mo ?? 0);
   const rev = p.revenue > 0 ? r2(revenue) : 0;
   return {
-    labor, laborOwn, parts, svc, mo, revenue: rev,
+    labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev,
     commission: r2(labor * p.labor / 100 + laborOwn * p.own / 100 + parts * p.parts / 100
       + svc * RULE.service / 100 + mo * RULE.labor / 100 + rev * p.revenue / 100),
   };

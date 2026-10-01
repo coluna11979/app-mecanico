@@ -506,6 +506,11 @@ function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, ow
       <p className="text-[11px] text-steel-400 mt-2">
         As % se somam. Serviços e peças contam para quem fez cada item da OS — dá para trocar item a item na OS.
       </p>
+      <div className="mt-3 rounded-xl bg-brand-50 border border-brand-200 px-3 py-2.5 text-xs text-brand-900">
+        <strong>Desde 01/10/2026 a comissão é igual para todos:</strong> 10% sobre “Mão de obra” (serviço sem peça) e
+        4% sobre “Serviço” + as peças dele, para quem fez. Só a <strong>% sobre o faturamento</strong> acima continua valendo;
+        as % de serviços e peças desta ficha ficam para o histórico (até 30/09/2026).
+      </div>
     </div>
   );
 }

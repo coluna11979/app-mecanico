@@ -274,6 +274,8 @@ export interface ServiceOrderItem {
   executor?: 'workshop' | 'platform' | null;
   /** Só peças: serviço (item da OS) em que foi usada — a comissão da peça segue quem fez esse serviço */
   used_in_item_id?: string | null;
+  /** Só serviços: 'servico' (leva peças → 4% sobre serviço + peças) · 'mao_de_obra' (sem peça → 10%) */
+  service_type?: 'servico' | 'mao_de_obra' | null;
   position: number;
   created_at: string;
 }

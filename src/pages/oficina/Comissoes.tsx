@@ -58,6 +58,8 @@ export default function Comissoes() {
           c.labor > 0 && `serviços ${fmtBRL(c.labor)}`,
           c.laborOwn > 0 && `só serviço ${fmtBRL(c.laborOwn)}`,
           c.parts > 0 && `peças ${fmtBRL(c.parts)}`,
+          c.svc > 0 && `serviço + peças ${fmtBRL(c.svc)} × 4%`,
+          c.mo > 0 && `mão de obra ${fmtBRL(c.mo)} × 10%`,
           c.revenue > 0 && `faturamento da loja ${fmtBRL(c.revenue)}`,
         ].filter(Boolean).join(' · ') + ` → ${r.rule} = ${fmtBRL(c.commission)}`;
         const { data, error } = await supabase.from('payables').insert({
