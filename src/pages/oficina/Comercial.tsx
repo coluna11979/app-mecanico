@@ -7,6 +7,7 @@ import LicensePlate from '@/components/os/LicensePlate';
 import { fmtBRL, waNumber } from '@/components/os/osHelpers';
 import { itemQuote, publicReportUrl, saleStage, type VehicleCheckup } from '@/lib/checkup';
 import { fetchAll } from '@/lib/fetchAll';
+import PeriodPicker, { usePeriod } from '@/components/PeriodPicker';
 
 type Item = { status: string | null; quote_labor: number | null; quote_parts: number | null; customer_decision: string | null };
 type Row = VehicleCheckup & {
@@ -25,9 +26,6 @@ const COLUMNS = [
 ] as const;
 type ColKey = typeof COLUMNS[number]['key'];
 
-const PERIODS = [
-  { days: 30, label: '30 dias' }, { days: 90, label: '90 dias' }, { days: 365, label: '12 meses' },
-];
 
 const flaggedOf = (r: Row) => r.items.filter(i => i.status === 'warn' || i.status === 'urgent');
 const quoted = (r: Row) => flaggedOf(r).reduce((a, i) => a + itemQuote(i), 0);
@@ -37,19 +35,23 @@ const daysSince = (iso: string | null | undefined) => iso ? Math.floor((Date.now
 export default function Comercial() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
-  const [days, setDays] = useState(30);
+  const period = usePeriod('comercial-periodo', 'month');
   const [rows, setRows] = useState<Row[] | null>(null);
+  const fromIso = period.range.from.toISOString();
+  const toIso = period.range.to.toISOString();
 
   useEffect(() => {
     if (!wid) return;
     setRows(null);
-    const from = new Date(Date.now() - days * 86400000).toISOString();
+    // Entra no período o check-up feito nele OU respondido pelo cliente nele
+    // (ex.: em "Hoje" aparece o orçamento de dias atrás que o cliente aprovou hoje)
     fetchAll((a, b) => supabase.from('vehicle_checkups')
       .select('*, mechanic:workshop_mechanics(name), items:checkup_items(status, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, price)')
-      .eq('workshop_id', wid).eq('status', 'completed').gte('completed_at', from)
+      .eq('workshop_id', wid).eq('status', 'completed')
+      .or(`and(completed_at.gte.${fromIso},completed_at.lt.${toIso}),and(customer_responded_at.gte.${fromIso},customer_responded_at.lt.${toIso})`)
       .order('completed_at', { ascending: false }).order('id').range(a, b))
       .then(({ data }) => setRows((data as unknown as Row[]) ?? []));
-  }, [wid, days]);
+  }, [wid, fromIso, toIso]);
 
   const byCol = useMemo(() => {
     const m: Record<ColKey, Row[]> = { quote: [], sent: [], viewed: [], won: [], answered: [] };
@@ -84,15 +86,12 @@ export default function Comercial() {
             <h1 className="text-3xl font-bold tracking-tight">💼 Comercial</h1>
             <p className="text-sm text-steel-500 mt-1">Cada check-up é uma venda: acompanhe do orçamento até virar OS e cobre quem não respondeu.</p>
           </div>
-          <div className="flex gap-2">
-            {PERIODS.map(p => (
-              <button key={p.days} onClick={() => setDays(p.days)}
-                className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${days === p.days ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
-                {p.label}
-              </button>
-            ))}
-            <Link to="/oficina/checkup" className="btn-primary !py-1.5 text-sm">+ Novo check-up</Link>
-          </div>
+          <Link to="/oficina/checkup" className="btn-primary !py-1.5 text-sm">+ Novo check-up</Link>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs text-steel-500">{period.label} · check-ups feitos ou respondidos pelo cliente no período</div>
+          <PeriodPicker period={period} />
         </div>
 
         {/* Números */}
@@ -109,7 +108,7 @@ export default function Comercial() {
         ) : rows.length === 0 ? (
           <div className="card text-center py-12 space-y-3">
             <div className="text-4xl">🩺</div>
-            <h2 className="text-lg font-bold">Nenhum check-up finalizado neste período</h2>
+            <h2 className="text-lg font-bold">Nada no período — {period.label.toLowerCase()}</h2>
             <p className="text-sm text-steel-500 max-w-md mx-auto">
               Faça o check-up, coloque o valor de cada item e envie pelo WhatsApp. O cliente aprova pelo link e a venda aparece aqui.
             </p>
