@@ -5,6 +5,7 @@ import NewOsModal from '@/components/os/NewOsModal';
 import PaymentsList, { paidResponsibles, type PaidOs } from '@/components/cash/PaymentsList';
 import CallMechanicModal, { type CallMechanicOs } from '@/components/cash/CallMechanicModal';
 import CounterSaleModal from '@/components/cash/CounterSaleModal';
+import { OsCommission, useOsCommission } from '@/components/cash/OsCommission';
 import { AssignmentsModal, ReceiveAssignments, useReceiveAssignments } from '@/components/cash/ReceiveAssignments';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -386,7 +387,7 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
       {calling && <CallMechanicModal wid={wid} os={calling} onClose={() => setCalling(null)} />}
 
       {setting && (
-        <AssignmentsModal os={setting} team={team} title={`OS nº ${osNum(setting)}`}
+        <AssignmentsModal os={setting} team={team} title={`OS nº ${osNum(setting)}`} wid={wid} sid={sid}
           onClose={() => setSetting(null)}
           onSaved={callPlatform => {
             const os = setting;
@@ -417,6 +418,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
 }) {
   const open = remainingOf(os);
   const who = useReceiveAssignments(os, team);
+  const comm = useOsCommission(os.id, who);
   const [discount, setDiscount] = useState('');
   const [parts, setParts] = useState<Part[]>([{ method: 'dinheiro', amount: moneyStr(open), installments: 1 }]);
   const [given, setGiven] = useState('');
@@ -439,6 +441,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
 
   async function confirmReceive() {
     if (!who.valid) return toast.error('Informe quem fez cada serviço: mecânico da loja ou da plataforma');
+    if (!comm.valid) return toast.error('Escolha quem recebe cada comissão');
     if (total <= 0) return toast.error('Informe o valor recebido');
     if (missing < -0.004) return toast.error('O total passa do valor em aberto');
     if (given && givenN < cashPart) return toast.error('O valor entregue é menor que a parte em dinheiro');
@@ -446,6 +449,8 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
     setBusy(true);
     const { error: rErr } = await who.save();
     if (rErr) { setBusy(false); return toast.error('Não consegui salvar quem fez: ' + rErr.message); }
+    const { error: cErr } = await comm.save(wid, sid);
+    if (cErr) { setBusy(false); return toast.error('Não consegui salvar as comissões: ' + cErr.message); }
     const { error } = await supabase.rpc('cash_receive_os', {
       p_workshop: wid, p_session: sid, p_os: os.id,
       p_parts: parts.filter(p => parseMoney(p.amount) > 0).map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
@@ -479,6 +484,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
         </div>
 
         <ReceiveAssignments a={who} team={team} />
+        <OsCommission c={comm} team={team} />
         {who.callPlatform && (
           <p className="text-[11px] text-steel-500 mt-1">Depois de confirmar, abre a chamada do mecânico da plataforma com esses serviços.</p>
         )}

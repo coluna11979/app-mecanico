@@ -49,6 +49,8 @@ export type CommissionBaseRow = {
   svc_base?: number;
   /** Mão de obra sem peça (10%) */
   mo_base?: number;
+  /** Comissão digitada à mão na OS (substitui a regra naquela OS) */
+  manual?: number;
 };
 
 /** Regra atual, igual para todas as lojas */
@@ -63,11 +65,14 @@ export type Done = {
   labor: number; laborOwn: number; parts: number; svc: number; mo: number;
   /** Regra atual: totais de mão de obra e peças só para mostrar (a comissão sai de svc/mo) */
   vLabor?: number; vParts?: number;
+  /** Comissões definidas à mão nas OS (R$, já é o valor a pagar) */
+  manual?: number;
 };
 
 /** labor/parts = totais que o colaborador fez (para mostrar); svc/mo = bases da regra atual */
 export type CommissionCalc = {
   labor: number; laborOwn: number; parts: number; svc: number; mo: number; revenue: number; commission: number;
+  manual: number;
 };
 
 /** Colunas de comissão para os selects de workshop_mechanics */
@@ -94,12 +99,12 @@ export const hasCommission = (m: CommissionMech) => {
 /** Base de comissão dos serviços finalizados no período, já dividida por quem fez */
 export async function loadCommissionBase(wid: string, from: string, to: string): Promise<CommissionBaseRow[]> {
   const { data } = await fetchAll((a, b) => supabase.from('os_commission_base')
-    .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts, labor_only, done_at, rule_v2, svc_base, mo_base')
+    .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts, labor_only, done_at, rule_v2, svc_base, mo_base, manual')
     .eq('workshop_id', wid).not('done_at', 'is', null)
     .gte('done_at', from).lt('done_at', to)
     .order('service_order_id').order('mechanic_id', { nullsFirst: true }).order('done_at').range(a, b));
   return ((data ?? []) as CommissionBaseRow[]).map(r => ({ ...r, labor: Number(r.labor), parts: Number(r.parts), labor_only: Number(r.labor_only ?? 0),
-    svc_base: Number(r.svc_base ?? 0), mo_base: Number(r.mo_base ?? 0) }));
+    svc_base: Number(r.svc_base ?? 0), mo_base: Number(r.mo_base ?? 0), manual: Number(r.manual ?? 0) }));
 }
 
 /** Soma o que cada colaborador fez (serviços e peças) */
@@ -108,6 +113,11 @@ export function baseByMechanic(rows: CommissionBaseRow[]) {
   for (const r of rows) {
     if (!r.mechanic_id) continue;
     const e = map.get(r.mechanic_id) ?? { labor: 0, laborOwn: 0, parts: 0, svc: 0, mo: 0 };
+    if (Number(r.manual ?? 0) > 0) {
+      e.manual = (e.manual ?? 0) + Number(r.manual);
+      map.set(r.mechanic_id, e);
+      continue;
+    }
     if (r.rule_v2) {
       e.svc += Number(r.svc_base ?? 0);
       e.mo += Number(r.mo_base ?? 0);
@@ -134,10 +144,11 @@ export function commissionFor(m: CommissionMech, done: Done | undefined, revenue
   const svc = r2(done?.svc ?? 0);
   const mo = r2(done?.mo ?? 0);
   const rev = p.revenue > 0 ? r2(revenue) : 0;
+  const manual = r2(done?.manual ?? 0);
   return {
-    labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev,
+    labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual,
     commission: r2(labor * p.labor / 100 + laborOwn * p.own / 100 + parts * p.parts / 100
-      + svc * RULE.service / 100 + mo * RULE.labor / 100 + rev * p.revenue / 100),
+      + svc * RULE.service / 100 + mo * RULE.labor / 100 + rev * p.revenue / 100 + manual),
   };
 }
 
