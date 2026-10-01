@@ -10,7 +10,7 @@ import ScheduleEditor from '@/components/team/ScheduleEditor';
 import { fmtBRL, fmtDur, moneyInput, osNumber, parseMoney, workedMinutes } from '@/components/os/osHelpers';
 import { RULE } from '@/lib/commission';
 import {
-  DOCUMENT_KINDS, EMPLOYMENT_TYPES, OFFICE_ROLES, QUALIFICATIONS, SHOP_ROLES, TEAM_STATUS, expiryLabel, roleArea, scheduleSummary, tenure,
+  DOCUMENT_KINDS, EMPLOYMENT_TYPES, OFFICE_ROLES, QUALIFICATIONS, SHOP_ROLES, TEAM_STATUS, expiryLabel, mostCommonSchedule, roleArea, scheduleSummary, tenure,
 } from '@/lib/team';
 import type {
   EmploymentType, MechanicCertification, MechanicDocument, MechanicPrivate, TeamStatus, WorkshopMechanic,
@@ -48,7 +48,7 @@ export default function EquipeFicha() {
   const { id } = useParams();
   const isNew = id === 'novo';
   const nav = useNavigate();
-  const { currentWorkshop, user } = useAuth();
+  const { currentWorkshop, workshops, user } = useAuth();
   const wid = currentWorkshop?.id ?? null;
 
   const [tab, setTab]       = useState<Tab>('pessoal');
@@ -106,6 +106,23 @@ export default function EquipeFicha() {
   }, [id, isNew]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Horário padrão: o mais usado na equipe desta loja (ou, se ela ainda não tem ninguém, nas outras lojas)
+  const [storeDefault, setStoreDefault] = useState<string | null>(null);
+  useEffect(() => {
+    if (!wid) return;
+    const ids = workshops.map(w => w.id);
+    supabase.from('workshop_mechanics').select('workshop_id, work_schedule')
+      .in('workshop_id', ids.length ? ids : [wid]).neq('status', 'terminated').not('work_schedule', 'is', null)
+      .then(({ data }) => {
+        const rows = (data ?? []) as { workshop_id: string; work_schedule: string | null }[];
+        const def = mostCommonSchedule(rows.filter(r => r.workshop_id === wid).map(r => r.work_schedule))
+          ?? mostCommonSchedule(rows.map(r => r.work_schedule));
+        setStoreDefault(def);
+        // Cadastro novo já começa com o padrão
+        if (isNew && def) setF(s => (s.work_schedule ? s : { ...s, work_schedule: def }));
+      });
+  }, [wid, isNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Aviso ao sair com alterações não salvas
   useEffect(() => {
@@ -334,7 +351,7 @@ export default function EquipeFicha() {
                 <Field label="Data de desligamento"><input className="input" type="date" value={f.terminated_at} onChange={set('terminated_at')} /></Field>
               )}
               <Field label="Jornada de trabalho" className="sm:col-span-2">
-                <ScheduleEditor value={f.work_schedule} isClt={f.employment_type === 'clt'}
+                <ScheduleEditor value={f.work_schedule} isClt={f.employment_type === 'clt'} storeDefault={storeDefault}
                   onChange={v => { setF(s => ({ ...s, work_schedule: v })); setDirty(true); }} />
               </Field>
               <Field label="Observações" className="sm:col-span-2"><textarea className="input" rows={3} value={f.notes} onChange={set('notes')} /></Field>

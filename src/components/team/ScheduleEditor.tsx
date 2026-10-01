@@ -1,6 +1,6 @@
 import { fmtDur } from '@/components/os/osHelpers';
 import {
-  WEEK_DAYS, parseSchedule, shiftMinutes, weeklyMinutes,
+  WEEK_DAYS, parseSchedule, scheduleSummary, shiftMinutes, weeklyMinutes,
   type ShiftDay, type WeekDay, type WorkSchedule,
 } from '@/lib/team';
 
@@ -16,9 +16,12 @@ const PRESETS: { label: string; build: () => WorkSchedule['days'] }[] = [
 const CLT_WEEK_LIMIT = 44 * 60;
 
 /** Jornada semanal: dia a dia, com entrada, saída e intervalo. Guarda JSON no campo work_schedule. */
-export default function ScheduleEditor({ value, onChange, isClt }: {
+export default function ScheduleEditor({ value, onChange, isClt, storeDefault }: {
   value: string; onChange: (v: string) => void; isClt: boolean;
+  /** Horário mais usado na equipe (vira o primeiro atalho) */
+  storeDefault?: string | null;
 }) {
+  const defaultDays = parseSchedule(storeDefault)?.days ?? null;
   const parsed = parseSchedule(value);
   const legacy = !parsed && value.trim() ? value.trim() : null;
   const w: WorkSchedule = parsed ?? { v: 1, days: {} };
@@ -52,6 +55,12 @@ export default function ScheduleEditor({ value, onChange, isClt }: {
     <div className="rounded-2xl border border-steel-200 overflow-hidden">
       <div className="flex flex-wrap items-center gap-1.5 px-3 py-2.5 bg-steel-50 border-b border-steel-200">
         <span className="text-xs text-steel-500 mr-1">Atalhos:</span>
+        {defaultDays && (
+          <button type="button" onClick={() => emit({ ...defaultDays })} title={scheduleSummary(storeDefault)}
+            className="text-xs font-semibold px-2.5 py-1 rounded-full border border-brand-300 bg-brand-50 text-brand-700 hover:border-brand-500 transition">
+            ⭐ Padrão da loja
+          </button>
+        )}
         {PRESETS.map(p => (
           <button type="button" key={p.label} onClick={() => emit(p.build())}
             className="text-xs font-semibold px-2.5 py-1 rounded-full border border-steel-200 bg-white text-steel-600 hover:border-brand-300 hover:text-brand-700 transition">
