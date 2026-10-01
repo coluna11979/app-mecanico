@@ -176,7 +176,9 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
   );
 }
 
-type Part = { method: PayMethod; amount: string; installments: number };
+/** 'depois' = essa parte não foi paga: sai do recebimento e a OS fica em "Pagar depois" com vencimento */
+const LATER = 'depois' as const;
+type Part = { method: PayMethod | typeof LATER; amount: string; installments: number };
 
 /** Corrigir as formas de um pagamento já lançado (mesma data, caixa e quem recebeu) */
 function FixPaymentModal({ payment, wid, sid, onClose, onDone }: {
@@ -187,22 +189,38 @@ function FixPaymentModal({ payment, wid, sid, onClose, onDone }: {
     ? current.map(e => ({ method: RECEIVE_METHODS.includes(e.method) ? e.method : 'pix', amount: moneyStr(Number(e.amount)), installments: e.installments || 1 }))
     : [{ method: 'pix', amount: moneyStr(Number(payment.amount)), installments: 1 }]);
   const [busy, setBusy] = useState(false);
+  const [dueDate, setDueDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); });
+  const [laterNote, setLaterNote] = useState('');
   const total = Math.round(parts.reduce((a, p) => a + parseMoney(p.amount), 0) * 100) / 100;
+  const paidParts = parts.filter(p => p.method !== LATER);
+  const paidNow = Math.round(paidParts.reduce((a, p) => a + parseMoney(p.amount), 0) * 100) / 100;
+  const laterAmount = Math.round((total - paidNow) * 100) / 100;
+  const deferring = laterAmount > 0.004;
   const original = Number(payment.amount);
   const diff = Math.round((total - original) * 100) / 100;
   const setPart = (i: number, patch: Partial<Part>) => setParts(ps => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
 
   async function save() {
     if (parts.some(p => !(parseMoney(p.amount) > 0))) return toast.error('Informe o valor de cada forma');
+    if (deferring && !dueDate) return toast.error('Informe até quando o cliente vai pagar');
     if (Math.abs(diff) > 0.004 && !confirm(`O total muda de ${brl(original)} para ${brl(total)}. Confirmar?`)) return;
     setBusy(true);
+    // Só o que foi pago de verdade fica no recebimento (vazio = nada foi pago)
     const { error } = await supabase.rpc('cash_fix_payment', {
       p_workshop: wid, p_session: sid, p_payment: payment.id,
-      p_parts: parts.map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
+      p_parts: paidParts.map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
     });
+    if (error) { setBusy(false); return toast.error(error.message); }
+    if (deferring && payment.service_order) {
+      const { error: lErr } = await supabase.rpc('cash_pay_later', {
+        p_workshop: wid, p_session: sid, p_os: payment.service_order.id, p_due: dueDate, p_note: laterNote,
+      });
+      if (lErr) { setBusy(false); return toast.error('Pagamento corrigido, mas o "pagar depois" não foi salvo: ' + lErr.message); }
+    }
     setBusy(false);
-    if (error) return toast.error(error.message);
-    toast.success('Pagamento corrigido ✓');
+    toast.success(deferring
+      ? `Corrigido ✓ — ${brl(laterAmount)} para pagar até ${new Date(`${dueDate}T12:00:00`).toLocaleDateString('pt-BR')}`
+      : 'Pagamento corrigido ✓');
     onDone();
   }
 
@@ -225,8 +243,9 @@ function FixPaymentModal({ payment, wid, sid, onClose, onDone }: {
         <div className="space-y-2">
           {parts.map((p, i) => (
             <div key={i} className="flex gap-2 items-center">
-              <select className="input flex-1 min-w-0" value={p.method} onChange={e => setPart(i, { method: e.target.value as PayMethod, installments: 1 })}>
+              <select className={`input flex-1 min-w-0 ${p.method === LATER ? '!border-brand-300 !bg-brand-50' : ''}`} value={p.method} onChange={e => setPart(i, { method: e.target.value as Part['method'], installments: 1 })}>
                 {RECEIVE_METHODS.map(m => <option key={m} value={m}>{METHODS[m].icon} {METHODS[m].label}</option>)}
+                <option value={LATER}>🕒 Pagar depois</option>
               </select>
               {p.method === 'credito' && (
                 <select className="input !w-16 shrink-0 !px-2" value={p.installments} onChange={e => setPart(i, { installments: Number(e.target.value) })}>
@@ -247,9 +266,26 @@ function FixPaymentModal({ payment, wid, sid, onClose, onDone }: {
           {Math.abs(diff) < 0.005 ? `✓ Total ${brl(total)} (igual ao lançado)` : `Total ${brl(total)} — ${diff > 0 ? 'a mais' : 'a menos'} ${brl(Math.abs(diff))} que o lançado`}
         </div>
 
+        {deferring && (
+          <div className="mt-3 rounded-2xl border-2 border-brand-300 bg-brand-50/40 p-3">
+            <div className="font-semibold text-sm">🕒 {brl(laterAmount)} para pagar depois</div>
+            <div className="text-[11px] text-steel-500">Sai do recebimento (não foi pago) e a OS fica em "Pagar depois" e no Financeiro → OS a receber.</div>
+            <div className="grid sm:grid-cols-2 gap-2 mt-3">
+              <label className="text-[11px] text-steel-500">Vai pagar até *
+                <input type="date" className="input mt-0.5" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              </label>
+              <label className="text-[11px] text-steel-500">Observação (opcional)
+                <input className="input mt-0.5" placeholder="Ex.: paga no dia 10" value={laterNote} onChange={e => setLaterNote(e.target.value)} />
+              </label>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2 mt-6">
           <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
-          <button onClick={save} disabled={busy || total <= 0} className="btn-primary flex-[2]">{busy ? 'Salvando…' : 'Salvar correção'}</button>
+          <button onClick={save} disabled={busy || total <= 0} className="btn-primary flex-[2]">
+            {busy ? 'Salvando…' : deferring ? (paidNow > 0 ? `Salvar · ${brl(paidNow)} pago + ${brl(laterAmount)} depois` : `Salvar · ${brl(laterAmount)} para depois`) : 'Salvar correção'}
+          </button>
         </div>
       </div>
     </div>
