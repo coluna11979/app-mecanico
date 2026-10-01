@@ -111,7 +111,7 @@ export function ReceiveAssignments({ a, team }: { a: ReturnType<typeof useReceiv
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate">{i.description}</div>
               <div className="text-[11px] text-steel-400 truncate">
-                {(a.partsOf.get(i.id)?.length ?? 0) > 0 ? 'Serviço' : i.service_type === 'servico' ? 'Serviço' : 'Mão de obra'} · {brl(amount(i))}
+                {(a.partsOf.get(i.id)?.length ?? 0) > 0 || i.service_type === 'servico' ? 'Serviço + peças' : 'Mão de obra'} · {brl(amount(i))}
                 {(a.partsOf.get(i.id) ?? []).map(p => ` + ${p.description} ${brl(amount(p))}`).join('')}
               </div>
             </div>

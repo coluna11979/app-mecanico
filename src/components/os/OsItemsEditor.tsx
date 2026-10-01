@@ -59,7 +59,7 @@ type TeamMember = { id: string; name: string; active: boolean };
 type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
-const rowLabel = (r: Pick<Row, 'kind' | 'stype'>) => (r.kind === 'part' ? 'Peça' : r.stype === 'mao_de_obra' ? 'Mão de obra' : 'Serviço');
+const rowLabel = (r: Pick<Row, 'kind' | 'stype'>) => (r.kind === 'part' ? 'Peça' : r.stype === 'mao_de_obra' ? 'Mão de obra' : 'Serviço + peças');
 
 let keySeq = 0;
 const newKey = () => `new-${++keySeq}`;
@@ -337,8 +337,19 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           <p className="text-xs text-steel-500">O total da OS é calculado a partir destes itens.</p>
         </div>
         {!readOnly && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => addRow('labor')}
+              title="Valor fechado: serviço com as peças incluídas (ex.: troca de óleo completa). Comissão 4% sobre o total."
+              className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
+              + Serviço + peças
+            </button>
+            <button type="button" onClick={() => addRow('mao_de_obra')}
+              title="Só o serviço, sem peça (ex.: alinhamento). Comissão 10%."
+              className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 transition">
+              + Mão de obra
+            </button>
             <button type="button" onClick={() => addRow('part')}
+              title="Opcional: detalhar uma peça ou vender peça avulsa"
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
               + Peça
             </button>
@@ -348,14 +359,6 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 🔩 Cadastrar peça
               </button>
             )}
-            <button type="button" onClick={() => addRow('labor')}
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 transition">
-              + Serviço
-            </button>
-            <button type="button" onClick={() => addRow('mao_de_obra')}
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-brand-50 text-brand-700 border border-brand-200 transition">
-              + Mão de obra
-            </button>
           </div>
         )}
       </div>
@@ -438,9 +441,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                   onChange={e => update(r.key, e.target.value === 'part'
                     ? { kind: 'part', stype: '' }
                     : { kind: 'labor', stype: e.target.value as 'servico' | 'mao_de_obra' })}>
-                  <option value="servico">Serviço</option>
-                  <option value="part">Peça</option>
+                  <option value="servico">Serviço + peças</option>
                   <option value="mao_de_obra">Mão de obra</option>
+                  <option value="part">Peça</option>
                 </select>
               )}
             </div>
@@ -453,9 +456,13 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Descrição */}
             <div className="col-span-12 md:col-span-4">
               {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
-                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : 'Ex.: Troca de pastilhas'}
+                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : r.stype === 'mao_de_obra' ? 'Ex.: Alinhamento' : 'Ex.: Troca de óleo completa (óleo + filtro)'}
                   list={`os-items-sugg-${osId}`} value={r.description}
                   onChange={e => update(r.key, { description: e.target.value })} />
+              )}
+              {!readOnly && r.kind === 'labor' && r.stype !== 'mao_de_obra'
+                && !rows.some(x => x.kind === 'part' && groups.get(x.key)?.key === r.key) && (
+                <div className="text-[11px] text-steel-500 mt-1">💡 Valor fechado, peças incluídas · comissão 4% do total. Detalhar as peças é opcional.</div>
               )}
               {!readOnly && r.kind === 'part' && !r.part_id && !r.description.trim() && showCost && (
                 <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
@@ -558,7 +565,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         <div className="px-5 pb-6 pt-2 text-center">
           <div className="text-3xl mb-1">🧾</div>
           <p className="text-sm text-steel-500">
-            {readOnly ? 'Nenhum item nesta OS.' : 'Adicione as peças e os serviços desta OS. O total é somado automaticamente.'}
+            {readOnly ? 'Nenhum item nesta OS.' : 'Use “+ Serviço + peças” para lançar o serviço com as peças num valor só (ex.: troca de óleo completa). Peça separada é opcional.'}
           </p>
         </div>
       )}
