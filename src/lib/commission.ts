@@ -1,5 +1,13 @@
 /**
- * Comissão da equipe (migration 0046).
+ * Comissão da equipe.
+ *
+ * REGRA ATUAL — igual para todas as lojas, trabalho finalizado a partir de 01/10/2026 (migration 0062):
+ * - "Mão de obra" (serviço sem peça) → 10% do valor, para quem fez;
+ * - "Serviço" + as peças logo abaixo dele na OS → 4% sobre a soma, para quem fez o serviço;
+ * - % sobre o faturamento da loja (gerente) continua vindo da ficha.
+ * A view os_commission_base entrega svc_base (4%) e mo_base (10%) nas linhas rule_v2.
+ *
+ * REGRA ANTERIOR (até 30/09/2026, migration 0046) — usada para as quinzenas antigas:
  *
  * Cada colaborador tem três % que se somam (0 = não ganha naquela base):
  * - commission_percent          → sobre os serviços (mão de obra) que fez
@@ -35,12 +43,27 @@ export type CommissionBaseRow = {
   labor_only?: number;
   /** Quando esse trabalho conta para a comissão (serviço finalizado) */
   done_at?: string | null;
+  /** Regra atual (10% mão de obra / 4% serviço + peças) */
+  rule_v2?: boolean;
+  /** Serviço + peças dele (4%) */
+  svc_base?: number;
+  /** Mão de obra sem peça (10%) */
+  mo_base?: number;
 };
 
-/** O que o colaborador fez no período: mão de obra normal, mão de obra com peça do cliente e peças */
-export type Done = { labor: number; laborOwn: number; parts: number };
+/** Regra atual, igual para todas as lojas */
+export const RULE = { service: 4, labor: 10 } as const;
 
-export type CommissionCalc = { labor: number; laborOwn: number; parts: number; revenue: number; commission: number };
+/**
+ * O que o colaborador fez no período.
+ * Regra anterior: mão de obra normal, "só serviço" e peças (× % da ficha).
+ * Regra atual: svc = serviço + peças (× 4%) e mo = mão de obra sem peça (× 10%).
+ */
+export type Done = { labor: number; laborOwn: number; parts: number; svc: number; mo: number };
+
+export type CommissionCalc = {
+  labor: number; laborOwn: number; parts: number; svc: number; mo: number; revenue: number; commission: number;
+};
 
 /** Colunas de comissão para os selects de workshop_mechanics */
 export const COMMISSION_COLS = 'commission_percent, commission_parts_percent, commission_revenue_percent, commission_own_parts_percent';
@@ -66,11 +89,12 @@ export const hasCommission = (m: CommissionMech) => {
 /** Base de comissão dos serviços finalizados no período, já dividida por quem fez */
 export async function loadCommissionBase(wid: string, from: string, to: string): Promise<CommissionBaseRow[]> {
   const { data } = await fetchAll((a, b) => supabase.from('os_commission_base')
-    .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts, labor_only, done_at')
+    .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts, labor_only, done_at, rule_v2, svc_base, mo_base')
     .eq('workshop_id', wid).not('done_at', 'is', null)
     .gte('done_at', from).lt('done_at', to)
     .order('service_order_id').order('mechanic_id', { nullsFirst: true }).order('done_at').range(a, b));
-  return ((data ?? []) as CommissionBaseRow[]).map(r => ({ ...r, labor: Number(r.labor), parts: Number(r.parts), labor_only: Number(r.labor_only ?? 0) }));
+  return ((data ?? []) as CommissionBaseRow[]).map(r => ({ ...r, labor: Number(r.labor), parts: Number(r.parts), labor_only: Number(r.labor_only ?? 0),
+    svc_base: Number(r.svc_base ?? 0), mo_base: Number(r.mo_base ?? 0) }));
 }
 
 /** Soma o que cada colaborador fez (serviços e peças) */
@@ -78,7 +102,13 @@ export function baseByMechanic(rows: CommissionBaseRow[]) {
   const map = new Map<string, Done>();
   for (const r of rows) {
     if (!r.mechanic_id) continue;
-    const e = map.get(r.mechanic_id) ?? { labor: 0, laborOwn: 0, parts: 0 };
+    const e = map.get(r.mechanic_id) ?? { labor: 0, laborOwn: 0, parts: 0, svc: 0, mo: 0 };
+    if (r.rule_v2) {
+      e.svc += Number(r.svc_base ?? 0);
+      e.mo += Number(r.mo_base ?? 0);
+      map.set(r.mechanic_id, e);
+      continue;
+    }
     const only = Math.min(r.labor, Number(r.labor_only ?? 0));
     if (r.customer_brought_parts) e.laborOwn += r.labor;
     else { e.laborOwn += only; e.labor += r.labor - only; }
@@ -94,10 +124,13 @@ export function commissionFor(m: CommissionMech, done: Done | undefined, revenue
   const labor = r2(done?.labor ?? 0);
   const laborOwn = r2(done?.laborOwn ?? 0);
   const parts = r2(done?.parts ?? 0);
+  const svc = r2(done?.svc ?? 0);
+  const mo = r2(done?.mo ?? 0);
   const rev = p.revenue > 0 ? r2(revenue) : 0;
   return {
-    labor, laborOwn, parts, revenue: rev,
-    commission: r2(labor * p.labor / 100 + laborOwn * p.own / 100 + parts * p.parts / 100 + rev * p.revenue / 100),
+    labor, laborOwn, parts, svc, mo, revenue: rev,
+    commission: r2(labor * p.labor / 100 + laborOwn * p.own / 100 + parts * p.parts / 100
+      + svc * RULE.service / 100 + mo * RULE.labor / 100 + rev * p.revenue / 100),
   };
 }
 
@@ -105,6 +138,16 @@ const pctStr = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigi
 
 /** "10% serviços + 5% peças + 1,5% faturamento" */
 export function commissionRule(m: CommissionMech) {
+  const p = pcts(m);
+  return [
+    `${pctStr(RULE.service)} serviço + peças`,
+    `${pctStr(RULE.labor)} mão de obra`,
+    p.revenue > 0 && `${pctStr(p.revenue)} faturamento`,
+  ].filter(Boolean).join(' + ');
+}
+
+/** Regra da ficha antes de 01/10/2026 (histórico) */
+export function legacyCommissionRule(m: CommissionMech) {
   const p = pcts(m);
   return [
     p.labor > 0 && `${pctStr(p.labor)} serviços`,
