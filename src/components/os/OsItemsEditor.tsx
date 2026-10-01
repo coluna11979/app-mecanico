@@ -432,8 +432,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       <div className="divide-y divide-steel-100">
         {rows.map((r, idx) => (
           <div key={r.key} className="px-5 py-3 grid grid-cols-12 gap-2 items-center">
-            {/* Tipo */}
+            {/* Tipo (cada lançamento = 1 item, como num cupom) */}
             <div className="col-span-6 md:col-span-2">
+              <div className="text-[10px] font-bold text-steel-400 uppercase tracking-wider mb-0.5">Item {idx + 1}</div>
               {readOnly ? (
                 <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{rowLabel(r)}</span>
               ) : (
@@ -574,6 +575,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       {(rows.length > 0 || items.length > 0) && (
         <div className="bg-steel-50 border-t border-steel-100 px-5 py-4">
           <div className="ml-auto max-w-xs space-y-1.5 text-sm">
+            <div className="flex justify-between text-steel-600"><span>Itens</span><span>{rows.length}</span></div>
             <div className="flex justify-between text-steel-600"><span>Peças</span><span>{fmtBRL(parts)}</span></div>
             <div className="flex justify-between text-steel-600"><span>Serviços</span><span>{fmtBRL(labor)}</span></div>
             <div className="flex justify-between items-center text-steel-600">

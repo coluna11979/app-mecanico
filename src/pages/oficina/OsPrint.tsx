@@ -174,6 +174,7 @@ export default function OsPrint() {
             <div className="w-64 space-y-1">
               {items.length > 0 ? (
                 <>
+                  <Line label="Itens" value={String(items.length)} />
                   <Line label="Peças" value={fmtBRL(sum(parts))} />
                   <Line label="Serviços" value={fmtBRL(sum(labor))} />
                   {Number(os.discount) > 0 && <Line label="Desconto" value={`− ${fmtBRL(os.discount)}`} />}
