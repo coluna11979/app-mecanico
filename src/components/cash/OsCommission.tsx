@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import { brl, moneyStr, parseMoney } from '@/lib/cash';
 import { RULE } from '@/lib/commission';
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
-import type { useReceiveAssignments } from '@/components/cash/ReceiveAssignments';
+import { useReceiveAssignments, type ReceiveOs } from '@/components/cash/ReceiveAssignments';
 import type { WorkshopMechanic } from '@/types/database';
 
 /**
@@ -96,16 +97,18 @@ export function useOsCommission(osId: string, a: Assign) {
     return { error };
   }
 
-  return { loaded, editing, rows, setRows, auto, startEdit, backToRule, valid, total, save };
+  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save };
 }
 
-export function OsCommission({ c, team }: { c: ReturnType<typeof useOsCommission>; team: Team }) {
+export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border border-steel-200 px-4 py-3', children }: {
+  c: ReturnType<typeof useOsCommission>; team: Team; className?: string; children?: React.ReactNode;
+}) {
   if (!c.loaded) return null;
   const name = (id: string) => team.find(t => t.id === id)?.name ?? 'Colaborador';
   const setRow = (key: number, patch: Partial<Row>) => c.setRows(rs => rs.map(r => r.key === key ? { ...r, ...patch } : r));
 
   return (
-    <div className="mt-4 rounded-2xl border border-steel-200 px-4 py-3">
+    <div className={className}>
       <div className="flex items-center justify-between gap-2">
         <div className="label !mb-0">💰 Comissões a pagar nesta OS</div>
         {c.editing
@@ -148,6 +151,46 @@ export function OsCommission({ c, team }: { c: ReturnType<typeof useOsCommission
         <span className="text-steel-500">Total de comissões</span><strong>{brl(c.total)}</strong>
       </div>
       <p className="text-[11px] text-steel-400 mt-1">A % do gerente sobre o faturamento da loja entra à parte, automática.</p>
+      {children}
     </div>
+  );
+}
+
+/**
+ * Mesmo quadro na página da OS (inclusive OS já paga ou importada), com botão de salvar.
+ * Usa os responsáveis já salvos nos itens; trocou "Quem fez" → a página remonta o quadro (key).
+ */
+export function OsCommissionCard({ os, team, wid, sid }: { os: ReceiveOs; team: Team; wid: string; sid: string | null }) {
+  const [ver, setVer] = useState(0);
+  return <CardInner key={ver} os={os} team={team} wid={wid} sid={sid} onSaved={() => setVer(v => v + 1)} />;
+}
+
+function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team; wid: string; sid: string | null; onSaved: () => void }) {
+  const a = useReceiveAssignments(os, team);
+  const c = useOsCommission(os.id, a);
+  const [busy, setBusy] = useState(false);
+  const pending = c.editing || c.wasManual;
+
+  async function save() {
+    if (!c.valid) return toast.error('Escolha quem recebe cada comissão');
+    setBusy(true);
+    const { error } = await c.save(wid, sid);
+    setBusy(false);
+    if (error) return toast.error('Não consegui salvar as comissões: ' + error.message);
+    toast.success(c.editing ? 'Comissões desta OS salvas ✓' : 'Comissão voltou para a regra ✓');
+    onSaved();
+  }
+
+  if (a.items === null || !c.loaded) return null;
+  return (
+    <OsCommission c={c} team={team} className="card">
+      {pending && (
+        <div className="flex justify-end mt-3">
+          <button onClick={save} disabled={busy || !c.valid} className="btn-primary text-sm">
+            {busy ? 'Salvando…' : c.editing ? '💾 Salvar comissões' : '💾 Confirmar volta para a regra'}
+          </button>
+        </div>
+      )}
+    </OsCommission>
   );
 }

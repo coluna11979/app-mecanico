@@ -13,6 +13,7 @@ import ResponsibleTimers from '@/components/os/ResponsibleTimers';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
 import PaymentsList from '@/components/cash/PaymentsList';
+import { OsCommissionCard } from '@/components/cash/OsCommission';
 import { PLATFORM, ResponsibleModal, responsibleOf } from '@/components/cash/ResponsiblePicker';
 import {
   durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber, fmtPhone,
@@ -495,6 +496,14 @@ export default function OsDetail() {
             {/* Pagamentos recebidos no caixa: quando, como e quem recebeu */}
             <PaymentsList filter={{ serviceOrderId: os.id }} showOs={false} empty={null} reloadKey={os.paid_amount}
               title="💰 Pagamentos desta OS" />
+
+            {/* Comissões desta OS: pela regra, com opção de alterar/incluir pessoas */}
+            {os.status !== 'cancelled' && canDo(session, balcao, 'caixa') && (
+              <OsCommissionCard
+                key={items.map(i => `${i.id}:${i.kind}:${i.executor ?? ''}:${i.workshop_mechanic_id ?? ''}:${i.quantity}:${i.unit_price}`).join('|') + `|${os.workshop_mechanic_id ?? ''}`}
+                os={{ id: os.id, executor: os.executor ?? null, workshop_mechanic_id: os.workshop_mechanic_id ?? null }}
+                team={team} wid={os.workshop_id} sid={balcao ? session?.session_id ?? null : null} />
+            )}
 
             {(os.description || os.notes) && (
               <div className="grid sm:grid-cols-2 gap-4">
