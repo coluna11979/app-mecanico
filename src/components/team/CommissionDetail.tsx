@@ -14,7 +14,7 @@ type OsInfo = {
   customer: { full_name: string } | null; vehicle: { plate: string | null } | null;
 };
 
-type Line = { os: OsInfo | undefined; osId: string; labor: number; parts: number; own: boolean; commission: number; doneAt: string | null };
+type Line = { os: OsInfo | undefined; osId: string; labor: number; parts: number; own: boolean; manual?: boolean; commission: number; doneAt: string | null };
 /** Linha da view com a data em que o trabalho conta (serviço finalizado ou OS concluída) */
 type BaseRow = CommissionBaseRow & { done_at?: string | null };
 const OS_COLS = 'id, number, title, price, completed_at, customer:customers(full_name), vehicle:vehicles(plate)';
@@ -95,6 +95,7 @@ export default function CommissionDetail({ wid, from, to }: { wid: string; from:
           labor: r2(rows.reduce((a, r) => a + r.labor, 0)),
           parts: r2(rows.reduce((a, r) => a + r.parts, 0)),
           own: rows.some(r => r.customer_brought_parts),
+          manual: rows.some(r => Number(r.manual ?? 0) > 0),
         };
       }).sort((a, b) => (b.doneAt ?? '').localeCompare(a.doneAt ?? ''));
       const revenueShare = p.revenue > 0 ? r2(revenue * p.revenue / 100) : 0;
@@ -171,6 +172,7 @@ export default function CommissionDetail({ wid, from, to }: { wid: string; from:
                                 {l.doneAt && ` · ${new Date(l.doneAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
                                 {l.os && !l.os.completed_at && <span className="text-brand-700"> · serviço finalizado (OS em andamento)</span>}
                                 {l.own && <span className="text-pending-700"> · peça do cliente</span>}
+                                {l.manual && <span className="text-brand-700"> · ✏️ comissão definida na OS</span>}
                               </div>
                             </td>
                             <td className="py-1.5 text-right whitespace-nowrap">

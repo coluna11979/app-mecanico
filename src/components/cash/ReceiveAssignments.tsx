@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { brl } from '@/lib/cash';
 import { toast } from '@/components/ui/Toast';
 import { PLATFORM, ResponsiblePicker, responsibleOf, saveResponsible } from '@/components/cash/ResponsiblePicker';
+import { OsCommission, useOsCommission } from '@/components/cash/OsCommission';
 import type { ServiceOrderItem, WorkshopMechanic } from '@/types/database';
 
 /**
@@ -138,17 +139,23 @@ export function ReceiveAssignments({ a, team }: { a: ReturnType<typeof useReceiv
 }
 
 /** OS já recebida: conferir/trocar os responsáveis (ex.: mecânico mudou de última hora) */
-export function AssignmentsModal({ os, team, title, onClose, onSaved }: {
-  os: ReceiveOs; team: Team; title: string; onClose: () => void; onSaved: (callPlatform: boolean) => void;
+export function AssignmentsModal({ os, team, title, wid, sid, onClose, onSaved }: {
+  os: ReceiveOs; team: Team; title: string; wid?: string; sid?: string | null; onClose: () => void; onSaved: (callPlatform: boolean) => void;
 }) {
   const a = useReceiveAssignments(os, team);
+  const comm = useOsCommission(os.id, a);
   const [busy, setBusy] = useState(false);
   async function save() {
     if (!a.valid) return toast.error('Complete os responsáveis antes de salvar');
+    if (wid && !comm.valid) return toast.error('Escolha quem recebe cada comissão');
     setBusy(true);
     const { error } = await a.save();
+    if (error) { setBusy(false); return toast.error(error.message); }
+    if (wid) {
+      const { error: cErr } = await comm.save(wid, sid ?? null);
+      if (cErr) { setBusy(false); return toast.error('Não consegui salvar as comissões: ' + cErr.message); }
+    }
     setBusy(false);
-    if (error) return toast.error(error.message);
     toast.success('Responsáveis salvos ✓');
     onSaved(a.callPlatform);
   }
@@ -160,6 +167,7 @@ export function AssignmentsModal({ os, team, title, onClose, onSaved }: {
           <button onClick={onClose} className="text-steel-400 hover:text-steel-700 text-xl leading-none" aria-label="Fechar">×</button>
         </div>
         <ReceiveAssignments a={a} team={team} />
+        {wid && <OsCommission c={comm} team={team} />}
         <div className="flex gap-2 mt-6">
           <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
           <button onClick={save} disabled={busy || !a.valid} className="btn-primary flex-[2]">{busy ? 'Salvando…' : 'Salvar'}</button>
