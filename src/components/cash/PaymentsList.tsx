@@ -90,9 +90,15 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
     return <div>{title && <h2 className="text-sm font-bold text-steel-700 mb-2">{title}</h2>}<div className="card text-center py-8 text-sm text-steel-500">{empty}</div></div>;
   }
 
+  const valid = rows.filter(r => !r.cancelled_at);
   return (
     <div>
-    {title && <h2 className="text-sm font-bold text-steel-700 mb-2">{title}</h2>}
+    {title && (
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+        <h2 className="text-sm font-bold text-steel-700">{title}</h2>
+        <span className="text-xs text-steel-500">{valid.length} recebimento{valid.length === 1 ? '' : 's'} · <strong className="text-steel-700">{brl(valid.reduce((a, r) => a + Number(r.amount), 0))}</strong></span>
+      </div>
+    )}
     <div className="card p-0 divide-y divide-steel-100">
       {rows.map(p => {
         const os = p.service_order;
