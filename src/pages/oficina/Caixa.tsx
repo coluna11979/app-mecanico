@@ -22,6 +22,19 @@ type OpenOs = {
   status: string; completed_at: string | null; created_at: string;
   executor: 'workshop' | 'platform' | null; workshop_mechanic_id: string | null;
   customer: { full_name: string } | null; vehicle: { plate: string | null; make: string | null; model: string | null } | null;
+  /** "Pagar depois": até quando o cliente vai pagar (o que falta da OS) */
+  pay_later_due?: string | null; pay_later_note?: string | null;
+};
+
+/** Dias até o vencimento do "pagar depois" (negativo = vencido) */
+const daysToDue = (due: string) => {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.round((new Date(`${due}T00:00:00`).getTime() - t.getTime()) / 86400000);
+};
+const dueLabel = (due: string) => {
+  const d = daysToDue(due);
+  const date = new Date(`${due}T12:00:00`).toLocaleDateString('pt-BR');
+  return d < 0 ? `vencido há ${-d} dia${d === -1 ? '' : 's'} (${date})` : d === 0 ? 'vence hoje' : `vence ${date}`;
 };
 
 type Tab = 'receber' | 'movimentos' | 'fechar';
@@ -245,7 +258,7 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('service_orders')
-      .select('id, number, title, price, paid_amount, counter_discount, status, completed_at, created_at, executor, workshop_mechanic_id, customer:customers(full_name), vehicle:vehicles(plate, make, model)')
+      .select('id, number, title, price, paid_amount, counter_discount, status, completed_at, created_at, executor, workshop_mechanic_id, pay_later_due, pay_later_note, customer:customers(full_name), vehicle:vehicles(plate, make, model)')
       .eq('workshop_id', wid).in('status', ['open', 'approved', 'in_progress', 'completed'])
       .order('created_at', { ascending: false }).limit(500);
     const rows = ((data as unknown as OpenOs[]) ?? []).filter(o => remainingOf(o) > 0.004);
@@ -279,6 +292,12 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
     ? '✅ Recebidas neste caixa'
     : `✅ Recebidas · ${period === 'custom' ? [from, to].filter(Boolean).map(d => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')).join(' até ') : periodName}`;
 
+  const matches = (o: OpenOs, t: string) => !t ||
+    osNum(o).includes(t) ||
+    (o.customer?.full_name ?? '').toLowerCase().includes(t) ||
+    (o.vehicle?.plate ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(t.replace(/ /g, '')) ||
+    o.title.toLowerCase().includes(t);
+
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase().replace(/[^a-z0-9à-ú ]/g, '');
     const [start, end] = periodRange(period, from, to);
@@ -287,12 +306,56 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
       return (!start || d >= start) && (!end || d < end);
     };
     if (!list) return [];
-    return list.filter(o => inDate(o) && (!t ||
-      osNum(o).includes(t) ||
-      (o.customer?.full_name ?? '').toLowerCase().includes(t) ||
-      (o.vehicle?.plate ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(t.replace(/ /g, '')) ||
-      o.title.toLowerCase().includes(t)));
+    // "Pagar depois" fica numa lista à parte (sai da fila do dia)
+    return list.filter(o => !o.pay_later_due && inDate(o) && matches(o, t));
   }, [list, q, period, from, to]);
+
+  /** Combinadas para pagar depois — todas, as que vencem primeiro no topo (só a busca filtra) */
+  const later = useMemo(() => {
+    const t = q.trim().toLowerCase().replace(/[^a-z0-9à-ú ]/g, '');
+    return (list ?? []).filter(o => !!o.pay_later_due && matches(o, t))
+      .sort((a, b) => a.pay_later_due!.localeCompare(b.pay_later_due!));
+  }, [list, q]);
+
+  const osRow = (o: OpenOs) => {
+    const rem = remainingOf(o);
+    return (
+      <div key={o.id} className="flex items-center gap-3 px-4 py-3">
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold truncate">
+            OS nº {osNum(o)} · {o.customer?.full_name ?? 'Sem cliente'}
+          </div>
+          <div className="text-xs text-steel-500 truncate">
+            {[o.vehicle?.plate, [o.vehicle?.make, o.vehicle?.model].filter(Boolean).join(' '), o.title].filter(Boolean).join(' · ')}
+          </div>
+          <div className="flex gap-1 mt-1">
+            <span className={`badge text-[10px] ${o.status === 'completed' ? 'bg-signal-100 text-signal-700' : 'bg-steel-100 text-steel-600'}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
+            <span className="text-[10px] text-steel-400 self-center">
+              {o.completed_at ? 'concluída' : 'aberta'} em {new Date(osDate(o)).toLocaleDateString('pt-BR')}
+            </span>
+            {o.paid_amount > 0 && <span className="badge text-[10px] bg-pending-100 text-pending-800">Parcialmente paga</span>}
+            {o.pay_later_due && (
+              <span className={`badge text-[10px] ${daysToDue(o.pay_later_due) < 0 ? 'bg-alert-100 text-alert-700' : 'bg-brand-50 text-brand-700'}`}>
+                🕒 Pagar depois · {dueLabel(o.pay_later_due)}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="font-bold">{brl(rem)}</div>
+          {o.paid_amount > 0 && <div className="text-[11px] text-steel-400">de {brl(o.price)}</div>}
+          {o.pay_later_note && <div className="text-[11px] text-steel-500 max-w-[160px] truncate" title={o.pay_later_note}>📝 {o.pay_later_note}</div>}
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+          <Link to={`/oficina/os/${o.id}`} className="btn-secondary text-sm text-center" title="Serviços, valores, quem fez e agendamento">✏️ Editar OS</Link>
+          {canCallMechanic && o.status !== 'completed' && (
+            <button onClick={() => setCalling(o)} className="btn-secondary text-sm" title="Publicar demanda com os serviços desta OS">🔧 Chamar mecânico</button>
+          )}
+          <button onClick={() => setPicked(o)} className="btn-primary text-sm">Receber</button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -322,43 +385,28 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
       ) : shown.length === 0 ? (
         <div className="card text-center py-10 text-sm text-steel-500">
-          {list.length === 0 ? 'Nenhuma OS com valor em aberto.' : 'Nenhuma OS encontrada.'}
+          {list.length === 0 ? 'Nenhuma OS com valor em aberto.' : later.length && !list.some(o => !o.pay_later_due) ? 'Nenhuma OS para receber agora — veja as combinadas para pagar depois abaixo.' : 'Nenhuma OS encontrada.'}
         </div>
       ) : (
         <div className="card p-0 divide-y divide-steel-100">
-          {shown.map(o => {
-            const rem = remainingOf(o);
-            return (
-              <div key={o.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate">
-                    OS nº {osNum(o)} · {o.customer?.full_name ?? 'Sem cliente'}
-                  </div>
-                  <div className="text-xs text-steel-500 truncate">
-                    {[o.vehicle?.plate, [o.vehicle?.make, o.vehicle?.model].filter(Boolean).join(' '), o.title].filter(Boolean).join(' · ')}
-                  </div>
-                  <div className="flex gap-1 mt-1">
-                    <span className={`badge text-[10px] ${o.status === 'completed' ? 'bg-signal-100 text-signal-700' : 'bg-steel-100 text-steel-600'}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
-                    <span className="text-[10px] text-steel-400 self-center">
-                      {o.completed_at ? 'concluída' : 'aberta'} em {new Date(osDate(o)).toLocaleDateString('pt-BR')}
-                    </span>
-                    {o.paid_amount > 0 && <span className="badge text-[10px] bg-pending-100 text-pending-800">Parcialmente paga</span>}
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="font-bold">{brl(rem)}</div>
-                  {o.paid_amount > 0 && <div className="text-[11px] text-steel-400">de {brl(o.price)}</div>}
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-                  <Link to={`/oficina/os/${o.id}`} className="btn-secondary text-sm text-center" title="Serviços, valores, quem fez e agendamento">✏️ Editar OS</Link>
-                  {canCallMechanic && o.status !== 'completed' && (
-                    <button onClick={() => setCalling(o)} className="btn-secondary text-sm" title="Publicar demanda com os serviços desta OS">🔧 Chamar mecânico</button>
-                  )}
-                  <button onClick={() => setPicked(o)} className="btn-primary text-sm">Receber</button>
-                </div>
-              </div>
-            );
-          })}
+          {shown.map(osRow)}
+        </div>
+      )}
+
+      {later.length > 0 && (
+        <div className="mt-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+            <h2 className="text-sm font-bold text-steel-700">🕒 Pagar depois</h2>
+            <span className="text-xs text-steel-500">
+              {later.length} OS · <strong className="text-steel-700">{brl(later.reduce((a, o) => a + remainingOf(o), 0))}</strong>
+              {later.some(o => daysToDue(o.pay_later_due!) < 0) && (
+                <span className="text-alert-600 font-semibold"> · {brl(later.filter(o => daysToDue(o.pay_later_due!) < 0).reduce((a, o) => a + remainingOf(o), 0))} vencido</span>
+              )}
+            </span>
+          </div>
+          <div className="card p-0 divide-y divide-steel-100">
+            {later.map(osRow)}
+          </div>
         </div>
       )}
 
@@ -434,6 +482,10 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
   const [parts, setParts] = useState<Part[]>([{ method: 'dinheiro', amount: moneyStr(open), installments: 1 }]);
   const [given, setGiven] = useState('');
   const [busy, setBusy]   = useState(false);
+  // "Pagar depois": o que faltar fica como conta a receber, com vencimento
+  const [later, setLater] = useState(!!os.pay_later_due);
+  const [dueDate, setDueDate] = useState(os.pay_later_due ?? (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })());
+  const [laterNote, setLaterNote] = useState(os.pay_later_note ?? '');
 
   const disc = parseMoney(discount);
   const due = Math.max(0, Math.round((open - disc) * 100) / 100);
@@ -453,23 +505,37 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
   async function confirmReceive() {
     if (!who.valid) return toast.error('Informe quem fez cada serviço: mecânico da loja ou da plataforma');
     if (!comm.valid) return toast.error('Escolha quem recebe cada comissão');
-    if (total <= 0) return toast.error('Informe o valor recebido');
+    const deferring = later && missing > 0.004;
+    if (total <= 0 && !deferring) return toast.error('Informe o valor recebido');
     if (missing < -0.004) return toast.error('O total passa do valor em aberto');
     if (given && givenN < cashPart) return toast.error('O valor entregue é menor que a parte em dinheiro');
-    if (missing > 0.004 && !confirm(`Vai ficar faltando ${brl(missing)} nesta OS. Confirmar recebimento parcial?`)) return;
+    if (deferring && !dueDate) return toast.error('Informe até quando o cliente vai pagar');
+    if (missing > 0.004 && !deferring && !confirm(`Vai ficar faltando ${brl(missing)} nesta OS. Confirmar recebimento parcial?`)) return;
     setBusy(true);
     const { error: rErr } = await who.save();
     if (rErr) { setBusy(false); return toast.error('Não consegui salvar quem fez: ' + rErr.message); }
     const { error: cErr } = await comm.save(wid, sid);
     if (cErr) { setBusy(false); return toast.error('Não consegui salvar as comissões: ' + cErr.message); }
-    const { error } = await supabase.rpc('cash_receive_os', {
-      p_workshop: wid, p_session: sid, p_os: os.id,
-      p_parts: parts.filter(p => parseMoney(p.amount) > 0).map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
-      p_discount: disc, p_cash_given: given ? givenN : null,
-    });
+    if (total > 0) {
+      const { error } = await supabase.rpc('cash_receive_os', {
+        p_workshop: wid, p_session: sid, p_os: os.id,
+        p_parts: parts.filter(p => parseMoney(p.amount) > 0).map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
+        p_discount: disc, p_cash_given: given ? givenN : null,
+      });
+      if (error) { setBusy(false); return toast.error(error.message); }
+    }
+    // Combinou pagar depois (ou desfez o combinado)
+    if (deferring || os.pay_later_due) {
+      const { error } = await supabase.rpc('cash_pay_later', {
+        p_workshop: wid, p_session: sid, p_os: os.id,
+        p_due: deferring ? dueDate : null, p_note: deferring ? laterNote : null,
+      });
+      if (error) { setBusy(false); return toast.error((total > 0 ? 'Recebimento registrado, mas o "pagar depois" não foi salvo: ' : '') + error.message); }
+    }
     setBusy(false);
-    if (error) return toast.error(error.message);
-    toast.success(change > 0 ? `Recebido! Troco: ${brl(change)}` : 'Recebimento registrado');
+    toast.success(deferring
+      ? `${total > 0 ? `Recebido ${brl(total)} · ` : ''}${brl(missing)} para pagar até ${new Date(`${dueDate}T12:00:00`).toLocaleDateString('pt-BR')}`
+      : change > 0 ? `Recebido! Troco: ${brl(change)}` : 'Recebimento registrado');
     onDone(who.callPlatform);
   }
 
@@ -528,8 +594,33 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
         </div>
         <button onClick={addPart} className="text-sm font-semibold text-brand-600 mt-2">+ Adicionar outra forma</button>
 
-        <div className={`mt-3 text-sm font-semibold ${Math.abs(missing) < 0.005 ? 'text-signal-700' : missing > 0 ? 'text-pending-800' : 'text-alert-600'}`}>
-          {Math.abs(missing) < 0.005 ? '✓ Valor fechado' : missing > 0 ? `Falta ${brl(missing)}` : `Passou ${brl(-missing)} do valor em aberto`}
+        <div className={`mt-3 text-sm font-semibold ${Math.abs(missing) < 0.005 ? 'text-signal-700' : missing > 0 ? (later ? 'text-brand-700' : 'text-pending-800') : 'text-alert-600'}`}>
+          {Math.abs(missing) < 0.005 ? '✓ Valor fechado' : missing > 0 ? (later ? `🕒 ${brl(missing)} para pagar depois` : `Falta ${brl(missing)}`) : `Passou ${brl(-missing)} do valor em aberto`}
+        </div>
+
+        {/* Pagar depois */}
+        <div className={`mt-3 rounded-2xl border-2 p-3 transition ${later ? 'border-brand-300 bg-brand-50/40' : 'border-steel-200'}`}>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" className="mt-1" checked={later} onChange={e => {
+              setLater(e.target.checked);
+              // Tudo para depois: zera a forma que veio preenchida com o total
+              if (e.target.checked && parts.length === 1 && Math.abs(parseMoney(parts[0].amount) - due) < 0.005) setParts([{ ...parts[0], amount: '' }]);
+            }} />
+            <span>
+              <span className="font-semibold text-sm">🕒 Pagar depois</span>
+              <span className="block text-[11px] text-steel-500">O que faltar fica como conta a receber. Não entra na gaveta; recebe quando o cliente pagar.</span>
+            </span>
+          </label>
+          {later && (
+            <div className="grid sm:grid-cols-2 gap-2 mt-3">
+              <label className="text-[11px] text-steel-500">Vai pagar até *
+                <input type="date" className="input mt-0.5" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              </label>
+              <label className="text-[11px] text-steel-500">Observação (opcional)
+                <input className="input mt-0.5" placeholder="Ex.: paga no dia 10" value={laterNote} onChange={e => setLaterNote(e.target.value)} />
+              </label>
+            </div>
+          )}
         </div>
 
         {cashPart > 0 && (
@@ -547,8 +638,8 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
 
         <div className="flex gap-2 mt-6">
           <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
-          <button onClick={confirmReceive} disabled={busy || !who.valid || total <= 0 || missing < -0.004} className="btn-primary flex-[2] btn-lg">
-            {busy ? 'Registrando…' : `Confirmar ${brl(total)}`}
+          <button onClick={confirmReceive} disabled={busy || !who.valid || (total <= 0 && !(later && missing > 0.004)) || missing < -0.004} className="btn-primary flex-[2] btn-lg">
+            {busy ? 'Registrando…' : later && missing > 0.004 ? (total > 0 ? `Receber ${brl(total)} · resto depois` : `Confirmar ${brl(missing)} para depois`) : `Confirmar ${brl(total)}`}
           </button>
         </div>
       </div>

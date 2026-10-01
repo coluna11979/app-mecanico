@@ -15,7 +15,7 @@ import type { PanelOs, Range } from '@/lib/workshopMetrics';
 export type FinEntry = Pick<CashEntry, 'id' | 'kind' | 'method' | 'amount' | 'installments' | 'category' | 'mechanic_id' | 'created_at'>;
 export type FinPayment = { id: string; discount: number; created_at: string };
 export type FinRegister = Pick<CashRegister, 'id' | 'opened_at' | 'closed_at' | 'opened_by' | 'closed_by' | 'counted_cash' | 'expected_cash' | 'close_notes'>;
-export type FinOs = PanelOs & { paid_amount: number; counter_discount: number };
+export type FinOs = PanelOs & { paid_amount: number; counter_discount: number; pay_later_due?: string | null; pay_later_note?: string | null };
 
 const inRange = (iso: string | null | undefined, r: Range) => {
   if (!iso) return false;
@@ -93,20 +93,35 @@ export function receivables(list: FinOs[], since: string | null) {
   const now = Date.now();
   const start = since ? new Date(since).getTime() : Infinity;
   const rows = list
-    .filter(o => o.status === 'completed' && !o.quote_status && !!o.completed_at && new Date(o.completed_at).getTime() >= start)
+    // "Pagar depois" entra sempre (foi combinado no caixa), mesmo de OS anterior ao 1º caixa
+    .filter(o => o.status === 'completed' && !o.quote_status && !!o.completed_at
+      && (!!o.pay_later_due || new Date(o.completed_at).getTime() >= start))
     .map(o => ({ os: o, open: round2(Number(o.price) - Number(o.counter_discount ?? 0) - Number(o.paid_amount ?? 0)) }))
     .filter(x => x.open > 0.009)
-    .map(x => ({
-      ...x,
-      partial: Number(x.os.paid_amount ?? 0) > 0,
-      days: x.os.completed_at ? Math.floor((now - new Date(x.os.completed_at).getTime()) / 86400000) : 0,
-    }))
-    .sort((a, b) => b.days - a.days);
+    .map(x => {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const dueIn = x.os.pay_later_due
+        ? Math.round((new Date(`${x.os.pay_later_due}T00:00:00`).getTime() - today.getTime()) / 86400000) : null;
+      const days = x.os.completed_at ? Math.floor((now - new Date(x.os.completed_at).getTime()) / 86400000) : 0;
+      return {
+        ...x,
+        partial: Number(x.os.paid_amount ?? 0) > 0,
+        days,
+        /** dias até o vencimento combinado (negativo = vencido); null = sem "pagar depois" */
+        dueIn,
+        // Vencido: passou da data combinada; sem data combinada, mais de 7 dias da conclusão
+        overdue: dueIn != null ? dueIn < 0 : days > 7,
+      };
+    })
+    .sort((a, b) => Number(b.overdue) - Number(a.overdue) || b.days - a.days);
+  const later = rows.filter(x => x.dueIn != null);
   return {
     rows,
     total: sum(rows, x => x.open),
-    overdue: rows.filter(x => x.days > 7),
-    overdueTotal: sum(rows.filter(x => x.days > 7), x => x.open),
+    overdue: rows.filter(x => x.overdue),
+    overdueTotal: sum(rows.filter(x => x.overdue), x => x.open),
+    laterTotal: sum(later, x => x.open),
+    laterCount: later.length,
   };
 }
 
