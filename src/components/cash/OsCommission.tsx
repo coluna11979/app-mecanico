@@ -16,16 +16,29 @@ import type { WorkshopMechanic } from '@/types/database';
 
 type Assign = ReturnType<typeof useReceiveAssignments>;
 type Team = Pick<WorkshopMechanic, 'id' | 'name'>[];
-type Row = { key: number; mechanic_id: string; amount: string };
+/** Como a comissão da pessoa é calculada: % padrão sobre o total da OS ou valor fechado */
+type Mode = 'p10' | 'p4' | 'fixo';
+const MODES: { key: Mode; label: string; pct: number | null }[] = [
+  { key: 'p10', label: `${RULE.labor}%`, pct: RULE.labor },
+  { key: 'p4', label: `${RULE.service}%`, pct: RULE.service },
+  { key: 'fixo', label: 'Valor fechado', pct: null },
+];
+type Row = { key: number; mechanic_id: string; mode: Mode; amount: string };
 
 let seq = 0;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const amt = (i: { quantity: number; unit_price: number }) => r2(Number(i.quantity) * Number(i.unit_price));
+/** Valor salvo bate com uma % padrão do total? Senão é valor fechado */
+const modeOf = (value: number, total: number): Mode =>
+  total > 0 && Math.abs(value - r2(total * RULE.labor / 100)) < 0.01 ? 'p10'
+    : total > 0 && Math.abs(value - r2(total * RULE.service / 100)) < 0.01 ? 'p4' : 'fixo';
 
 export function useOsCommission(osId: string, a: Assign) {
   const [loaded, setLoaded]   = useState(false);
   const [wasManual, setWasManual] = useState(false);
   const [brought, setBrought] = useState(false);
+  /** Total da OS — base das opções de % */
+  const [osTotal, setOsTotal] = useState(0);
   const [editing, setEditing] = useState(false);
   const [rows, setRows]       = useState<Row[]>([]);
 
@@ -34,18 +47,19 @@ export function useOsCommission(osId: string, a: Assign) {
     (async () => {
       try {
         const [o, ov] = await Promise.all([
-          supabase.from('service_orders').select('commission_manual, customer_brought_parts').eq('id', osId).maybeSingle(),
+          supabase.from('service_orders').select('commission_manual, customer_brought_parts, price').eq('id', osId).maybeSingle(),
           supabase.from('os_commission_overrides').select('mechanic_id, amount').eq('service_order_id', osId),
         ]);
         if (!alive) return;
-        const os = o.data as { commission_manual?: boolean; customer_brought_parts?: boolean } | null;
+        const os = o.data as { commission_manual?: boolean; customer_brought_parts?: boolean; price?: number } | null;
+        setOsTotal(Number(os?.price ?? 0));
         const manual = !!os?.commission_manual;
         setWasManual(manual);
         setBrought(!!os?.customer_brought_parts);
         if (manual) {
           setEditing(true);
           setRows(((ov.data as { mechanic_id: string; amount: number }[]) ?? [])
-            .map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, amount: moneyStr(Number(x.amount)) })));
+            .map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(Number(x.amount), Number(os?.price ?? 0)), amount: moneyStr(Number(x.amount)) })));
         }
       } catch (e) {
         console.warn('[OsCommission] não carregou a comissão da OS:', e);
@@ -79,25 +93,30 @@ export function useOsCommission(osId: string, a: Assign) {
   }, [a.labor, a.who, a.partsOf, brought]);
 
   function startEdit() {
-    setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, amount: moneyStr(x.value) }))
-      : [{ key: ++seq, mechanic_id: '', amount: '' }]);
+    setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }))
+      : [{ key: ++seq, mechanic_id: '', mode: 'p10', amount: '' }]);
     setEditing(true);
   }
   const backToRule = () => { setEditing(false); setRows([]); };
 
-  const valid = !editing || rows.every(r => r.mechanic_id && parseMoney(r.amount) >= 0);
-  const total = editing ? r2(rows.reduce((s, r) => s + parseMoney(r.amount), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
+  /** Valor da pessoa: % padrão sobre o total da OS, ou o valor fechado digitado */
+  const valueOf = (r: Row) => {
+    const pct = MODES.find(m => m.key === r.mode)?.pct;
+    return pct != null ? r2(osTotal * pct / 100) : r2(parseMoney(r.amount));
+  };
+  const valid = !editing || rows.every(r => r.mechanic_id && valueOf(r) >= 0);
+  const total = editing ? r2(rows.reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
 
   async function save(wid: string, sid: string | null): Promise<{ error: { message: string } | null }> {
     if (!loaded || (!editing && !wasManual)) return { error: null };
     const { error } = await supabase.rpc('set_os_commissions', {
       p_workshop: wid, p_session: sid, p_os: osId, p_manual: editing,
-      p_rows: editing ? rows.filter(r => r.mechanic_id).map(r => ({ mechanic_id: r.mechanic_id, amount: parseMoney(r.amount) })) : [],
+      p_rows: editing ? rows.filter(r => r.mechanic_id).map(r => ({ mechanic_id: r.mechanic_id, amount: valueOf(r) })) : [],
     });
     return { error };
   }
 
-  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save };
+  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf };
 }
 
 export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border border-steel-200 px-4 py-3', children }: {
@@ -129,19 +148,36 @@ export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border bor
       ) : (
         <div className="mt-2 space-y-2">
           {c.rows.map(r => (
-            <div key={r.key} className="flex gap-2 items-center">
-              <select className={`input !py-1.5 text-sm flex-1 min-w-0 ${r.mechanic_id ? '' : '!border-pending-400'}`} value={r.mechanic_id}
-                onChange={e => setRow(r.key, { mechanic_id: e.target.value })}>
-                <option value="">Quem recebe…</option>
-                {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-              <input className="input !py-1.5 text-sm !w-28 shrink-0 text-right" inputMode="decimal" placeholder="0,00" value={r.amount}
-                onChange={e => setRow(r.key, { amount: e.target.value })} />
-              <button type="button" onClick={() => c.setRows(rs => rs.filter(x => x.key !== r.key))}
-                className="text-steel-400 hover:text-alert-600 px-1" aria-label="Remover">✕</button>
+            <div key={r.key} className="rounded-xl bg-steel-50 p-2 space-y-2">
+              <div className="flex gap-2 items-center">
+                <select className={`input !py-1.5 text-sm flex-1 min-w-0 ${r.mechanic_id ? '' : '!border-pending-400'}`} value={r.mechanic_id}
+                  onChange={e => setRow(r.key, { mechanic_id: e.target.value })}>
+                  <option value="">Quem recebe…</option>
+                  {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <button type="button" onClick={() => c.setRows(rs => rs.filter(x => x.key !== r.key))}
+                  className="text-steel-400 hover:text-alert-600 px-1" aria-label="Remover">✕</button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 items-center">
+                {MODES.map(m => (
+                  <button key={m.key} type="button"
+                    onClick={() => setRow(r.key, { mode: m.key, amount: m.key === 'fixo' ? moneyStr(c.valueOf(r)) : r.amount })}
+                    className={`text-xs font-semibold px-2.5 py-1.5 rounded-full border transition ${
+                      r.mode === m.key ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                    {m.label}
+                  </button>
+                ))}
+                {r.mode === 'fixo' ? (
+                  <input className="input !py-1.5 text-sm !w-28 ml-auto text-right" inputMode="decimal" placeholder="0,00" value={r.amount} autoFocus
+                    onChange={e => setRow(r.key, { amount: e.target.value })} />
+                ) : (
+                  <span className="ml-auto text-sm font-bold">{brl(c.valueOf(r))}</span>
+                )}
+              </div>
+              {r.mode !== 'fixo' && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} do total da OS ({brl(c.osTotal)})</div>}
             </div>
           ))}
-          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', amount: '' }])}
+          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: 'p10', amount: '' }])}
             className="text-sm font-semibold text-brand-600">+ Incluir pessoa</button>
           <p className="text-[11px] text-steel-500">Esses valores substituem a regra só nesta OS.</p>
         </div>
