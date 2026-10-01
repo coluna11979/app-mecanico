@@ -13,6 +13,7 @@ import { change, previousRange, productivity, salesOf, type PanelMechanic } from
 import PeriodPicker, { PREV_LABEL, usePeriod } from '@/components/PeriodPicker';
 import { ALL_TIME, COMMISSION_COLS, loadCommissionBase, type CommissionBaseRow } from '@/lib/commission';
 import CommissionDetail from '@/components/team/CommissionDetail';
+import ReceivablesTab from '@/components/finance/ReceivablesTab';
 import {
   byMethod, cashFlowOf, closings, expensesByCategory, flowSeries, receivables, valesByMechanic,
   type FinEntry, type FinOs, type FinPayment, type FinRegister,
@@ -28,6 +29,10 @@ export default function Financeiro() {
   const { preset, range } = period;
   // Comissões detalhadas: hoje (padrão) ou o período escolhido no topo
   const [commScope, setCommScope] = useState<'hoje' | 'periodo'>('hoje');
+  /** Visão geral do dinheiro ou a lista de OS a receber */
+  const [tab, setTab] = useState<'geral' | 'receber'>(() => {
+    try { return new URLSearchParams(window.location.search).get('aba') === 'receber' ? 'receber' : 'geral'; } catch { return 'geral'; }
+  });
   const todayRange = useMemo(() => {
     const f = new Date(); f.setHours(0, 0, 0, 0);
     const t = new Date(f); t.setDate(t.getDate() + 1);
@@ -70,7 +75,7 @@ export default function Financeiro() {
           .eq('workshop_id', wid).eq('status', 'closed').gte('closed_at', fromIso).lt('closed_at', toIso)
           .order('closed_at', { ascending: false }),
         fetchAll((a, b) => supabase.from('service_orders')
-          .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, paid_amount, counter_discount, pay_later_due, pay_later_note, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, created_at), vehicle:vehicles(make, model, plate)')
+          .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, paid_amount, counter_discount, pay_later_due, pay_later_note, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, phone, created_at), vehicle:vehicles(make, model, plate)')
           .eq('workshop_id', wid).eq('status', 'completed').order('id').range(a, b)),
         supabase.from('workshop_mechanics').select(`id, name, active, ${COMMISSION_COLS}`).eq('workshop_id', wid),
         supabase.from('workshop_operators').select('id, name').eq('workshop_id', wid),
@@ -167,10 +172,24 @@ export default function Financeiro() {
             <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">💵 Como está o dinheiro</h1>
             <div className="text-xs text-steel-400 mt-0.5">{period.label}</div>
           </div>
-          <PeriodPicker period={period} />
+          {tab === 'geral' && <PeriodPicker period={period} />}
         </div>
 
-        {loading ? (
+        {/* Abas */}
+        <div className="flex gap-1 bg-steel-100 rounded-xl p-1">
+          {([['geral', '💵 Visão geral'], ['receber', `📥 OS a receber${f.toReceive.rows.length ? ` (${f.toReceive.rows.length})` : ''}`]] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${tab === k ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'receber' ? (
+          loading
+            ? <div className="h-40 bg-white rounded-2xl animate-pulse" />
+            : <ReceivablesTab data={f.toReceive} firstOpen={firstOpen} shopName={currentWorkshop?.business_name} />
+        ) : loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map(i => <div key={i} className="h-28 bg-white rounded-2xl animate-pulse" />)}
           </div>
@@ -325,8 +344,10 @@ export default function Financeiro() {
                   ))}
                 </ul>
               )}
-              {f.toReceive.rows.length > 12 && (
-                <p className="text-xs text-steel-500 mt-2">+ {f.toReceive.rows.length - 12} OS. As mais antigas aparecem primeiro.</p>
+              {f.toReceive.rows.length > 0 && (
+                <button onClick={() => { setTab('receber'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-sm font-semibold text-brand-600 mt-3">
+                  {f.toReceive.rows.length > 12 ? `Ver todas as ${f.toReceive.rows.length} OS a receber →` : 'Abrir a aba OS a receber →'}
+                </button>
               )}
             </div>
 

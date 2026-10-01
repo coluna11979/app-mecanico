@@ -469,7 +469,9 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canFix, c
   );
 }
 
-type Part = { method: PayMethod; amount: string; installments: number };
+/** 'depois' = Pagar depois: essa parte não entra no caixa agora, vira conta a receber com vencimento */
+const LATER = 'depois' as const;
+type Part = { method: PayMethod | typeof LATER; amount: string; installments: number };
 
 function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
   os: OpenOs; wid: string; sid: string | null; canDiscount: boolean; team: WorkshopMechanic[];
@@ -482,8 +484,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
   const [parts, setParts] = useState<Part[]>([{ method: 'dinheiro', amount: moneyStr(open), installments: 1 }]);
   const [given, setGiven] = useState('');
   const [busy, setBusy]   = useState(false);
-  // "Pagar depois": o que faltar fica como conta a receber, com vencimento
-  const [later, setLater] = useState(!!os.pay_later_due);
+  // "Pagar depois" (uma das formas): vencimento e observação
   const [dueDate, setDueDate] = useState(os.pay_later_due ?? (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })());
   const [laterNote, setLaterNote] = useState(os.pay_later_note ?? '');
 
@@ -491,6 +492,11 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
   const due = Math.max(0, Math.round((open - disc) * 100) / 100);
   const total = Math.round(parts.reduce((a, p) => a + parseMoney(p.amount), 0) * 100) / 100;
   const missing = Math.round((due - total) * 100) / 100;
+  /** Recebido agora (sem o "pagar depois") e o que fica para depois */
+  const paidParts = parts.filter(p => p.method !== LATER && parseMoney(p.amount) > 0);
+  const paidNow = Math.round(paidParts.reduce((a, p) => a + parseMoney(p.amount), 0) * 100) / 100;
+  const laterAmount = Math.round((total - paidNow) * 100) / 100;
+  const deferring = laterAmount > 0.004;
   const cashPart = parts.filter(p => p.method === 'dinheiro').reduce((a, p) => a + parseMoney(p.amount), 0);
   const givenN = parseMoney(given);
   const change = given ? Math.round((givenN - cashPart) * 100) / 100 : 0;
@@ -505,21 +511,21 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
   async function confirmReceive() {
     if (!who.valid) return toast.error('Informe quem fez cada serviço: mecânico da loja ou da plataforma');
     if (!comm.valid) return toast.error('Escolha quem recebe cada comissão');
-    const deferring = later && missing > 0.004;
-    if (total <= 0 && !deferring) return toast.error('Informe o valor recebido');
+    if (total <= 0) return toast.error('Informe o valor recebido');
     if (missing < -0.004) return toast.error('O total passa do valor em aberto');
     if (given && givenN < cashPart) return toast.error('O valor entregue é menor que a parte em dinheiro');
     if (deferring && !dueDate) return toast.error('Informe até quando o cliente vai pagar');
-    if (missing > 0.004 && !deferring && !confirm(`Vai ficar faltando ${brl(missing)} nesta OS. Confirmar recebimento parcial?`)) return;
+    if (deferring && missing > 0.004) return toast.error(`Falta ${brl(missing)} — some no "Pagar depois" ou em outra forma`);
+    if (missing > 0.004 && !confirm(`Vai ficar faltando ${brl(missing)} nesta OS. Confirmar recebimento parcial?`)) return;
     setBusy(true);
     const { error: rErr } = await who.save();
     if (rErr) { setBusy(false); return toast.error('Não consegui salvar quem fez: ' + rErr.message); }
     const { error: cErr } = await comm.save(wid, sid);
     if (cErr) { setBusy(false); return toast.error('Não consegui salvar as comissões: ' + cErr.message); }
-    if (total > 0) {
+    if (paidNow > 0) {
       const { error } = await supabase.rpc('cash_receive_os', {
         p_workshop: wid, p_session: sid, p_os: os.id,
-        p_parts: parts.filter(p => parseMoney(p.amount) > 0).map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
+        p_parts: paidParts.map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
         p_discount: disc, p_cash_given: given ? givenN : null,
       });
       if (error) { setBusy(false); return toast.error(error.message); }
@@ -530,11 +536,11 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
         p_workshop: wid, p_session: sid, p_os: os.id,
         p_due: deferring ? dueDate : null, p_note: deferring ? laterNote : null,
       });
-      if (error) { setBusy(false); return toast.error((total > 0 ? 'Recebimento registrado, mas o "pagar depois" não foi salvo: ' : '') + error.message); }
+      if (error) { setBusy(false); return toast.error((paidNow > 0 ? 'Recebimento registrado, mas o "pagar depois" não foi salvo: ' : '') + error.message); }
     }
     setBusy(false);
     toast.success(deferring
-      ? `${total > 0 ? `Recebido ${brl(total)} · ` : ''}${brl(missing)} para pagar até ${new Date(`${dueDate}T12:00:00`).toLocaleDateString('pt-BR')}`
+      ? `${paidNow > 0 ? `Recebido ${brl(paidNow)} · ` : ''}${brl(laterAmount)} para pagar até ${new Date(`${dueDate}T12:00:00`).toLocaleDateString('pt-BR')}`
       : change > 0 ? `Recebido! Troco: ${brl(change)}` : 'Recebimento registrado');
     onDone(who.callPlatform);
   }
@@ -577,8 +583,9 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
         <div className="space-y-2">
           {parts.map((p, i) => (
             <div key={i} className="flex gap-2 items-center">
-              <select className="input flex-1 min-w-0" value={p.method} onChange={e => setPart(i, { method: e.target.value as PayMethod, installments: 1 })}>
+              <select className={`input flex-1 min-w-0 ${p.method === LATER ? '!border-brand-300 !bg-brand-50' : ''}`} value={p.method} onChange={e => setPart(i, { method: e.target.value as Part['method'], installments: 1 })}>
                 {RECEIVE_METHODS.map(m => <option key={m} value={m}>{METHODS[m].icon} {METHODS[m].label}</option>)}
+                <option value={LATER}>🕒 Pagar depois</option>
               </select>
               {p.method === 'credito' && (
                 <select className="input !w-16 shrink-0 !px-2" value={p.installments} onChange={e => setPart(i, { installments: Number(e.target.value) })}>
@@ -594,24 +601,15 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
         </div>
         <button onClick={addPart} className="text-sm font-semibold text-brand-600 mt-2">+ Adicionar outra forma</button>
 
-        <div className={`mt-3 text-sm font-semibold ${Math.abs(missing) < 0.005 ? 'text-signal-700' : missing > 0 ? (later ? 'text-brand-700' : 'text-pending-800') : 'text-alert-600'}`}>
-          {Math.abs(missing) < 0.005 ? '✓ Valor fechado' : missing > 0 ? (later ? `🕒 ${brl(missing)} para pagar depois` : `Falta ${brl(missing)}`) : `Passou ${brl(-missing)} do valor em aberto`}
+        <div className={`mt-3 text-sm font-semibold ${Math.abs(missing) < 0.005 ? 'text-signal-700' : missing > 0 ? 'text-pending-800' : 'text-alert-600'}`}>
+          {Math.abs(missing) < 0.005 ? '✓ Valor fechado' : missing > 0 ? `Falta ${brl(missing)}` : `Passou ${brl(-missing)} do valor em aberto`}
         </div>
 
-        {/* Pagar depois */}
-        <div className={`mt-3 rounded-2xl border-2 p-3 transition ${later ? 'border-brand-300 bg-brand-50/40' : 'border-steel-200'}`}>
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input type="checkbox" className="mt-1" checked={later} onChange={e => {
-              setLater(e.target.checked);
-              // Tudo para depois: zera a forma que veio preenchida com o total
-              if (e.target.checked && parts.length === 1 && Math.abs(parseMoney(parts[0].amount) - due) < 0.005) setParts([{ ...parts[0], amount: '' }]);
-            }} />
-            <span>
-              <span className="font-semibold text-sm">🕒 Pagar depois</span>
-              <span className="block text-[11px] text-steel-500">O que faltar fica como conta a receber. Não entra na gaveta; recebe quando o cliente pagar.</span>
-            </span>
-          </label>
-          {later && (
+        {/* Pagar depois (forma escolhida acima) */}
+        {deferring && (
+          <div className="mt-3 rounded-2xl border-2 border-brand-300 bg-brand-50/40 p-3">
+            <div className="font-semibold text-sm">🕒 {brl(laterAmount)} para pagar depois</div>
+            <div className="text-[11px] text-steel-500">Não entra na gaveta; fica em "Pagar depois" e no Financeiro até o cliente pagar.</div>
             <div className="grid sm:grid-cols-2 gap-2 mt-3">
               <label className="text-[11px] text-steel-500">Vai pagar até *
                 <input type="date" className="input mt-0.5" value={dueDate} onChange={e => setDueDate(e.target.value)} />
@@ -620,8 +618,8 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
                 <input className="input mt-0.5" placeholder="Ex.: paga no dia 10" value={laterNote} onChange={e => setLaterNote(e.target.value)} />
               </label>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {cashPart > 0 && (
           <div className="mt-4 grid grid-cols-2 gap-3 items-end">
@@ -638,8 +636,8 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
 
         <div className="flex gap-2 mt-6">
           <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
-          <button onClick={confirmReceive} disabled={busy || !who.valid || (total <= 0 && !(later && missing > 0.004)) || missing < -0.004} className="btn-primary flex-[2] btn-lg">
-            {busy ? 'Registrando…' : later && missing > 0.004 ? (total > 0 ? `Receber ${brl(total)} · resto depois` : `Confirmar ${brl(missing)} para depois`) : `Confirmar ${brl(total)}`}
+          <button onClick={confirmReceive} disabled={busy || !who.valid || total <= 0 || missing < -0.004} className="btn-primary flex-[2] btn-lg">
+            {busy ? 'Registrando…' : deferring ? (paidNow > 0 ? `Receber ${brl(paidNow)} · ${brl(laterAmount)} depois` : `Confirmar ${brl(laterAmount)} para depois`) : `Confirmar ${brl(total)}`}
           </button>
         </div>
       </div>
