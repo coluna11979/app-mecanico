@@ -8,6 +8,7 @@ import { resizeImage } from '@/lib/imageResize';
 import AbsencePanel from '@/components/team/AbsencePanel';
 import ScheduleEditor from '@/components/team/ScheduleEditor';
 import { fmtBRL, fmtDur, moneyInput, osNumber, parseMoney, workedMinutes } from '@/components/os/osHelpers';
+import { RULE } from '@/lib/commission';
 import {
   DOCUMENT_KINDS, EMPLOYMENT_TYPES, OFFICE_ROLES, QUALIFICATIONS, SHOP_ROLES, TEAM_STATUS, expiryLabel, roleArea, scheduleSummary, tenure,
 } from '@/lib/team';
@@ -451,66 +452,81 @@ function Qualifications({ role, specialty, skills, onSpecialty, onSkills }: {
 }
 
 const COMMISSION_PRESETS = ['0', '20', '30', '40', '50'];
-const EXAMPLE_LABOR = 200;
 
-/** % de comissão com atalhos e exemplo calculado na hora */
+/** Comissão: regra única da loja (10% mão de obra / 4% serviço + peças) + % do faturamento, se tiver */
 function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, own, onOwn }: {
   value: string; onChange: (v: string) => void;
   parts: string; onParts: (v: string) => void;
   revenue: string; onRevenue: (v: string) => void;
   own: string; onOwn: (v: string) => void;
 }) {
+  // % antigas da ficha (até 30/09/2026): só aparecem para quem tem histórico
+  const hasLegacy = [value, parts, own].some(v => v !== '' && Number(v.replace(',', '.')) > 0);
+  const [showLegacy, setShowLegacy] = useState(false);
   const pct = Number(value.replace(',', '.'));
   const valid = value === '' || (Number.isFinite(pct) && pct >= 0 && pct <= 100);
   const current = value === '' ? '0' : value;
+
   return (
     <div className="card mb-4 !py-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="min-w-[180px]">
-          <div className="text-sm font-bold text-steel-900">💰 Comissão</div>
-          <div className="text-xs text-steel-500">% sobre os serviços que ele fizer</div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {COMMISSION_PRESETS.map(p => (
-            <button type="button" key={p} onClick={() => onChange(p === '0' ? '' : p)}
-              className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${
-                current === p ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'}`}>
-              {p === '0' ? 'Sem comissão' : `${p}%`}
-            </button>
-          ))}
-          <div className="relative w-24">
-            <input className={`input !py-1.5 !pr-7 text-sm ${valid ? '' : '!border-alert-500'}`} inputMode="decimal"
-              placeholder="outro" value={COMMISSION_PRESETS.includes(current) ? '' : value}
-              onChange={e => onChange(e.target.value)} aria-label="Outra porcentagem" />
-            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-sm">%</span>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-sm font-bold text-steel-900">💰 Comissão</div>
+        <div className="text-[11px] text-steel-500">Regra da loja, igual para todos · conta sobre o que ele fizer na OS</div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="rounded-xl border border-steel-200 px-3 py-2.5 flex items-center gap-3">
+          <div className="text-2xl font-bold text-brand-600 w-14 shrink-0">{RULE.labor}%</div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-steel-800">🔧 Só mão de obra</div>
+            <div className="text-[11px] text-steel-500">Serviço sem peça. Ex.: alinhamento de {fmtBRL(100)} → ele ganha <strong className="text-signal-700">{fmtBRL(100 * RULE.labor / 100)}</strong></div>
           </div>
         </div>
-        <div className="text-xs sm:ml-auto">
-          {!valid ? (
-            <span className="text-alert-600 font-semibold">Use um valor entre 0 e 100%</span>
-          ) : pct > 0 ? (
-            <span className="text-steel-600">
-              Ex.: numa OS com {fmtBRL(EXAMPLE_LABOR)} de mão de obra, ele recebe <strong className="text-signal-700">{fmtBRL(EXAMPLE_LABOR * pct / 100)}</strong>
-            </span>
-          ) : (
-            <span className="text-steel-400">Não recebe comissão sobre serviços</span>
-          )}
+        <div className="rounded-xl border border-steel-200 px-3 py-2.5 flex items-center gap-3">
+          <div className="text-2xl font-bold text-brand-600 w-14 shrink-0">{RULE.service}%</div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-steel-800">🔩 Serviço + peças</div>
+            <div className="text-[11px] text-steel-500">Sobre o serviço somado às peças dele. Ex.: {fmtBRL(150)} + {fmtBRL(250)} de peças → <strong className="text-signal-700">{fmtBRL(400 * RULE.service / 100)}</strong></div>
+          </div>
         </div>
       </div>
-      <div className="mt-3 pt-3 border-t border-steel-100 grid sm:grid-cols-2 gap-3">
-        <PctField label="% sobre as peças" hint="das peças nos itens que ele fizer" value={parts} onChange={onParts} />
-        <PctField label="% sobre “só serviço” (sem peça da loja)" placeholder={value || '0'}
-          hint="serviço que não usou peça da loja, ou cliente trouxe a peça — vazio = mesma % de serviços" value={own} onChange={onOwn} />
-        <PctField label="% sobre o faturamento da loja" hint="de tudo que a loja faturar no mês (ex.: gerente 1,5%)" value={revenue} onChange={onRevenue} />
+
+      <div className="mt-3 pt-3 border-t border-steel-100">
+        <PctField label="+ % sobre o faturamento da loja (opcional)" hint="Só para quem ganha sobre tudo que a loja fatura no mês, ex.: gerente 1,5%. Mecânico deixa vazio."
+          value={revenue} onChange={onRevenue} />
       </div>
-      <p className="text-[11px] text-steel-400 mt-2">
-        As % se somam. Serviços e peças contam para quem fez cada item da OS — dá para trocar item a item na OS.
-      </p>
-      <div className="mt-3 rounded-xl bg-brand-50 border border-brand-200 px-3 py-2.5 text-xs text-brand-900">
-        <strong>Desde 01/10/2026 a comissão é igual para todos:</strong> 10% sobre “Mão de obra” (serviço sem peça) e
-        4% sobre “Serviço” + as peças dele, para quem fez. Só a <strong>% sobre o faturamento</strong> acima continua valendo;
-        as % de serviços e peças desta ficha ficam para o histórico (até 30/09/2026).
-      </div>
+
+      {hasLegacy && (
+        <div className="mt-3">
+          <button type="button" onClick={() => setShowLegacy(v => !v)} className="text-[11px] text-steel-400 hover:text-steel-600">
+            {showLegacy ? '▾' : '▸'} Regra antiga desta ficha (vale só para o histórico até 30/09/2026)
+          </button>
+          {showLegacy && (
+            <div className="mt-2 rounded-xl bg-steel-50 px-3 py-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-steel-500 mr-1">% sobre serviços:</span>
+                {COMMISSION_PRESETS.map(p => (
+                  <button type="button" key={p} onClick={() => onChange(p === '0' ? '' : p)}
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition ${
+                      current === p ? 'bg-steel-700 text-white border-steel-700' : 'bg-white text-steel-600 border-steel-200'}`}>
+                    {p === '0' ? 'Nenhuma' : `${p}%`}
+                  </button>
+                ))}
+                <div className="relative w-20">
+                  <input className={`input !py-1 !pr-6 text-xs ${valid ? '' : '!border-alert-500'}`} inputMode="decimal"
+                    placeholder="outro" value={COMMISSION_PRESETS.includes(current) ? '' : value}
+                    onChange={e => onChange(e.target.value)} aria-label="Outra porcentagem" />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-steel-400 text-xs">%</span>
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <PctField label="% sobre as peças" hint="das peças nos itens que ele fez" value={parts} onChange={onParts} />
+                <PctField label="% sobre “só serviço”" placeholder={value || '0'} hint="vazio = mesma % de serviços" value={own} onChange={onOwn} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
