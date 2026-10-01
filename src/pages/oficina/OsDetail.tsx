@@ -46,6 +46,8 @@ export default function OsDetail() {
   /* false = fechado · 'edit' = escolher · 'platform' = já abre com a plataforma marcada */
   const [scheduling, setScheduling] = useState(false);
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
+  /** Concluir escolhendo a data (OS de outro dia, ex.: nota importada ou reaberta para corrigir) */
+  const [concluding, setConcluding] = useState(false);
   const nav = useNavigate();
 
   // OS importada de orçamento em papel → mostra a foto original
@@ -136,7 +138,15 @@ export default function OsDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function changeStatus(status: OsStatus, opts: { channel?: string; declined?: boolean; skipConfirm?: boolean } = {}) {
+  /** OS aberta antes de hoje → pergunta a data da conclusão; de hoje → conclui agora */
+  function askConclude() {
+    if (!os) return;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (new Date(os.created_at).getTime() < today.getTime()) setConcluding(true);
+    else changeStatus('completed');
+  }
+
+  async function changeStatus(status: OsStatus, opts: { channel?: string; declined?: boolean; skipConfirm?: boolean; completedAt?: string } = {}) {
     if (!os) return;
     const confirms: Partial<Record<OsStatus, string>> = {
       cancelled: opts.declined ? 'O cliente não aprovou o orçamento?' : 'Cancelar esta OS?',
@@ -144,6 +154,11 @@ export default function OsDetail() {
     };
     if (!opts.skipConfirm && confirms[status] && !confirm(confirms[status])) return;
     const { patch, message } = statusChange(os, status, opts);
+    // Conclusão com data escolhida (o serviço foi feito em outro dia)
+    if (status === 'completed' && opts.completedAt) {
+      patch.completed_at = opts.completedAt;
+      if (!os.started_at) patch.started_at = opts.completedAt;
+    }
     setBusy(true);
     // Concluir ou cancelar com o serviço pausado: encerra a pausa no mesmo momento
     if ((status === 'completed' || status === 'cancelled') && openPause(os.pauses)) {
@@ -337,12 +352,16 @@ export default function OsDetail() {
             {os.status === 'approved' && (
               <button onClick={() => changeStatus('in_progress')} disabled={busy} className="btn-primary text-sm !py-2">▶ Iniciar serviço</button>
             )}
+            {(os.status === 'open' || os.status === 'awaiting_approval' || os.status === 'approved') && (
+              <button onClick={() => setConcluding(true)} disabled={busy} className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700"
+                title="O serviço já foi feito: conclui direto, escolhendo a data">✓ Já foi concluída</button>
+            )}
             {os.status === 'in_progress' && (
               openPause(os.pauses) ? (
                 <button onClick={resumeService} disabled={busy} className="btn-primary text-sm !py-2">▶ Retomar serviço</button>
               ) : (
                 <>
-                  <button onClick={() => changeStatus('completed')} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✓ Concluir</button>
+                  <button onClick={askConclude} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✓ Concluir</button>
                   <button onClick={() => setPausing(true)} disabled={busy} className="btn-ghost text-sm !py-2 border border-pending-300 text-pending-800">⏸ Pausar</button>
                 </>
               )
@@ -387,6 +406,12 @@ export default function OsDetail() {
               )}
             </div>
           </div>
+
+          {concluding && (
+            <ConcludeAt createdAt={os.created_at} busy={busy}
+              onCancel={() => setConcluding(false)}
+              onConfirm={iso => { setConcluding(false); changeStatus('completed', { completedAt: iso }); }} />
+          )}
 
           {/* Motivo da pausa */}
           {pausing && (
@@ -819,6 +844,44 @@ function ServiceSplit({ items, team, osMechanic }: {
           <span className="font-semibold text-steel-700">{osMechanic ?? 'ninguém da equipe'}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Escolher a data da conclusão: hoje, a data em que a OS foi aberta (ex.: data da nota) ou outra */
+function ConcludeAt({ createdAt, busy, onCancel, onConfirm }: {
+  createdAt: string; busy: boolean; onCancel: () => void; onConfirm: (iso: string) => void;
+}) {
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const today = ymd(new Date());
+  const original = ymd(new Date(createdAt));
+  const [day, setDay] = useState(original < today ? original : today);
+  const br = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR');
+  // Hoje = agora; outro dia = meio-dia daquele dia (mesmo padrão das notas importadas)
+  const iso = () => (day === today ? new Date() : new Date(`${day}T12:00:00`)).toISOString();
+  return (
+    <div className="mt-4 rounded-2xl border-2 border-signal-500/40 bg-signal-50/50 p-4">
+      <div className="font-semibold text-sm">✓ Concluir OS — quando o serviço foi concluído?</div>
+      <p className="text-[11px] text-steel-500 mt-0.5">Faturamento, comissão e relatórios contam nessa data.</p>
+      <div className="flex flex-wrap items-center gap-2 mt-3">
+        {original < today && (
+          <button type="button" onClick={() => setDay(original)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${day === original ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200'}`}>
+            {br(original)} (abertura)
+          </button>
+        )}
+        <button type="button" onClick={() => setDay(today)}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${day === today ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200'}`}>
+          Hoje
+        </button>
+        <input type="date" className="input !py-1.5 !text-xs !w-auto" max={today} value={day} onChange={e => e.target.value && setDay(e.target.value)} />
+      </div>
+      <div className="flex gap-2 mt-4">
+        <button onClick={onCancel} className="btn-ghost text-sm">Cancelar</button>
+        <button onClick={() => onConfirm(iso())} disabled={busy || day > today} className="btn-primary text-sm !bg-signal-500">
+          ✓ Concluir em {day === today ? 'hoje' : br(day)}
+        </button>
+      </div>
     </div>
   );
 }
