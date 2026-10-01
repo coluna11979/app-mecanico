@@ -13,6 +13,7 @@ import { fmtQty, loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib
 type CatPart = Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>;
 type Line = { key: number; part_id: string | null; description: string; quantity: string; price: string; stock: number | null };
 type Pay = { method: PayMethod; amount: string; installments: number };
+type NewPart = { name: string; code: string; cost: string; price: string; stock: string };
 
 let seq = 0;
 const norm = (s: string | null | undefined) => (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -28,6 +29,9 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
   const [pays, setPays]       = useState<Pay[]>([{ method: 'dinheiro', amount: '', installments: 1 }]);
   const [given, setGiven]     = useState('');
   const [busy, setBusy]       = useState(false);
+  /** Cadastro rápido de peça, sem sair da venda */
+  const [newPart, setNewPart] = useState<NewPart | null>(null);
+  const [savingPart, setSavingPart] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -55,6 +59,35 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
     });
     setQ('');
   }
+  function openNewPart() {
+    setNewPart({ name: q.trim(), code: '', cost: '', price: '', stock: '' });
+    setQ('');
+  }
+
+  async function saveNewPart() {
+    if (!newPart) return;
+    const name = newPart.name.trim();
+    const cost = parseMoney(newPart.cost);
+    const price = parseMoney(newPart.price);
+    const stock = newPart.stock.trim() ? parseMoney(newPart.stock) : 0;
+    if (!name) return toast.error('Informe o nome da peça');
+    if (!(price > 0)) return toast.error('Informe o preço de venda');
+    if (cost < 0) return toast.error('Custo inválido');
+    if (stock < 0) return toast.error('Estoque inválido');
+    if (cost > 0 && price < cost && !window.confirm(`O preço de venda (${brl(price)}) está abaixo do custo (${brl(cost)}). Salvar assim mesmo?`)) return;
+    setSavingPart(true);
+    const { data, error } = await supabase.from('workshop_parts')
+      .insert({ workshop_id: wid, name, code: newPart.code.trim() || null, cost, sale_price: price, stock_qty: stock })
+      .select('id, name, code, brand, cost, margin_percent, sale_price, stock_qty, unit').single();
+    setSavingPart(false);
+    if (error) return toast.error('Não foi possível cadastrar: ' + error.message);
+    const part = data as CatPart;
+    setCatalog(c => [...(c ?? []), part].sort((a, b) => a.name.localeCompare(b.name)));
+    addPart(part);
+    setNewPart(null);
+    toast.success('Peça cadastrada ✓ — já está na venda');
+  }
+
   function addFree() {
     setLines(ls => [...ls, { key: ++seq, part_id: null, description: q.trim(), quantity: '1', price: '', stock: null }]);
     setQ('');
@@ -128,7 +161,7 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
         <div className="relative mt-4">
           <input className="input" placeholder={catalog === null ? 'Carregando peças…' : 'Buscar peça (nome, código, marca)…'} value={q}
             onChange={e => setQ(e.target.value)} autoFocus
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (found[0]) addPart(found[0]); else if (q.trim()) addFree(); } }} />
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (found[0]) addPart(found[0]); else if (q.trim()) openNewPart(); } }} />
           {q.trim() && (
             <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-steel-200 rounded-xl shadow-lg overflow-hidden">
               {found.map(p => (
@@ -141,16 +174,63 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
                   </span>
                 </button>
               ))}
-              <button type="button" onClick={addFree} className="w-full text-left px-3 py-2 hover:bg-steel-50 text-sm text-brand-700 font-semibold border-t border-steel-100">
-                + Vender “{q.trim()}” sem cadastro
+              <button type="button" onClick={openNewPart} className="w-full text-left px-3 py-2 hover:bg-steel-50 text-sm text-brand-700 font-semibold border-t border-steel-100">
+                + Cadastrar “{q.trim()}” (custo e preço)
+              </button>
+              <button type="button" onClick={addFree} className="w-full text-left px-3 py-2 hover:bg-steel-50 text-xs text-steel-500 border-t border-steel-100">
+                Vender “{q.trim()}” sem cadastrar
               </button>
             </div>
           )}
         </div>
 
+        {newPart ? (
+          <div className="mt-3 rounded-2xl border-2 border-brand-200 bg-brand-50/40 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-sm">🔩 Cadastrar peça</div>
+              <button onClick={() => setNewPart(null)} className="text-steel-400 hover:text-steel-700 text-sm" aria-label="Fechar">✕</button>
+            </div>
+            <input className="input" placeholder="Nome da peça * (ex.: Óleo 5W30 1L)" value={newPart.name} autoFocus
+              onChange={e => setNewPart(n => n && { ...n, name: e.target.value })} />
+            <input className="input" placeholder="Código / referência (opcional)" value={newPart.code}
+              onChange={e => setNewPart(n => n && { ...n, code: e.target.value })} />
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-[11px] text-steel-500">Preço de custo
+                <input className="input mt-0.5" inputMode="decimal" placeholder="0,00" value={newPart.cost}
+                  onChange={e => setNewPart(n => n && { ...n, cost: e.target.value })} />
+              </label>
+              <label className="text-[11px] text-steel-500">Preço de venda *
+                <input className="input mt-0.5" inputMode="decimal" placeholder="0,00" value={newPart.price}
+                  onChange={e => setNewPart(n => n && { ...n, price: e.target.value })} />
+              </label>
+            </div>
+            <label className="block text-[11px] text-steel-500">Quantas tem no estoque hoje? (opcional)
+              <input className="input mt-0.5" inputMode="decimal" placeholder="0" value={newPart.stock}
+                onChange={e => setNewPart(n => n && { ...n, stock: e.target.value })} />
+            </label>
+            {parseMoney(newPart.cost) > 0 && parseMoney(newPart.price) > 0 && (
+              <div className="text-[11px] text-steel-500">
+                Lucro por unidade: <strong>{brl(parseMoney(newPart.price) - parseMoney(newPart.cost))}</strong>
+                {' '}({Math.round(((parseMoney(newPart.price) - parseMoney(newPart.cost)) / parseMoney(newPart.cost)) * 100)}% sobre o custo)
+              </div>
+            )}
+            <button onClick={saveNewPart} disabled={savingPart} className="btn-primary w-full">
+              {savingPart ? 'Salvando…' : 'Salvar e adicionar à venda'}
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={openNewPart} className="mt-2 text-sm font-semibold text-brand-600">+ Cadastrar peça nova</button>
+        )}
+
         {/* Itens */}
         <div className="mt-3 space-y-2">
-          {lines.length === 0 && <p className="text-sm text-steel-400 text-center py-4">Busque e toque na peça para adicionar.</p>}
+          {lines.length === 0 && !newPart && (
+            <p className="text-sm text-steel-400 text-center py-4">
+              {catalog !== null && catalog.length === 0
+                ? 'Nenhuma peça cadastrada ainda. Toque em “+ Cadastrar peça nova”.'
+                : 'Busque e toque na peça para adicionar.'}
+            </p>
+          )}
           {lines.map(l => (
             <div key={l.key} className="rounded-xl border border-steel-200 p-2.5">
               <div className="flex gap-2 items-center">

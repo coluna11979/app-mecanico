@@ -535,17 +535,17 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                   <>
                     {payRows.map(p => (
                       <div key={p.key} className="flex gap-1.5 items-center">
-                        <select className={`input !py-2 text-sm flex-[1.2] ${!p.method || isUnsure('pagamentos') ? '!border-pending-500 !bg-pending-50' : ''}`}
+                        <select className={`input !py-2 text-sm flex-1 min-w-0 ${!p.method || isUnsure('pagamentos') ? '!border-pending-500 !bg-pending-50' : ''}`}
                           value={p.method} onChange={e => setPay(p.key, { method: e.target.value as PayMethod, installments: 1 })}>
                           <option value="">Forma de pagamento…</option>
                           {RECEIVE_METHODS.map(m => <option key={m} value={m}>{METHODS[m].icon} {METHODS[m].label}</option>)}
                         </select>
                         {p.method === 'credito' && (
-                          <select className="input !py-2 text-sm w-20" value={p.installments} onChange={e => setPay(p.key, { installments: Number(e.target.value) })}>
+                          <select className="input !py-2 text-sm !w-16 shrink-0 !px-2" value={p.installments} onChange={e => setPay(p.key, { installments: Number(e.target.value) })}>
                             {Array.from({ length: 12 }, (_, k) => k + 1).map(n => <option key={n} value={n}>{n}x</option>)}
                           </select>
                         )}
-                        <input className="input !py-2 text-sm flex-1 text-right" inputMode="decimal" placeholder="0,00"
+                        <input className="input !py-2 text-sm !w-28 shrink-0 text-right" inputMode="decimal" placeholder="0,00"
                           value={p.amount}
                           onChange={e => setPay(p.key, { amount: e.target.value })} />
                         {pays.length > 1 && (

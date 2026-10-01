@@ -494,15 +494,15 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
         <div className="space-y-2">
           {parts.map((p, i) => (
             <div key={i} className="flex gap-2 items-center">
-              <select className="input flex-[1.2]" value={p.method} onChange={e => setPart(i, { method: e.target.value as PayMethod, installments: 1 })}>
+              <select className="input flex-1 min-w-0" value={p.method} onChange={e => setPart(i, { method: e.target.value as PayMethod, installments: 1 })}>
                 {RECEIVE_METHODS.map(m => <option key={m} value={m}>{METHODS[m].icon} {METHODS[m].label}</option>)}
               </select>
               {p.method === 'credito' && (
-                <select className="input w-20" value={p.installments} onChange={e => setPart(i, { installments: Number(e.target.value) })}>
+                <select className="input !w-16 shrink-0 !px-2" value={p.installments} onChange={e => setPart(i, { installments: Number(e.target.value) })}>
                   {Array.from({ length: 12 }, (_, k) => k + 1).map(n => <option key={n} value={n}>{n}x</option>)}
                 </select>
               )}
-              <input className="input flex-1" inputMode="decimal" placeholder="0,00" value={p.amount} onChange={e => setPart(i, { amount: e.target.value })} />
+              <input className="input !w-28 shrink-0 text-right" inputMode="decimal" placeholder="0,00" value={p.amount} onChange={e => setPart(i, { amount: e.target.value })} />
               {parts.length > 1 && (
                 <button onClick={() => setParts(ps => ps.filter((_, j) => j !== i))} className="text-steel-400 hover:text-alert-600 px-1" aria-label="Remover">✕</button>
               )}
