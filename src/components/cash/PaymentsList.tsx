@@ -26,6 +26,8 @@ export type PaidOs = NonNullable<PaymentRow['service_order']>;
 export function paidResponsibles(os: PaidOs): { label: string; missing: boolean } {
   const labor = (os.items ?? []).filter(i => i.kind === 'labor');
   if (!labor.length) {
+    // Só peças (venda de balcão): não tem serviço, não precisa de responsável
+    if ((os.items ?? []).length) return { label: '🛒 Venda de peças', missing: false };
     if (os.executor === 'platform') return { label: '🌐 Mecânico da plataforma', missing: false };
     return os.mechanic ? { label: `🔧 ${os.mechanic.name}`, missing: false } : { label: '⚠️ Sem responsável pelo serviço', missing: true };
   }
