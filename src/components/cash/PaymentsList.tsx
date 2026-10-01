@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { METHODS, brl, type PayMethod } from '@/lib/cash';
+import { METHODS, RECEIVE_METHODS, brl, moneyStr, parseMoney, type PayMethod } from '@/lib/cash';
+import { toast } from '@/components/ui/Toast';
 
 type PaymentRow = {
   id: string; amount: number; discount: number; change_given: number; created_at: string;
@@ -12,7 +13,7 @@ type PaymentRow = {
     items: { kind: 'part' | 'labor'; executor: 'workshop' | 'platform' | null; mechanic: { name: string } | null }[];
     customer: { full_name: string } | null; vehicle: { plate: string | null; make: string | null; model: string | null } | null;
   } | null;
-  entries: { method: PayMethod; amount: number; installments: number }[];
+  entries: { method: PayMethod; amount: number; installments: number; cancelled_at?: string | null }[];
 };
 
 type Filter =
@@ -49,13 +50,17 @@ const osNum = (o: { id: string; number: number | null }) => (o.number != null ? 
  * Histórico de recebimentos de OS: de qual OS veio, cliente, placa, formas de
  * pagamento, quem recebeu e quando. Cada linha leva para a OS.
  */
-export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum recebimento ainda.', reloadKey, title, action }: {
+export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum recebimento ainda.', reloadKey, title, action, fix }: {
   filter: Filter; showOs?: boolean; empty?: string | null; reloadKey?: unknown;
   /** Botão ao lado da linha (ex.: Caixa → definir responsável / chamar mecânico) */
   action?: (os: PaidOs) => ReactNode;
   /** Título mostrado acima da lista (some junto quando `empty` é null e não há nada) */
   title?: string;
+  /** Mostra "✏️ Corrigir" em cada pagamento (trocar a forma sem reabrir a OS) */
+  fix?: { wid: string; sid: string | null };
 }) {
+  const [fixing, setFixing] = useState<PaymentRow | null>(null);
+  const [bump, setBump] = useState(0);
   const [rows, setRows] = useState<PaymentRow[] | null>(null);
   const [ops, setOps]   = useState<Record<string, string>>({});
   const fkey = JSON.stringify(filter);
@@ -66,7 +71,7 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
       let q = supabase.from('os_payments')
         .select('id, amount, discount, change_given, created_at, cancelled_at, cancel_reason, operator_id, workshop_id, '
           + 'service_order:service_orders(id, number, title, executor, workshop_mechanic_id, mechanic:workshop_mechanics!fk_so_workshop_mechanic(name), items:service_order_items!service_order_items_service_order_id_fkey(kind, executor, mechanic:workshop_mechanics(name)), customer:customers(full_name), vehicle:vehicles(plate, make, model)), '
-          + 'entries:cash_entries(method, amount, installments)')
+          + 'entries:cash_entries(method, amount, installments, cancelled_at)')
         .order('created_at', { ascending: false }).limit(300);
       if ('registerId' in filter) q = q.eq('register_id', filter.registerId);
       else if ('serviceOrderId' in filter) q = q.eq('service_order_id', filter.serviceOrderId);
@@ -82,7 +87,7 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
       }
     })();
     return () => { alive = false; };
-  }, [fkey, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fkey, reloadKey, bump]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (rows === null) return empty === null ? null : <div className="space-y-2">{[1, 2].map(i => <div key={i} className="h-14 bg-white rounded-2xl animate-pulse" />)}</div>;
   if (rows.length === 0) {
@@ -103,7 +108,8 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
       {rows.map(p => {
         const os = p.service_order;
         const cancelled = !!p.cancelled_at;
-        const forms = p.entries.map(e =>
+        // Pagamento corrigido: as partes antigas ficam estornadas — mostra só as atuais
+        const forms = p.entries.filter(e => cancelled || !e.cancelled_at).map(e =>
           `${METHODS[e.method]?.icon ?? ''} ${METHODS[e.method]?.label ?? e.method}${e.installments > 1 ? ` ${e.installments}x` : ''} ${brl(e.amount)}`);
         const body = (
           <>
@@ -131,6 +137,10 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
               </div>
             </div>
             <div className={`font-bold shrink-0 ${cancelled ? 'text-steel-400 line-through' : 'text-signal-700'}`}>{brl(p.amount)}</div>
+            {fix && !cancelled && (
+              <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setFixing(p); }}
+                className="btn-secondary text-xs !px-2.5 !py-1.5 shrink-0 whitespace-nowrap" title="Trocar a forma de pagamento sem reabrir a OS">✏️ Corrigir</button>
+            )}
             {showOs && os && <span className="text-steel-300 shrink-0">›</span>}
           </>
         );
@@ -146,6 +156,91 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
         );
       })}
     </div>
+    {fixing && fix && (
+      <FixPaymentModal payment={fixing} wid={fix.wid} sid={fix.sid}
+        onClose={() => setFixing(null)}
+        onDone={() => { setFixing(null); setBump(b => b + 1); }} />
+    )}
+    </div>
+  );
+}
+
+type Part = { method: PayMethod; amount: string; installments: number };
+
+/** Corrigir as formas de um pagamento já lançado (mesma data, caixa e quem recebeu) */
+function FixPaymentModal({ payment, wid, sid, onClose, onDone }: {
+  payment: PaymentRow; wid: string; sid: string | null; onClose: () => void; onDone: () => void;
+}) {
+  const current = payment.entries.filter(e => !e.cancelled_at);
+  const [parts, setParts] = useState<Part[]>(() => current.length
+    ? current.map(e => ({ method: RECEIVE_METHODS.includes(e.method) ? e.method : 'pix', amount: moneyStr(Number(e.amount)), installments: e.installments || 1 }))
+    : [{ method: 'pix', amount: moneyStr(Number(payment.amount)), installments: 1 }]);
+  const [busy, setBusy] = useState(false);
+  const total = Math.round(parts.reduce((a, p) => a + parseMoney(p.amount), 0) * 100) / 100;
+  const original = Number(payment.amount);
+  const diff = Math.round((total - original) * 100) / 100;
+  const setPart = (i: number, patch: Partial<Part>) => setParts(ps => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+
+  async function save() {
+    if (parts.some(p => !(parseMoney(p.amount) > 0))) return toast.error('Informe o valor de cada forma');
+    if (Math.abs(diff) > 0.004 && !confirm(`O total muda de ${brl(original)} para ${brl(total)}. Confirmar?`)) return;
+    setBusy(true);
+    const { error } = await supabase.rpc('cash_fix_payment', {
+      p_workshop: wid, p_session: sid, p_payment: payment.id,
+      p_parts: parts.map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
+    });
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    toast.success('Pagamento corrigido ✓');
+    onDone();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-steel-900/60 grid place-items-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl w-full max-w-md max-h-[92vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold">✏️ Corrigir pagamento</h2>
+            <div className="text-sm text-steel-500">
+              {new Date(payment.created_at).toLocaleDateString('pt-BR')} · {brl(original)}
+              {payment.service_order ? ` · OS nº ${osNum(payment.service_order)}` : ''}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-steel-400 hover:text-steel-700 text-xl leading-none" aria-label="Fechar">×</button>
+        </div>
+        <p className="text-[11px] text-steel-500 mt-2">A OS continua concluída; data, caixa e quem recebeu não mudam.</p>
+
+        <div className="label mt-4 mb-2">Formas de pagamento</div>
+        <div className="space-y-2">
+          {parts.map((p, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <select className="input flex-1 min-w-0" value={p.method} onChange={e => setPart(i, { method: e.target.value as PayMethod, installments: 1 })}>
+                {RECEIVE_METHODS.map(m => <option key={m} value={m}>{METHODS[m].icon} {METHODS[m].label}</option>)}
+              </select>
+              {p.method === 'credito' && (
+                <select className="input !w-16 shrink-0 !px-2" value={p.installments} onChange={e => setPart(i, { installments: Number(e.target.value) })}>
+                  {Array.from({ length: 12 }, (_, k) => k + 1).map(n => <option key={n} value={n}>{n}x</option>)}
+                </select>
+              )}
+              <input className="input !w-28 shrink-0 text-right" inputMode="decimal" placeholder="0,00" value={p.amount} onChange={e => setPart(i, { amount: e.target.value })} />
+              {parts.length > 1 && (
+                <button onClick={() => setParts(ps => ps.filter((_, j) => j !== i))} className="text-steel-400 hover:text-alert-600 px-1" aria-label="Remover">✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setParts(ps => [...ps, { method: 'pix', amount: diff < 0 ? moneyStr(-diff) : '', installments: 1 }])}
+          className="text-sm font-semibold text-brand-600 mt-2">+ Dividir em outra forma</button>
+
+        <div className={`mt-3 text-sm font-semibold ${Math.abs(diff) < 0.005 ? 'text-signal-700' : 'text-pending-800'}`}>
+          {Math.abs(diff) < 0.005 ? `✓ Total ${brl(total)} (igual ao lançado)` : `Total ${brl(total)} — ${diff > 0 ? 'a mais' : 'a menos'} ${brl(Math.abs(diff))} que o lançado`}
+        </div>
+
+        <div className="flex gap-2 mt-6">
+          <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
+          <button onClick={save} disabled={busy || total <= 0} className="btn-primary flex-[2]">{busy ? 'Salvando…' : 'Salvar correção'}</button>
+        </div>
+      </div>
     </div>
   );
 }

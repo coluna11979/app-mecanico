@@ -150,7 +150,7 @@ export default function OsDetail() {
     if (!os) return;
     const confirms: Partial<Record<OsStatus, string>> = {
       cancelled: opts.declined ? 'O cliente não aprovou o orçamento?' : 'Cancelar esta OS?',
-      open: 'Reabrir esta OS para corrigir? Ela volta para "Aberta". Depois é só seguir o fluxo de novo.',
+      open: 'Reabrir esta OS para corrigir peças e serviços? Ela volta para "Aberta".\n\nPara mudar só a forma de pagamento, cancele e use "✏️ Corrigir" em Pagamentos desta OS.',
     };
     if (!opts.skipConfirm && confirms[status] && !confirm(confirms[status])) return;
     const { patch, message } = statusChange(os, status, opts);
@@ -520,7 +520,8 @@ export default function OsDetail() {
 
             {/* Pagamentos recebidos no caixa: quando, como e quem recebeu */}
             <PaymentsList filter={{ serviceOrderId: os.id }} showOs={false} empty={null} reloadKey={os.paid_amount}
-              title="💰 Pagamentos desta OS" />
+              title="💰 Pagamentos desta OS"
+              fix={canDo(session, balcao, 'cancelar_recebimento') ? { wid: os.workshop_id, sid: balcao ? session?.session_id ?? null : null } : undefined} />
 
             {/* Comissões desta OS: pela regra, com opção de alterar/incluir pessoas */}
             {os.status !== 'cancelled' && canDo(session, balcao, 'caixa') && (

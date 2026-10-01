@@ -149,7 +149,7 @@ export default function Caixa() {
             </div>
 
             {tab === 'receber' && (
-              <ReceiveTab wid={wid!} sid={sid} registerId={reg.id} entriesCount={entries.length} canDiscount={can('dar_desconto')} canCallMechanic={canCallMechanic} team={team} onDone={load}
+              <ReceiveTab wid={wid!} sid={sid} registerId={reg.id} entriesCount={entries.length} canDiscount={can('dar_desconto')} canFix={can('cancelar_recebimento')} canCallMechanic={canCallMechanic} team={team} onDone={load}
                 focusOs={focusOs} onFocusUsed={() => setParams({}, { replace: true })} />
             )}
             {tab === 'movimentos' && (
@@ -240,8 +240,8 @@ function Line({ label, value, cls = '' }: { label: string; value: string; cls?: 
 
 /* ── Receber OS ──────────────────────────────────────────────────────────── */
 
-function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMechanic, team, onDone, focusOs, onFocusUsed }: {
-  wid: string; sid: string | null; registerId: string; entriesCount: number; canDiscount: boolean; canCallMechanic: boolean;
+function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canFix, canCallMechanic, team, onDone, focusOs, onFocusUsed }: {
+  wid: string; sid: string | null; registerId: string; entriesCount: number; canDiscount: boolean; canFix: boolean; canCallMechanic: boolean;
   team: WorkshopMechanic[]; onDone: () => void;
   focusOs: string | null; onFocusUsed: () => void;
 }) {
@@ -411,7 +411,7 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
       )}
 
       <div className="mt-6">
-        <PaymentsList filter={paidFilter} reloadKey={`${entriesCount}-${paidKey}`} title={paidTitle} empty={paidFilter && 'registerId' in paidFilter ? 'Nenhuma OS recebida neste caixa ainda.' : 'Nenhuma OS recebida neste período.'}
+        <PaymentsList filter={paidFilter} reloadKey={`${entriesCount}-${paidKey}`} fix={canFix ? { wid, sid } : undefined} title={paidTitle} empty={paidFilter && 'registerId' in paidFilter ? 'Nenhuma OS recebida neste caixa ainda.' : 'Nenhuma OS recebida neste período.'}
           action={os => (
             <div className="flex flex-col sm:flex-row gap-1.5">
               <Link to={`/oficina/os/${os.id}`} className="btn-secondary text-xs !px-3 !py-1.5 whitespace-nowrap text-center">✏️ Editar OS</Link>
