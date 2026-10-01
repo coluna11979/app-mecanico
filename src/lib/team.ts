@@ -76,6 +76,20 @@ export function parseSchedule(raw?: string | null): WorkSchedule | null {
 const hh = (t: string) => t.replace(/^0(\d)/, '$1').replace(':00', 'h').replace(':', 'h');
 const dayText = (d: ShiftDay) => `${hh(d.start)}–${hh(d.end)}`;
 
+/** Horário mais usado na lista (o "padrão da loja"); ignora texto livre antigo */
+export function mostCommonSchedule(list: (string | null | undefined)[]): string | null {
+  const count = new Map<string, number>();
+  for (const raw of list) {
+    const w = parseSchedule(raw);
+    if (!w || !Object.keys(w.days).length) continue;
+    const key = JSON.stringify(w);
+    count.set(key, (count.get(key) ?? 0) + 1);
+  }
+  let best: string | null = null, n = 0;
+  for (const [k, c] of count) if (c > n) { best = k; n = c; }
+  return best;
+}
+
 /** Resumo legível: "Seg–Sex 8h–18h · Sáb 8h–12h" (agrupa dias seguidos com o mesmo horário) */
 export function scheduleSummary(raw?: string | null): string {
   const w = parseSchedule(raw);

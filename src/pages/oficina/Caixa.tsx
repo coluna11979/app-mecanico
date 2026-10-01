@@ -4,6 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import NewOsModal from '@/components/os/NewOsModal';
 import PaymentsList, { paidResponsibles, type PaidOs } from '@/components/cash/PaymentsList';
 import CallMechanicModal, { type CallMechanicOs } from '@/components/cash/CallMechanicModal';
+import CounterSaleModal from '@/components/cash/CounterSaleModal';
 import { AssignmentsModal, ReceiveAssignments, useReceiveAssignments } from '@/components/cash/ReceiveAssignments';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -234,6 +235,7 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
   const [q, setQ]         = useState('');
   const [picked, setPicked] = useState<OpenOs | null>(null);
   const [newOs, setNewOs] = useState(false);
+  const [selling, setSelling] = useState(false);
   const [calling, setCalling] = useState<CallMechanicOs | null>(null);
   /* OS já recebida: definir/corrigir responsável (e chamar mecânico da plataforma) */
   const [setting, setSetting] = useState<PaidOs | null>(null);
@@ -281,8 +283,9 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
 
   return (
     <div>
-      <div className="flex gap-2 mb-3">
-        <input className="input flex-1" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+      <div className="flex flex-wrap gap-2 mb-3">
+        <input className="input flex-1 min-w-[200px]" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <button onClick={() => setSelling(true)} className="btn-secondary shrink-0" title="Venda no balcão, sem serviço (óleo, palheta…)">🛒 Venda de peças</button>
         <button onClick={() => setNewOs(true)} className="btn-secondary shrink-0">+ Nova OS</button>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -371,6 +374,12 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canCallMe
             nav(`/oficina/os/${id}`);
           }}
         />
+      )}
+
+      {selling && (
+        <CounterSaleModal wid={wid} sid={sid} canDiscount={canDiscount}
+          onClose={() => setSelling(false)}
+          onDone={() => { setSelling(false); setPaidKey(k => k + 1); onDone(); }} />
       )}
 
       {calling && <CallMechanicModal wid={wid} os={calling} onClose={() => setCalling(null)} />}

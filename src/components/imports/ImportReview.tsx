@@ -2,9 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { fmtBRL, fmtPhone, moneyInput, parseMoney } from '@/components/os/osHelpers';
-import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle } from '@/types/database';
+import { PLATFORM } from '@/components/cash/ResponsiblePicker';
+import { METHODS, RECEIVE_METHODS, type PayMethod } from '@/lib/cash';
+import { useOperator } from '@/lib/operators';
+import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, WorkshopMechanic } from '@/types/database';
 
-type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string };
+/** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
+type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string; who: string };
+type PayRow = { key: number; method: PayMethod | ''; amount: string; installments: number };
+type Op = { id: string; name: string; is_owner: boolean };
 
 let seq = 0;
 const digits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
@@ -13,6 +19,7 @@ const plateNorm = (s: string | null | undefined) => (s ?? '').toUpperCase().repl
 interface Props {
   imp: PaperImport;
   imageUrl: string | null;
+  isPdf?: boolean;
   onClose: () => void;
   onDone: () => void;
 }
@@ -21,7 +28,7 @@ interface Props {
  * Conferência de um orçamento lido pela IA: foto de um lado, dados do outro.
  * Nada entra no sistema sem a oficina confirmar.
  */
-export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) {
+export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: Props) {
   const x = imp.extracted as PaperQuoteExtracted;
   const unsure = new Set(x?.campos_incertos ?? []);
   const isUnsure = (path: string) => [...unsure].some(u => u === path || u.startsWith(path + '.') || u.startsWith(path + '['));
@@ -50,8 +57,26 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
       key: ++seq, tipo: i.tipo, descricao: i.descricao,
       quantidade: String(qty).replace('.', ','),
       valor: unit != null ? moneyInput(unit) : '',
+      who: '',
     };
   }));
+  const { balcao, session } = useOperator();
+  const sid = balcao ? session?.session_id ?? null : null;
+
+  // Quem fez o serviço (equipe da loja) e quem recebeu (colaboradores do balcão)
+  const [team, setTeam] = useState<Pick<WorkshopMechanic, 'id' | 'name'>[]>([]);
+  const [ops, setOps]   = useState<Op[]>([]);
+  const [osWho, setOsWho] = useState('');
+  const [receivedBy, setReceivedBy] = useState('');
+  /** Pago na época (lança o recebimento com a data da nota) ou ficou em aberto */
+  const [paid, setPaid] = useState(true);
+  const [pays, setPays] = useState<PayRow[]>(() => {
+    const list = (x?.pagamentos ?? []).map(p => ({
+      key: ++seq, method: p.forma as PayMethod, amount: p.valor != null ? moneyInput(p.valor) : '', installments: p.parcelas || 1,
+    }));
+    return list.length ? list : [{ key: ++seq, method: '' as const, amount: '', installments: 1 }];
+  });
+
   /** O serviço foi feito, ou ficou só no orçamento? */
   const [done, setDone] = useState(true);
   /** Serviços recomendados para o futuro (alimentam a reativação de clientes) */
@@ -65,6 +90,23 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
   const [zoom, setZoom]     = useState(false);
 
   useEffect(() => {
+    (async () => {
+      const [m, o] = await Promise.all([
+        supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', imp.workshop_id).eq('active', true).order('name'),
+        supabase.from('workshop_operators').select('id, name, is_owner').eq('workshop_id', imp.workshop_id).eq('active', true).order('name'),
+      ]);
+      const mechs = (m.data as Pick<WorkshopMechanic, 'id' | 'name'>[]) ?? [];
+      const opList = (o.data as Op[]) ?? [];
+      setTeam(mechs); setOps(opList);
+      // Mecânico escrito na nota → equipe (pelo nome)
+      const written = (x?.mecanico ?? '').trim().toLowerCase();
+      if (written) {
+        const hit = mechs.find(t => t.name.toLowerCase() === written)
+          ?? mechs.find(t => t.name.toLowerCase().split(' ')[0] === written.split(' ')[0]);
+        if (hit) setOsWho(hit.id);
+      }
+      setReceivedBy(balcao && session?.operator_id ? session.operator_id : opList.find(p => p.is_owner)?.id ?? '');
+    })();
     (async () => {
       const plate = plateNorm(f.placa);
       if (plate.length >= 7) {
@@ -94,6 +136,29 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
   const total = Math.max(sum - disc, 0);
   const aiTotal = x?.total ?? null;
   const totalMismatch = aiTotal != null && items.length > 0 && Math.abs(aiTotal - total) > 0.5;
+  const finalTotal = Math.round((items.length ? total : (aiTotal ?? 0)) * 100) / 100;
+
+  // Uma forma só e sem valor → é o total da nota
+  const payRows = pays.length === 1 && !pays[0].amount ? [{ ...pays[0], amount: moneyInput(finalTotal) }] : pays;
+  const payVal = (p: PayRow) => { const v = parseMoney(p.amount || '0'); return Number.isFinite(v) ? v : 0; };
+  const paySum = Math.round(payRows.reduce((a, p) => a + payVal(p), 0) * 100) / 100;
+  const payMissing = Math.round((finalTotal - paySum) * 100) / 100;
+  const setPay = (key: number, patch: Partial<PayRow>) => setPays(ps => ps.map(p => (p.key === key ? { ...p, ...patch } : p)));
+  function addPay() {
+    const used = new Set(pays.map(p => p.method));
+    const next = RECEIVE_METHODS.find(m => !used.has(m)) ?? 'pix';
+    setPays(ps => {
+      const base = ps.length === 1 && !ps[0].amount ? [{ ...ps[0], amount: moneyInput(finalTotal) }] : ps;
+      return [...base, { key: ++seq, method: next, amount: payMissing > 0 ? moneyInput(payMissing) : '', installments: 1 }];
+    });
+  }
+
+  const laborRows = items.filter(r => r.tipo === 'labor');
+  const whoOf = (r: ItemRow) => r.who || osWho;
+  // Nota só de peças (venda de balcão): não tem serviço, ninguém ganha comissão — não pede quem fez
+  const onlyParts = items.length > 0 && laborRows.length === 0;
+  const needWho = done && team.length > 0 && !onlyParts;
+  const whoMissing = needWho && (laborRows.length ? laborRows.some(r => !whoOf(r)) : !osWho);
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
   const cls = (path: string) => `input !py-2 text-sm ${isUnsure(path) ? '!border-pending-500 !bg-pending-50' : ''}`;
@@ -108,7 +173,16 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
       if (!Number.isFinite(parseMoney(r.quantidade)) || parseMoney(r.quantidade) <= 0) { toast.error(`Item ${i + 1}: quantidade inválida`); return; }
       if (!Number.isFinite(parseMoney(r.valor || '0'))) { toast.error(`Item ${i + 1}: valor inválido`); return; }
     }
+    if (whoMissing) { toast.error('Informe quem fez o serviço'); return; }
+    const charge = done && paid && finalTotal > 0;
+    if (charge) {
+      if (payRows.some(p => !p.method)) { toast.error('Escolha a forma de pagamento'); return; }
+      if (payRows.some(p => !(payVal(p) > 0))) { toast.error('Informe o valor de cada forma de pagamento'); return; }
+      if (payMissing < -0.004) { toast.error('O pagamento passa do total da nota'); return; }
+      if (payMissing > 0.004 && !window.confirm(`O pagamento soma ${fmtBRL(paySum)} e a nota dá ${fmtBRL(finalTotal)}. Os ${fmtBRL(payMissing)} que faltam ficam em aberto. Confirmar?`)) return;
+    }
     setSaving(true);
+    let osId: string | null = null;
     try {
       const wid = imp.workshop_id;
 
@@ -162,7 +236,14 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
       // 3. OS com a data do bloquinho: concluída (feito) ou orçamento não aprovado
       const when = f.data ? new Date(`${f.data}T12:00:00`).toISOString() : imp.created_at;
       const doc = x?.numero_documento?.trim();
-      const description = [doc ? `Talão nº ${doc}` : null, f.obs.trim() || null].filter(Boolean).join('\n') || null;
+      const description = [doc ? `Nota nº ${doc}` : null, f.obs.trim() || null].filter(Boolean).join('\n') || null;
+      // Responsável geral: quem mais fez serviço da equipe (referência dos indicadores)
+      const effWho = done ? (laborRows.length ? laborRows.map(whoOf) : [osWho]).filter(Boolean) : [];
+      const allPlatform = effWho.length > 0 && effWho.every(w => w === PLATFORM);
+      const bySum = new Map<string, number>();
+      if (done) laborRows.forEach(r => { const w = whoOf(r); if (w && w !== PLATFORM) bySum.set(w, (bySum.get(w) ?? 0) + rowTotal(r)); });
+      const topMech = [...bySum.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+        ?? (done && osWho && osWho !== PLATFORM ? osWho : null);
       const { data: os, error: osErr } = await supabase.from('service_orders').insert({
         workshop_id: wid,
         customer_id: customerId,
@@ -177,8 +258,11 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
         price: items.length ? 0 : (aiTotal ?? 0), // com itens, o banco recalcula
         discount: disc,
         source: 'paper_import',
+        workshop_mechanic_id: allPlatform ? null : topMech,
+        executor: allPlatform ? 'platform' : topMech ? 'workshop' : null,
       }).select('id, number').single();
       if (osErr) throw osErr;
+      osId = os.id;
 
       // 4. Itens (o total é recalculado pelo banco)
       if (items.length) {
@@ -188,7 +272,23 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
           quantity: parseMoney(r.quantidade),
           unit_price: parseMoney(r.valor || '0'),
           position: idx,
+          // Serviço leva quem fez; peça segue o serviço logo acima dela (comissão)
+          ...(done && r.tipo === 'labor' && whoOf(r)
+            ? whoOf(r) === PLATFORM
+              ? { executor: 'platform', workshop_mechanic_id: null }
+              : { executor: 'workshop', workshop_mechanic_id: whoOf(r) }
+            : {}),
         })));
+        if (error) throw error;
+      }
+
+      // 4b. Recebimento com a data da nota (fora do caixa do dia; entra no Financeiro do período)
+      if (charge) {
+        const { error } = await supabase.rpc('import_receive_os', {
+          p_workshop: wid, p_session: sid, p_os: os.id, p_paid_at: when,
+          p_operator: receivedBy || null,
+          p_parts: payRows.map(p => ({ method: p.method, amount: payVal(p), installments: p.installments })),
+        });
         if (error) throw error;
       }
 
@@ -213,6 +313,8 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
       onDone();
     } catch (e: any) {
       console.error('[ImportReview] erro:', e);
+      // Desfaz a OS criada pela metade (itens e recebimento vão junto)
+      if (osId) await supabase.from('service_orders').delete().eq('id', osId);
       toast.error('Não foi possível importar: ' + (e?.message ?? 'erro'));
     } finally {
       setSaving(false);
@@ -225,7 +327,7 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
         className="bg-white w-full max-w-6xl sm:rounded-2xl shadow-2xl flex flex-col max-h-screen sm:max-h-[94vh]">
         <div className="px-5 py-3 border-b border-steel-100 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold">Conferir orçamento</h2>
+            <h2 className="text-lg font-bold">Conferir nota</h2>
             <p className="text-xs text-steel-500">Confira com a foto e corrija o que precisar. Campos em <span className="bg-pending-50 border border-pending-500 px-1 rounded">amarelo</span> a IA leu com dúvida.</p>
           </div>
           <button onClick={onClose} className="text-steel-400 hover:text-steel-700 text-xl">✕</button>
@@ -234,10 +336,12 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
         <div className="flex-1 overflow-y-auto grid lg:grid-cols-2 gap-0">
           {/* Foto */}
           <div className="bg-steel-900 lg:sticky lg:top-0 lg:h-[calc(94vh-120px)] flex items-center justify-center p-3">
-            {imageUrl ? (
+            {imageUrl && isPdf ? (
+              <iframe src={imageUrl} title="Nota original" className="w-full h-[45vh] lg:h-full rounded-lg bg-white" />
+            ) : imageUrl ? (
               <img src={imageUrl} alt="Orçamento original" onClick={() => setZoom(z => !z)}
                 className={`max-h-[45vh] lg:max-h-full object-contain cursor-zoom-in rounded-lg ${zoom ? 'lg:scale-150 lg:cursor-zoom-out' : ''} transition-transform`} />
-            ) : <div className="text-steel-400 text-sm">Carregando foto…</div>}
+            ) : <div className="text-steel-400 text-sm">Carregando arquivo…</div>}
           </div>
 
           {/* Dados */}
@@ -329,9 +433,9 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
               <div className="flex items-center justify-between">
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Peças e serviços</div>
                 <div className="flex gap-1.5">
-                  <button type="button" onClick={() => setItems(s => [...s, { key: ++seq, tipo: 'part', descricao: '', quantidade: '1', valor: '' }])}
+                  <button type="button" onClick={() => setItems(s => [...s, { key: ++seq, tipo: 'part', descricao: '', quantidade: '1', valor: '', who: '' }])}
                     className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-steel-100 hover:bg-steel-200">+ Peça</button>
-                  <button type="button" onClick={() => setItems(s => [...s, { key: ++seq, tipo: 'labor', descricao: '', quantidade: '1', valor: '' }])}
+                  <button type="button" onClick={() => setItems(s => [...s, { key: ++seq, tipo: 'labor', descricao: '', quantidade: '1', valor: '', who: '' }])}
                     className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100">+ Serviço</button>
                 </div>
               </div>
@@ -377,6 +481,97 @@ export default function ImportReview({ imp, imageUrl, onClose, onDone }: Props) 
                 </div>
               )}
             </section>
+
+            {/* Quem fez — comissão e desempenho no mês da nota */}
+            {needWho && (
+              <section className="space-y-2">
+                <div>
+                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Quem fez o serviço <span className="text-alert-600">*</span></div>
+                  <div className="text-[11px] text-steel-400">A comissão entra no mês da nota. Peça vai junto com o serviço logo acima dela.</div>
+                </div>
+                <select className={`input !py-2 text-sm ${!osWho && whoMissing ? '!border-pending-500 !bg-pending-50' : ''}`}
+                  value={osWho} onChange={e => setOsWho(e.target.value)}>
+                  <option value="">{laborRows.length > 1 ? 'Responsável pela nota (vale para todos os serviços)…' : 'Selecione…'}</option>
+                  {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  <option value={PLATFORM}>🌐 Mecânico da plataforma</option>
+                </select>
+                {x?.mecanico && !osWho && <div className="text-[11px] text-pending-700">Na nota está escrito “{x.mecanico}” — escolha quem é da equipe.</div>}
+                {laborRows.length > 1 && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="text-[11px] text-steel-500">Serviço feito por outra pessoa? Troque só nele:</div>
+                    {laborRows.map(r => (
+                      <div key={r.key} className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0 text-sm truncate">{r.descricao || 'Serviço'} <span className="text-steel-400 text-xs">· {fmtBRL(rowTotal(r))}</span></div>
+                        <select className={`input !py-1.5 text-sm !w-44 shrink-0 ${!whoOf(r) ? '!border-pending-500' : ''}`} value={r.who}
+                          onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, who: e.target.value } : i))}>
+                          <option value="">{osWho ? `Mesmo (${osWho === PLATFORM ? 'plataforma' : team.find(t => t.id === osWho)?.name ?? ''})` : 'Selecione…'}</option>
+                          {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          <option value={PLATFORM}>🌐 Plataforma</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Pagamento — entra no Financeiro com a data da nota */}
+            {done && finalTotal > 0 && (
+              <section className="space-y-2">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Pagamento</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setPaid(true)}
+                    className={`rounded-xl border-2 p-2.5 text-left transition ${paid ? 'border-signal-500 bg-signal-50' : 'border-steel-200'}`}>
+                    <div className="font-semibold text-sm">💰 Foi pago</div>
+                    <div className="text-[11px] text-steel-500">Entra como recebido em {f.data ? new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR') : 'na data da nota'}</div>
+                  </button>
+                  <button type="button" onClick={() => setPaid(false)}
+                    className={`rounded-xl border-2 p-2.5 text-left transition ${!paid ? 'border-pending-500 bg-pending-50' : 'border-steel-200'}`}>
+                    <div className="font-semibold text-sm">⏳ Ficou em aberto</div>
+                    <div className="text-[11px] text-steel-500">Recebe depois pelo Caixa</div>
+                  </button>
+                </div>
+                {paid && (
+                  <>
+                    {payRows.map(p => (
+                      <div key={p.key} className="flex gap-1.5 items-center">
+                        <select className={`input !py-2 text-sm flex-[1.2] ${!p.method || isUnsure('pagamentos') ? '!border-pending-500 !bg-pending-50' : ''}`}
+                          value={p.method} onChange={e => setPay(p.key, { method: e.target.value as PayMethod, installments: 1 })}>
+                          <option value="">Forma de pagamento…</option>
+                          {RECEIVE_METHODS.map(m => <option key={m} value={m}>{METHODS[m].icon} {METHODS[m].label}</option>)}
+                        </select>
+                        {p.method === 'credito' && (
+                          <select className="input !py-2 text-sm w-20" value={p.installments} onChange={e => setPay(p.key, { installments: Number(e.target.value) })}>
+                            {Array.from({ length: 12 }, (_, k) => k + 1).map(n => <option key={n} value={n}>{n}x</option>)}
+                          </select>
+                        )}
+                        <input className="input !py-2 text-sm flex-1 text-right" inputMode="decimal" placeholder="0,00"
+                          value={p.amount}
+                          onChange={e => setPay(p.key, { amount: e.target.value })} />
+                        {pays.length > 1 && (
+                          <button type="button" onClick={() => setPays(ps => ps.filter(x2 => x2.key !== p.key))}
+                            className="h-9 w-9 rounded-lg bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600 text-xs shrink-0">✕</button>
+                        )}
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between">
+                      <button type="button" onClick={addPay} className="text-xs font-semibold text-brand-600">+ Outra forma</button>
+                      <span className={`text-xs font-semibold ${Math.abs(payMissing) < 0.005 ? 'text-signal-700' : payMissing > 0 ? 'text-pending-800' : 'text-alert-600'}`}>
+                        {Math.abs(payMissing) < 0.005 ? '✓ Valor fechado' : payMissing > 0 ? `Falta ${fmtBRL(payMissing)}` : `Passou ${fmtBRL(-payMissing)}`}
+                      </span>
+                    </div>
+                    {ops.length > 0 && (
+                      <label className="block text-[11px] text-steel-500">
+                        Quem recebeu
+                        <select className="input !py-2 text-sm mt-0.5" value={receivedBy} onChange={e => setReceivedBy(e.target.value)}>
+                          {ops.map(o => <option key={o.id} value={o.id}>{o.name}{o.is_owner ? ' (dono)' : ''}</option>)}
+                        </select>
+                      </label>
+                    )}
+                  </>
+                )}
+              </section>
+            )}
           </div>
         </div>
 

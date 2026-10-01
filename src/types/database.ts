@@ -294,6 +294,10 @@ export interface PaperQuoteExtracted {
   itens: { tipo: OsItemKind; descricao: string; quantidade: number; valor_unitario: number | null; valor_total_item?: number | null }[];
   desconto: number | null;
   total: number | null;
+  /** Como foi pago, se escrito na nota (leituras antigas não têm) */
+  pagamentos?: { forma: 'dinheiro' | 'pix' | 'debito' | 'credito'; valor: number | null; parcelas: number }[];
+  /** Mecânico/responsável escrito na nota */
+  mecanico?: string;
   campos_incertos: string[];
 }
 
