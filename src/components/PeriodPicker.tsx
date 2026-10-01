@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Range } from '@/lib/workshopMetrics';
 
-/** Seletor de período (Hoje, 7 dias, Este mês, Mês passado, Personalizado) — usado nos painéis */
-export type Preset = 'today' | '7d' | 'month' | 'lastMonth' | 'custom';
+/** Seletor de período (Hoje, Ontem, 7 dias, Este mês, Mês passado, Personalizado) — usado nos painéis */
+export type Preset = 'today' | 'yesterday' | '7d' | 'month' | 'lastMonth' | 'custom';
 
 export const PRESETS: { key: Preset; label: string }[] = [
   { key: 'today',     label: 'Hoje' },
+  { key: 'yesterday', label: 'Ontem' },
   { key: '7d',        label: '7 dias' },
   { key: 'month',     label: 'Este mês' },
   { key: 'lastMonth', label: 'Mês passado' },
@@ -13,7 +14,7 @@ export const PRESETS: { key: Preset; label: string }[] = [
 ];
 
 export const PREV_LABEL: Record<Preset, string> = {
-  today: 'vs. ontem', '7d': 'vs. 7 dias anteriores', month: 'vs. mesmo período antes',
+  today: 'vs. ontem', yesterday: 'vs. anteontem', '7d': 'vs. 7 dias anteriores', month: 'vs. mesmo período antes',
   lastMonth: 'vs. mês retrasado', custom: 'vs. período anterior',
 };
 
@@ -25,6 +26,7 @@ export function rangeOf(p: Preset, custom: { from: string; to: string }): Range 
   const today = startOfDay(new Date());
   switch (p) {
     case 'today':     return { from: today, to: addDays(today, 1) };
+    case 'yesterday': return { from: addDays(today, -1), to: today };
     case '7d':        return { from: addDays(today, -6), to: addDays(today, 1) };
     case 'month':     return { from: new Date(today.getFullYear(), today.getMonth(), 1), to: addDays(today, 1) };
     case 'lastMonth': return { from: new Date(today.getFullYear(), today.getMonth() - 1, 1), to: new Date(today.getFullYear(), today.getMonth(), 1) };
