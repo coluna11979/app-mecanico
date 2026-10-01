@@ -28,14 +28,15 @@ type Tab = 'receber' | 'movimentos' | 'fechar';
 const osNum = (o: { id: string; number: number | null }) => (o.number != null ? String(o.number).padStart(4, '0') : o.id.slice(0, 8));
 const remainingOf = (o: OpenOs) => Math.round((o.price - o.counter_discount - o.paid_amount) * 100) / 100;
 /* Filtro por data: concluída em (ou aberta em, se ainda não concluiu) */
-type DatePeriod = 'today' | '7d' | '30d' | 'all' | 'custom';
-const DATE_PERIODS: [DatePeriod, string][] = [['today', 'Hoje'], ['7d', '7 dias'], ['30d', '30 dias'], ['all', 'Todas'], ['custom', '📅 Escolher datas']];
+type DatePeriod = 'today' | 'yesterday' | '7d' | '30d' | 'all' | 'custom';
+const DATE_PERIODS: [DatePeriod, string][] = [['today', 'Hoje'], ['yesterday', 'Ontem'], ['7d', '7 dias'], ['30d', '30 dias'], ['all', 'Todas'], ['custom', '📅 Escolher datas']];
 const osDate = (o: { completed_at: string | null; created_at: string }) => new Date(o.completed_at ?? o.created_at).getTime();
 
 function periodRange(p: DatePeriod, from: string, to: string): [number | null, number | null] {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const day = 86400000;
   if (p === 'today') return [today.getTime(), null];
+  if (p === 'yesterday') return [today.getTime() - day, today.getTime()];
   if (p === '7d') return [today.getTime() - 6 * day, null];
   if (p === '30d') return [today.getTime() - 29 * day, null];
   if (p === 'custom') return [
