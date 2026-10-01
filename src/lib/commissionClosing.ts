@@ -7,7 +7,7 @@
 import { supabase } from '@/lib/supabase';
 import { fetchAll } from '@/lib/fetchAll';
 import {
-  COMMISSION_COLS, baseByMechanic, commissionFor, commissionRule, hasCommission, loadCommissionBase,
+  COMMISSION_COLS, baseByMechanic, commissionFor, commissionRule, hasCommission, loadCommissionBase, workedIn,
   type CommissionCalc, type CommissionMech,
 } from '@/lib/commission';
 
@@ -81,7 +81,7 @@ export async function loadCommissionHalf(wid: string, competence: string, half: 
     .map(m => ({ m, calc: commissionFor(m, done.get(m.id), revenue) }))
     .filter(({ m, calc }) => closedBy.has(m.id) || calc.commission > 0 || (m.active && hasCommission(m)))
     .map(({ m, calc }) => ({
-      mechanicId: m.id, name: m.name, active: m.active, rule: commissionRule(m),
+      mechanicId: m.id, name: m.name, active: m.active, rule: commissionRule(m, { worked: workedIn(calc), manual: calc.manual > 0 }),
       calc, closed: closedBy.get(m.id) ?? null,
     }));
 }

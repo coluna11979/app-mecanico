@@ -154,13 +154,22 @@ export function commissionFor(m: CommissionMech, done: Done | undefined, revenue
 
 const pctStr = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
 
-/** "10% serviços + 5% peças + 1,5% faturamento" */
-export function commissionRule(m: CommissionMech) {
+/** Fez algum serviço/peça (ou teve comissão definida na OS) no período? */
+export const workedIn = (c: Pick<CommissionCalc, 'labor' | 'laborOwn' | 'parts' | 'svc' | 'mo' | 'manual'>) =>
+  c.labor + c.laborOwn + c.parts + c.svc + c.mo + c.manual > 0;
+
+/**
+ * Texto da regra que vale para a pessoa: "4% serviço + peças + 10% mão de obra (+ 1,5% faturamento)".
+ * Quem ganha % do faturamento e não fez serviço no período (ex.: gerente) → só "1,5% do faturamento".
+ */
+export function commissionRule(m: CommissionMech, ctx?: { worked: boolean; manual?: boolean }) {
   const p = pcts(m);
+  if (ctx && !ctx.worked && p.revenue > 0) return `${pctStr(p.revenue)} do faturamento`;
   return [
     `${pctStr(RULE.service)} serviço + peças`,
     `${pctStr(RULE.labor)} mão de obra`,
     p.revenue > 0 && `${pctStr(p.revenue)} faturamento`,
+    ctx?.manual && 'valores definidos na OS',
   ].filter(Boolean).join(' + ');
 }
 

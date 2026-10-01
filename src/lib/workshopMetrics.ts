@@ -10,7 +10,7 @@
 import { workedMinutes } from '@/components/os/osHelpers';
 import type { OsStatus } from '@/types/database';
 import {
-  baseByMechanic, commissionFor, commissionRule, pcts, type CommissionBaseRow, type CommissionMech,
+  baseByMechanic, commissionFor, commissionRule, pcts, workedIn, type CommissionBaseRow, type CommissionMech,
 } from '@/lib/commission';
 
 export type PanelOs = {
@@ -187,6 +187,7 @@ export function productivity(list: PanelOs[], mechanics: PanelMechanic[], r: Ran
       row.labor = calc.labor + calc.laborOwn;
       row.parts = calc.parts;
       row.commission = calc.commission;
+      row.rule = commissionRule(m, { worked: workedIn(calc), manual: calc.manual > 0 });
     }
   }
   return [...rows.values()]

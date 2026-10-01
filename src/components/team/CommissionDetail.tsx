@@ -100,7 +100,7 @@ export default function CommissionDetail({ wid, from, to }: { wid: string; from:
       }).sort((a, b) => (b.doneAt ?? '').localeCompare(a.doneAt ?? ''));
       const revenueShare = p.revenue > 0 ? r2(revenue * p.revenue / 100) : 0;
       return {
-        mech, rule: commissionRule(mech), lines,
+        mech, rule: commissionRule(mech, { worked: lines.some(l => l.commission > 0 || l.labor > 0 || l.parts > 0), manual: lines.some(l => l.manual) }), lines,
         labor: r2(lines.reduce((a, l) => a + l.labor, 0)),
         parts: r2(lines.reduce((a, l) => a + l.parts, 0)),
         revenueShare,
