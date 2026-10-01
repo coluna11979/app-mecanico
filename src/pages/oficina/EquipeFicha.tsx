@@ -499,8 +499,8 @@ function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, ow
       </div>
       <div className="mt-3 pt-3 border-t border-steel-100 grid sm:grid-cols-2 gap-3">
         <PctField label="% sobre as peças" hint="das peças nos itens que ele fizer" value={parts} onChange={onParts} />
-        <PctField label="% sobre o serviço quando o cliente traz a peça" placeholder={value || '0'}
-          hint="na OS marcada “Cliente trouxe a peça” — vazio = mesma % de serviços" value={own} onChange={onOwn} />
+        <PctField label="% sobre “só serviço” (sem peça da loja)" placeholder={value || '0'}
+          hint="serviço que não usou peça da loja, ou cliente trouxe a peça — vazio = mesma % de serviços" value={own} onChange={onOwn} />
         <PctField label="% sobre o faturamento da loja" hint="de tudo que a loja faturar no mês (ex.: gerente 1,5%)" value={revenue} onChange={onRevenue} />
       </div>
       <p className="text-[11px] text-steel-400 mt-2">

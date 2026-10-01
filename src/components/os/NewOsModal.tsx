@@ -87,6 +87,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   // 3. Execução
   const [mechs, setMechs]       = useState<WorkshopMechanic[]>([]);
   const [mechId, setMechId]     = useState(preset?.mechanicId ?? '');
+  const [platform, setPlatform] = useState(false); // mecânico de fora, chamado pela plataforma
   const [km, setKm]             = useState('');
   const [schedule, setSchedule] = useState(!!preset?.schedule);
   const [when, setWhen]         = useState(preset?.when ?? '');
@@ -312,7 +313,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
         description: report.trim() || null,
         km_reading: km ? parseInt(digits(km), 10) || null : null,
         scheduled_at: schedule && when ? new Date(when).toISOString() : null,
-        workshop_mechanic_id: mechId || null,
+        workshop_mechanic_id: platform ? null : mechId || null,
+        executor: platform ? 'platform' : mechId ? 'workshop' : null,
         status: 'open',
         price: 0,
       }).select('id, number').single();
@@ -324,6 +326,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
         description: s, quantity: 1, unit_price: 0, position: i,
       })));
       if (itErr) console.warn('[NewOsModal] itens não criados:', itErr.message);
+
+      if (platform) toast.info('Lance os valores dos serviços e toque em "🔧 Chamar mecânico" no Caixa — os serviços já vão preenchidos.');
 
       const isCheckup = !(schedule && when)
         && (category === 'Check-up' || allServices.some(s => /check-?up/i.test(s)));
@@ -523,16 +527,25 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
           <section>
             <div className="text-sm font-bold text-steel-800 mb-2">3. Quem vai executar?</div>
             <div className="grid grid-cols-2 gap-2 mb-3">
-              <div className="rounded-xl border-2 border-brand-500 bg-brand-50 p-3">
+              <button type="button" onClick={() => setPlatform(false)}
+                className={`rounded-xl border-2 p-3 text-left transition ${!platform ? 'border-brand-500 bg-brand-50' : 'border-steel-200 hover:border-brand-300'}`}>
                 <div className="font-semibold text-sm">🔧 Equipe da oficina</div>
                 <div className="text-xs text-steel-500">Seus próprios colaboradores</div>
-              </div>
-              <button type="button" onClick={() => { onClose(); nav('/oficina/dashboard?nova=1'); }}
-                className="rounded-xl border-2 border-steel-200 hover:border-brand-300 p-3 text-left transition">
+              </button>
+              <button type="button" onClick={() => setPlatform(true)}
+                className={`rounded-xl border-2 p-3 text-left transition ${platform ? 'border-brand-500 bg-brand-50' : 'border-steel-200 hover:border-brand-300'}`}>
                 <div className="font-semibold text-sm">🌐 Mecânico da plataforma</div>
-                <div className="text-xs text-steel-500">Chamar um profissional de fora →</div>
+                <div className="text-xs text-steel-500">Chamar um profissional de fora</div>
               </button>
             </div>
+
+            {platform && (
+              <div className="text-xs text-steel-600 bg-steel-50 rounded-xl px-3 py-2.5">
+                A OS é aberta com esses serviços. Depois de lançar os valores, toque em <strong>🔧 Chamar mecânico</strong> no Caixa:
+                os serviços e o valor sugerido para o mecânico já vêm preenchidos.
+              </div>
+            )}
+            {!platform && <>
 
             {/* Sugestão: quem tem mais habilidade neste tipo de serviço */}
             {suggested && skill && (
@@ -576,6 +589,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
                 )}
               </div>
             )}
+            </>}
           </section>
 
           {/* ── 4. KM e quando ── */}

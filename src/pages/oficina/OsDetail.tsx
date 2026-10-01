@@ -8,9 +8,12 @@ import { canDo, useOperator } from '@/lib/operators';
 import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
+import ScheduleOsModal from '@/components/os/ScheduleOsModal';
+import ResponsibleTimers from '@/components/os/ResponsibleTimers';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
 import PaymentsList from '@/components/cash/PaymentsList';
+import { PLATFORM, ResponsibleModal, responsibleOf } from '@/components/cash/ResponsiblePicker';
 import {
   durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber, fmtPhone,
   statusChange, APPROVAL_CHANNELS, PAUSE_REASONS, openPause, workedMinutes,
@@ -39,6 +42,9 @@ export default function OsDetail() {
   const [original, setOriginal]   = useState<(OsLink & { mechanic: { name: string } | null }) | null>(null);
   const [returns, setReturns]     = useState<OsLink[]>([]);
   const [team, setTeam]           = useState<{ id: string; name: string }[]>([]);
+  /* false = fechado · 'edit' = escolher · 'platform' = já abre com a plataforma marcada */
+  const [scheduling, setScheduling] = useState(false);
+  const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
   const nav = useNavigate();
 
   // OS importada de orçamento em papel → mostra a foto original
@@ -83,12 +89,12 @@ export default function OsDetail() {
     setReturns((rets.data as OsLink[]) ?? []);
   }, [id]);
 
-  // Equipe (para corrigir o responsável pelo retorno)
+  // Equipe (responsável da OS e responsável pelo retorno)
   useEffect(() => {
-    if (!os?.workshop_id || !os.rework_of_id) return;
-    supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', os.workshop_id).order('name')
+    if (!os?.workshop_id) return;
+    supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', os.workshop_id).neq('status', 'terminated').order('name')
       .then(({ data }) => setTeam(data ?? []));
-  }, [os?.workshop_id, os?.rework_of_id]);
+  }, [os?.workshop_id]);
 
   /** 🔁 Cliente voltou: abre uma OS de retorno ligada a esta */
   async function createRework(cause: ReworkCause | null, notes: string) {
@@ -141,6 +147,11 @@ export default function OsDetail() {
     // Concluir ou cancelar com o serviço pausado: encerra a pausa no mesmo momento
     if ((status === 'completed' || status === 'cancelled') && openPause(os.pauses)) {
       await supabase.from('service_order_pauses').update({ ended_at: new Date().toISOString() })
+        .eq('service_order_id', os.id).is('ended_at', null);
+    }
+    // Concluir/cancelar: fecha o relógio de quem ainda estava trabalhando
+    if (status === 'completed' || status === 'cancelled') {
+      await supabase.from('service_order_work_logs').update({ ended_at: new Date().toISOString(), finished: status === 'completed' })
         .eq('service_order_id', os.id).is('ended_at', null);
     }
     const { error } = await supabase.from('service_orders').update(patch).eq('id', os.id);
@@ -291,6 +302,15 @@ export default function OsDetail() {
               pauses={os.pauses} estimatedHours={os.estimated_hours} mechanicName={os.mechanic?.name} />
           )}
 
+          {/* Relógio por responsável (cada um inicia/pausa/termina a sua parte) */}
+          {['approved', 'in_progress', 'completed'].includes(os.status) && (
+            <ResponsibleTimers key={`${os.id}-${items.map(i => `${i.id}${i.executor}${i.workshop_mechanic_id}`).join()}`}
+              osId={os.id} status={os.status} items={items} team={team}
+              osMechanicId={os.workshop_mechanic_id} osExecutor={os.executor} readOnly={os.status === 'completed'}
+              onStartOs={() => changeStatus('in_progress', { skipConfirm: true })}
+              onAllDone={() => changeStatus('completed')} />
+          )}
+
           <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap gap-2">
             {canReceive && (
               <button onClick={() => nav(`/oficina/caixa?os=${os.id}`)} className="btn-primary text-sm !py-2 !bg-signal-500">
@@ -330,6 +350,13 @@ export default function OsDetail() {
               <button onClick={() => setReworkForm(v => !v)} disabled={busy}
                 className="btn-ghost text-sm !py-2 border border-alert-200 text-alert-700 hover:bg-alert-50">
                 🔁 Cliente voltou (retorno / garantia)
+              </button>
+            )}
+            {!closed && (
+              <button onClick={() => setScheduling(true)} className="btn-ghost text-sm !py-2 border border-steel-200">
+                {os.scheduled_at
+                  ? `📅 Agendado · ${new Date(os.scheduled_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date(os.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                  : '📅 Agendar serviço'}
               </button>
             )}
             <Link to={`/oficina/checkup?os=${os.id}`} className="btn-ghost text-sm !py-2 border border-brand-200 text-brand-700 hover:bg-brand-50">🔍 Check-up do veículo</Link>
@@ -534,8 +561,25 @@ export default function OsDetail() {
 
             {/* Responsável */}
             <div className="card">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-2">Responsável</div>
-              {os.mechanic ? (
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Responsável</div>
+                {os.status !== 'cancelled' && (
+                  (os.executor === 'platform' || os.mechanic) && (
+                    <button onClick={() => setSettingResp('edit')} className="text-xs font-semibold text-brand-600 hover:underline">Alterar</button>
+                  )
+                )}
+              </div>
+              {items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id)) ? (
+                <ServiceSplit items={items} team={team} osMechanic={os.mechanic?.name ?? null} />
+              ) : os.executor === 'platform' ? (
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-full bg-brand-500/10 grid place-items-center">🌐</div>
+                  <div className="text-sm">
+                    <div className="font-semibold text-steel-900">Mecânico da plataforma</div>
+                    <div className="text-steel-500">Profissional de fora</div>
+                  </div>
+                </div>
+              ) : os.mechanic ? (
                 <div className="flex items-center gap-3">
                   <div className="h-9 w-9 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold">{os.mechanic.name.charAt(0).toUpperCase()}</div>
                   <div className="text-sm">
@@ -544,7 +588,23 @@ export default function OsDetail() {
                   </div>
                 </div>
               ) : (
-                <EmptyLink text="Nenhum mecânico definido" onClick={closed ? undefined : () => setEditing(true)} />
+                os.status === 'cancelled' ? (
+                  <EmptyLink text="Nenhum mecânico definido" />
+                ) : (
+                  <div className="grid gap-2">
+                    <div className="text-sm text-steel-500">Quem vai fazer o serviço?</div>
+                    <button onClick={() => setSettingResp('edit')}
+                      className="rounded-xl border-2 border-steel-200 hover:border-brand-300 px-3 py-2.5 text-left transition">
+                      <div className="font-semibold text-sm">🔧 Mecânico da loja</div>
+                      <div className="text-xs text-steel-500">Escolher alguém da equipe</div>
+                    </button>
+                    <button onClick={() => setSettingResp('platform')}
+                      className="rounded-xl border-2 border-steel-200 hover:border-brand-300 px-3 py-2.5 text-left transition">
+                      <div className="font-semibold text-sm">🌐 Mecânico da plataforma</div>
+                      <div className="text-xs text-steel-500">Chamar um profissional de fora</div>
+                    </button>
+                  </div>
+                )
               )}
               {os.estimated_hours != null && (
                 <div className="text-xs text-steel-500 mt-2">⏱ Tempo estimado: {String(os.estimated_hours).replace('.', ',')}h</div>
@@ -603,6 +663,19 @@ export default function OsDetail() {
           </div>
         </div>
       </div>
+
+      {scheduling && (
+        <ScheduleOsModal shopName={currentWorkshop?.business_name ?? 'oficina'}
+          os={{ id: os.id, workshop_id: os.workshop_id, title: os.title, scheduled_at: os.scheduled_at ?? null,
+                customer: os.customer ?? null, vehicle: os.vehicle ?? null }}
+          onClose={() => setScheduling(false)} onSaved={load} />
+      )}
+
+      {settingResp && (
+        <ResponsibleModal wid={os.workshop_id} team={team} current={settingResp === 'platform' ? PLATFORM : responsibleOf(os)}
+          os={{ id: os.id, number: os.number ?? null, title: os.title, vehicle: os.vehicle ?? null }}
+          onClose={() => setSettingResp(false)} onSaved={load} />
+      )}
 
       {editing && currentWorkshop && (
         <OsEditModal
@@ -705,6 +778,38 @@ function EmptyLink({ text, onClick }: { text: string; onClick?: () => void }) {
     <div className="text-sm text-steel-400">
       {text}
       {onClick && <button onClick={onClick} className="block mt-1 text-brand-600 font-semibold hover:underline">+ Adicionar</button>}
+    </div>
+  );
+}
+
+/** Responsável por serviço (quando os serviços estão divididos entre equipe e plataforma) */
+function ServiceSplit({ items, team, osMechanic }: {
+  items: ServiceOrderItem[]; team: { id: string; name: string }[]; osMechanic: string | null;
+}) {
+  const name = new Map(team.map(m => [m.id, m.name]));
+  const laborIds = new Set(items.filter(i => i.kind === 'labor').map(i => i.id));
+  const linked = (id: string) => items.filter(i => i.kind === 'part' && i.used_in_item_id === id);
+  const hasParts = items.some(i => i.kind === 'part' && !(i.used_in_item_id && laborIds.has(i.used_in_item_id)));
+  return (
+    <div className="space-y-1.5 text-sm">
+      {items.filter(i => i.kind === 'labor').map(i => (
+        <div key={i.id} className="flex justify-between gap-3">
+          <span className="text-steel-600 truncate">
+            {i.description}
+            {linked(i.id).length > 0 && <span className="text-steel-400"> + {linked(i.id).map(p => p.description).join(', ')}</span>}
+          </span>
+          <span className="font-semibold text-steel-900 shrink-0">
+            {i.executor === 'platform' ? '🌐 Plataforma'
+              : (i.workshop_mechanic_id && name.get(i.workshop_mechanic_id)) || osMechanic || <span className="text-pending-700">a definir</span>}
+          </span>
+        </div>
+      ))}
+      {hasParts && (
+        <div className="flex justify-between gap-3 pt-1.5 border-t border-steel-100 text-xs">
+          <span className="text-steel-500">Comissão das peças sem serviço</span>
+          <span className="font-semibold text-steel-700">{osMechanic ?? 'ninguém da equipe'}</span>
+        </div>
+      )}
     </div>
   );
 }

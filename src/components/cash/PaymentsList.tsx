@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { METHODS, brl, type PayMethod } from '@/lib/cash';
@@ -8,6 +8,8 @@ type PaymentRow = {
   cancelled_at: string | null; cancel_reason: string | null; operator_id: string | null;
   service_order: {
     id: string; number: number | null; title: string;
+    executor: 'workshop' | 'platform' | null; workshop_mechanic_id: string | null; mechanic: { name: string } | null;
+    items: { kind: 'part' | 'labor'; executor: 'workshop' | 'platform' | null; mechanic: { name: string } | null }[];
     customer: { full_name: string } | null; vehicle: { plate: string | null; make: string | null; model: string | null } | null;
   } | null;
   entries: { method: PayMethod; amount: number; installments: number }[];
@@ -18,14 +20,37 @@ type Filter =
   | { serviceOrderId: string }
   | { workshopId: string; from: string; to: string };
 
+export type PaidOs = NonNullable<PaymentRow['service_order']>;
+
+/** Responsáveis da OS paga: por serviço quando há serviços lançados, senão o responsável geral */
+export function paidResponsibles(os: PaidOs): { label: string; missing: boolean } {
+  const labor = (os.items ?? []).filter(i => i.kind === 'labor');
+  if (!labor.length) {
+    if (os.executor === 'platform') return { label: '🌐 Mecânico da plataforma', missing: false };
+    return os.mechanic ? { label: `🔧 ${os.mechanic.name}`, missing: false } : { label: '⚠️ Sem responsável pelo serviço', missing: true };
+  }
+  const names = new Set<string>();
+  let missing = false;
+  for (const i of labor) {
+    if (i.executor === 'platform') names.add('🌐 Plataforma');
+    else if (i.mechanic?.name ?? os.mechanic?.name) names.add(`🔧 ${i.mechanic?.name ?? os.mechanic!.name}`);
+    else if (os.executor === 'platform') names.add('🌐 Plataforma');
+    else missing = true;
+  }
+  if (missing) names.add('⚠️ serviço sem responsável');
+  return { label: [...names].join(' · '), missing };
+}
+
 const osNum = (o: { id: string; number: number | null }) => (o.number != null ? String(o.number).padStart(4, '0') : o.id.slice(0, 8));
 
 /**
  * Histórico de recebimentos de OS: de qual OS veio, cliente, placa, formas de
  * pagamento, quem recebeu e quando. Cada linha leva para a OS.
  */
-export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum recebimento ainda.', reloadKey, title }: {
+export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum recebimento ainda.', reloadKey, title, action }: {
   filter: Filter; showOs?: boolean; empty?: string | null; reloadKey?: unknown;
+  /** Botão ao lado da linha (ex.: Caixa → definir responsável / chamar mecânico) */
+  action?: (os: PaidOs) => ReactNode;
   /** Título mostrado acima da lista (some junto quando `empty` é null e não há nada) */
   title?: string;
 }) {
@@ -38,7 +63,7 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
     (async () => {
       let q = supabase.from('os_payments')
         .select('id, amount, discount, change_given, created_at, cancelled_at, cancel_reason, operator_id, workshop_id, '
-          + 'service_order:service_orders(id, number, title, customer:customers(full_name), vehicle:vehicles(plate, make, model)), '
+          + 'service_order:service_orders(id, number, title, executor, workshop_mechanic_id, mechanic:workshop_mechanics!fk_so_workshop_mechanic(name), items:service_order_items!service_order_items_service_order_id_fkey(kind, executor, mechanic:workshop_mechanics(name)), customer:customers(full_name), vehicle:vehicles(plate, make, model)), '
           + 'entries:cash_entries(method, amount, installments)')
         .order('created_at', { ascending: false }).limit(300);
       if ('registerId' in filter) q = q.eq('register_id', filter.registerId);
@@ -86,6 +111,10 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
                 </div>
               )}
               <div className="text-xs text-steel-500 truncate">{forms.join(' + ')}</div>
+              {showOs && os && !cancelled && (() => {
+                const r = paidResponsibles(os);
+                return <div className={`text-[11px] truncate ${r.missing ? 'text-pending-800 font-semibold' : 'text-steel-500'}`}>{r.label}</div>;
+              })()}
               <div className="text-[11px] text-steel-400 truncate">
                 {[p.operator_id && ops[p.operator_id] ? `recebido por ${ops[p.operator_id]}` : null,
                   p.discount > 0 ? `desconto ${brl(p.discount)}` : null,
@@ -98,9 +127,12 @@ export default function PaymentsList({ filter, showOs = true, empty = 'Nenhum re
           </>
         );
         return showOs && os ? (
-          <Link key={p.id} to={`/oficina/os/${os.id}`} className={`flex items-center gap-3 px-4 py-3 hover:bg-steel-50 transition ${cancelled ? 'opacity-60' : ''}`}>
-            {body}
-          </Link>
+          <div key={p.id} className="flex items-center">
+            <Link to={`/oficina/os/${os.id}`} className={`flex-1 min-w-0 flex items-center gap-3 px-4 py-3 hover:bg-steel-50 transition ${cancelled ? 'opacity-60' : ''}`}>
+              {body}
+            </Link>
+            {action && !cancelled && <div className="pr-4 shrink-0">{action(os)}</div>}
+          </div>
         ) : (
           <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${cancelled ? 'opacity-60' : ''}`}>{body}</div>
         );
