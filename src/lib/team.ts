@@ -6,7 +6,7 @@ export const SHOP_ROLES = [
 ];
 /** Funções de balcão e escritório */
 export const OFFICE_ROLES = [
-  'Atendente', 'Recepcionista', 'Caixa', 'Consultor técnico', 'Financeiro', 'Estoquista / compras', 'Gerente',
+  'Atendente', 'Recepcionista', 'Caixa', 'Vendedor', 'Consultor técnico', 'Financeiro', 'Estoquista / compras', 'Gerente',
 ];
 export const ROLE_TITLES = [...SHOP_ROLES, ...OFFICE_ROLES, 'Outro'];
 
@@ -26,10 +26,11 @@ export const QUALIFICATIONS: Record<'shop' | 'office', { label: string; specialt
   },
   office: {
     label: 'Balcão e escritório',
-    specialties: ['Atendimento / recepção', 'Caixa', 'Orçamentos', 'Financeiro', 'Compras e estoque', 'Gerência', 'Geral'],
+    specialties: ['Atendimento / recepção', 'Caixa', 'Vendas', 'Orçamentos', 'Financeiro', 'Compras e estoque', 'Gerência', 'Geral'],
     skills: ['Atendimento ao cliente', 'Abertura de OS', 'Orçamentos', 'Agendamento', 'Caixa / recebimentos',
       'PIX e maquininha', 'Emissão de nota fiscal', 'Cobrança', 'Contas a pagar', 'Compras de peças',
-      'Controle de estoque', 'Vendas de peças', 'Pós-venda', 'WhatsApp e redes sociais'],
+      'Controle de estoque', 'Vendas de peças', 'Vendas de serviços', 'Negociação', 'Retorno de orçamentos',
+      'Pós-venda', 'WhatsApp e redes sociais'],
   },
 };
 
