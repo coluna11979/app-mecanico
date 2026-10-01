@@ -44,7 +44,7 @@ export default function WorkshopCheckupRun() {
   // Enviado ao celular do mecânico: acompanha o preenchimento sem recarregar a página
   // Caixa/atendente no modo balcão: abre, escolhe o mecânico e envia o link — não preenche a inspeção
   const { balcao, session } = useOperator();
-  const dispatchOnly = !demo && balcao && (session?.role === 'caixa' || session?.role === 'atendente');
+  const dispatchOnly = !demo && balcao && (session?.role === 'caixa' || session?.role === 'atendente' || session?.role === 'vendedor');
   // Nomes do cadastro de peças e da tabela de serviços, para apontar o que trocar
   const [catalog, setCatalog] = useState<CatalogNames | undefined>(undefined);
   useEffect(() => {

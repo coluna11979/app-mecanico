@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 
 /* ── Funções e permissões ─────────────────────────────────────────────────── */
 
-export type OperatorRole = 'gestor' | 'caixa' | 'atendente' | 'mecanico';
+export type OperatorRole = 'gestor' | 'caixa' | 'atendente' | 'mecanico' | 'vendedor';
 export type OperatorPerm =
   | 'dar_desconto' | 'cancelar_recebimento' | 'reabrir_caixa'
   | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe';
@@ -39,9 +39,15 @@ export const ROLES: Record<OperatorRole, {
     label: 'Mecânico', icon: '🔧', desc: 'Vê e atualiza as ordens de serviço.',
     routes: ['/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/avisos'], home: '/oficina/os',
   },
+  vendedor: {
+    label: 'Vendedor', icon: '🤝', desc: 'Módulo Comercial: orçamentos do check-up, clientes, retorno pelo WhatsApp e agenda.',
+    routes: ['/oficina/comercial', '/oficina/checkup', '/oficina/clientes', '/oficina/os', '/oficina/agenda',
+             '/oficina/mensagens', '/oficina/avisos'],
+    home: '/oficina/comercial',
+  },
 };
 
-export const ROLE_ORDER: OperatorRole[] = ['gestor', 'caixa', 'atendente', 'mecanico'];
+export const ROLE_ORDER: OperatorRole[] = ['gestor', 'caixa', 'atendente', 'vendedor', 'mecanico'];
 
 export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   dar_desconto:         { label: 'Dar desconto',          desc: 'Conceder desconto no recebimento' },
