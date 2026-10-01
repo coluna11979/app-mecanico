@@ -10,18 +10,23 @@ import { formatScheduled } from '@/lib/scheduling';
 import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 import type { Job } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
+import { jobDraftKey, jobDraftOriginKey } from '@/lib/callMechanic';
 import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
 
 type NewJob = {
   title: string; description: string;
   price_per_hour: string; max_hours: string; scheduled_at: string;
+  /** Veio do Caixa ("Chamar mecânico"): a demanda fica ligada a essa OS */
+  service_order_id?: string;
+  /** Itens da OS que esse mecânico vai fazer (passam a "mecânico da plataforma") */
+  service_order_item_ids?: string[];
 };
 type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
 type JobMode = 'open' | 'favorites' | 'direct';
 
 const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '' };
 
-const draftKey = (workshopId: string) => `draft_job_${workshopId}`;
+const draftKey = jobDraftKey;
 function loadDraft(workshopId: string): NewJob | null {
   try {
     const raw = localStorage.getItem(draftKey(workshopId));
@@ -44,6 +49,8 @@ export default function WorkshopDashboard() {
   const [modal, setModal]       = useState(false);
   const [form, setForm]         = useState<NewJob>(EMPTY);
   const [draftRestored, setDraftRestored] = useState(false);
+  /* Rascunho montado no Caixa ("Chamar mecânico"): de qual OS veio */
+  const [draftOrigin, setDraftOrigin] = useState<string | null>(null);
   const [marketRate, setMarketRate] = useState<{ low: number; high: number; count: number } | null>(null);
   const [mode, setMode]         = useState<JobMode>('open');
   const [pickedMechanic, setPickedMechanic] = useState<string>('');
@@ -170,6 +177,7 @@ export default function WorkshopDashboard() {
       const draft = loadDraft(currentWorkshop.id);
       if (draft) { setForm(draft); setDraftRestored(true); }
       else { setForm(EMPTY); setDraftRestored(false); }
+      setDraftOrigin(draft ? localStorage.getItem(jobDraftOriginKey(currentWorkshop.id)) : null);
     }
     setMode('open'); setPickedMechanic(''); setMechSearch('');
     setModal(true);
@@ -206,9 +214,13 @@ export default function WorkshopDashboard() {
   }
 
   function discardDraft() {
-    if (currentWorkshop?.id) localStorage.removeItem(draftKey(currentWorkshop.id));
+    if (currentWorkshop?.id) {
+      localStorage.removeItem(draftKey(currentWorkshop.id));
+      localStorage.removeItem(jobDraftOriginKey(currentWorkshop.id));
+    }
     setForm(EMPTY);
     setDraftRestored(false);
+    setDraftOrigin(null);
   }
 
   async function createJob(e: FormEvent) {
@@ -274,6 +286,7 @@ export default function WorkshopDashboard() {
       mechanic_id:    isDirect ? pickedMechanic : null,
       audience:       isFavorites ? 'favorites' : 'public',
     };
+    if (form.service_order_id) payload.service_order_id = form.service_order_id;
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
     const { error: insErr } = await supabase.from('jobs').insert(payload);
     setSaving(false);
@@ -283,6 +296,22 @@ export default function WorkshopDashboard() {
       return; // mantém o modal aberto e o rascunho salvo
     }
     localStorage.removeItem(draftKey(currentShop.id));
+    localStorage.removeItem(jobDraftOriginKey(currentShop.id));
+    // Serviços escolhidos passam a "mecânico da plataforma" (sem comissão da equipe).
+    // A OS só vira "plataforma" inteira se todos os serviços dela forem da plataforma.
+    if (form.service_order_id) {
+      const ids = form.service_order_item_ids ?? [];
+      if (ids.length) {
+        await supabase.from('service_order_items').update({ executor: 'platform', workshop_mechanic_id: null })
+          .in('id', ids).eq('service_order_id', form.service_order_id);
+      }
+      const { count } = await supabase.from('service_order_items').select('id', { count: 'exact', head: true })
+        .eq('service_order_id', form.service_order_id).eq('kind', 'labor').or('executor.is.null,executor.neq.platform');
+      if (count === 0) {
+        await supabase.from('service_orders').update({ executor: 'platform', workshop_mechanic_id: null })
+          .eq('id', form.service_order_id).eq('workshop_id', currentShop.id);
+      }
+    }
     resetModal();
     await fetchJobs(currentShop.id);
   }
@@ -574,7 +603,9 @@ export default function WorkshopDashboard() {
 
               {draftRestored && !editingId && (
                 <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
-                  <span className="text-amber-800">📝 Rascunho restaurado do último acesso.</span>
+                  <span className="text-amber-800">
+                    {draftOrigin ? `🔧 Preenchido com os serviços da ${draftOrigin} — revise e publique.` : '📝 Rascunho restaurado do último acesso.'}
+                  </span>
                   <button type="button" onClick={discardDraft} className="text-amber-700 underline font-semibold whitespace-nowrap">
                     Descartar
                   </button>
