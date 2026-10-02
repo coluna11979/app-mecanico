@@ -143,7 +143,7 @@ export function AssignmentsModal({ os, team, title, wid, sid, onClose, onSaved }
   os: ReceiveOs; team: Team; title: string; wid?: string; sid?: string | null; onClose: () => void; onSaved: (callPlatform: boolean) => void;
 }) {
   const a = useReceiveAssignments(os, team);
-  const comm = useOsCommission(os.id, a);
+  const comm = useOsCommission(os.id, a, team);
   const [busy, setBusy] = useState(false);
   async function save() {
     if (!a.valid) return toast.error('Complete os responsáveis antes de salvar');

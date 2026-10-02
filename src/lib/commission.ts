@@ -33,6 +33,8 @@ export type CommissionMech = {
   commission_parts_percent?: number | null;
   commission_revenue_percent?: number | null;
   commission_own_parts_percent?: number | null;
+  /** Salário fixo: não recebe comissão nenhuma */
+  no_commission?: boolean | null;
 };
 
 export type CommissionBaseRow = {
@@ -76,7 +78,7 @@ export type CommissionCalc = {
 };
 
 /** Colunas de comissão para os selects de workshop_mechanics */
-export const COMMISSION_COLS = 'commission_percent, commission_parts_percent, commission_revenue_percent, commission_own_parts_percent';
+export const COMMISSION_COLS = 'commission_percent, commission_parts_percent, commission_revenue_percent, commission_own_parts_percent, no_commission';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -92,6 +94,7 @@ export const pcts = (m: CommissionMech) => ({
 });
 
 export const hasCommission = (m: CommissionMech) => {
+  if (m.no_commission) return false;
   const p = pcts(m);
   return p.labor > 0 || p.own > 0 || p.parts > 0 || p.revenue > 0;
 };
@@ -145,6 +148,8 @@ export function commissionFor(m: CommissionMech, done: Done | undefined, revenue
   const mo = r2(done?.mo ?? 0);
   const rev = p.revenue > 0 ? r2(revenue) : 0;
   const manual = r2(done?.manual ?? 0);
+  // Salário fixo: mostra o que fez, mas não ganha comissão
+  if (m.no_commission) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: 0, manual: 0, commission: 0 };
   return {
     labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual,
     commission: r2(labor * p.labor / 100 + laborOwn * p.own / 100 + parts * p.parts / 100
@@ -163,6 +168,7 @@ export const workedIn = (c: Pick<CommissionCalc, 'labor' | 'laborOwn' | 'parts' 
  * Quem ganha % do faturamento e não fez serviço no período (ex.: gerente) → só "1,5% do faturamento".
  */
 export function commissionRule(m: CommissionMech, ctx?: { worked: boolean; manual?: boolean }) {
+  if (m.no_commission) return 'Salário fixo — sem comissão';
   const p = pcts(m);
   if (ctx && !ctx.worked && p.revenue > 0) return `${pctStr(p.revenue)} do faturamento`;
   return [
