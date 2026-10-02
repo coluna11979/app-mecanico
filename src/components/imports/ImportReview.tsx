@@ -154,6 +154,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   }
 
   const laborRows = items.filter(r => r.tipo === 'labor');
+  const todayYmd = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  const futureDate = !!f.data && f.data > todayYmd;
   const whoOf = (r: ItemRow) => r.who || osWho;
   // Nota só de peças (venda de balcão): não tem serviço, ninguém ganha comissão — não pede quem fez
   const onlyParts = items.length > 0 && laborRows.length === 0;
@@ -174,6 +176,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       if (!Number.isFinite(parseMoney(r.valor || '0'))) { toast.error(`Item ${i + 1}: valor inválido`); return; }
     }
     if (whoMissing) { toast.error('Informe quem fez o serviço'); return; }
+    if (futureDate) { toast.error('A data da nota está no futuro — corrija antes de importar'); return; }
     const charge = done && paid && finalTotal > 0;
     if (charge) {
       if (payRows.some(p => !p.method)) { toast.error('Escolha a forma de pagamento'); return; }
@@ -403,8 +406,14 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Serviço</div>
               <div className="grid sm:grid-cols-3 gap-2">
                 <input className={`${cls('servico_resumo')} sm:col-span-2`} placeholder="Serviço * (ex.: Troca de embreagem)" value={f.titulo} onChange={set('titulo')} />
-                <input className={cls('data')} type="date" value={f.data} onChange={set('data')} />
+                <input className={`${cls('data')} ${futureDate ? '!border-alert-500 !bg-alert-50' : ''}`} type="date" max={todayYmd} value={f.data} onChange={set('data')} />
               </div>
+              {futureDate && (
+                <div className="text-xs bg-alert-50 border border-alert-200 text-alert-700 rounded-lg px-3 py-2">
+                  ⚠️ A data da nota ({new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}) é depois de hoje — a leitura pode ter errado. Confira no papel e corrija.
+                </div>
+              )}
+              {!f.data && <div className="text-xs text-pending-800">Sem data: a nota entra com a data de hoje. Se estiver no papel, preencha.</div>}
               <textarea className={cls('observacoes')} rows={2} placeholder="Observações" value={f.obs} onChange={set('obs')} />
             </section>
 
