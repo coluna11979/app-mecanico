@@ -54,6 +54,10 @@ export default function ImportarOrcamentos() {
   const [from, setFrom]       = useState('');
   const [to, setTo]           = useState('');
   const [start, end]          = periodRange(period, from, to);
+  /** Filtrar pela data escrita na nota (padrão) ou pela data em que foi enviada */
+  const [by, setBy]           = useState<'nota' | 'envio'>('nota');
+  // Data da nota é AAAA-MM-DD (dia local); o fim do período é exclusivo
+  const localDay = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef  = useRef<HTMLInputElement>(null);
 
@@ -61,8 +65,13 @@ export default function ImportarOrcamentos() {
     if (!wid) return;
     let query = supabase.from('paper_imports').select('*')
       .eq('workshop_id', wid).neq('status', 'discarded');
-    if (start) query = query.gte('created_at', start);
-    if (end) query = query.lt('created_at', end);
+    if (by === 'envio') {
+      if (start) query = query.gte('created_at', start);
+      if (end) query = query.lt('created_at', end);
+    } else {
+      if (start) query = query.gte('extracted->>data', localDay(start));
+      if (end) query = query.lt('extracted->>data', localDay(end));
+    }
     const { data } = await query.order('created_at', { ascending: false }).limit(1000);
     const rows = (data as PaperImport[]) ?? [];
     setList(rows);
@@ -81,7 +90,7 @@ export default function ImportarOrcamentos() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wid, start, end]);
+  }, [wid, start, end, by]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -117,7 +126,7 @@ export default function ImportarOrcamentos() {
 
     setUploading({ done: 0, total: files.length });
     // As novas são de hoje: o filtro de outro período as esconderia
-    if (period !== 'all' && period !== 'today') setPeriod('all');
+    if (period !== 'all' && !(by === 'envio' && period === 'today')) setPeriod('all');
     setTab('reading');
     const ids: string[] = [];
     for (const file of files) {
@@ -214,7 +223,10 @@ export default function ImportarOrcamentos() {
 
         {/* Período da importação */}
         <div className="flex flex-wrap items-center gap-2 mt-6">
-          <span className="text-xs font-semibold text-steel-500">Importadas em:</span>
+          <select className="input !py-1 !px-2 !text-xs !w-auto font-semibold" value={by} onChange={e => setBy(e.target.value as 'nota' | 'envio')}>
+            <option value="nota">Data da nota</option>
+            <option value="envio">Data de envio</option>
+          </select>
           {PERIODS.map(([k, l]) => (
             <button key={k} onClick={() => setPeriod(k)}
               className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
