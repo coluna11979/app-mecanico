@@ -25,6 +25,9 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const [code, setCode]         = useState('');
   const [unit, setUnit]         = useState('un');
   const [cost, setCost]         = useState('');
+  /** custo = preço sai do custo + margem · venda = só o preço de venda (custo depois, em Peças e estoque) */
+  const [mode, setMode]         = useState<'custo' | 'venda'>('custo');
+  const [salePrice, setSalePrice] = useState('');
   const [marginStr, setMarginStr] = useState(String(defaultMargin));
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [bought, setBought]     = useState(true);
@@ -46,14 +49,18 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const q = Number.isFinite(parseMoney(qty)) ? parseMoney(qty) : 0;
   const m = parseMoney(marginStr);
   const marginOk = Number.isFinite(m) && m >= 0 && m <= 1000;
-  const price = priceFromMargin(c, marginOk ? m : defaultMargin);
+  const sp = Number.isFinite(parseMoney(salePrice)) ? parseMoney(salePrice) : 0;
+  const price = mode === 'venda' ? sp : priceFromMargin(c, marginOk ? m : defaultMargin);
   const total = Math.round(c * q * 100) / 100;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return toast.error('Informe o nome da peça');
-    if (!(c > 0)) return toast.error('Informe o custo da peça');
-    if (!marginOk) return toast.error('Margem inválida');
+    if (mode === 'custo') {
+      if (!(c > 0)) return toast.error('Informe o custo da peça (ou escolha "Só preço de venda")');
+      if (!marginOk) return toast.error('Margem inválida');
+    } else if (!(sp > 0)) return toast.error('Informe o preço de venda');
+    if (bought && !(c > 0)) return toast.error('Para lançar a compra, informe o custo — ou desmarque "Comprei agora"');
     if (bought) {
       if (!supplier) return toast.error('Escolha ou cadastre a autopeças / fornecedor');
       if (!(q > 0)) return toast.error('Quantidade inválida');
@@ -62,8 +69,12 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
     setSaving(true);
     try {
       const { data: part, error } = await supabase.from('workshop_parts')
-        .insert({ workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c, supplier_id: supplier?.id ?? null,
-          margin_percent: Math.abs(m - defaultMargin) > 0.001 ? m : null })
+        .insert(mode === 'venda'
+          // Só preço de venda: preço fixo; custo fica 0 até alguém informar em Peças e estoque
+          ? { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c > 0 ? c : 0, supplier_id: supplier?.id ?? null,
+              sale_price: sp, margin_percent: null }
+          : { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c, supplier_id: supplier?.id ?? null,
+              margin_percent: Math.abs(m - defaultMargin) > 0.001 ? m : null })
         .select('id').single();
       if (error) throw error;
       const partId = (part as { id: string }).id;
@@ -115,9 +126,35 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             <label className="label">Fornecedor / autopeças {bought && '*'}</label>
             <SupplierPicker wid={wid} value={supplier?.id ?? null} onChange={setSupplier} />
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setMode('custo')}
+              className={`px-3 py-2 rounded-xl border text-sm font-semibold ${mode === 'custo' ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 text-steel-600'}`}>
+              Tenho o custo
+              <span className={`block text-[10px] font-normal ${mode === 'custo' ? 'text-steel-300' : 'text-steel-400'}`}>venda = custo + margem</span>
+            </button>
+            <button type="button" onClick={() => { setMode('venda'); setBought(false); }}
+              className={`px-3 py-2 rounded-xl border text-sm font-semibold ${mode === 'venda' ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 text-steel-600'}`}>
+              Só preço de venda
+              <span className={`block text-[10px] font-normal ${mode === 'venda' ? 'text-steel-300' : 'text-steel-400'}`}>custo depois</span>
+            </button>
+          </div>
+
+          {mode === 'venda' && (
+            <div>
+              <label className="label">Preço de venda *</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                <input className="input !pl-9 text-right text-lg font-bold" inputMode="decimal" placeholder="0,00" value={salePrice} autoFocus
+                  onChange={e => setSalePrice(e.target.value)}
+                  onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) setSalePrice(moneyInput(v)); }} />
+              </div>
+              <p className="text-[11px] text-steel-500 mt-1">Sem custo, o lucro dessa peça não aparece nos relatórios até alguém informar o custo em <strong>Peças e estoque</strong>.</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-1">
-              <label className="label">Custo unit. *</label>
+              <label className="label">Custo unit. {mode === 'custo' ? '*' : <span className="font-normal text-steel-400">(opcional)</span>}</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
                 <input className="input !pl-9 text-right" inputMode="decimal" placeholder="0,00" value={cost} autoFocus={!!initialName}
@@ -137,7 +174,7 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 bg-steel-50 rounded-xl p-3 text-center">
+          {mode === 'custo' && <div className="grid grid-cols-3 gap-2 bg-steel-50 rounded-xl p-3 text-center">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">Venda</div>
               <div className="text-lg font-bold font-display">{fmtBRL(price)}</div>
@@ -154,7 +191,7 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
               </div>
               <div className="text-[10px] text-steel-400 mt-0.5">{Math.abs((marginOk ? m : defaultMargin) - defaultMargin) < 0.001 ? 'padrão' : `padrão é ${defaultMargin}%`}</div>
             </div>
-          </div>
+          </div>}
 
           <label className="flex items-start gap-2 rounded-xl border border-steel-200 p-3 cursor-pointer">
             <input type="checkbox" className="mt-1" checked={bought} onChange={e => setBought(e.target.checked)} />
