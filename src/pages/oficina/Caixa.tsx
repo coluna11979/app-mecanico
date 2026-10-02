@@ -479,7 +479,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
 }) {
   const open = remainingOf(os);
   const who = useReceiveAssignments(os, team);
-  const comm = useOsCommission(os.id, who);
+  const comm = useOsCommission(os.id, who, team);
   const [discount, setDiscount] = useState('');
   const [parts, setParts] = useState<Part[]>([{ method: 'dinheiro', amount: moneyStr(open), installments: 1 }]);
   const [given, setGiven] = useState('');

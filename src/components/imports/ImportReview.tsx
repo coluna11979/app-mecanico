@@ -187,7 +187,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       const w = g.labor ? whoOf(g.labor) : (ruleV2 ? '' : osWho);
       if (!w || w === PLATFORM) continue;
       const m = team.find(t => t.id === w);
-      if (!m) continue;
+      if (!m || m.no_commission) continue;  // salário fixo: sem comissão
       const laborAmt = g.labor ? rowTotal(g.labor) : 0;
       const partsAmt = g.parts.reduce((a, p) => a + rowTotal(p), 0);
       const e = by.get(w) ?? { value: 0, base: [] };

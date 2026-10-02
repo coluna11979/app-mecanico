@@ -15,7 +15,7 @@ import type { WorkshopMechanic } from '@/types/database';
  */
 
 type Assign = ReturnType<typeof useReceiveAssignments>;
-type Team = Pick<WorkshopMechanic, 'id' | 'name'>[];
+type Team = (Pick<WorkshopMechanic, 'id' | 'name'> & { no_commission?: boolean | null })[];
 /** Como a comissão da pessoa é calculada: % padrão sobre o total da OS ou valor fechado */
 type Mode = 'p10' | 'p4' | 'fixo';
 const MODES: { key: Mode; label: string; pct: number | null }[] = [
@@ -33,7 +33,9 @@ const modeOf = (value: number, total: number): Mode =>
   total > 0 && Math.abs(value - r2(total * RULE.labor / 100)) < 0.01 ? 'p10'
     : total > 0 && Math.abs(value - r2(total * RULE.service / 100)) < 0.01 ? 'p4' : 'fixo';
 
-export function useOsCommission(osId: string, a: Assign) {
+export function useOsCommission(osId: string, a: Assign, team: Team = []) {
+  /** Salário fixo não entra na comissão */
+  const fixed = useMemo(() => new Set(team.filter(t => t.no_commission).map(t => t.id)), [team]);
   const [loaded, setLoaded]   = useState(false);
   const [wasManual, setWasManual] = useState(false);
   const [brought, setBrought] = useState(false);
@@ -75,7 +77,7 @@ export function useOsCommission(osId: string, a: Assign) {
     const by = new Map<string, { value: number; base: string[] }>();
     for (const l of a.labor) {
       const w = a.who[l.id];
-      if (!w || w === PLATFORM) continue;
+      if (!w || w === PLATFORM || fixed.has(w)) continue;
       const parts = a.partsOf.get(l.id) ?? [];
       const type = l.service_type ?? (parts.length ? 'servico' : 'mao_de_obra');
       const e = by.get(w) ?? { value: 0, base: [] };
@@ -90,7 +92,7 @@ export function useOsCommission(osId: string, a: Assign) {
       by.set(w, e);
     }
     return [...by.entries()].map(([id, e]) => ({ mechanic_id: id, value: r2(e.value), base: e.base.join(' + ') }));
-  }, [a.labor, a.who, a.partsOf, brought]);
+  }, [a.labor, a.who, a.partsOf, brought, fixed]);
 
   function startEdit() {
     setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }))
@@ -189,7 +191,7 @@ export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border bor
                 <select className={`input !py-1.5 text-sm flex-1 min-w-0 ${r.mechanic_id ? '' : '!border-pending-400'}`} value={r.mechanic_id}
                   onChange={e => setRow(r.key, { mechanic_id: e.target.value })}>
                   <option value="">Quem recebe…</option>
-                  {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {team.filter(t => !t.no_commission || t.id === r.mechanic_id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
                 <button type="button" onClick={() => c.setRows(rs => rs.filter(x => x.key !== r.key))}
                   className="text-steel-400 hover:text-alert-600 px-1" aria-label="Remover">✕</button>
@@ -239,7 +241,7 @@ export function OsCommissionCard({ os, team, wid, sid }: { os: ReceiveOs; team: 
 
 function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team; wid: string; sid: string | null; onSaved: () => void }) {
   const a = useReceiveAssignments(os, team);
-  const c = useOsCommission(os.id, a);
+  const c = useOsCommission(os.id, a, team);
   const [busy, setBusy] = useState(false);
   const pending = c.editing || c.wasManual;
 

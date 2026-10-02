@@ -362,6 +362,8 @@ export interface WorkshopMechanic {
   commission_revenue_percent?: number;
   /** % sobre a mão de obra quando o cliente traz a peça; null = igual à de serviços */
   commission_own_parts_percent?: number | null;
+  /** Salário fixo: não recebe comissão */
+  no_commission?: boolean | null;
   photo_url?: string | null;
   phone?: string | null;
   /** Função: mecânico, eletricista, auxiliar… */
