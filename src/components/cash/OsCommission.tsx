@@ -119,8 +119,44 @@ export function useOsCommission(osId: string, a: Assign) {
   return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf };
 }
 
+/** O que o quadro precisa (serve para a OS salva e para a conferência de nota, antes de a OS existir) */
+type CommissionCtl = Pick<ReturnType<typeof useOsCommission>,
+  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf'>;
+
+export type AutoCommission = { mechanic_id: string; value: number; base: string };
+
+/**
+ * Comissão de uma OS que ainda vai ser criada (conferência de nota importada): mostra a regra,
+ * permite alterar e só grava em save(), depois que a OS existir.
+ */
+export function useDraftCommission(auto: AutoCommission[], osTotal: number) {
+  const [editing, setEditing] = useState(false);
+  const [rows, setRows]       = useState<Row[]>([]);
+  function startEdit() {
+    setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }))
+      : [{ key: ++seq, mechanic_id: '', mode: 'p10', amount: '' }]);
+    setEditing(true);
+  }
+  const backToRule = () => { setEditing(false); setRows([]); };
+  const valueOf = (r: Row) => {
+    const pct = MODES.find(m => m.key === r.mode)?.pct;
+    return pct != null ? r2(osTotal * pct / 100) : r2(parseMoney(r.amount));
+  };
+  const valid = !editing || rows.every(r => r.mechanic_id && valueOf(r) >= 0);
+  const total = editing ? r2(rows.reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
+  async function save(wid: string, sid: string | null, osId: string): Promise<{ error: { message: string } | null }> {
+    if (!editing) return { error: null };
+    const { error } = await supabase.rpc('set_os_commissions', {
+      p_workshop: wid, p_session: sid, p_os: osId, p_manual: true,
+      p_rows: rows.filter(r => r.mechanic_id).map(r => ({ mechanic_id: r.mechanic_id, amount: valueOf(r) })),
+    });
+    return { error };
+  }
+  return { loaded: true, editing, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf };
+}
+
 export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border border-steel-200 px-4 py-3', children }: {
-  c: ReturnType<typeof useOsCommission>; team: Team; className?: string; children?: React.ReactNode;
+  c: CommissionCtl; team: Team; className?: string; children?: React.ReactNode;
 }) {
   if (!c.loaded) return null;
   const name = (id: string) => team.find(t => t.id === id)?.name ?? 'Colaborador';

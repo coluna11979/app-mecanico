@@ -112,6 +112,8 @@ Extraia os dados exatamente como estão escritos:
   • PIX = PIX → "pix"
   • D = débito → "debito"
   Cada valor com sua sigla vira um item em pagamentos (ex.: "500 PIX + 270 F" → pix 500 e depois 270).
+  A sigla pode estar sozinha e CIRCULADA no meio da nota, abaixo dos itens ou perto do total, sem valor ao lado (ex.: um "F" dentro de um círculo).
+  Nesse caso ela vale para o total da nota: um item em pagamentos com essa forma e valor null.
 - mecanico: nome do mecânico ou responsável pelo serviço, se escrito (ex.: "Mecânico: João" → "João"). Vazio se não houver.
 - PDF com várias páginas: é uma nota só; junte os itens de todas as páginas.
 - Liste em campos_incertos tudo que tiver leitura duvidosa, para a oficina conferir.
