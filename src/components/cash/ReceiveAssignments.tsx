@@ -51,9 +51,11 @@ export function useReceiveAssignments(os: ReceiveOs, team: Team) {
   // Peça pertence ao serviço logo acima dela na OS (ordem dos itens) — automático, não precisa escolher
   const partsOf = useMemo(() => {
     const m = new Map<string, Item[]>();
-    let cur: Item | null = null;
+    // Peças antes do primeiro serviço pertencem a ele
+    let cur: Item | null = (items ?? []).find(i => i.kind === 'labor') ?? null;
+    if (cur) m.set(cur.id, []);
     for (const i of items ?? []) {
-      if (i.kind === 'labor') { cur = i; m.set(i.id, []); } else if (cur) m.get(cur.id)!.push(i);
+      if (i.kind === 'labor') { cur = i; if (!m.has(i.id)) m.set(i.id, []); } else if (cur) m.get(cur.id)!.push(i);
     }
     return m;
   }, [items]);

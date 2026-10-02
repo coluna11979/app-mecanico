@@ -175,14 +175,18 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
    */
   const commAuto = useMemo<AutoCommission[]>(() => {
     if (!done) return [];
-    const ruleV2 = (f.data || todayYmd) >= '2026-10-01';
+    // Nota importada usa sempre a regra atual (4% serviço + peças · 10% mão de obra)
+    const ruleV2 = true;
     const by = new Map<string, { value: number; base: string[] }>();
     const groups: { labor: ItemRow | null; parts: ItemRow[] }[] = [];
+    // Peças antes do primeiro serviço pertencem a esse primeiro serviço
+    const lead: ItemRow[] = [];
     for (const r of items) {
-      if (r.tipo === 'labor') groups.push({ labor: r, parts: [] });
+      if (r.tipo === 'labor') groups.push({ labor: r, parts: groups.length ? [] : lead.splice(0) });
       else if (groups.length) groups[groups.length - 1].parts.push(r);
-      else groups.push({ labor: null, parts: [r] });
+      else lead.push(r);
     }
+    if (lead.length) groups.push({ labor: null, parts: lead });
     for (const g of groups) {
       const w = g.labor ? whoOf(g.labor) : (ruleV2 ? '' : osWho);
       if (!w || w === PLATFORM) continue;
@@ -627,9 +631,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
             {done && team.length > 0 && (
               <section>
                 <OsCommission c={comm} team={team} className="rounded-xl border border-steel-200 px-3 py-3" />
-                {(f.data || todayYmd) < '2026-10-01' && !comm.editing && (
-                  <p className="text-[11px] text-steel-400 mt-1">Nota antes de 01/10/2026: vale a % da ficha de cada colaborador.</p>
-                )}
+
               </section>
             )}
 
