@@ -157,6 +157,10 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const laterAmt = Math.round(payRows.filter(p => p.method === 'depois').reduce((a, p) => a + payVal(p), 0) * 100) / 100;
   const [laterDue, setLaterDue] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); });
   const [laterNote, setLaterNote] = useState('');
+  /** Fiado (F) de nota antiga que o cliente já quitou: entra como pago, na forma e data em que pagou */
+  const [laterPaid, setLaterPaid] = useState(false);
+  const [laterPaidMethod, setLaterPaidMethod] = useState<PayMethod | ''>('');
+  const [laterPaidDate, setLaterPaidDate] = useState('');
   const setPay = (key: number, patch: Partial<PayRow>) => setPays(ps => ps.map(p => (p.key === key ? { ...p, ...patch } : p)));
   function addPay() {
     const used = new Set(pays.map(p => p.method));
@@ -256,7 +260,9 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       if (payRows.some(p => !p.method)) { toast.error('Escolha a forma de pagamento'); return; }
       if (payRows.some(p => !(payVal(p) > 0))) { toast.error('Informe o valor de cada forma de pagamento'); return; }
       if (payMissing < -0.004) { toast.error('O pagamento passa do total da nota'); return; }
-      if (laterAmt > 0 && !laterDue) { toast.error('Informe até quando o cliente vai pagar o que ficou para depois'); return; }
+      if (laterAmt > 0 && !laterPaid && !laterDue) { toast.error('Informe até quando o cliente vai pagar o que ficou para depois'); return; }
+      if (laterAmt > 0 && laterPaid && !laterPaidMethod) { toast.error('Escolha como o cliente pagou o fiado'); return; }
+      if (laterAmt > 0 && laterPaid && laterPaidDate && laterPaidDate > todayYmd) { toast.error('A data do pagamento não pode ser no futuro'); return; }
       if (payMissing > 0.004 && !window.confirm(`O pagamento soma ${fmtBRL(paySum)} e a nota dá ${fmtBRL(finalTotal)}. Os ${fmtBRL(payMissing)} que faltam ficam em aberto. Confirmar?`)) return;
     }
     setSaving(true);
@@ -392,8 +398,18 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
         });
         if (error) throw error;
       }
+      // F já quitado: recebimento na data em que o cliente pagou (vazia = data da nota)
+      if (charge && laterAmt > 0 && laterPaid) {
+        const paidAt = laterPaidDate ? new Date(`${laterPaidDate}T12:00:00`).toISOString() : when;
+        const { error } = await supabase.rpc('import_receive_os', {
+          p_workshop: wid, p_session: sid, p_os: os.id, p_paid_at: paidAt,
+          p_operator: receivedBy || null,
+          p_parts: [{ method: laterPaidMethod, amount: laterAmt, installments: 1 }],
+        });
+        if (error) throw error;
+      }
       // F (pagar depois): o que falta fica como conta a receber, com vencimento
-      if (charge && laterAmt > 0) {
+      if (charge && laterAmt > 0 && !laterPaid) {
         const { error } = await supabase.rpc('cash_pay_later', {
           p_workshop: wid, p_session: sid, p_os: os.id, p_due: laterDue, p_note: laterNote || 'F na nota',
         });
@@ -711,6 +727,31 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                     {laterAmt > 0 && (
                       <div className="rounded-xl border-2 border-brand-300 bg-brand-50/40 p-2.5 space-y-2">
                         <div className="text-xs font-semibold">🕒 {fmtBRL(laterAmt)} para pagar depois (F)</div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button type="button" onClick={() => setLaterPaid(false)}
+                            className={`px-2 py-1.5 rounded-lg border text-xs font-semibold ${!laterPaid ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 text-steel-600'}`}>
+                            ⏳ Ainda vai pagar
+                          </button>
+                          <button type="button" onClick={() => { setLaterPaid(true); if (!laterPaidDate) setLaterPaidDate(f.data || todayYmd); }}
+                            className={`px-2 py-1.5 rounded-lg border text-xs font-semibold ${laterPaid ? 'bg-signal-600 text-white border-signal-600' : 'bg-white border-steel-200 text-steel-600'}`}>
+                            ✅ O cliente já pagou
+                          </button>
+                        </div>
+                        {laterPaid ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="text-[11px] text-steel-500">Pagou com *
+                              <select className={`input !py-2 text-sm mt-0.5 ${laterPaidMethod ? '' : '!border-pending-500 !bg-pending-50'}`} value={laterPaidMethod}
+                                onChange={e => setLaterPaidMethod(e.target.value as PayMethod)}>
+                                <option value="">Forma…</option>
+                                {RECEIVE_METHODS.map(m => <option key={m} value={m}>{METHODS[m].icon} {METHODS[m].label}</option>)}
+                              </select>
+                            </label>
+                            <label className="text-[11px] text-steel-500">Pagou em
+                              <input type="date" className="input !py-2 text-sm mt-0.5" max={todayYmd} value={laterPaidDate} onChange={e => setLaterPaidDate(e.target.value)} />
+                            </label>
+                            <div className="col-span-2 text-[11px] text-steel-500">Entra como recebido nessa data (fora do caixa, se não for hoje). Não fica em “a receber”.</div>
+                          </div>
+                        ) : (
                         <div className="grid grid-cols-2 gap-2">
                           <label className="text-[11px] text-steel-500">Vai pagar até *
                             <input type="date" className="input !py-2 text-sm mt-0.5" value={laterDue} onChange={e => setLaterDue(e.target.value)} />
@@ -719,7 +760,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                             <input className="input !py-2 text-sm mt-0.5" placeholder="Ex.: paga dia 10" value={laterNote} onChange={e => setLaterNote(e.target.value)} />
                           </label>
                         </div>
-                        <div className="text-[11px] text-steel-500">Fica em Caixa → Pagar depois e no Financeiro → OS a receber. Se o cliente já pagou, troque pela forma usada.</div>
+                        )}
+                        {!laterPaid && <div className="text-[11px] text-steel-500">Fica em Caixa → Pagar depois e no Financeiro → OS a receber.</div>}
                       </div>
                     )}
                     {ops.length > 0 && (
