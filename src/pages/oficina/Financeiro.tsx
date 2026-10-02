@@ -14,6 +14,7 @@ import PeriodPicker, { PREV_LABEL, usePeriod } from '@/components/PeriodPicker';
 import { ALL_TIME, COMMISSION_COLS, loadCommissionBase, type CommissionBaseRow } from '@/lib/commission';
 import CommissionDetail from '@/components/team/CommissionDetail';
 import ReceivablesTab from '@/components/finance/ReceivablesTab';
+import CompletedOsList from '@/components/finance/CompletedOsList';
 import {
   byMethod, cashFlowOf, closings, expensesByCategory, flowSeries, receivables, valesByMechanic,
   type FinEntry, type FinOs, type FinPayment, type FinRegister,
@@ -439,6 +440,8 @@ export default function Financeiro() {
             </div>
 
             {/* Extrato: cada recebimento com a OS de origem */}
+            <CompletedOsList list={f.sales.sales as FinOs[]} />
+
             <PaymentsList filter={{ workshopId: wid!, from: range.from.toISOString(), to: range.to.toISOString() }}
               title="🧾 Recebimentos de OS no período" empty="Nenhum recebimento no período." />
           </>
