@@ -6,6 +6,8 @@ import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { METHODS, RECEIVE_METHODS, type PayMethod } from '@/lib/cash';
 import { useOperator } from '@/lib/operators';
 import { ensureCatalogParts, partKey, partNameForVehicle } from '@/lib/parts';
+import { COMMISSION_COLS, RULE, commissionFor, pcts, type CommissionMech } from '@/lib/commission';
+import { OsCommission, useDraftCommission, type AutoCommission } from '@/components/cash/OsCommission';
 import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, WorkshopMechanic } from '@/types/database';
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
@@ -66,7 +68,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const sid = balcao ? session?.session_id ?? null : null;
 
   // Quem fez o serviço (equipe da loja) e quem recebeu (colaboradores do balcão)
-  const [team, setTeam] = useState<Pick<WorkshopMechanic, 'id' | 'name'>[]>([]);
+  const [team, setTeam] = useState<(Pick<WorkshopMechanic, 'id' | 'name'> & CommissionMech)[]>([]);
   const [ops, setOps]   = useState<Op[]>([]);
   const [osWho, setOsWho] = useState('');
   const [receivedBy, setReceivedBy] = useState('');
@@ -96,10 +98,10 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   useEffect(() => {
     (async () => {
       const [m, o] = await Promise.all([
-        supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', imp.workshop_id).eq('active', true).order('name'),
+        supabase.from('workshop_mechanics').select(`id, name, ${COMMISSION_COLS}`).eq('workshop_id', imp.workshop_id).eq('active', true).order('name'),
         supabase.from('workshop_operators').select('id, name, is_owner').eq('workshop_id', imp.workshop_id).eq('active', true).order('name'),
       ]);
-      const mechs = (m.data as Pick<WorkshopMechanic, 'id' | 'name'>[]) ?? [];
+      const mechs = (m.data as unknown as (Pick<WorkshopMechanic, 'id' | 'name'> & CommissionMech)[]) ?? [];
       const opList = (o.data as Op[]) ?? [];
       setTeam(mechs); setOps(opList);
       // Mecânico escrito na nota → equipe (pelo nome)
@@ -166,6 +168,46 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const todayYmd = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const futureDate = !!f.data && f.data > todayYmd;
   const whoOf = (r: ItemRow) => r.who || osWho;
+
+  /**
+   * Comissão pela regra, com quem fez cada serviço: peças ficam com o serviço logo acima delas.
+   * Nota a partir de 01/10/2026: 4% serviço + peças · 10% mão de obra. Antes: a % da ficha de cada um.
+   */
+  const commAuto = useMemo<AutoCommission[]>(() => {
+    if (!done) return [];
+    const ruleV2 = (f.data || todayYmd) >= '2026-10-01';
+    const by = new Map<string, { value: number; base: string[] }>();
+    const groups: { labor: ItemRow | null; parts: ItemRow[] }[] = [];
+    for (const r of items) {
+      if (r.tipo === 'labor') groups.push({ labor: r, parts: [] });
+      else if (groups.length) groups[groups.length - 1].parts.push(r);
+      else groups.push({ labor: null, parts: [r] });
+    }
+    for (const g of groups) {
+      const w = g.labor ? whoOf(g.labor) : (ruleV2 ? '' : osWho);
+      if (!w || w === PLATFORM) continue;
+      const m = team.find(t => t.id === w);
+      if (!m) continue;
+      const laborAmt = g.labor ? rowTotal(g.labor) : 0;
+      const partsAmt = g.parts.reduce((a, p) => a + rowTotal(p), 0);
+      const e = by.get(w) ?? { value: 0, base: [] };
+      if (ruleV2) {
+        if (!g.labor) continue;
+        if (g.parts.length) { e.value += (laborAmt + partsAmt) * RULE.service / 100; e.base.push(`${RULE.service}% de ${fmtBRL(laborAmt + partsAmt)}`); }
+        else { e.value += laborAmt * RULE.labor / 100; e.base.push(`${RULE.labor}% de ${fmtBRL(laborAmt)}`); }
+      } else {
+        const p = pcts(m);
+        e.value += commissionFor(m, { labor: laborAmt, laborOwn: 0, parts: partsAmt, svc: 0, mo: 0 }, 0).commission;
+        if (laborAmt) e.base.push(`${p.labor}% de ${fmtBRL(laborAmt)}`);
+        if (partsAmt && p.parts) e.base.push(`${p.parts}% peças ${fmtBRL(partsAmt)}`);
+      }
+      by.set(w, e);
+    }
+    return [...by.entries()].filter(([, e]) => e.value > 0)
+      .map(([id, e]) => ({ mechanic_id: id, value: Math.round(e.value * 100) / 100, base: e.base.join(' + ') }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, osWho, team, done, f.data]);
+  const comm = useDraftCommission(commAuto, items.length ? total : (aiTotal ?? 0));
   // Nota só de peças (venda de balcão): não tem serviço, ninguém ganha comissão — não pede quem fez
   const onlyParts = items.length > 0 && laborRows.length === 0;
   const needWho = done && team.length > 0 && !onlyParts;
@@ -190,6 +232,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       if (!Number.isFinite(parseMoney(r.valor || '0'))) { toast.error(`Item ${i + 1}: valor inválido`); return; }
     }
     if (whoMissing) { toast.error('Informe quem fez o serviço'); return; }
+    if (!comm.valid) { toast.error('Escolha quem recebe cada comissão'); return; }
     if (futureDate) { toast.error('A data da nota está no futuro — corrija antes de importar'); return; }
     const charge = done && paid && finalTotal > 0;
     if (charge) {
@@ -311,6 +354,12 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
               : { executor: 'workshop', workshop_mechanic_id: whoOf(r) }
             : {}),
         })));
+        if (error) throw error;
+      }
+
+      // 4a. Comissão alterada na conferência (substitui a regra só nesta OS)
+      if (done && comm.editing) {
+        const { error } = await comm.save(wid, sid, os.id);
         if (error) throw error;
       }
 
@@ -570,6 +619,16 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                       </div>
                     ))}
                   </div>
+                )}
+              </section>
+            )}
+
+            {/* Comissões — pela regra, com opção de alterar */}
+            {done && team.length > 0 && (
+              <section>
+                <OsCommission c={comm} team={team} className="rounded-xl border border-steel-200 px-3 py-3" />
+                {(f.data || todayYmd) < '2026-10-01' && !comm.editing && (
+                  <p className="text-[11px] text-steel-400 mt-1">Nota antes de 01/10/2026: vale a % da ficha de cada colaborador.</p>
                 )}
               </section>
             )}
