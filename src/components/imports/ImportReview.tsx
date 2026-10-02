@@ -225,6 +225,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   // Nota só de peças (venda de balcão): não tem serviço, ninguém ganha comissão — não pede quem fez
   const onlyParts = items.length > 0 && laborRows.length === 0;
   const needWho = done && team.length > 0 && !onlyParts;
+  /** "Quem fez" aparece sempre que o serviço foi feito; em nota só de peças é opcional (quem instalou) */
+  const showWho = done && team.length > 0;
   const whoMissing = needWho && (laborRows.length ? laborRows.some(r => !whoOf(r)) : !osWho);
 
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
@@ -568,6 +570,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
               {items.map((r, idx) => (
                 /* Duas linhas por item: o painel de conferência ocupa só metade da tela */
                 <div key={r.key} className="grid grid-cols-12 gap-1.5 items-center pb-2 border-b border-steel-100 last:border-0">
+                  {/* Cada lançamento é 1 item, como num cupom */}
+                  <div className="col-span-12 text-[10px] font-bold text-steel-400 uppercase tracking-wider">Item {idx + 1}</div>
                   <select className="input !py-2 !px-2 text-xs col-span-3" value={r.tipo}
                     onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, tipo: e.target.value as OsItemKind } : i))}>
                     <option value="part">Peça</option>
@@ -598,6 +602,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                 <input className="input !py-1.5 w-28 text-right text-sm" inputMode="decimal" placeholder="0,00" value={f.desconto} onChange={set('desconto')} />
               </div>
               <div className="flex justify-end items-baseline gap-3">
+                {items.length > 0 && <span className="text-xs text-steel-400 mr-auto">{items.length} {items.length === 1 ? 'item' : 'itens'}</span>}
                 <span className="text-sm text-steel-500">Total</span>
                 <span className="text-2xl font-bold font-display">{fmtBRL(items.length ? total : (aiTotal ?? 0))}</span>
               </div>
@@ -609,11 +614,17 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
             </section>
 
             {/* Quem fez — comissão e desempenho no mês da nota */}
-            {needWho && (
+            {showWho && (
               <section className="space-y-2">
                 <div>
-                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Quem fez o serviço <span className="text-alert-600">*</span></div>
-                  <div className="text-[11px] text-steel-400">A comissão entra no mês da nota. Peça vai junto com o serviço logo acima dela.</div>
+                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">
+                    Quem fez o serviço {needWho ? <span className="text-alert-600">*</span> : <span className="normal-case font-normal text-steel-400">(opcional)</span>}
+                  </div>
+                  <div className="text-[11px] text-steel-400">
+                    {onlyParts
+                      ? 'Nota só com peças: informe quem instalou, se alguém instalou. Peça sem serviço não tem comissão pela regra — use “Alterar ou digitar valor” se ele ganha algo.'
+                      : 'A comissão entra no mês da nota. Peça vai junto com o serviço logo acima dela.'}
+                  </div>
                 </div>
                 <select className={`input !py-2 text-sm ${!osWho && whoMissing ? '!border-pending-500 !bg-pending-50' : ''}`}
                   value={osWho} onChange={e => setOsWho(e.target.value)}>
