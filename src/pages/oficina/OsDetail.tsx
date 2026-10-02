@@ -42,7 +42,7 @@ export default function OsDetail() {
   const [reworkForm, setReworkForm] = useState(false);
   const [original, setOriginal]   = useState<(OsLink & { mechanic: { name: string } | null }) | null>(null);
   const [returns, setReturns]     = useState<OsLink[]>([]);
-  const [team, setTeam]           = useState<{ id: string; name: string; no_commission?: boolean | null }[]>([]);
+  const [team, setTeam]           = useState<{ id: string; name: string; no_commission?: boolean | null; commission_revenue_percent?: number | null }[]>([]);
   /* false = fechado · 'edit' = escolher · 'platform' = já abre com a plataforma marcada */
   const [scheduling, setScheduling] = useState(false);
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
@@ -97,7 +97,7 @@ export default function OsDetail() {
   // Equipe (responsável da OS e responsável pelo retorno)
   useEffect(() => {
     if (!os?.workshop_id) return;
-    supabase.from('workshop_mechanics').select('id, name, no_commission').eq('workshop_id', os.workshop_id).neq('status', 'terminated').order('name')
+    supabase.from('workshop_mechanics').select('id, name, no_commission, commission_revenue_percent').eq('workshop_id', os.workshop_id).neq('status', 'terminated').order('name')
       .then(({ data }) => setTeam(data ?? []));
   }, [os?.workshop_id]);
 

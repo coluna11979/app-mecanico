@@ -16,7 +16,7 @@ import type { WorkshopMechanic } from '@/types/database';
  */
 
 type Assign = ReturnType<typeof useReceiveAssignments>;
-type Team = (Pick<WorkshopMechanic, 'id' | 'name'> & { no_commission?: boolean | null })[];
+type Team = (Pick<WorkshopMechanic, 'id' | 'name'> & { no_commission?: boolean | null; commission_revenue_percent?: number | null })[];
 /** Como a comissão da pessoa é calculada: % padrão sobre o total da OS ou valor fechado */
 type Mode = 'p10' | 'p4' | 'fixo';
 const MODES: { key: Mode; label: string; pct: number | null }[] = [
@@ -243,7 +243,17 @@ export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border bor
       <div className="flex justify-between text-sm pt-2 mt-2 border-t border-steel-100">
         <span className="text-steel-500">Total de comissões</span><strong>{brl(c.total)}</strong>
       </div>
-      <p className="text-[11px] text-steel-400 mt-1">A % do gerente sobre o faturamento da loja entra à parte, automática.</p>
+      {/* Quem ganha % do faturamento (ex.: gerente): só informação — entra sozinho no fechamento */}
+      {team.filter(t => !t.no_commission && Number(t.commission_revenue_percent ?? 0) > 0).map(t => {
+        const pct = Number(t.commission_revenue_percent);
+        return (
+          <div key={t.id} className="flex justify-between gap-3 text-xs text-steel-500 mt-1.5">
+            <span className="min-w-0">ℹ️ <strong className="text-steel-700">{t.name}</strong> · {String(pct).replace('.', ',')}% do faturamento desta OS (entra sozinho no fechamento)</span>
+            <span className="shrink-0 font-semibold text-steel-700">{brl(Math.round(c.osTotal * pct) / 100)}</span>
+          </div>
+        );
+      })}
+      <p className="text-[11px] text-steel-400 mt-1">A % do gerente é sobre o faturamento total da loja no período: não soma no total acima.</p>
       {children}
     </div>
   );
