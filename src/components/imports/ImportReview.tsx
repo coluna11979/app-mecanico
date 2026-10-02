@@ -9,7 +9,8 @@ import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, W
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
 type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string; who: string };
-type PayRow = { key: number; method: PayMethod | ''; amount: string; installments: number };
+/** 'depois' = F na nota (pagar depois): não entra como recebido; vira conta a receber com vencimento */
+type PayRow = { key: number; method: PayMethod | '' | 'depois'; amount: string; installments: number };
 type Op = { id: string; name: string; is_owner: boolean };
 
 let seq = 0;
@@ -72,7 +73,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const [paid, setPaid] = useState(true);
   const [pays, setPays] = useState<PayRow[]>(() => {
     const list = (x?.pagamentos ?? []).map(p => ({
-      key: ++seq, method: p.forma as PayMethod, amount: p.valor != null ? moneyInput(p.valor) : '', installments: p.parcelas || 1,
+      key: ++seq, method: p.forma as PayRow['method'], amount: p.valor != null ? moneyInput(p.valor) : '', installments: p.parcelas || 1,
     }));
     return list.length ? list : [{ key: ++seq, method: '' as const, amount: '', installments: 1 }];
   });
@@ -143,6 +144,11 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const payVal = (p: PayRow) => { const v = parseMoney(p.amount || '0'); return Number.isFinite(v) ? v : 0; };
   const paySum = Math.round(payRows.reduce((a, p) => a + payVal(p), 0) * 100) / 100;
   const payMissing = Math.round((finalTotal - paySum) * 100) / 100;
+  /** Recebido de verdade × o que ficou para pagar depois (F) */
+  const paidRows = payRows.filter(p => p.method !== 'depois');
+  const laterAmt = Math.round(payRows.filter(p => p.method === 'depois').reduce((a, p) => a + payVal(p), 0) * 100) / 100;
+  const [laterDue, setLaterDue] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); });
+  const [laterNote, setLaterNote] = useState('');
   const setPay = (key: number, patch: Partial<PayRow>) => setPays(ps => ps.map(p => (p.key === key ? { ...p, ...patch } : p)));
   function addPay() {
     const used = new Set(pays.map(p => p.method));
@@ -182,6 +188,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       if (payRows.some(p => !p.method)) { toast.error('Escolha a forma de pagamento'); return; }
       if (payRows.some(p => !(payVal(p) > 0))) { toast.error('Informe o valor de cada forma de pagamento'); return; }
       if (payMissing < -0.004) { toast.error('O pagamento passa do total da nota'); return; }
+      if (laterAmt > 0 && !laterDue) { toast.error('Informe até quando o cliente vai pagar o que ficou para depois'); return; }
       if (payMissing > 0.004 && !window.confirm(`O pagamento soma ${fmtBRL(paySum)} e a nota dá ${fmtBRL(finalTotal)}. Os ${fmtBRL(payMissing)} que faltam ficam em aberto. Confirmar?`)) return;
     }
     setSaving(true);
@@ -286,11 +293,18 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       }
 
       // 4b. Recebimento com a data da nota (fora do caixa do dia; entra no Financeiro do período)
-      if (charge) {
+      if (charge && paidRows.some(p => payVal(p) > 0)) {
         const { error } = await supabase.rpc('import_receive_os', {
           p_workshop: wid, p_session: sid, p_os: os.id, p_paid_at: when,
           p_operator: receivedBy || null,
-          p_parts: payRows.map(p => ({ method: p.method, amount: payVal(p), installments: p.installments })),
+          p_parts: paidRows.filter(p => payVal(p) > 0).map(p => ({ method: p.method, amount: payVal(p), installments: p.installments })),
+        });
+        if (error) throw error;
+      }
+      // F (pagar depois): o que falta fica como conta a receber, com vencimento
+      if (charge && laterAmt > 0) {
+        const { error } = await supabase.rpc('cash_pay_later', {
+          p_workshop: wid, p_session: sid, p_os: os.id, p_due: laterDue, p_note: laterNote || 'F na nota',
         });
         if (error) throw error;
       }
@@ -552,6 +566,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                           value={p.method} onChange={e => setPay(p.key, { method: e.target.value as PayMethod, installments: 1 })}>
                           <option value="">Forma de pagamento…</option>
                           {RECEIVE_METHODS.map(m => <option key={m} value={m}>{METHODS[m].icon} {METHODS[m].label}</option>)}
+                          <option value="depois">🕒 Pagar depois (F)</option>
                         </select>
                         {p.method === 'credito' && (
                           <select className="input !py-2 text-sm !w-16 shrink-0 !px-2" value={p.installments} onChange={e => setPay(p.key, { installments: Number(e.target.value) })}>
@@ -573,6 +588,20 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                         {Math.abs(payMissing) < 0.005 ? '✓ Valor fechado' : payMissing > 0 ? `Falta ${fmtBRL(payMissing)}` : `Passou ${fmtBRL(-payMissing)}`}
                       </span>
                     </div>
+                    {laterAmt > 0 && (
+                      <div className="rounded-xl border-2 border-brand-300 bg-brand-50/40 p-2.5 space-y-2">
+                        <div className="text-xs font-semibold">🕒 {fmtBRL(laterAmt)} para pagar depois (F)</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="text-[11px] text-steel-500">Vai pagar até *
+                            <input type="date" className="input !py-2 text-sm mt-0.5" value={laterDue} onChange={e => setLaterDue(e.target.value)} />
+                          </label>
+                          <label className="text-[11px] text-steel-500">Observação
+                            <input className="input !py-2 text-sm mt-0.5" placeholder="Ex.: paga dia 10" value={laterNote} onChange={e => setLaterNote(e.target.value)} />
+                          </label>
+                        </div>
+                        <div className="text-[11px] text-steel-500">Fica em Caixa → Pagar depois e no Financeiro → OS a receber. Se o cliente já pagou, troque pela forma usada.</div>
+                      </div>
+                    )}
                     {ops.length > 0 && (
                       <label className="block text-[11px] text-steel-500">
                         Quem recebeu

@@ -73,7 +73,7 @@ const SCHEMA = {
         type: 'object', additionalProperties: false,
         required: ['forma', 'valor', 'parcelas'],
         properties: {
-          forma: { type: 'string', enum: ['dinheiro', 'pix', 'debito', 'credito'] },
+          forma: { type: 'string', enum: ['dinheiro', 'pix', 'debito', 'credito', 'depois'] },
           valor: nullable({ type: 'number' }),
           parcelas: { type: 'integer' },
         },
@@ -105,6 +105,13 @@ Extraia os dados exatamente como estão escritos:
 - Se só existir um valor total sem itens discriminados, crie um item "labor" com a descrição do serviço e esse valor.
 - recomendacoes: serviços que a oficina recomendou fazer no futuro (ex.: "Recomendada avaliação das bieletas na próxima revisão" → "Avaliar bieletas"). Um por item. Lista vazia se não houver.
 - pagamentos: forma de pagamento se estiver escrita ("PIX", "cartão de crédito 3x", "dinheiro", "débito"). Cartão sem dizer qual → "credito" e inclua em campos_incertos. Parcelas = 1 quando não houver. Valor null quando não estiver separado por forma. Lista vazia se a nota não diz como foi pago.
+  Nesta oficina a forma costuma vir em SIGLA ao lado do valor, no rodapé ou perto do total (ex.: "500 PIX", "270 F", "MC 3x"):
+  • MC = cartão de crédito → "credito" (número de vezes, se houver, em parcelas)
+  • F = pagar depois (fiado) → "depois"
+  • R$ = dinheiro → "dinheiro"
+  • PIX = PIX → "pix"
+  • D = débito → "debito"
+  Cada valor com sua sigla vira um item em pagamentos (ex.: "500 PIX + 270 F" → pix 500 e depois 270).
 - mecanico: nome do mecânico ou responsável pelo serviço, se escrito (ex.: "Mecânico: João" → "João"). Vazio se não houver.
 - PDF com várias páginas: é uma nota só; junte os itens de todas as páginas.
 - Liste em campos_incertos tudo que tiver leitura duvidosa, para a oficina conferir.
