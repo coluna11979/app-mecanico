@@ -534,7 +534,9 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                   <button type="button" onClick={() => setPaid(true)}
                     className={`rounded-xl border-2 p-2.5 text-left transition ${paid ? 'border-signal-500 bg-signal-50' : 'border-steel-200'}`}>
                     <div className="font-semibold text-sm">💰 Foi pago</div>
-                    <div className="text-[11px] text-steel-500">Entra como recebido em {f.data ? new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR') : 'na data da nota'}</div>
+                    <div className="text-[11px] text-steel-500">
+                      {!f.data || f.data === todayYmd ? 'Nota de hoje: entra no caixa aberto (conta na gaveta)' : `Entra como recebido em ${new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}, fora do caixa`}
+                    </div>
                   </button>
                   <button type="button" onClick={() => setPaid(false)}
                     className={`rounded-xl border-2 p-2.5 text-left transition ${!paid ? 'border-pending-500 bg-pending-50' : 'border-steel-200'}`}>
