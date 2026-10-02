@@ -53,6 +53,8 @@ export type CommissionBaseRow = {
   mo_base?: number;
   /** Comissão digitada à mão na OS (substitui a regra naquela OS) */
   manual?: number;
+  /** Valor fixo de regra por item (ex.: R$ 5 por alinhamento) */
+  fixed?: number;
 };
 
 /** Regra atual, igual para todas as lojas */
@@ -69,12 +71,15 @@ export type Done = {
   vLabor?: number; vParts?: number;
   /** Comissões definidas à mão nas OS (R$, já é o valor a pagar) */
   manual?: number;
+  /** Valores fixos das regras por item (R$) */
+  fixed?: number;
 };
 
 /** labor/parts = totais que o colaborador fez (para mostrar); svc/mo = bases da regra atual */
 export type CommissionCalc = {
   labor: number; laborOwn: number; parts: number; svc: number; mo: number; revenue: number; commission: number;
   manual: number;
+  fixed: number;
 };
 
 /** Colunas de comissão para os selects de workshop_mechanics */
@@ -102,12 +107,12 @@ export const hasCommission = (m: CommissionMech) => {
 /** Base de comissão dos serviços finalizados no período, já dividida por quem fez */
 export async function loadCommissionBase(wid: string, from: string, to: string): Promise<CommissionBaseRow[]> {
   const { data } = await fetchAll((a, b) => supabase.from('os_commission_base')
-    .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts, labor_only, done_at, rule_v2, svc_base, mo_base, manual')
+    .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts, labor_only, done_at, rule_v2, svc_base, mo_base, manual, fixed')
     .eq('workshop_id', wid).not('done_at', 'is', null)
     .gte('done_at', from).lt('done_at', to)
     .order('service_order_id').order('mechanic_id', { nullsFirst: true }).order('done_at').range(a, b));
   return ((data ?? []) as CommissionBaseRow[]).map(r => ({ ...r, labor: Number(r.labor), parts: Number(r.parts), labor_only: Number(r.labor_only ?? 0),
-    svc_base: Number(r.svc_base ?? 0), mo_base: Number(r.mo_base ?? 0), manual: Number(r.manual ?? 0) }));
+    svc_base: Number(r.svc_base ?? 0), mo_base: Number(r.mo_base ?? 0), manual: Number(r.manual ?? 0), fixed: Number(r.fixed ?? 0) }));
 }
 
 /** Soma o que cada colaborador fez (serviços e peças) */
@@ -116,6 +121,7 @@ export function baseByMechanic(rows: CommissionBaseRow[]) {
   for (const r of rows) {
     if (!r.mechanic_id) continue;
     const e = map.get(r.mechanic_id) ?? { labor: 0, laborOwn: 0, parts: 0, svc: 0, mo: 0 };
+    if (Number(r.fixed ?? 0) > 0) e.fixed = (e.fixed ?? 0) + Number(r.fixed);
     if (Number(r.manual ?? 0) > 0) {
       e.manual = (e.manual ?? 0) + Number(r.manual);
       map.set(r.mechanic_id, e);
@@ -148,20 +154,21 @@ export function commissionFor(m: CommissionMech, done: Done | undefined, revenue
   const mo = r2(done?.mo ?? 0);
   const rev = p.revenue > 0 ? r2(revenue) : 0;
   const manual = r2(done?.manual ?? 0);
+  const fixed = r2(done?.fixed ?? 0);
   // Salário fixo: mostra o que fez, mas não ganha comissão
-  if (m.no_commission) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: 0, manual: 0, commission: 0 };
+  if (m.no_commission) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: 0, manual: 0, fixed: 0, commission: 0 };
   return {
-    labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual,
+    labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual, fixed,
     commission: r2(labor * p.labor / 100 + laborOwn * p.own / 100 + parts * p.parts / 100
-      + svc * RULE.service / 100 + mo * RULE.labor / 100 + rev * p.revenue / 100 + manual),
+      + svc * RULE.service / 100 + mo * RULE.labor / 100 + rev * p.revenue / 100 + manual + fixed),
   };
 }
 
 const pctStr = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
 
 /** Fez algum serviço/peça (ou teve comissão definida na OS) no período? */
-export const workedIn = (c: Pick<CommissionCalc, 'labor' | 'laborOwn' | 'parts' | 'svc' | 'mo' | 'manual'>) =>
-  c.labor + c.laborOwn + c.parts + c.svc + c.mo + c.manual > 0;
+export const workedIn = (c: Pick<CommissionCalc, 'labor' | 'laborOwn' | 'parts' | 'svc' | 'mo' | 'manual' | 'fixed'>) =>
+  c.labor + c.laborOwn + c.parts + c.svc + c.mo + c.manual + c.fixed > 0;
 
 /**
  * Texto da regra que vale para a pessoa: "4% serviço + peças + 10% mão de obra (+ 1,5% faturamento)".

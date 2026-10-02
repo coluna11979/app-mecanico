@@ -8,6 +8,7 @@ import { useOperator } from '@/lib/operators';
 import { ensureCatalogParts, partKey, partNameForVehicle } from '@/lib/parts';
 import { COMMISSION_COLS, RULE, commissionFor, pcts, type CommissionMech } from '@/lib/commission';
 import { OsCommission, useDraftCommission, type AutoCommission } from '@/components/cash/OsCommission';
+import { fixedFor, isExcluded, loadItemRules, type ItemRule } from '@/lib/commissionRules';
 import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, WorkshopMechanic } from '@/types/database';
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
@@ -68,6 +69,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const sid = balcao ? session?.session_id ?? null : null;
 
   // Quem fez o serviço (equipe da loja) e quem recebeu (colaboradores do balcão)
+  const [itemRules, setItemRules] = useState<ItemRule[]>([]);
+  useEffect(() => { loadItemRules(imp.workshop_id).then(setItemRules); }, [imp.workshop_id]);
   const [team, setTeam] = useState<(Pick<WorkshopMechanic, 'id' | 'name'> & CommissionMech)[]>([]);
   const [ops, setOps]   = useState<Op[]>([]);
   const [osWho, setOsWho] = useState('');
@@ -193,8 +196,15 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       const e = by.get(w) ?? { value: 0, base: [] };
       if (ruleV2) {
         if (!g.labor) continue;
-        if (g.parts.length) { e.value += (laborAmt + partsAmt) * RULE.service / 100; e.base.push(`${RULE.service}% de ${fmtBRL(laborAmt + partsAmt)}`); }
-        else { e.value += laborAmt * RULE.labor / 100; e.base.push(`${RULE.labor}% de ${fmtBRL(laborAmt)}`); }
+        // Regra por item da loja: item com regra (ex.: alinhamento) sai da conta; fixo para quem tiver
+        const lab = isExcluded(g.labor.descricao, itemRules) ? 0 : laborAmt;
+        const prt = g.parts.filter(p => !isExcluded(p.descricao, itemRules)).reduce((a, p) => a + rowTotal(p), 0);
+        if (g.parts.length) { if (lab + prt > 0) { e.value += (lab + prt) * RULE.service / 100; e.base.push(`${RULE.service}% de ${fmtBRL(lab + prt)}`); } }
+        else if (lab > 0) { e.value += lab * RULE.labor / 100; e.base.push(`${RULE.labor}% de ${fmtBRL(lab)}`); }
+        for (const it of [g.labor, ...g.parts]) {
+          const fx = fixedFor(it.descricao, w, parseMoney(it.quantidade) || 0, itemRules);
+          if (fx > 0) { e.value += fx; e.base.push(`${fmtBRL(fx)} fixo (${it.descricao})`); }
+        }
       } else {
         const p = pcts(m);
         e.value += commissionFor(m, { labor: laborAmt, laborOwn: 0, parts: partsAmt, svc: 0, mo: 0 }, 0).commission;
@@ -206,7 +216,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
     return [...by.entries()].filter(([, e]) => e.value > 0)
       .map(([id, e]) => ({ mechanic_id: id, value: Math.round(e.value * 100) / 100, base: e.base.join(' + ') }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, osWho, team, done, f.data]);
+  }, [items, osWho, team, done, f.data, itemRules]);
   const comm = useDraftCommission(commAuto, items.length ? total : (aiTotal ?? 0), osWho && osWho !== PLATFORM ? osWho : '');
   // Nota só de peças (venda de balcão): não tem serviço, ninguém ganha comissão — não pede quem fez
   const onlyParts = items.length > 0 && laborRows.length === 0;
