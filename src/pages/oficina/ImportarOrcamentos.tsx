@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { resizeImage } from '@/lib/imageResize';
 import { fmtBRL } from '@/components/os/osHelpers';
 import ImportReview from '@/components/imports/ImportReview';
-import { ensureCatalogParts, partKey } from '@/lib/parts';
+import { ensureCatalogParts, partKey, partNameForVehicle } from '@/lib/parts';
 import type { PaperImport, PaperImportStatus } from '@/types/database';
 
 type Tab = 'review' | 'reading' | 'failed' | 'done';
@@ -63,13 +63,27 @@ export default function ImportarOrcamentos() {
   const cameraRef  = useRef<HTMLInputElement>(null);
 
   /** Peças das notas já importadas que ainda não estão no cadastro */
-  type LoosePart = { id: string; description: string; unit_price: number; unit_cost: number | null; created_at: string };
+  type LoosePart = {
+    id: string; description: string; unit_price: number; unit_cost: number | null; created_at: string;
+    os: {
+      vehicle: { make: string | null; model: string | null } | null;
+      imp: { extracted: { veiculo?: { marca?: string | null; modelo?: string | null } } | null }[] | null;
+    } | null;
+  };
+  /** Nome no cadastro: com o veículo da nota quando houver ("Kit amortecedor (Fiat Strada)") */
+  const looseName = (i: LoosePart) => {
+    // Veículo da OS; sem ele, o que a leitura da nota trouxe (nota só com o modelo não gera veículo)
+    const read = i.os?.imp?.[0]?.extracted?.veiculo;
+    const make = i.os?.vehicle?.make && !/n[aã]o informado/i.test(i.os.vehicle.make) ? i.os.vehicle.make : read?.marca;
+    const model = i.os?.vehicle?.model && !/n[aã]o informado/i.test(i.os.vehicle.model) ? i.os.vehicle.model : read?.modelo;
+    return partNameForVehicle(i.description, make, model);
+  };
   const [loose, setLoose] = useState<LoosePart[]>([]);
   const [linking, setLinking] = useState(false);
   const loadLoose = useCallback(async () => {
     if (!wid) return;
     const { data } = await supabase.from('service_order_items')
-      .select('id, description, unit_price, unit_cost, created_at, os:service_orders!inner(source, status)')
+      .select('id, description, unit_price, unit_cost, created_at, os:service_orders!inner(source, status, vehicle:vehicles(make, model), imp:paper_imports(extracted))')
       .eq('workshop_id', wid).eq('kind', 'part').is('part_id', null)
       .eq('os.source', 'paper_import').neq('os.status', 'cancelled').limit(2000);
     setLoose(((data ?? []) as unknown as LoosePart[]));
@@ -78,16 +92,16 @@ export default function ImportarOrcamentos() {
 
   async function linkLooseParts() {
     if (!wid || !loose.length) return;
-    const names = new Set(loose.map(i => partKey(i.description)));
+    const names = new Set(loose.map(i => partKey(looseName(i))));
     if (!confirm(`Salvar no cadastro ${names.size} peça(s) das notas importadas? O preço de venda é o da nota mais recente; o custo sai pela margem da loja (100% → metade). Dá para mudar depois em Peças e estoque.`)) return;
     setLinking(true);
     try {
       // Preço da nota mais recente de cada peça
       const latest = [...loose].sort((a, b) => b.created_at.localeCompare(a.created_at));
-      const { map, created } = await ensureCatalogParts(wid, latest.map(i => ({ name: i.description, price: Number(i.unit_price) })));
+      const { map, created } = await ensureCatalogParts(wid, latest.map(i => ({ name: looseName(i), price: Number(i.unit_price) })));
       const byPart = new Map<string, { cost: number; ids: string[]; noCost: string[] }>();
       for (const i of loose) {
-        const p = map.get(partKey(i.description));
+        const p = map.get(partKey(looseName(i)));
         if (!p) continue;
         const e = byPart.get(p.id) ?? { cost: p.cost, ids: [], noCost: [] };
         e.ids.push(i.id);
@@ -271,8 +285,9 @@ export default function ImportarOrcamentos() {
         {loose.length > 0 && (
           <div className="card mt-5 flex flex-wrap items-center gap-3 !py-3">
             <div className="flex-1 min-w-[220px] text-sm">
-              <strong>🔩 {new Set(loose.map(i => partKey(i.description))).size} peça(s) das notas importadas ainda não estão no cadastro.</strong>
-              <span className="block text-xs text-steel-500">Salve para buscar nas próximas OS — com o preço da nota e o custo pela margem da loja.</span>
+              <strong>🔩 {new Set(loose.map(i => partKey(looseName(i)))).size} peça(s) das notas importadas ainda não estão no cadastro.</strong>
+              <span className="block text-xs text-steel-500">Salve para buscar nas próximas OS — com o preço da nota e o custo pela margem da loja.
+                Nota com veículo: a peça entra com o carro no nome (ex.: “Kit amortecedor (Fiat Strada)”).</span>
             </div>
             <button onClick={linkLooseParts} disabled={linking} className="btn-primary text-sm">{linking ? 'Salvando…' : 'Salvar no cadastro'}</button>
           </div>

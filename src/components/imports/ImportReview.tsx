@@ -5,7 +5,7 @@ import { fmtBRL, fmtPhone, moneyInput, parseMoney } from '@/components/os/osHelp
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { METHODS, RECEIVE_METHODS, type PayMethod } from '@/lib/cash';
 import { useOperator } from '@/lib/operators';
-import { ensureCatalogParts, partKey } from '@/lib/parts';
+import { ensureCatalogParts, partKey, partNameForVehicle } from '@/lib/parts';
 import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, WorkshopMechanic } from '@/types/database';
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
@@ -169,6 +169,11 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const cls = (path: string) => `input !py-2 text-sm ${isUnsure(path) ? '!border-pending-500 !bg-pending-50' : ''}`;
 
   const linking = useExisting && !!matchCustomer;
+  /** Nome no cadastro: com o veículo da nota, quando identificado */
+  const vehicleMake = linking && matchVehicle && !f.marca.trim() ? matchVehicle.make : f.marca;
+  const vehicleModel = linking && matchVehicle && !f.modelo.trim() ? matchVehicle.model : f.modelo;
+  const catalogName = (d: string) => partNameForVehicle(d, vehicleMake, vehicleModel);
+  const vehicleLabel = partNameForVehicle('', vehicleMake, vehicleModel).replace(/^\s*\(|\)\s*$/g, '');
   const canSave = useMemo(() => !!(f.nome.trim() || linking) && !!f.titulo.trim(), [f.nome, f.titulo, linking]);
 
   async function confirm() {
@@ -276,7 +281,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       if (toCatalog) {
         try {
           catalog = (await ensureCatalogParts(wid, items.filter(r => r.tipo === 'part' && r.descricao.trim())
-            .map(r => ({ name: r.descricao, price: parseMoney(r.valor || '0') })))).map;
+            .map(r => ({ name: catalogName(r.descricao), price: parseMoney(r.valor || '0') })))).map;
         } catch (err) {
           console.warn('[ImportReview] peças não foram para o cadastro:', err);
         }
@@ -288,9 +293,9 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
           quantity: parseMoney(r.quantidade),
           unit_price: parseMoney(r.valor || '0'),
           position: idx,
-          ...(r.tipo === 'part' && catalog.get(partKey(r.descricao))
-            ? { part_id: catalog.get(partKey(r.descricao))!.id,
-                unit_cost: catalog.get(partKey(r.descricao))!.cost > 0 ? catalog.get(partKey(r.descricao))!.cost : null }
+          ...(r.tipo === 'part' && catalog.get(partKey(catalogName(r.descricao)))
+            ? { part_id: catalog.get(partKey(catalogName(r.descricao)))!.id,
+                unit_cost: catalog.get(partKey(catalogName(r.descricao)))!.cost > 0 ? catalog.get(partKey(catalogName(r.descricao)))!.cost : null }
             : {}),
           // Serviço leva quem fez; peça segue o serviço logo acima dela (comissão)
           ...(done && r.tipo === 'labor' && whoOf(r)
@@ -473,6 +478,9 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                   <span>
                     <strong>Salvar as peças no cadastro</strong> (Peças e estoque) com o preço desta nota; o custo sai pela margem da loja
                     (100% → metade do preço). Peça com o mesmo nome já cadastrada é reaproveitada. Dá para mudar depois.
+                    {vehicleLabel
+                      ? <span className="block mt-1 text-steel-600">Veículo identificado: entram como <strong>“{catalogName(items.find(r => r.tipo === 'part')?.descricao || 'Peça')}”</strong>.</span>
+                      : <span className="block mt-1 text-steel-500">Sem veículo na nota: entram com o nome como está.</span>}
                   </span>
                 </label>
               )}

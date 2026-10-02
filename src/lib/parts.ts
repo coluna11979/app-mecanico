@@ -116,3 +116,18 @@ export async function ensureCatalogParts(wid: string, list: { name: string; pric
   }
   return { map: out, created: toCreate.length };
 }
+
+/**
+ * Peça de nota com veículo identificado → nome com o carro ("Kit amortecedor (Fiat Strada)"):
+ * a mesma descrição para outro veículo é outro produto. Sem veículo, fica o nome como veio.
+ */
+export function partNameForVehicle(name: string, make?: string | null, model?: string | null) {
+  const clean = (s?: string | null) => { const t = (s ?? '').trim(); return !t || /n[aã]o informado/i.test(t) ? '' : t; };
+  const mk = clean(make), md = clean(model);
+  const vehicle = [mk, md].filter(Boolean).join(' ');
+  const base = name.trim();
+  if (!vehicle) return base;
+  // Já fala do carro na descrição? não repete
+  if (md && partKey(base).includes(partKey(md))) return base;
+  return `${base} (${vehicle})`;
+}
