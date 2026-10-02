@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { resizeImage } from '@/lib/imageResize';
 import { fmtBRL } from '@/components/os/osHelpers';
 import ImportReview from '@/components/imports/ImportReview';
+import { ensureCatalogParts, partKey } from '@/lib/parts';
 import type { PaperImport, PaperImportStatus } from '@/types/database';
 
 type Tab = 'review' | 'reading' | 'failed' | 'done';
@@ -60,6 +61,52 @@ export default function ImportarOrcamentos() {
   const localDay = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef  = useRef<HTMLInputElement>(null);
+
+  /** Peças das notas já importadas que ainda não estão no cadastro */
+  type LoosePart = { id: string; description: string; unit_price: number; unit_cost: number | null; created_at: string };
+  const [loose, setLoose] = useState<LoosePart[]>([]);
+  const [linking, setLinking] = useState(false);
+  const loadLoose = useCallback(async () => {
+    if (!wid) return;
+    const { data } = await supabase.from('service_order_items')
+      .select('id, description, unit_price, unit_cost, created_at, os:service_orders!inner(source, status)')
+      .eq('workshop_id', wid).eq('kind', 'part').is('part_id', null)
+      .eq('os.source', 'paper_import').neq('os.status', 'cancelled').limit(2000);
+    setLoose(((data ?? []) as unknown as LoosePart[]));
+  }, [wid]);
+  useEffect(() => { loadLoose(); }, [loadLoose]);
+
+  async function linkLooseParts() {
+    if (!wid || !loose.length) return;
+    const names = new Set(loose.map(i => partKey(i.description)));
+    if (!confirm(`Salvar no cadastro ${names.size} peça(s) das notas importadas? O preço de venda é o da nota mais recente; o custo sai pela margem da loja (100% → metade). Dá para mudar depois em Peças e estoque.`)) return;
+    setLinking(true);
+    try {
+      // Preço da nota mais recente de cada peça
+      const latest = [...loose].sort((a, b) => b.created_at.localeCompare(a.created_at));
+      const { map, created } = await ensureCatalogParts(wid, latest.map(i => ({ name: i.description, price: Number(i.unit_price) })));
+      const byPart = new Map<string, { cost: number; ids: string[]; noCost: string[] }>();
+      for (const i of loose) {
+        const p = map.get(partKey(i.description));
+        if (!p) continue;
+        const e = byPart.get(p.id) ?? { cost: p.cost, ids: [], noCost: [] };
+        e.ids.push(i.id);
+        if (i.unit_cost == null && p.cost > 0) e.noCost.push(i.id);
+        byPart.set(p.id, e);
+      }
+      for (const [partId, e] of byPart) {
+        const { error } = await supabase.from('service_order_items').update({ part_id: partId }).in('id', e.ids);
+        if (error) throw error;
+        if (e.noCost.length) await supabase.from('service_order_items').update({ unit_cost: e.cost }).in('id', e.noCost);
+      }
+      toast.success(`${created} peça(s) nova(s) no cadastro · ${loose.length} item(ns) das notas ligados ✓`);
+      await loadLoose();
+    } catch (err: any) {
+      toast.error('Não foi possível salvar as peças: ' + (err?.message ?? 'erro'));
+    } finally {
+      setLinking(false);
+    }
+  }
 
   const load = useCallback(async () => {
     if (!wid) return;
@@ -221,6 +268,16 @@ export default function ImportarOrcamentos() {
           )}
         </div>
 
+        {loose.length > 0 && (
+          <div className="card mt-5 flex flex-wrap items-center gap-3 !py-3">
+            <div className="flex-1 min-w-[220px] text-sm">
+              <strong>🔩 {new Set(loose.map(i => partKey(i.description))).size} peça(s) das notas importadas ainda não estão no cadastro.</strong>
+              <span className="block text-xs text-steel-500">Salve para buscar nas próximas OS — com o preço da nota e o custo pela margem da loja.</span>
+            </div>
+            <button onClick={linkLooseParts} disabled={linking} className="btn-primary text-sm">{linking ? 'Salvando…' : 'Salvar no cadastro'}</button>
+          </div>
+        )}
+
         {/* Período da importação */}
         <div className="flex flex-wrap items-center gap-2 mt-6">
           <select className="input !py-1 !px-2 !text-xs !w-auto font-semibold" value={by} onChange={e => setBy(e.target.value as 'nota' | 'envio')}>
@@ -326,7 +383,7 @@ export default function ImportarOrcamentos() {
           imageUrl={urls[reviewing.id] ?? null}
           isPdf={isPdfPath(reviewing.image_path)}
           onClose={() => setReviewing(null)}
-          onDone={() => { setReviewing(null); load(); }}
+          onDone={() => { setReviewing(null); load(); loadLoose(); }}
         />
       )}
     </WorkshopLayout>

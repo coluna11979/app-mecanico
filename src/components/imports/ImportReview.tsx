@@ -5,6 +5,7 @@ import { fmtBRL, fmtPhone, moneyInput, parseMoney } from '@/components/os/osHelp
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { METHODS, RECEIVE_METHODS, type PayMethod } from '@/lib/cash';
 import { useOperator } from '@/lib/operators';
+import { ensureCatalogParts, partKey } from '@/lib/parts';
 import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, WorkshopMechanic } from '@/types/database';
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
@@ -70,6 +71,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const [receivedBy, setReceivedBy] = useState('');
   /** Pago na época (lança o recebimento com a data da nota) ou ficou em aberto */
   const [paid, setPaid] = useState(true);
+  /** Peças da nota vão para o cadastro (preço da nota; custo pela margem da loja) */
+  const [toCatalog, setToCatalog] = useState(true);
   const [pays, setPays] = useState<PayRow[]>(() => {
     const list = (x?.pagamentos ?? []).map(p => ({
       key: ++seq, method: p.forma as PayMethod, amount: p.valor != null ? moneyInput(p.valor) : '', installments: p.parcelas || 1,
@@ -268,6 +271,16 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       osId = os.id;
 
       // 4. Itens (o total é recalculado pelo banco)
+      // Peças → cadastro: reaproveita a de mesmo nome ou cria (custo = preço ÷ (1 + margem))
+      let catalog = new Map<string, { id: string; cost: number }>();
+      if (toCatalog) {
+        try {
+          catalog = (await ensureCatalogParts(wid, items.filter(r => r.tipo === 'part' && r.descricao.trim())
+            .map(r => ({ name: r.descricao, price: parseMoney(r.valor || '0') })))).map;
+        } catch (err) {
+          console.warn('[ImportReview] peças não foram para o cadastro:', err);
+        }
+      }
       if (items.length) {
         const { error } = await supabase.from('service_order_items').insert(items.map((r, idx) => ({
           service_order_id: os.id, workshop_id: wid, kind: r.tipo,
@@ -275,6 +288,10 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
           quantity: parseMoney(r.quantidade),
           unit_price: parseMoney(r.valor || '0'),
           position: idx,
+          ...(r.tipo === 'part' && catalog.get(partKey(r.descricao))
+            ? { part_id: catalog.get(partKey(r.descricao))!.id,
+                unit_cost: catalog.get(partKey(r.descricao))!.cost > 0 ? catalog.get(partKey(r.descricao))!.cost : null }
+            : {}),
           // Serviço leva quem fez; peça segue o serviço logo acima dela (comissão)
           ...(done && r.tipo === 'labor' && whoOf(r)
             ? whoOf(r) === PLATFORM
@@ -450,6 +467,15 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                     className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100">+ Serviço</button>
                 </div>
               </div>
+              {items.some(r => r.tipo === 'part') && (
+                <label className="flex items-start gap-2 text-xs bg-steel-50 rounded-lg px-3 py-2 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={toCatalog} onChange={e => setToCatalog(e.target.checked)} />
+                  <span>
+                    <strong>Salvar as peças no cadastro</strong> (Peças e estoque) com o preço desta nota; o custo sai pela margem da loja
+                    (100% → metade do preço). Peça com o mesmo nome já cadastrada é reaproveitada. Dá para mudar depois.
+                  </span>
+                </label>
+              )}
               {items.map((r, idx) => (
                 /* Duas linhas por item: o painel de conferência ocupa só metade da tela */
                 <div key={r.key} className="grid grid-cols-12 gap-1.5 items-center pb-2 border-b border-steel-100 last:border-0">

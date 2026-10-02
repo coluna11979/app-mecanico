@@ -79,3 +79,40 @@ export const fmtQty = (n: number | null | undefined) =>
 /** Estoque abaixo do mínimo (só quando há mínimo definido) */
 export const needsRestock = (p: Pick<WorkshopPart, 'stock_qty' | 'min_qty'>) =>
   Number(p.min_qty) > 0 && Number(p.stock_qty) <= Number(p.min_qty);
+
+/** "Óleo  5W30 " → "oleo 5w30" (para achar a mesma peça escrita de outro jeito) */
+export const partKey = (name: string) =>
+  name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * Garante as peças no cadastro a partir de notas/orçamentos: o que já existe (mesmo nome) é reaproveitado;
+ * o que falta entra com o preço de venda da nota e o custo pela margem da loja (100% → metade do preço).
+ * A peça nova fica sem preço fixo: a venda sai do custo + margem padrão (= o preço da nota). Dá para mudar depois.
+ */
+export async function ensureCatalogParts(wid: string, list: { name: string; price: number }[]) {
+  const out = new Map<string, { id: string; cost: number }>();
+  const wanted = new Map<string, { name: string; price: number }>();
+  for (const p of list) {
+    const k = partKey(p.name);
+    if (k && !wanted.has(k)) wanted.set(k, { name: p.name.trim(), price: p.price });
+  }
+  if (!wanted.size) return { map: out, created: 0 };
+  const [{ data: existing }, margin] = await Promise.all([
+    supabase.from('workshop_parts').select('id, name, cost').eq('workshop_id', wid),
+    loadDefaultMargin(wid),
+  ]);
+  for (const p of (existing ?? []) as { id: string; name: string; cost: number }[]) {
+    const k = partKey(p.name);
+    if (!out.has(k)) out.set(k, { id: p.id, cost: Number(p.cost) });
+  }
+  const toCreate = [...wanted.entries()].filter(([k, p]) => !out.has(k) && p.price > 0);
+  if (toCreate.length) {
+    const rows = toCreate.map(([, p]) => ({
+      workshop_id: wid, name: p.name, cost: round2(p.price / (1 + margin / 100)), margin_percent: null, sale_price: null,
+    }));
+    const { data, error } = await supabase.from('workshop_parts').insert(rows).select('id, name, cost');
+    if (error) throw error;
+    for (const p of (data ?? []) as { id: string; name: string; cost: number }[]) out.set(partKey(p.name), { id: p.id, cost: Number(p.cost) });
+  }
+  return { map: out, created: toCreate.length };
+}
