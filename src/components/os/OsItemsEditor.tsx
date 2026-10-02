@@ -417,7 +417,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           onSaved={res => {
             setSugg(xs => [{ description: res.name, kind: 'part', unit_price: res.price, part_id: res.part_id, cost: res.cost, stock: 0, unit: res.unit },
               ...xs.filter(x => x.description.toLowerCase() !== res.name.toLowerCase())]);
-            const filled = { description: res.name, part_id: res.part_id, unit_cost: moneyInput(res.cost), unit_price: moneyInput(res.price) };
+            const filled = { description: res.name, part_id: res.part_id, unit_cost: res.cost > 0 ? moneyInput(res.cost) : '', unit_price: moneyInput(res.price) };
             setRows(rs => quick.key
               ? rs.map(x => x.key === quick.key ? { ...x, ...filled } : x)
               : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', used_in: '', stype: '', ...filled }]);
