@@ -524,6 +524,19 @@ export default function OsDetail() {
               onSaved={load}
             />
 
+            {/* Total mudou depois de pago (ex.: corrigiu o valor da nota): o pagamento ficou maior que a OS */}
+            {Number(os.paid_amount ?? 0) > Number(os.price) - Number(os.counter_discount ?? 0) + 0.004 && (
+              <div className="rounded-2xl border-2 border-alert-200 bg-alert-50 px-4 py-3 flex flex-wrap items-center gap-3">
+                <div className="flex-1 min-w-[220px] text-sm text-alert-700">
+                  ⚠️ O pagamento ({fmtBRL(Number(os.paid_amount))}) está <strong>maior que o total da OS</strong> ({fmtBRL(Number(os.price) - Number(os.counter_discount ?? 0))}).
+                  Corrija o pagamento para bater com o total.
+                </div>
+                {canDo(session, balcao, 'cancelar_recebimento') && (
+                  <button onClick={() => setFixPay(n => n + 1)} className="btn-primary text-sm">💳 Corrigir pagamento</button>
+                )}
+              </div>
+            )}
+
             {/* Pagamentos recebidos no caixa: quando, como e quem recebeu */}
             <PaymentsList filter={{ serviceOrderId: os.id }} showOs={false} empty={null} reloadKey={os.paid_amount}
               title="💰 Pagamentos desta OS" openFix={fixPay}
