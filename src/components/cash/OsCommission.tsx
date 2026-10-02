@@ -129,12 +129,12 @@ export type AutoCommission = { mechanic_id: string; value: number; base: string 
  * Comissão de uma OS que ainda vai ser criada (conferência de nota importada): mostra a regra,
  * permite alterar e só grava em save(), depois que a OS existir.
  */
-export function useDraftCommission(auto: AutoCommission[], osTotal: number) {
+export function useDraftCommission(auto: AutoCommission[], osTotal: number, defaultMechanic = '') {
   const [editing, setEditing] = useState(false);
   const [rows, setRows]       = useState<Row[]>([]);
   function startEdit() {
     setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }))
-      : [{ key: ++seq, mechanic_id: '', mode: 'p10', amount: '' }]);
+      : [{ key: ++seq, mechanic_id: defaultMechanic, mode: 'p10', amount: '' }]);
     setEditing(true);
   }
   const backToRule = () => { setEditing(false); setRows([]); };

@@ -207,7 +207,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       .map(([id, e]) => ({ mechanic_id: id, value: Math.round(e.value * 100) / 100, base: e.base.join(' + ') }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, osWho, team, done, f.data]);
-  const comm = useDraftCommission(commAuto, items.length ? total : (aiTotal ?? 0));
+  const comm = useDraftCommission(commAuto, items.length ? total : (aiTotal ?? 0), osWho && osWho !== PLATFORM ? osWho : '');
   // Nota só de peças (venda de balcão): não tem serviço, ninguém ganha comissão — não pede quem fez
   const onlyParts = items.length > 0 && laborRows.length === 0;
   const needWho = done && team.length > 0 && !onlyParts;
@@ -222,10 +222,11 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const vehicleModel = linking && matchVehicle && !f.modelo.trim() ? matchVehicle.model : f.modelo;
   const catalogName = (d: string) => partNameForVehicle(d, vehicleMake, vehicleModel);
   const vehicleLabel = partNameForVehicle('', vehicleMake, vehicleModel).replace(/^\s*\(|\)\s*$/g, '');
-  const canSave = useMemo(() => !!(f.nome.trim() || linking) && !!f.titulo.trim(), [f.nome, f.titulo, linking]);
+  // Cliente é opcional: nota de balcão costuma vir sem nome (a OS entra sem cliente)
+  const canSave = useMemo(() => !!f.titulo.trim(), [f.titulo]);
 
   async function confirm() {
-    if (!canSave) { toast.error('Informe o nome do cliente e o serviço'); return; }
+    if (!canSave) { toast.error('Informe o serviço'); return; }
     for (const [i, r] of items.entries()) {
       if (!r.descricao.trim()) { toast.error(`Item ${i + 1}: informe a descrição`); return; }
       if (!Number.isFinite(parseMoney(r.quantidade)) || parseMoney(r.quantidade) <= 0) { toast.error(`Item ${i + 1}: quantidade inválida`); return; }
@@ -247,8 +248,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
     try {
       const wid = imp.workshop_id;
 
-      // 1. Cliente
-      let customerId: string;
+      // 1. Cliente (sem nome na nota → OS sem cliente)
+      let customerId: string | null = null;
       if (linking) {
         customerId = matchCustomer!.id;
         // completa só o que estava vazio no cadastro
@@ -257,7 +258,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
         if (!matchCustomer!.cpf && f.cpf.trim()) patch.cpf = f.cpf.trim();
         if (!matchCustomer!.address && f.endereco.trim()) patch.address = f.endereco.trim();
         if (Object.keys(patch).length) await supabase.from('customers').update(patch).eq('id', customerId);
-      } else {
+      } else if (f.nome.trim()) {
         const { data, error } = await supabase.from('customers').insert({
           workshop_id: wid,
           full_name: f.nome.trim(),
@@ -275,7 +276,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       const plate = plateNorm(f.placa);
       if (linking && matchVehicle && (!plate || plateNorm(matchVehicle.plate) === plate)) {
         vehicleId = matchVehicle.id;
-      } else if (plate || (f.marca.trim() && f.modelo.trim())) {
+      } else if (customerId && (plate || f.modelo.trim())) {
         const { data: existing } = plate
           ? await supabase.from('vehicles').select('id').eq('workshop_id', wid).eq('customer_id', customerId).ilike('plate', plate).limit(1)
           : { data: [] as { id: string }[] };
@@ -297,7 +298,10 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       // 3. OS com a data do bloquinho: concluída (feito) ou orçamento não aprovado
       const when = f.data ? new Date(`${f.data}T12:00:00`).toISOString() : imp.created_at;
       const doc = x?.numero_documento?.trim();
-      const description = [doc ? `Nota nº ${doc}` : null, f.obs.trim() || null].filter(Boolean).join('\n') || null;
+      // Sem cliente não dá para cadastrar o veículo: o carro fica anotado na OS
+      const carNote = !vehicleId && (f.marca.trim() || f.modelo.trim() || plate)
+        ? `Veículo: ${[f.marca.trim(), f.modelo.trim(), plate].filter(Boolean).join(' ')}` : null;
+      const description = [doc ? `Nota nº ${doc}` : null, carNote, f.obs.trim() || null].filter(Boolean).join('\n') || null;
       // Responsável geral: quem mais fez serviço da equipe (referência dos indicadores)
       const effWho = done ? (laborRows.length ? laborRows.map(whoOf) : [osWho]).filter(Boolean) : [];
       const allPlatform = effWho.length > 0 && effWho.every(w => w === PLATFORM);
@@ -467,7 +471,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
               )}
               {!linking && (
                 <div className="grid sm:grid-cols-2 gap-2">
-                  <input className={cls('cliente.nome')} placeholder="Nome *" value={f.nome} onChange={set('nome')} />
+                  <input className={cls('cliente.nome')} placeholder="Nome (opcional)" value={f.nome} onChange={set('nome')} />
                   <input className={cls('cliente.telefone')} placeholder="Telefone / WhatsApp" inputMode="tel" value={f.telefone} onChange={set('telefone')} />
                   <input className={cls('cliente.cpf')} placeholder="CPF" value={f.cpf} onChange={set('cpf')} />
                   <input className={cls('cliente.endereco')} placeholder="Endereço" value={f.endereco} onChange={set('endereco')} />
