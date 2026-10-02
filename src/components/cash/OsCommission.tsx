@@ -107,7 +107,7 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
 
   function startEdit() {
     setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }))
-      : [{ key: ++seq, mechanic_id: '', mode: 'p10', amount: '' }]);
+      : [{ key: ++seq, mechanic_id: '', mode: 'fixo', amount: '' }]);
     setEditing(true);
   }
   const backToRule = () => { setEditing(false); setRows([]); };
@@ -147,7 +147,7 @@ export function useDraftCommission(auto: AutoCommission[], osTotal: number, defa
   const [rows, setRows]       = useState<Row[]>([]);
   function startEdit() {
     setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }))
-      : [{ key: ++seq, mechanic_id: defaultMechanic, mode: 'p10', amount: '' }]);
+      : [{ key: ++seq, mechanic_id: defaultMechanic, mode: 'fixo', amount: '' }]);
     setEditing(true);
   }
   const backToRule = () => { setEditing(false); setRows([]); };
@@ -181,12 +181,17 @@ export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border bor
         <div className="label !mb-0">💰 Comissões a pagar nesta OS</div>
         {c.editing
           ? <button type="button" onClick={c.backToRule} className="text-xs font-semibold text-steel-500 hover:text-steel-800">↺ Voltar para a regra</button>
-          : <button type="button" onClick={c.startEdit} className="text-xs font-semibold text-brand-600">✏️ Alterar</button>}
+          : <button type="button" onClick={c.startEdit} className="text-xs font-semibold text-brand-600">✏️ Alterar ou digitar valor</button>}
       </div>
 
       {!c.editing ? (
         <div className="mt-2 space-y-1 text-sm">
-          {c.auto.length === 0 && <p className="text-xs text-steel-500">Ninguém da equipe ganha comissão pela regra nesta OS.</p>}
+          {c.auto.length === 0 && (
+            <p className="text-xs text-steel-500">
+              Ninguém ganha comissão pela regra nesta OS.{' '}
+              <button type="button" onClick={c.startEdit} className="font-semibold text-brand-600">Digitar o valor da comissão →</button>
+            </p>
+          )}
           {c.auto.map(x => (
             <div key={x.mechanic_id} className="flex justify-between gap-3">
               <span className="min-w-0 truncate">{name(x.mechanic_id)} <span className="text-[11px] text-steel-400">· {x.base}</span></span>
@@ -226,9 +231,12 @@ export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border bor
               {r.mode !== 'fixo' && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} do total da OS ({brl(c.osTotal)})</div>}
             </div>
           ))}
-          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: 'p10', amount: '' }])}
+          {c.rows.length === 0 && (
+            <p className="text-xs text-pending-800">Ninguém vai receber comissão nesta OS. Toque em “+ Incluir pessoa” para digitar um valor.</p>
+          )}
+          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: 'fixo', amount: '' }])}
             className="text-sm font-semibold text-brand-600">+ Incluir pessoa</button>
-          <p className="text-[11px] text-steel-500">Esses valores substituem a regra só nesta OS.</p>
+          <p className="text-[11px] text-steel-500">Valor fechado = o valor que você digitar, independente do cadastro. Substitui a regra só nesta OS.</p>
         </div>
       )}
 

@@ -29,7 +29,8 @@ type Row = {
 /** Peças pertencem ao serviço imediatamente acima delas (até o próximo serviço/mão de obra) */
 function groupOf(rs: Row[]): Map<string, Row | null> {
   const g = new Map<string, Row | null>();
-  let cur: Row | null = null;
+  // Peças antes do primeiro serviço pertencem a esse primeiro serviço (nas notas o serviço costuma vir por último)
+  let cur: Row | null = rs.find(r => r.kind === 'labor') ?? null;
   for (const r of rs) {
     if (r.kind === 'labor') cur = r;
     else g.set(r.key, cur);
@@ -43,6 +44,8 @@ function withTypes(rs: Row[]): Row[] {
     if (r.kind !== 'labor' || r.stype) return r;
     let hasPart = false;
     for (let j = i + 1; j < rs.length && rs[j].kind !== 'labor'; j++) hasPart = true;
+    // Primeiro serviço também leva as peças que vêm antes dele
+    if (rs.findIndex(x => x.kind === 'labor') === i && rs.slice(0, i).some(x => x.kind === 'part')) hasPart = true;
     return { ...r, stype: hasPart ? 'servico' : 'mao_de_obra' };
   });
 }
