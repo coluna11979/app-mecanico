@@ -11,6 +11,7 @@ import {
   currentHalf, halfLabel, loadCommissionHalf, payDate, shiftHalf, type CommissionRow, type Half,
 } from '@/lib/commissionClosing';
 import { Restricted } from './Fornecedores';
+import ItemRulesCard from '@/components/team/ItemRulesCard';
 
 export default function Comissoes() {
   const { currentWorkshop } = useAuth();
@@ -186,6 +187,8 @@ export default function Comissoes() {
             </div>
           </div>
         )}
+
+        {wid && <ItemRulesCard wid={wid} />}
 
         <p className="text-xs text-steel-400 leading-relaxed">
           Comissão sobre os serviços e as peças que cada um fez nas OS concluídas na quinzena (+ % sobre o faturamento da loja, para quem tiver).

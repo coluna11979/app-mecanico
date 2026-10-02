@@ -3,6 +3,7 @@ import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import { brl, moneyStr, parseMoney } from '@/lib/cash';
 import { RULE } from '@/lib/commission';
+import { fixedFor, isExcluded, loadItemRules, type ItemRule } from '@/lib/commissionRules';
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { useReceiveAssignments, type ReceiveOs } from '@/components/cash/ReceiveAssignments';
 import type { WorkshopMechanic } from '@/types/database';
@@ -41,6 +42,8 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   const [brought, setBrought] = useState(false);
   /** Total da OS — base das opções de % */
   const [osTotal, setOsTotal] = useState(0);
+  /** Regras por item da loja (ex.: alinhamento sem comissão) */
+  const [itemRules, setItemRules] = useState<ItemRule[]>([]);
   const [editing, setEditing] = useState(false);
   const [rows, setRows]       = useState<Row[]>([]);
 
@@ -49,12 +52,13 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     (async () => {
       try {
         const [o, ov] = await Promise.all([
-          supabase.from('service_orders').select('commission_manual, customer_brought_parts, price').eq('id', osId).maybeSingle(),
+          supabase.from('service_orders').select('commission_manual, customer_brought_parts, price, workshop_id').eq('id', osId).maybeSingle(),
           supabase.from('os_commission_overrides').select('mechanic_id, amount').eq('service_order_id', osId),
         ]);
         if (!alive) return;
-        const os = o.data as { commission_manual?: boolean; customer_brought_parts?: boolean; price?: number } | null;
+        const os = o.data as { commission_manual?: boolean; customer_brought_parts?: boolean; price?: number; workshop_id?: string } | null;
         setOsTotal(Number(os?.price ?? 0));
+        if (os?.workshop_id) loadItemRules(os.workshop_id).then(r => { if (alive) setItemRules(r); });
         const manual = !!os?.commission_manual;
         setWasManual(manual);
         setBrought(!!os?.customer_brought_parts);
@@ -81,22 +85,29 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
       const parts = a.partsOf.get(l.id) ?? [];
       const type = l.service_type ?? (parts.length ? 'servico' : 'mao_de_obra');
       const e = by.get(w) ?? { value: 0, base: [] };
+      // Regra por item da loja: item com regra sai da conta; quem tiver valor fixo ganha o fixo
+      const keepLabor = !isExcluded(l.description, itemRules);
+      const keepParts = parts.filter(p => !isExcluded(p.description, itemRules));
       if (type === 'servico' && !brought) {
-        const base = amt(l) + parts.reduce((s, p) => s + amt(p), 0);
-        e.value += base * RULE.service / 100;
-        e.base.push(`${RULE.service}% de ${brl(base)}`);
-      } else {
+        const base = (keepLabor ? amt(l) : 0) + keepParts.reduce((s, p) => s + amt(p), 0);
+        if (base > 0) { e.value += base * RULE.service / 100; e.base.push(`${RULE.service}% de ${brl(base)}`); }
+      } else if (keepLabor) {
         e.value += amt(l) * RULE.labor / 100;
         e.base.push(`${RULE.labor}% de ${brl(amt(l))}`);
       }
-      by.set(w, e);
+      for (const it of [l, ...parts]) {
+        const fx = fixedFor(it.description, w, Number(it.quantity), itemRules);
+        if (fx > 0) { e.value += fx; e.base.push(`${brl(fx)} fixo (${it.description})`); }
+      }
+      if (e.value > 0 || e.base.length) by.set(w, e);
     }
-    return [...by.entries()].map(([id, e]) => ({ mechanic_id: id, value: r2(e.value), base: e.base.join(' + ') }));
-  }, [a.labor, a.who, a.partsOf, brought, fixed]);
+    return [...by.entries()].filter(([, e]) => e.value > 0)
+      .map(([id, e]) => ({ mechanic_id: id, value: r2(e.value), base: e.base.join(' + ') }));
+  }, [a.labor, a.who, a.partsOf, brought, fixed, itemRules]);
 
   function startEdit() {
     setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }))
-      : [{ key: ++seq, mechanic_id: '', mode: 'p10', amount: '' }]);
+      : [{ key: ++seq, mechanic_id: '', mode: 'fixo', amount: '' }]);
     setEditing(true);
   }
   const backToRule = () => { setEditing(false); setRows([]); };
@@ -136,7 +147,7 @@ export function useDraftCommission(auto: AutoCommission[], osTotal: number, defa
   const [rows, setRows]       = useState<Row[]>([]);
   function startEdit() {
     setRows(auto.length ? auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }))
-      : [{ key: ++seq, mechanic_id: defaultMechanic, mode: 'p10', amount: '' }]);
+      : [{ key: ++seq, mechanic_id: defaultMechanic, mode: 'fixo', amount: '' }]);
     setEditing(true);
   }
   const backToRule = () => { setEditing(false); setRows([]); };
@@ -170,12 +181,17 @@ export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border bor
         <div className="label !mb-0">💰 Comissões a pagar nesta OS</div>
         {c.editing
           ? <button type="button" onClick={c.backToRule} className="text-xs font-semibold text-steel-500 hover:text-steel-800">↺ Voltar para a regra</button>
-          : <button type="button" onClick={c.startEdit} className="text-xs font-semibold text-brand-600">✏️ Alterar</button>}
+          : <button type="button" onClick={c.startEdit} className="text-xs font-semibold text-brand-600">✏️ Alterar ou digitar valor</button>}
       </div>
 
       {!c.editing ? (
         <div className="mt-2 space-y-1 text-sm">
-          {c.auto.length === 0 && <p className="text-xs text-steel-500">Ninguém da equipe ganha comissão pela regra nesta OS.</p>}
+          {c.auto.length === 0 && (
+            <p className="text-xs text-steel-500">
+              Ninguém ganha comissão pela regra nesta OS.{' '}
+              <button type="button" onClick={c.startEdit} className="font-semibold text-brand-600">Digitar o valor da comissão →</button>
+            </p>
+          )}
           {c.auto.map(x => (
             <div key={x.mechanic_id} className="flex justify-between gap-3">
               <span className="min-w-0 truncate">{name(x.mechanic_id)} <span className="text-[11px] text-steel-400">· {x.base}</span></span>
@@ -215,9 +231,12 @@ export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border bor
               {r.mode !== 'fixo' && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} do total da OS ({brl(c.osTotal)})</div>}
             </div>
           ))}
-          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: 'p10', amount: '' }])}
+          {c.rows.length === 0 && (
+            <p className="text-xs text-pending-800">Ninguém vai receber comissão nesta OS. Toque em “+ Incluir pessoa” para digitar um valor.</p>
+          )}
+          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: 'fixo', amount: '' }])}
             className="text-sm font-semibold text-brand-600">+ Incluir pessoa</button>
-          <p className="text-[11px] text-steel-500">Esses valores substituem a regra só nesta OS.</p>
+          <p className="text-[11px] text-steel-500">Valor fechado = o valor que você digitar, independente do cadastro. Substitui a regra só nesta OS.</p>
         </div>
       )}
 
