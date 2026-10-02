@@ -308,6 +308,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       // 6. Marca a importação como concluída
       await supabase.from('paper_imports').update({
         status: 'confirmed', service_order_id: os.id, customer_id: customerId, confirmed_at: new Date().toISOString(),
+        // Guarda a data conferida (o cartão e o filtro "data da nota" usam esta, não a lida pela IA)
+        extracted: { ...x, data: f.data || null },
       }).eq('id', imp.id);
 
       toast.success(done
