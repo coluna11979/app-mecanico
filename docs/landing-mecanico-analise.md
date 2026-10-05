@@ -40,7 +40,7 @@ Público: mecânicos e profissionais automotivos (marketplace), não a equipe da
 
 ## 4. O que mover de posição
 
-- **Calculadora:** estava logo após o hero. Ela vem depois de "Como funciona" e "Benefícios", para o número aparecer quando a pessoa já entende o modelo, e não como promessa de entrada.
+- **Calculadora:** continua logo após o hero, com o título original ("Quanto você quer ganhar?"), por decisão do produto.
 - **"Zero investimento":** deixa de ser seção solta e vira um card em Benefícios ("Estrutura da oficina").
 - **Reputação:** sai do meio de uma lista de 6 cards e ganha seção própria, com destaque escuro.
 - **Prova de confiança:** sai da faixa de "números" no fim e vira a seção "Confiança", antes do FAQ.
@@ -68,10 +68,10 @@ Público: mecânicos e profissionais automotivos (marketplace), não a equipe da
 ## 8. Nova sequência das seções
 
 1. Hero (headline, subtítulo, CTA, selos, card de oportunidade + card de avaliação)
-2. Para quem é (4 perfis + nota CLT)
-3. Como funciona (5 passos)
-4. Benefícios (6 cards)
-5. Simulador
+2. Simulador (Calcule sua renda)
+3. Para quem é (4 perfis + nota CLT)
+4. Como funciona (5 passos)
+5. Benefícios (6 cards)
 6. Reputação profissional (seção escura)
 7. Confiança
 8. FAQ
@@ -111,8 +111,8 @@ Público: mecânicos e profissionais automotivos (marketplace), não a equipe da
 - *Estrutura da oficina:* Elevador, ferramental e peças ficam por conta da oficina. Você entra com a mão de obra.
 - *Valor claro antes de aceitar:* Você vê quanto vai receber antes de dizer sim. Nada de combinar no fio do bigode.
 
-**Simulador**: "Quanto suas horas livres podem render?"
-- Sub: Ajuste as horas e o valor da sua hora. É só uma simulação para você ter uma ideia.
+**Simulador**: kicker "Calcule sua renda", título "Quanto você quer ganhar?"
+- Sub: Defina as horas que cabem na sua semana. Sem 44h obrigatórias, sem patrão fixando o horário.
 - Controles: horas/semana (2–40, padrão 8h) com presets *Só o sábado · 8h*, *Sábado + 2 noites · 15h*, *Meio período · 25h*; valor/hora (R$ 50–150, padrão R$ 80).
 - Resultado: "Simulação · valor líquido": R$ X por semana, ≈ R$ Y por mês.
 - Aviso: Simulação ilustrativa, não é promessa nem garantia de ganho. Considera que todas as horas informadas foram preenchidas com serviços e já desconta a taxa da plataforma. O resultado real depende da demanda na sua região, dos serviços que você aceitar e do valor de cada um.

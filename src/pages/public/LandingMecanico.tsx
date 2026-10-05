@@ -110,80 +110,12 @@ export default function LandingMecanico() {
         </div>
       </section>
 
-      {/* ── PARA QUEM É ── */}
-      <section className="py-20 lg:py-24 px-5 lg:px-8 bg-steel-50">
-        <div className="max-w-5xl mx-auto">
-          <SectionHead kicker="Para quem é"
-            title={<>Feito pra quem <span className="text-brand-500">sabe trabalhar</span>, seja qual for a sua rotina.</>} />
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Card title="Tem emprego e quer renda extra"
-              desc="Use folgas, sábados ou o contraturno. Você continua no seu trabalho e soma uma renda complementar quando der." />
-            <Card title="Já trabalha por conta"
-              desc="Preencha os horários vagos da semana com serviços em oficinas, sem precisar correr atrás de cliente." />
-            <Card title="Tem uma especialidade forte"
-              desc="Injeção, elétrica, diesel, ar-condicionado, câmbio… Seja encontrado pelo que você faz de melhor." />
-            <Card title="Quer construir nome no mercado"
-              desc="Cada serviço avaliado vira histórico. Seu trabalho passa a falar por você com novas oficinas." />
-          </div>
-
-          <p className="mt-6 text-center text-xs text-steel-500 max-w-2xl mx-auto leading-relaxed">
-            Tem carteira assinada? Vale conferir se o seu contrato tem cláusula de exclusividade.
-            Na maioria dos casos, trabalhar no tempo livre é permitido.
-          </p>
-        </div>
-      </section>
-
-      {/* ── COMO FUNCIONA ── */}
-      <section id="como-funciona" className="py-20 lg:py-28 px-5 lg:px-8 scroll-mt-16">
-        <div className="max-w-4xl mx-auto">
-          <SectionHead kicker="Como funciona"
-            title="Você informa sua rotina. A gente mostra o que encaixa." />
-
-          <div className="space-y-3">
-            <FlowStep n={1} title="Monte seu perfil profissional"
-              desc="Especialidades, anos de experiência, região onde mora, valor da sua hora e chave PIX. Leva poucos minutos e é gratuito." />
-            <FlowStep n={2} title="Nossa equipe analisa o cadastro"
-              desc="Conferimos os dados pra manter a rede confiável, para você e para as oficinas. Você recebe o aviso quando for aprovado." />
-            <FlowStep n={3} title="Fique disponível quando puder"
-              desc="Ativou, recebe alertas. Desativou, ninguém te chama. Pode ser só no sábado, só à noite ou a semana toda." />
-            <FlowStep n={4} title="Escolha o serviço"
-              desc="Antes de aceitar você vê o serviço, a oficina, a distância, as horas estimadas e o valor. Aceita o que fizer sentido, recusa o resto, sem penalidade." />
-            <FlowStep n={5} title="Execute e registre"
-              desc="Faz o serviço na oficina, com a estrutura dela. A oficina confirma, o valor entra no seu histórico de ganhos e o pagamento vai para a sua chave PIX." />
-          </div>
-        </div>
-      </section>
-
-      {/* ── BENEFÍCIOS ── */}
+      {/* ── SIMULADOR ── */}
       <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
         <div className="max-w-5xl mx-auto">
-          <SectionHead kicker="Por que usar"
-            title={<>Mais trabalho, <span className="text-brand-500">do seu jeito.</span></>} />
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Card title="Renda complementar"
-              desc="Transforme horas livres em dinheiro, sem largar o que você já tem." />
-            <Card title="Seus horários"
-              desc="Sem jornada mínima. Disponibilidade parcial é bem-vinda: uma tarde por semana já conta." />
-            <Card title="Sua região"
-              desc="Você vê a distância de cada serviço e escolhe até onde vale a pena ir." />
-            <Card title="Suas especialidades"
-              desc="Cadastre o que você domina e receba oportunidades compatíveis com o seu conhecimento." />
-            <Card title="Estrutura da oficina"
-              desc="Elevador, ferramental e peças ficam por conta da oficina. Você entra com a mão de obra." />
-            <Card title="Valor claro antes de aceitar"
-              desc="Você vê quanto vai receber antes de dizer sim. Nada de combinar no fio do bigode." />
-          </div>
-        </div>
-      </section>
-
-      {/* ── SIMULADOR ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8">
-        <div className="max-w-5xl mx-auto">
-          <SectionHead kicker="Simulador"
-            title={<>Quanto suas horas livres <span className="text-brand-500">podem render?</span></>}
-            sub="Ajuste as horas e o valor da sua hora. É só uma simulação para você ter uma ideia." />
+          <SectionHead kicker="Calcule sua renda"
+            title={<>Quanto você quer <span className="text-brand-500">ganhar</span>?</>}
+            sub="Defina as horas que cabem na sua semana. Sem 44h obrigatórias, sem patrão fixando o horário." />
 
           <div className="grid md:grid-cols-2 gap-6 items-center bg-white rounded-3xl p-6 lg:p-8 shadow-xl border border-steel-100">
             <div className="space-y-7">
@@ -238,6 +170,74 @@ export default function LandingMecanico() {
             foram preenchidas com serviços e já desconta a taxa da plataforma. O resultado real depende da demanda
             na sua região, dos serviços que você aceitar e do valor de cada um.
           </p>
+        </div>
+      </section>
+
+      {/* ── PARA QUEM É ── */}
+      <section className="py-20 lg:py-24 px-5 lg:px-8">
+        <div className="max-w-5xl mx-auto">
+          <SectionHead kicker="Para quem é"
+            title={<>Feito pra quem <span className="text-brand-500">sabe trabalhar</span>, seja qual for a sua rotina.</>} />
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Card title="Tem emprego e quer renda extra"
+              desc="Use folgas, sábados ou o contraturno. Você continua no seu trabalho e soma uma renda complementar quando der." />
+            <Card title="Já trabalha por conta"
+              desc="Preencha os horários vagos da semana com serviços em oficinas, sem precisar correr atrás de cliente." />
+            <Card title="Tem uma especialidade forte"
+              desc="Injeção, elétrica, diesel, ar-condicionado, câmbio… Seja encontrado pelo que você faz de melhor." />
+            <Card title="Quer construir nome no mercado"
+              desc="Cada serviço avaliado vira histórico. Seu trabalho passa a falar por você com novas oficinas." />
+          </div>
+
+          <p className="mt-6 text-center text-xs text-steel-500 max-w-2xl mx-auto leading-relaxed">
+            Tem carteira assinada? Vale conferir se o seu contrato tem cláusula de exclusividade.
+            Na maioria dos casos, trabalhar no tempo livre é permitido.
+          </p>
+        </div>
+      </section>
+
+      {/* ── COMO FUNCIONA ── */}
+      <section id="como-funciona" className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50 scroll-mt-16">
+        <div className="max-w-4xl mx-auto">
+          <SectionHead kicker="Como funciona"
+            title="Você informa sua rotina. A gente mostra o que encaixa." />
+
+          <div className="space-y-3">
+            <FlowStep n={1} title="Monte seu perfil profissional"
+              desc="Especialidades, anos de experiência, região onde mora, valor da sua hora e chave PIX. Leva poucos minutos e é gratuito." />
+            <FlowStep n={2} title="Nossa equipe analisa o cadastro"
+              desc="Conferimos os dados pra manter a rede confiável, para você e para as oficinas. Você recebe o aviso quando for aprovado." />
+            <FlowStep n={3} title="Fique disponível quando puder"
+              desc="Ativou, recebe alertas. Desativou, ninguém te chama. Pode ser só no sábado, só à noite ou a semana toda." />
+            <FlowStep n={4} title="Escolha o serviço"
+              desc="Antes de aceitar você vê o serviço, a oficina, a distância, as horas estimadas e o valor. Aceita o que fizer sentido, recusa o resto, sem penalidade." />
+            <FlowStep n={5} title="Execute e registre"
+              desc="Faz o serviço na oficina, com a estrutura dela. A oficina confirma, o valor entra no seu histórico de ganhos e o pagamento vai para a sua chave PIX." />
+          </div>
+        </div>
+      </section>
+
+      {/* ── BENEFÍCIOS ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8">
+        <div className="max-w-5xl mx-auto">
+          <SectionHead kicker="Por que usar"
+            title={<>Mais trabalho, <span className="text-brand-500">do seu jeito.</span></>} />
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Card title="Renda complementar"
+              desc="Transforme horas livres em dinheiro, sem largar o que você já tem." />
+            <Card title="Seus horários"
+              desc="Sem jornada mínima. Disponibilidade parcial é bem-vinda: uma tarde por semana já conta." />
+            <Card title="Sua região"
+              desc="Você vê a distância de cada serviço e escolhe até onde vale a pena ir." />
+            <Card title="Suas especialidades"
+              desc="Cadastre o que você domina e receba oportunidades compatíveis com o seu conhecimento." />
+            <Card title="Estrutura da oficina"
+              desc="Elevador, ferramental e peças ficam por conta da oficina. Você entra com a mão de obra." />
+            <Card title="Valor claro antes de aceitar"
+              desc="Você vê quanto vai receber antes de dizer sim. Nada de combinar no fio do bigode." />
+          </div>
         </div>
       </section>
 
