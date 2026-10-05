@@ -236,6 +236,18 @@ export default function ImportarOrcamentos() {
     else toast.success('Foto lida ✓');
   }
 
+  /** Trocar a data da nota no cartão (antes de conferir) */
+  const [editingDate, setEditingDate] = useState<string | null>(null);
+  async function saveDate(imp: PaperImport, ymd: string) {
+    if (!imp.extracted) return;
+    const extracted = { ...imp.extracted, data: ymd };
+    const { error } = await supabase.from('paper_imports').update({ extracted }).eq('id', imp.id);
+    if (error) { toast.error('Não foi possível trocar a data: ' + error.message); return; }
+    setList(l => l.map(x => x.id === imp.id ? { ...x, extracted } : x));
+    setEditingDate(null);
+    toast.success(`Data da nota: ${new Date(`${ymd}T12:00:00`).toLocaleDateString('pt-BR')} ✓`);
+  }
+
   async function discard(imp: PaperImport) {
     if (!confirm('Descartar esta foto?')) return;
     const { error } = await supabase.from('paper_imports').update({ status: 'discarded' }).eq('id', imp.id);
@@ -361,7 +373,17 @@ export default function ImportarOrcamentos() {
                         </div>
                         <div className="text-xs text-steel-500 truncate mt-0.5">{x?.servico_resumo ?? ''}</div>
                         <div className="flex justify-between items-center mt-2 text-sm">
-                          <span className="text-steel-400">{x?.data ? `Nota de ${new Date(`${x.data}T12:00:00`).toLocaleDateString('pt-BR')}` : 'Sem data'}</span>
+                          {r.status === 'extracted' && editingDate === r.id ? (
+                            <input type="date" className="input !py-1 !text-xs !w-auto" autoFocus defaultValue={x?.data ?? ''}
+                              onBlur={() => setEditingDate(null)}
+                              onChange={e => e.target.value && saveDate(r, e.target.value)} />
+                          ) : (
+                            <button type="button" disabled={r.status !== 'extracted'} onClick={() => setEditingDate(r.id)}
+                              className="text-steel-400 hover:text-brand-700 disabled:hover:text-steel-400 text-left" title="Trocar a data da nota">
+                              {x?.data ? `Nota de ${new Date(`${x.data}T12:00:00`).toLocaleDateString('pt-BR')}` : 'Sem data'}
+                              {r.status === 'extracted' && <span className="ml-1">✏️</span>}
+                            </button>
+                          )}
                           {x?.total != null && <strong>{fmtBRL(x.total)}</strong>}
                         </div>
                         {(x?.campos_incertos?.length ?? 0) > 0 && r.status === 'extracted' && (
