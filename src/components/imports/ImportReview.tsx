@@ -174,6 +174,12 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const laborRows = items.filter(r => r.tipo === 'labor');
   const todayYmd = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const futureDate = !!f.data && f.data > todayYmd;
+  /** Data muito antiga costuma ser mês lido errado (ex.: 30/03 em vez de 30/09) */
+  const oldDate = (() => {
+    if (!f.data) return false;
+    const d = new Date(); d.setDate(d.getDate() - 90);
+    return f.data < `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
   const whoOf = (r: ItemRow) => r.who || osWho;
 
   /**
@@ -472,6 +478,24 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
 
           {/* Dados */}
           <div className="p-5 space-y-5">
+            {/* Data da nota (a leitura às vezes erra o dia/mês) */}
+            <section className="space-y-1.5">
+              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">📅 Data da nota</div>
+              <input className={`${cls('data')} ${futureDate ? '!border-alert-500 !bg-alert-50' : ''} !text-base font-semibold`} type="date" max={todayYmd}
+                value={f.data} onChange={set('data')} />
+              {futureDate && (
+                <div className="text-xs bg-alert-50 border border-alert-200 text-alert-700 rounded-lg px-3 py-2">
+                  ⚠️ A data da nota ({new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}) é depois de hoje — a leitura pode ter errado. Confira no papel e corrija.
+                </div>
+              )}
+              {oldDate && (
+                <div className="text-xs bg-pending-50 border border-pending-200 text-pending-800 rounded-lg px-3 py-2">
+                  ⚠️ Data de mais de 3 meses atrás ({new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}) — confira no papel se a leitura não trocou o mês.
+                </div>
+              )}
+              {!f.data && <div className="text-xs text-pending-800">Sem data: a nota entra com a data de hoje. Se estiver no papel, preencha.</div>}
+            </section>
+
             {/* Foi feito? */}
             <section className="space-y-2">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Esse serviço foi feito?</div>
@@ -527,16 +551,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
             {/* Serviço */}
             <section className="space-y-2">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Serviço</div>
-              <div className="grid sm:grid-cols-3 gap-2">
-                <input className={`${cls('servico_resumo')} sm:col-span-2`} placeholder="Serviço * (ex.: Troca de embreagem)" value={f.titulo} onChange={set('titulo')} />
-                <input className={`${cls('data')} ${futureDate ? '!border-alert-500 !bg-alert-50' : ''}`} type="date" max={todayYmd} value={f.data} onChange={set('data')} />
-              </div>
-              {futureDate && (
-                <div className="text-xs bg-alert-50 border border-alert-200 text-alert-700 rounded-lg px-3 py-2">
-                  ⚠️ A data da nota ({new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}) é depois de hoje — a leitura pode ter errado. Confira no papel e corrija.
-                </div>
-              )}
-              {!f.data && <div className="text-xs text-pending-800">Sem data: a nota entra com a data de hoje. Se estiver no papel, preencha.</div>}
+              <input className={cls('servico_resumo')} placeholder="Serviço * (ex.: Troca de embreagem)" value={f.titulo} onChange={set('titulo')} />
               <textarea className={cls('observacoes')} rows={2} placeholder="Observações" value={f.obs} onChange={set('obs')} />
             </section>
 
