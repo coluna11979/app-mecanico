@@ -5,6 +5,8 @@ import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
 import { DEFAULT_MARGIN, fmtPct, fmtQty, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import QuickPartModal from '@/components/parts/QuickPartModal';
+import { RULE } from '@/lib/commission';
+import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -24,6 +26,8 @@ type Row = {
   used_in: string;
   /** Só serviços: 'servico' (leva peças → 4% sobre serviço + peças) · 'mao_de_obra' (sem peça → 10%) */
   stype: '' | 'servico' | 'mao_de_obra';
+  /** Só serviços: comissão digitada para quem fez (R$, substitui a regra deste serviço); '' = regra */
+  comm: string;
 };
 
 /** Peças pertencem ao serviço imediatamente acima delas (até o próximo serviço/mão de obra) */
@@ -57,7 +61,7 @@ const whoPatch = (v: string) => (v === PLATFORM_ITEM
   ? { workshop_mechanic_id: null, executor: 'platform' }
   : { workshop_mechanic_id: v || null, executor: v ? 'workshop' : null });
 
-type TeamMember = { id: string; name: string; active: boolean };
+type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null };
 
 type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
 
@@ -75,6 +79,7 @@ function toRow(i: ServiceOrderItem): Row {
     mechanic_id: i.executor === 'platform' ? PLATFORM_ITEM : i.workshop_mechanic_id ?? '',
     used_in: i.used_in_item_id ?? '',
     stype: i.kind === 'labor' ? i.service_type ?? '' : '',
+    comm: i.kind === 'labor' && i.commission_amount != null ? moneyInput(Number(i.commission_amount)) : '',
   };
 }
 
@@ -122,11 +127,16 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   /** Cadastro rápido de peça: key = linha que vai receber a peça (null = cria linha nova) */
   const [quick, setQuick]       = useState<{ key: string | null; name: string; qty: number } | null>(null);
   const [team, setTeam]         = useState<TeamMember[]>([]);
+  /** Regras por item da loja (ex.: alinhamento sem comissão) — para mostrar a comissão de cada serviço */
+  const [itemRules, setItemRules] = useState<ItemRule[]>([]);
+  /** Serviço com o campo de comissão aberto */
+  const [commEdit, setCommEdit] = useState<string | null>(null);
 
   // Equipe, para dizer quem fez cada item (comissão)
   useEffect(() => {
-    supabase.from('workshop_mechanics').select('id, name, active').eq('workshop_id', workshopId).order('name')
+    supabase.from('workshop_mechanics').select('id, name, active, no_commission').eq('workshop_id', workshopId).order('name')
       .then(({ data }) => setTeam((data as TeamMember[]) ?? []));
+    loadItemRules(workshopId).then(setItemRules);
   }, [workshopId]);
   const teamName = useMemo(() => new Map(team.map(m => [m.id, m.name])), [team]);
   // Com a opção "mecânico da plataforma", vale mostrar mesmo com um só colaborador
@@ -153,6 +163,33 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     const { error } = await supabase.from('service_order_items').update(whoPatch(mechanicId)).eq('id', r.id);
     if (error) { toast.error('Não foi possível trocar: ' + error.message); setRows(initRows(items)); return; }
     toast.success(mechanicId === PLATFORM_ITEM ? 'Item marcado para o mecânico da plataforma ✓' : 'Comissão deste item atualizada ✓');
+    onSaved();
+  }
+
+  /** Comissão de cada serviço: valor digitado, ou a regra (4% serviço + peças · 10% mão de obra · regras da loja) */
+  const commOf = (r: Row): { who: string | null; value: number; base: string; typed: boolean; none?: string } => {
+    const who = r.mechanic_id === PLATFORM_ITEM ? PLATFORM_ITEM : r.mechanic_id || osMechanicId || '';
+    if (who === PLATFORM_ITEM) return { who, value: 0, base: '', typed: false, none: 'mecânico da plataforma — sem comissão da equipe' };
+    if (!who) return { who: null, value: 0, base: '', typed: false, none: 'escolha quem fez' };
+    if (team.find(m => m.id === who)?.no_commission) return { who, value: 0, base: '', typed: false, none: 'salário fixo — sem comissão' };
+    if (r.comm.trim()) return { who, value: Math.max(0, parseMoney(r.comm)), base: 'definido na OS', typed: true };
+    const parts = rows.filter(x => x.kind === 'part' && groups.get(x.key)?.key === r.key)
+      .map(x => ({ description: x.description, quantity: parseMoney(x.quantity), unit_price: parseMoney(x.unit_price || '0') }));
+    const c = serviceCommission({
+      service: { description: r.description, quantity: parseMoney(r.quantity), unit_price: parseMoney(r.unit_price || '0') },
+      parts, type: r.stype === 'mao_de_obra' ? 'mao_de_obra' : 'servico', who, brought: ownParts, rules: itemRules, pct: RULE,
+    });
+    return { who, value: c.value, base: c.base || 'item sem comissão pela regra da loja', typed: false };
+  };
+
+  /** OS fechada: grava a comissão do serviço direto no item */
+  async function saveComm(r: Row, value: string) {
+    if (!r.id) return;
+    setRows(rs => rs.map(x => x.key === r.key ? { ...x, comm: value } : x));
+    const { error } = await supabase.from('service_order_items')
+      .update({ commission_amount: value.trim() ? Math.max(0, parseMoney(value)) : null }).eq('id', r.id);
+    if (error) { toast.error('Não foi possível salvar a comissão: ' + error.message); setRows(initRows(items)); return; }
+    toast.success(value.trim() ? 'Comissão do serviço salva ✓' : 'Comissão volta para a regra ✓');
     onSaved();
   }
 
@@ -212,7 +249,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   function addRow(kind: OsItemKind | 'mao_de_obra') {
     setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
-      stype: kind === 'mao_de_obra' ? 'mao_de_obra' : kind === 'labor' ? 'servico' : '' }]);
+      stype: kind === 'mao_de_obra' ? 'mao_de_obra' : kind === 'labor' ? 'servico' : '', comm: '' }]);
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
@@ -291,6 +328,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         unit_cost: r.kind === 'part' && r.unit_cost.trim() ? parseMoney(r.unit_cost) : null,
         part_id: r.kind === 'part' ? r.part_id : null,
         ...whoPatch(r.kind === 'labor' ? r.mechanic_id : ''),
+        commission_amount: r.kind === 'labor' && r.comm.trim() ? Math.max(0, parseMoney(r.comm)) : null,
         // Peça → serviço logo acima (só se for "Serviço"; abaixo de "Mão de obra" fica sem serviço)
         used_in_item_id: (() => {
           if (r.kind !== 'part') return null;
@@ -423,7 +461,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             const filled = { description: res.name, part_id: res.part_id, unit_cost: res.cost > 0 ? moneyInput(res.cost) : '', unit_price: moneyInput(res.price) };
             setRows(rs => quick.key
               ? rs.map(x => x.key === quick.key ? { ...x, ...filled } : x)
-              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', used_in: '', stype: '', ...filled }]);
+              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', used_in: '', stype: '', comm: '', ...filled }]);
             setQuick(null);
           }} />
       )}
@@ -525,7 +563,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             )}
             {/* Quem fez (comissão) — só em serviço; peça conta para o responsável da OS */}
             {showWho && r.kind === 'labor' && (
-              <div className="col-span-12 -mt-1 flex items-center gap-2 text-xs">
+              <div className="col-span-12 -mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                 <span className="text-steel-500 shrink-0">🔧 Quem fez:</span>
                 {canAssign && (!readOnly || r.id) ? (
                   <select className="input !py-1 !px-2 !w-auto text-xs" value={r.mechanic_id}
@@ -542,6 +580,40 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                       : (r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'Responsável da OS'}
                   </span>
                 )}
+                {/* Comissão de quem fez este serviço: pela regra, ou o valor digitado aqui */}
+                {(() => {
+                  const c = commOf(r);
+                  const canEdit = !!canAssign && (!readOnly || !!r.id) && !c.none;
+                  if (c.none) return <span className="text-steel-400">· {c.none}</span>;
+                  if (commEdit === r.key) {
+                    return (
+                      <span className="flex items-center gap-1">
+                        <span className="text-steel-500">💰 R$</span>
+                        <input autoFocus className="input !py-1 !px-2 !w-20 text-xs" inputMode="decimal"
+                          defaultValue={r.comm || moneyInput(c.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setCommEdit(null); }}
+                          onBlur={e => {
+                            const v = e.target.value;
+                            setCommEdit(null);
+                            if (readOnly) saveComm(r, v); else update(r.key, { comm: v });
+                          }} />
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="flex items-center gap-1.5">
+                      <span className={`font-semibold ${c.typed ? 'text-brand-700' : 'text-signal-700'}`}>💰 {fmtBRL(c.value)}</span>
+                      <span className="text-steel-400 hidden sm:inline">({c.base})</span>
+                      {canEdit && (
+                        <button type="button" onClick={() => setCommEdit(r.key)} className="text-brand-600 hover:underline">✏️ alterar</button>
+                      )}
+                      {canEdit && c.typed && (
+                        <button type="button" onClick={() => (readOnly ? saveComm(r, '') : update(r.key, { comm: '' }))}
+                          className="text-steel-500 hover:underline">↩ regra</button>
+                      )}
+                    </span>
+                  );
+                })()}
               </div>
             )}
             {/* Peça: pertence ao serviço logo acima (a comissão segue quem fez esse serviço) */}

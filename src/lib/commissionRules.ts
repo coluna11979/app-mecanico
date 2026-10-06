@@ -36,3 +36,35 @@ export function fixedFor(desc: string, mechanicId: string, qty: number, rules: I
   }
   return best;
 }
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const brl2 = (n: number) => `R$ ${n.toFixed(2).replace('.', ',')}`;
+type Line = { description: string; quantity: number | string; unit_price: number | string };
+const lineAmt = (i: Line) => r2(Number(i.quantity) * Number(i.unit_price));
+
+/**
+ * Comissão de UM serviço pela regra (mesma conta da view os_commission_base, regra atual):
+ * "Serviço" + peças dele → 4% sobre a soma; "Mão de obra" → 10%; item com regra da loja sai da conta;
+ * valor fixo de regra por item para quem fez. Cliente trouxe a peça → o serviço conta como mão de obra.
+ */
+export function serviceCommission(o: {
+  service: Line; parts: Line[]; type: 'servico' | 'mao_de_obra'; who: string;
+  brought: boolean; rules: ItemRule[]; pct: { service: number; labor: number };
+}): { value: number; base: string } {
+  const out: string[] = [];
+  let value = 0;
+  const keepLabor = !isExcluded(o.service.description, o.rules);
+  const keepParts = o.parts.filter(p => !isExcluded(p.description, o.rules));
+  if (o.type === 'servico' && !o.brought) {
+    const base = (keepLabor ? lineAmt(o.service) : 0) + keepParts.reduce((s, p) => s + lineAmt(p), 0);
+    if (base > 0) { value += base * o.pct.service / 100; out.push(`${o.pct.service}% de ${brl2(base)}`); }
+  } else if (keepLabor) {
+    value += lineAmt(o.service) * o.pct.labor / 100;
+    out.push(`${o.pct.labor}% de ${brl2(lineAmt(o.service))}`);
+  }
+  for (const it of [o.service, ...o.parts]) {
+    const fx = fixedFor(it.description, o.who, Number(it.quantity), o.rules);
+    if (fx > 0) { value += fx; out.push(`${brl2(fx)} fixo (${it.description})`); }
+  }
+  return { value: r2(value), base: out.join(' + ') };
+}
