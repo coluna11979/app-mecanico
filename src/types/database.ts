@@ -276,6 +276,8 @@ export interface ServiceOrderItem {
   used_in_item_id?: string | null;
   /** Só serviços: 'servico' (leva peças → 4% sobre serviço + peças) · 'mao_de_obra' (sem peça → 10%) */
   service_type?: 'servico' | 'mao_de_obra' | null;
+  /** Só serviços: comissão em R$ definida na OS para quem fez (substitui a regra deste serviço); null = regra */
+  commission_amount?: number | null;
   position: number;
   created_at: string;
 }

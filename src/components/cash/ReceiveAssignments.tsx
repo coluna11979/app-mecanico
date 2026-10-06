@@ -17,7 +17,7 @@ import type { ServiceOrderItem, WorkshopMechanic } from '@/types/database';
  * OS antiga sem itens (valores digitados) continua com um responsável só.
  */
 
-type Item = Pick<ServiceOrderItem, 'id' | 'kind' | 'description' | 'quantity' | 'unit_price' | 'executor' | 'workshop_mechanic_id' | 'used_in_item_id' | 'service_type'>;
+type Item = Pick<ServiceOrderItem, 'id' | 'kind' | 'description' | 'quantity' | 'unit_price' | 'executor' | 'workshop_mechanic_id' | 'used_in_item_id' | 'service_type' | 'commission_amount'>;
 type Team = Pick<WorkshopMechanic, 'id' | 'name'>[];
 export type ReceiveOs = { id: string; executor: 'workshop' | 'platform' | null; workshop_mechanic_id: string | null };
 
@@ -30,7 +30,7 @@ export function useReceiveAssignments(os: ReceiveOs, team: Team) {
 
   useEffect(() => {
     let alive = true;
-    supabase.from('service_order_items').select('id, kind, description, quantity, unit_price, executor, workshop_mechanic_id, used_in_item_id, service_type')
+    supabase.from('service_order_items').select('id, kind, description, quantity, unit_price, executor, workshop_mechanic_id, used_in_item_id, service_type, commission_amount')
       .eq('service_order_id', os.id).order('position')
       .then(({ data }) => {
         if (!alive) return;

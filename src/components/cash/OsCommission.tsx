@@ -3,7 +3,7 @@ import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import { brl, moneyStr, parseMoney } from '@/lib/cash';
 import { RULE } from '@/lib/commission';
-import { fixedFor, isExcluded, loadItemRules, type ItemRule } from '@/lib/commissionRules';
+import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { useReceiveAssignments, type ReceiveOs } from '@/components/cash/ReceiveAssignments';
 import type { WorkshopMechanic } from '@/types/database';
@@ -85,20 +85,19 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
       const parts = a.partsOf.get(l.id) ?? [];
       const type = l.service_type ?? (parts.length ? 'servico' : 'mao_de_obra');
       const e = by.get(w) ?? { value: 0, base: [] };
-      // Regra por item da loja: item com regra sai da conta; quem tiver valor fixo ganha o fixo
-      const keepLabor = !isExcluded(l.description, itemRules);
-      const keepParts = parts.filter(p => !isExcluded(p.description, itemRules));
-      if (type === 'servico' && !brought) {
-        const base = (keepLabor ? amt(l) : 0) + keepParts.reduce((s, p) => s + amt(p), 0);
-        if (base > 0) { e.value += base * RULE.service / 100; e.base.push(`${RULE.service}% de ${brl(base)}`); }
-      } else if (keepLabor) {
-        e.value += amt(l) * RULE.labor / 100;
-        e.base.push(`${RULE.labor}% de ${brl(amt(l))}`);
+      // Comissão digitada no serviço (na OS) substitui a regra desse serviço e das peças dele
+      if (l.commission_amount != null) {
+        e.value += Number(l.commission_amount);
+        e.base.push(`${brl(Number(l.commission_amount))} definido em “${l.description}”`);
+        by.set(w, e);
+        continue;
       }
-      for (const it of [l, ...parts]) {
-        const fx = fixedFor(it.description, w, Number(it.quantity), itemRules);
-        if (fx > 0) { e.value += fx; e.base.push(`${brl(fx)} fixo (${it.description})`); }
-      }
+      // Regra: 4% serviço + peças · 10% mão de obra · regras por item da loja
+      const c = serviceCommission({
+        service: l, parts, type: type === 'mao_de_obra' ? 'mao_de_obra' : 'servico', who: w, brought, rules: itemRules, pct: RULE,
+      });
+      e.value += c.value;
+      if (c.base) e.base.push(c.base);
       if (e.value > 0 || e.base.length) by.set(w, e);
     }
     return [...by.entries()].filter(([, e]) => e.value > 0)
