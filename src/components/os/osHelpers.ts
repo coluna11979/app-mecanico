@@ -190,7 +190,7 @@ export const OS_CATEGORIES = [
   // Mecânica
   'Motor','Câmbio','Suspensão','Transmissão','Embreagem','Injeção eletrônica',
   // Elétrica / outros
-  'Elétrica','Ar-condicionado','Diagnóstico','Funilaria','Outro',
+  'Escapamento','Elétrica','Ar-condicionado','Diagnóstico','Funilaria','Outro',
 ];
 
 /**
