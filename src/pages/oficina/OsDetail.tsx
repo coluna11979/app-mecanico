@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
 import { toast } from '@/components/ui/Toast';
 import { canDo, sessionAllows, useOperator } from '@/lib/operators';
 import LicensePlate from '@/components/os/LicensePlate';
@@ -42,6 +43,7 @@ export default function OsDetail() {
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy]     = useState(false);
+  const [waOpen, setWaOpen] = useState(false);
   const [paperUrl, setPaperUrl] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [pausing, setPausing]     = useState(false);
@@ -228,6 +230,23 @@ export default function OsDetail() {
     changeStatus('awaiting_approval', { skipConfirm: true });
   }
 
+  /** Comprovante da venda de balcão para o WhatsApp */
+  function saleReceiptText(): string {
+    if (!os) return '';
+    const shop = currentWorkshop?.business_name ?? 'nossa loja';
+    const name = os.customer?.full_name?.split(' ')[0] ?? '';
+    const out = [`Olá${name ? `, ${name}` : ''}! Aqui é da *${shop}*.`, `Segue o comprovante da sua compra (venda nº ${osNumber(os)}):`, ''];
+    for (const i of items) {
+      const qty = Number(i.quantity) !== 1 ? `${String(i.quantity).replace('.', ',')}x ` : '';
+      out.push(`• ${qty}${i.description} — ${fmtBRL(i.quantity * i.unit_price)}`);
+    }
+    if (Number(os.counter_discount ?? 0) > 0) out.push(`• Desconto — − ${fmtBRL(Number(os.counter_discount))}`);
+    out.push('', `*Total: ${fmtBRL(Number(os.price) - Number(os.counter_discount ?? 0))}*`);
+    if (os.paid_at) out.push(`Pago em ${fmtDateTime(os.paid_at)} ✓`);
+    out.push('', 'Obrigado pela preferência! 🙏');
+    return out.join('\n');
+  }
+
   function whatsappText(kind: 'summary' | 'approval' = 'summary'): string {
     if (!os) return '';
     const shop = currentWorkshop?.business_name ?? 'nossa oficina';
@@ -302,8 +321,6 @@ export default function OsDetail() {
     ...(!closed && !os.scheduled_at ? [{ label: '📅 Agendar serviço', onClick: () => setScheduling(true) }] : []),
     ...(canOpen('/oficina/checkup') ? [{ label: '🔍 Check-up do veículo', onClick: () => nav(`/oficina/checkup?os=${os.id}`) }] : []),
     { label: '🖨️ Imprimir / PDF', onClick: () => nav(`/oficina/os/${os.id}/imprimir`), mobileOnly: true },
-    ...(wa ? [{ label: '💬 Enviar resumo no WhatsApp',
-      onClick: () => window.open(`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText())}`, '_blank', 'noopener') }] : []),
     ...(!closed ? [{ label: '✏️ Editar dados', onClick: () => setEditing(true) }] : []),
     ...(os.status === 'completed' && Number(os.paid_amount ?? 0) > 0 && canDo(session, balcao, 'cancelar_recebimento')
       ? [{ label: '💳 Corrigir pagamento', onClick: () => setFixPay(n => n + 1) }] : []),
@@ -404,6 +421,7 @@ export default function OsDetail() {
               </button>
             )}
             {/* Imprimir fica à vista no computador; no celular está em "Mais ações" */}
+            <button onClick={() => setWaOpen(true)} className={`${SEC} !border-signal-500/40 text-signal-700`}>📲 WhatsApp</button>
             <Link to={`/oficina/os/${os.id}/imprimir`} className={`${SEC} hidden lg:inline-flex`}>🖨️ Imprimir / PDF</Link>
 
             <MoreActions items={moreActions} />
@@ -562,7 +580,7 @@ export default function OsDetail() {
               items={items}
               discount={Number(os.discount ?? 0)}
               legacy={{ parts: os.parts_cost, labor: os.labor_cost, price: os.price }}
-              readOnly={closed}
+              readOnly={closed || isSale}
               showCost={showCost}
               osMechanicId={os.workshop_mechanic_id}
               canAssign={canDo(session, balcao, 'caixa')}
@@ -736,6 +754,18 @@ export default function OsDetail() {
           </div>
         </div>
       </div>
+
+      {waOpen && (
+        <SendWhatsAppModal phone={os.customer?.phone}
+          messages={isSale
+            ? [{ key: 'recibo', label: 'Comprovante', text: saleReceiptText() }]
+            : [
+                ...(os.status === 'open' || os.status === 'awaiting_approval' ? [{ key: 'approval', label: 'Orçamento', text: whatsappText('approval') }] : []),
+                { key: 'summary', label: 'Resumo', text: whatsappText('summary') },
+                ...(os.status !== 'open' && os.status !== 'awaiting_approval' ? [{ key: 'approval', label: 'Orçamento', text: whatsappText('approval') }] : []),
+              ]}
+          onClose={() => setWaOpen(false)} />
+      )}
 
       {scheduling && (
         <ScheduleOsModal shopName={currentWorkshop?.business_name ?? 'oficina'}

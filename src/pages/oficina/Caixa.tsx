@@ -37,7 +37,7 @@ const dueLabel = (due: string) => {
   return d < 0 ? `vencido há ${-d} dia${d === -1 ? '' : 's'} (${date})` : d === 0 ? 'vence hoje' : `vence ${date}`;
 };
 
-type Tab = 'receber' | 'movimentos' | 'fechar';
+type Tab = 'vender' | 'receber' | 'movimentos' | 'fechar';
 
 const osNum = (o: { id: string; number: number | null }) => (o.number != null ? String(o.number).padStart(4, '0') : o.id.slice(0, 8));
 const remainingOf = (o: OpenOs) => Math.round((o.price - o.counter_discount - o.paid_amount) * 100) / 100;
@@ -77,9 +77,13 @@ export default function Caixa() {
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [ops, setOps]         = useState<Record<string, string>>({});
   const [team, setTeam]       = useState<WorkshopMechanic[]>([]);
-  const [tab, setTab]         = useState<Tab>('receber');
   const [params, setParams]   = useSearchParams();
   const focusOs = params.get('os');
+  // Abre direto na venda (PDV); vindo de uma OS ("Receber no caixa"), abre em Receber
+  const [tab, setTab]         = useState<Tab>(focusOs ? 'receber' : 'vender');
+  const [newOsTop, setNewOsTop] = useState(false);
+  const navTop = useNavigate();
+  useEffect(() => { if (focusOs) setTab('receber'); }, [focusOs]);
 
   const load = useCallback(async () => {
     if (!wid) return;
@@ -138,15 +142,21 @@ export default function Caixa() {
               <Kpi label="Saídas (vales, despesas, sangrias)" value={brl(Number(summary?.by_kind.vale ?? 0) + Number(summary?.by_kind.despesa ?? 0) + Number(summary?.by_kind.sangria ?? 0))} />
             </div>
 
-            <div className="flex gap-2 mb-4">
-              {([['receber', '🧾 Receber OS'], ['movimentos', '↕️ Movimentações'], ['fechar', '🔒 Fechar caixa']] as [Tab, string][]).map(([k, l]) => (
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {([['vender', '🛒 Vender peças'], ['receber', '🧾 Receber OS'], ['movimentos', '↕️ Movimentações'], ['fechar', '🔒 Fechar caixa']] as [Tab, string][]).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)}
                   className={`text-sm font-semibold px-4 py-2 rounded-full border transition ${
                     tab === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
                   {l}
                 </button>
               ))}
+              <button onClick={() => setNewOsTop(true)} className="btn-primary text-sm ml-auto">+ Nova OS</button>
             </div>
+
+            {tab === 'vender' && (
+              <CounterSaleModal variant="page" wid={wid!} sid={sid} canDiscount={can('dar_desconto')}
+                onClose={() => setTab('receber')} onDone={load} />
+            )}
 
             {tab === 'receber' && (
               <ReceiveTab wid={wid!} sid={sid} registerId={reg.id} entriesCount={entries.length} canDiscount={can('dar_desconto')} canFix={can('cancelar_recebimento')} canCallMechanic={canCallMechanic} team={team} onDone={load}
@@ -158,6 +168,14 @@ export default function Caixa() {
             )}
             {tab === 'fechar' && summary && <CloseTab wid={wid!} sid={sid} summary={summary} onDone={load} />}
           </>
+        )}
+        {newOsTop && wid && (
+          <NewOsModal workshopId={wid} onClose={() => setNewOsTop(false)}
+            onCreated={(id, number) => {
+              setNewOsTop(false);
+              toast.success(`OS nº ${String(number ?? '').padStart(4, '0')} aberta ✓ — lance as peças e serviços e toque em Receber no caixa`);
+              navTop(`/oficina/os/${id}`);
+            }} />
         )}
       </div>
     </WorkshopLayout>
@@ -245,12 +263,9 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canFix, c
   team: WorkshopMechanic[]; onDone: () => void;
   focusOs: string | null; onFocusUsed: () => void;
 }) {
-  const nav = useNavigate();
   const [list, setList]   = useState<OpenOs[] | null>(null);
   const [q, setQ]         = useState('');
   const [picked, setPicked] = useState<OpenOs | null>(null);
-  const [newOs, setNewOs] = useState(false);
-  const [selling, setSelling] = useState(false);
   /** Lista "Pagar depois" fica fechada até o caixa pedir (abre sozinha numa busca) */
   const [showLater, setShowLater] = useState(false);
   const [calling, setCalling] = useState<CallMechanicOs | null>(null);
@@ -363,8 +378,6 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canFix, c
     <div>
       <div className="flex flex-wrap gap-2 mb-3">
         <input className="input flex-1 min-w-[200px]" placeholder="Buscar por nº da OS, cliente, placa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
-        <button onClick={() => setSelling(true)} className="btn-secondary shrink-0" title="Venda no balcão, sem serviço (óleo, palheta…)">🛒 Venda de peças</button>
-        <button onClick={() => setNewOs(true)} className="btn-secondary shrink-0">+ Nova OS</button>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {DATE_PERIODS.map(([k, l]) => (
@@ -432,24 +445,6 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canFix, c
             </div>
           )} />
       </div>
-
-      {newOs && (
-        <NewOsModal
-          workshopId={wid}
-          onClose={() => setNewOs(false)}
-          onCreated={(id, number) => {
-            setNewOs(false);
-            toast.success(`OS nº ${String(number ?? '').padStart(4, '0')} aberta ✓ — lance as peças e serviços e toque em Receber no caixa`);
-            nav(`/oficina/os/${id}`);
-          }}
-        />
-      )}
-
-      {selling && (
-        <CounterSaleModal wid={wid} sid={sid} canDiscount={canDiscount}
-          onClose={() => setSelling(false)}
-          onDone={() => { setSelling(false); setPaidKey(k => k + 1); onDone(); }} />
-      )}
 
       {calling && <CallMechanicModal wid={wid} os={calling} onClose={() => setCalling(null)} />}
 
