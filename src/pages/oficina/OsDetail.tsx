@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
@@ -24,6 +24,10 @@ import {
 } from '@/components/os/osHelpers';
 import type { OsRow } from '@/components/os/OsCard';
 import type { OsStatus, ReworkCause, ServiceOrderItem } from '@/types/database';
+
+/** Botão principal e secundário das ações da OS */
+const BTN = 'btn-primary text-sm !py-2';
+const SEC = 'btn-ghost text-sm !py-2 border border-steel-200';
 
 type OsLink = { id: string; number: number | null; title: string; created_at: string; completed_at: string | null; rework_cause?: ReworkCause | null; status?: OsStatus };
 
@@ -290,6 +294,20 @@ export default function OsDetail() {
   const canOpen = (path: string) => !balcao || !session || sessionAllows(session, path);
   const perService = items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id));
   const noResponsible = responsibleOf(os) === '' && !perService;
+  const moreActions: MoreItem[] = [
+    ...(['open', 'awaiting_approval', 'approved'].includes(os.status)
+      ? [{ label: '✓ Já foi concluída (escolher a data)', onClick: () => setConcluding(true) }] : []),
+    ...(!closed && !os.scheduled_at ? [{ label: '📅 Agendar serviço', onClick: () => setScheduling(true) }] : []),
+    ...(canOpen('/oficina/checkup') ? [{ label: '🔍 Check-up do veículo', onClick: () => nav(`/oficina/checkup?os=${os.id}`) }] : []),
+    { label: '🖨️ Imprimir / PDF', onClick: () => nav(`/oficina/os/${os.id}/imprimir`), mobileOnly: true },
+    ...(wa ? [{ label: '💬 Enviar resumo no WhatsApp',
+      onClick: () => window.open(`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText())}`, '_blank', 'noopener') }] : []),
+    ...(!closed ? [{ label: '✏️ Editar dados', onClick: () => setEditing(true) }] : []),
+    ...(os.status === 'completed' && Number(os.paid_amount ?? 0) > 0 && canDo(session, balcao, 'cancelar_recebimento')
+      ? [{ label: '💳 Corrigir pagamento', onClick: () => setFixPay(n => n + 1) }] : []),
+    ...(closed && os.quote_status !== 'declined' ? [{ label: '✏️ Corrigir OS (reabrir)', onClick: () => changeStatus('open') }] : []),
+    ...(!closed ? [{ label: '✕ Cancelar OS', onClick: () => changeStatus('cancelled'), danger: true }] : []),
+  ];
   /** Iniciar: sem responsável, avisa antes (dá para seguir mesmo assim) */
   const startService = () => (noResponsible ? setStartWarn(true) : changeStatus('in_progress'));
 
@@ -308,7 +326,12 @@ export default function OsDetail() {
                 {os.category && <span className="badge bg-steel-100 text-steel-600">{os.category}</span>}
               </div>
               <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1.5">{os.title}</h1>
-              <div className="text-xs text-steel-500 mt-1">Aberta em {fmtDateTime(os.created_at)}</div>
+              {(os.customer || os.vehicle) && (
+                <div className="text-sm text-steel-600 mt-1 truncate">
+                  {[os.customer?.full_name, os.vehicle ? `${os.vehicle.make} ${os.vehicle.model} · ${os.vehicle.plate}` : null].filter(Boolean).join(' · ')}
+                </div>
+              )}
+              <div className="text-xs text-steel-500 mt-0.5">Aberta em {fmtDateTime(os.created_at)}</div>
             </div>
             <div className="text-left lg:text-right shrink-0">
               <div className="text-[10px] text-steel-400 uppercase tracking-wider">Total</div>
@@ -321,107 +344,69 @@ export default function OsDetail() {
             </div>
           </div>
 
-          {/* Ações */}
           {/* Etapa atual do fluxo */}
           <FlowSteps os={os} />
 
-          {/* Tempo que o mecânico levou: do Iniciar ao Concluir */}
-          {(os.status === 'in_progress' || os.status === 'completed') && (
-            <ServiceTimer startedAt={os.started_at} completedAt={os.status === 'completed' ? os.completed_at : null}
-              pauses={os.pauses} estimatedHours={os.estimated_hours} mechanicName={os.mechanic?.name} />
-          )}
-
-          {/* Relógio por responsável (cada um inicia/pausa/termina a sua parte) */}
-          {['approved', 'in_progress', 'completed'].includes(os.status) && (
-            <ResponsibleTimers key={`${os.id}-${items.map(i => `${i.id}${i.executor}${i.workshop_mechanic_id}`).join()}`}
-              osId={os.id} status={os.status} items={items} team={team}
-              osMechanicId={os.workshop_mechanic_id} osExecutor={os.executor} readOnly={os.status === 'completed'}
-              onStartOs={() => changeStatus('in_progress', { skipConfirm: true })}
-              onAllDone={() => changeStatus('completed')} />
-          )}
-
-          <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap gap-2">
-            {canReceive && (
-              <button onClick={() => nav(`/oficina/caixa?os=${os.id}`)} className="btn-primary text-sm !py-2 !bg-signal-500">
-                💰 Receber no caixa · {fmtBRL(osOpenAmount)}
-              </button>
-            )}
+          {/* Ações: a da etapa em destaque; o resto em "Mais ações" */}
+          <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap items-center gap-2">
             {os.status === 'open' && (
               <>
-                <button onClick={sendForApproval} disabled={busy} className="btn-primary text-sm !py-2">📤 Enviar orçamento para aprovação</button>
-                <button onClick={() => setApproving(true)} disabled={busy} className="btn-ghost text-sm !py-2 border border-steel-200">✅ Cliente já aprovou</button>
+                <button onClick={sendForApproval} disabled={busy} className={BTN}>📤 Enviar orçamento para aprovação</button>
+                <button onClick={() => setApproving(true)} disabled={busy} className={SEC}>✅ Cliente já aprovou</button>
               </>
             )}
             {os.status === 'awaiting_approval' && (
               <>
-                <button onClick={() => setApproving(true)} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✅ Cliente aprovou</button>
-                <button onClick={() => changeStatus('cancelled', { declined: true })} disabled={busy} className="btn-ghost text-sm !py-2 border border-steel-200 text-alert-600">✕ Não aprovou</button>
+                <button onClick={() => setApproving(true)} disabled={busy} className={`${BTN} !bg-signal-500`}>✅ Cliente aprovou</button>
+                <button onClick={() => changeStatus('cancelled', { declined: true })} disabled={busy} className={`${SEC} text-alert-600`}>✕ Não aprovou</button>
                 {wa && (
                   <a href={`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText('approval'))}`} target="_blank" rel="noopener noreferrer"
-                    className="btn-ghost text-sm !py-2 border border-steel-200">↻ Reenviar orçamento</a>
+                    className={SEC}>↻ Reenviar orçamento</a>
                 )}
               </>
             )}
             {os.status === 'approved' && (
-              <button onClick={startService} disabled={busy} className="btn-primary text-sm !py-2">▶ Iniciar serviço</button>
-            )}
-            {(os.status === 'open' || os.status === 'awaiting_approval' || os.status === 'approved') && (
-              <button onClick={() => setConcluding(true)} disabled={busy} className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700"
-                title="O serviço já foi feito: conclui direto, escolhendo a data">✓ Já foi concluída</button>
+              <button onClick={startService} disabled={busy} className={BTN}>▶ Iniciar serviço</button>
             )}
             {os.status === 'in_progress' && (
               openPause(os.pauses) ? (
-                <button onClick={resumeService} disabled={busy} className="btn-primary text-sm !py-2">▶ Retomar serviço</button>
+                <button onClick={resumeService} disabled={busy} className={BTN}>▶ Retomar serviço</button>
               ) : (
                 <>
-                  <button onClick={askConclude} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✓ Concluir</button>
-                  <button onClick={() => setPausing(true)} disabled={busy} className="btn-ghost text-sm !py-2 border border-pending-300 text-pending-800">⏸ Pausar</button>
+                  <button onClick={askConclude} disabled={busy} className={`${BTN} !bg-signal-500`}>✓ Concluir</button>
+                  <button onClick={() => setPausing(true)} disabled={busy} className={`${SEC} !border-pending-300 text-pending-800`}>⏸ Pausar</button>
                 </>
               )
             )}
+            {os.status === 'cancelled' && os.quote_status === 'declined' && (
+              <button onClick={() => setApproving(true)} disabled={busy} className={`${BTN} !bg-signal-500`}>✅ Cliente aprovou agora</button>
+            )}
+
+            {/* Receber: principal na OS concluída; antes disso (adiantamento) fica como secundária */}
+            {canReceive && canOpen('/oficina/caixa') && (
+              <button onClick={() => nav(`/oficina/caixa?os=${os.id}`)}
+                className={os.status === 'completed' ? `${BTN} !bg-signal-500` : `${SEC} !border-signal-500/40 text-signal-700`}>
+                💰 Receber no caixa · {fmtBRL(osOpenAmount)}
+              </button>
+            )}
             {os.status === 'completed' && !os.quote_status && (
-              <button onClick={() => setReworkForm(v => !v)} disabled={busy}
-                className="btn-ghost text-sm !py-2 border border-alert-200 text-alert-700 hover:bg-alert-50">
-                🔁 Cliente voltou (retorno / garantia)
+              <button onClick={() => setReworkForm(v => !v)} disabled={busy} className={`${SEC} !border-alert-200 text-alert-700 hover:bg-alert-50`}>
+                🔁 Cliente voltou
               </button>
             )}
-            {!closed && (
-              <button onClick={() => setScheduling(true)} className="btn-ghost text-sm !py-2 border border-steel-200">
-                {os.scheduled_at
-                  ? `📅 Agendado · ${new Date(os.scheduled_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date(os.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-                  : '📅 Agendar serviço'}
+            {os.scheduled_at && !closed && (
+              <button onClick={() => setScheduling(true)} className={SEC}>
+                📅 Agendado · {new Date(os.scheduled_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às {new Date(os.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
               </button>
             )}
-            <Link to={`/oficina/checkup?os=${os.id}`} className="btn-ghost text-sm !py-2 border border-brand-200 text-brand-700 hover:bg-brand-50">🔍 Check-up do veículo</Link>
-            <Link to={`/oficina/os/${os.id}/imprimir`} className="btn-ghost text-sm !py-2 border border-steel-200">🖨️ Imprimir / PDF</Link>
-            {os.status === 'completed' && Number(os.paid_amount ?? 0) > 0 && canDo(session, balcao, 'cancelar_recebimento') && (
-              <button onClick={() => setFixPay(n => n + 1)} className="btn-ghost text-sm !py-2 border border-steel-200"
-                title="Trocar ou dividir a forma de pagamento sem reabrir a OS">💳 Corrigir pagamento</button>
-            )}
-            {wa && (
-              <a href={`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText())}`} target="_blank" rel="noopener noreferrer"
-                className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700">
-                💬 Enviar resumo no WhatsApp
-              </a>
-            )}
-            {!closed && (
-              <button onClick={() => setEditing(true)} className="btn-ghost text-sm !py-2 border border-steel-200">✏️ Editar dados</button>
-            )}
+            {/* Imprimir fica à vista no computador; no celular está em "Mais ações" */}
+            <Link to={`/oficina/os/${os.id}/imprimir`} className={`${SEC} hidden lg:inline-flex`}>🖨️ Imprimir / PDF</Link>
+
+            <MoreActions items={moreActions} />
+
             {os.status === 'completed' && (
-              <span className="self-center text-xs text-steel-400">🔒 OS concluída — reabra para editar</span>
+              <span className="text-xs text-steel-400">🔒 OS concluída — reabra para editar</span>
             )}
-            <div className="flex gap-2 sm:ml-auto">
-              {(os.status === 'completed' || os.status === 'cancelled') && (
-                os.quote_status === 'declined' ? (
-                  <button onClick={() => setApproving(true)} disabled={busy} className="btn-primary text-sm !py-2 !bg-signal-500">✅ Cliente aprovou agora</button>
-                ) : (
-                  <button onClick={() => changeStatus('open')} disabled={busy} className="btn-ghost text-sm !py-2 text-steel-600">✏️ Corrigir OS</button>
-                )
-              )}
-              {os.status !== 'completed' && os.status !== 'cancelled' && (
-                <button onClick={() => changeStatus('cancelled')} disabled={busy} className="btn-ghost text-sm !py-2 text-alert-600 hover:bg-alert-50">✕ Cancelar OS</button>
-              )}
-            </div>
           </div>
 
           {concluding && (
@@ -546,6 +531,26 @@ export default function OsDetail() {
               onDefine={() => setSettingResp('edit')}
               onCallPlatform={() => setSettingResp('platform')}
               onPublish={() => setPublishing(true)} />
+
+            {/* Cronômetros: do serviço e de cada responsável */}
+            {['approved', 'in_progress', 'completed'].includes(os.status) && (
+              <div className="card !p-4 empty:hidden [&>*:first-child]:mt-0">
+                {/* Tempo que o mecânico levou: do Iniciar ao Concluir */}
+                {(os.status === 'in_progress' || os.status === 'completed') && (
+                  <ServiceTimer startedAt={os.started_at} completedAt={os.status === 'completed' ? os.completed_at : null}
+                    pauses={os.pauses} estimatedHours={os.estimated_hours} mechanicName={os.mechanic?.name} />
+                )}
+  
+                {/* Relógio por responsável (cada um inicia/pausa/termina a sua parte) */}
+                {['approved', 'in_progress', 'completed'].includes(os.status) && (
+                  <ResponsibleTimers key={`${os.id}-${items.map(i => `${i.id}${i.executor}${i.workshop_mechanic_id}`).join()}`}
+                    osId={os.id} status={os.status} items={items} team={team}
+                    osMechanicId={os.workshop_mechanic_id} osExecutor={os.executor} readOnly={os.status === 'completed'}
+                    onStartOs={() => changeStatus('in_progress', { skipConfirm: true })}
+                    onAllDone={() => changeStatus('completed')} />
+                )}
+              </div>
+            )}
 
             <OsItemsEditor
               osId={os.id}
@@ -892,6 +897,40 @@ function ConcludeAt({ createdAt, busy, onCancel, onConfirm }: {
           ✓ Concluir em {day === today ? 'hoje' : br(day)}
         </button>
       </div>
+    </div>
+  );
+}
+
+type MoreItem = { label: string; onClick: () => void; danger?: boolean; mobileOnly?: boolean };
+
+/** "Mais ações": no computador abre embaixo do botão; no celular sobe como painel por cima da barra inferior */
+function MoreActions({ items }: { items: MoreItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  if (!items.length) return null;
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className={SEC}>Mais ações ▾</button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40 bg-steel-900/40 lg:hidden" onClick={() => setOpen(false)} />
+          <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl pb-[env(safe-area-inset-bottom)] lg:absolute lg:inset-x-auto lg:bottom-auto lg:left-0 lg:top-full lg:mt-1 lg:w-72 lg:rounded-xl bg-white shadow-2xl border border-steel-200 py-1">
+            {items.map(i => (
+              <button key={i.label} type="button" onClick={() => { setOpen(false); i.onClick(); }}
+                className={`${i.mobileOnly ? 'lg:hidden' : ''} w-full text-left px-4 py-3 lg:py-2.5 text-sm hover:bg-steel-50 ${
+                  i.danger ? 'text-alert-600 border-t border-steel-100' : 'text-steel-700'}`}>
+                {i.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
