@@ -8,7 +8,7 @@ import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
-import { ROLES, sessionAllows, useOperator } from '@/lib/operators';
+import { ROLES, sessionAllows, useOperator, type OperatorRole } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
 
 type ArrivalAlert = { jobId: string; title: string };
@@ -16,115 +16,92 @@ type FinishedAlert = { jobId: string; title: string; price: number };
 type EnRouteAlert = { jobId: string; title: string };
 
 interface NavItem  { to: string; icon: string; label: string }
-interface SoonItem { icon: string; label: string; desc: string }
-interface SoonDept { dept: string; items: SoonItem[] }
+/** Submenu: agrupa telas irmãs sob um item que só abre/fecha (não tem rota própria) */
+interface NavSub   { icon: string; label: string; children: NavItem[] }
+type NavEntry = NavItem | NavSub;
+interface NavGroup { key: string; title: string; items: NavEntry[] }
 
-/** Menu organizado por departamento: cada área com o que é dela */
-const SECTIONS: { title: string; items: NavItem[] }[] = [
-  { title: 'Vendas', items: [
-    { to: '/oficina/painel',     icon: '📊', label: 'Painel de vendas'     },
-    { to: '/oficina/comercial',  icon: '💼', label: 'Comercial'            },
+const isSub = (e: NavEntry): e is NavSub => 'children' in e;
+const leaves = (entries: NavEntry[]): NavItem[] => entries.flatMap(e => (isSub(e) ? e.children : [e]));
+const onRoute = (path: string, to: string) => path === to || path.startsWith(`${to}/`);
+
+/** Itens soltos no topo do menu (telas de entrada do gestor) */
+const TOP_ITEMS: NavItem[] = [
+  { to: '/oficina/inicio', icon: '🏠', label: 'Início'           },
+  { to: '/oficina/painel', icon: '📊', label: 'Painel de vendas' },
+];
+
+/** Menu por fluxo de trabalho. Só muda a organização: as rotas (e as permissões do modo balcão) são as mesmas. */
+const SECTIONS: NavGroup[] = [
+  { key: 'atendimento', title: 'Atendimento', items: [
+    { to: '/oficina/os',         icon: '📋', label: 'Ordens de serviço'    },
+    { to: '/oficina/agenda',     icon: '📅', label: 'Agenda'               },
+    { to: '/oficina/checkup',    icon: '🩺', label: 'Check-up'             },
     { to: '/oficina/clientes',   icon: '👥', label: 'Clientes'             },
+    { to: '/oficina/comercial',  icon: '🤝', label: 'Comercial'            },
   ] },
-  { title: 'Financeiro', items: [
+  { key: 'financeiro', title: 'Financeiro', items: [
     { to: '/oficina/caixa',      icon: '💰', label: 'Caixa'                },
-    { to: '/oficina/financeiro', icon: '💵', label: 'Financeiro'           },
+    { to: '/oficina/financeiro', icon: '💵', label: 'Visão financeira'     },
     { to: '/oficina/contas-a-pagar', icon: '📤', label: 'Contas a pagar'   },
   ] },
-  { title: 'Compras e estoque', items: [
+  { key: 'estoque', title: 'Estoque e compras', items: [
     { to: '/oficina/pecas',      icon: '🔩', label: 'Peças e estoque'      },
     { to: '/oficina/compras',    icon: '🧾', label: 'Notas de compra'      },
     { to: '/oficina/fornecedores', icon: '🚚', label: 'Fornecedores'       },
   ] },
-  { title: 'Operação', items: [
-    { to: '/oficina/agenda',     icon: '📅', label: 'Agenda'               },
-    { to: '/oficina/os',         icon: '📋', label: 'Ordens de Serviço'    },
-    { to: '/oficina/servicos',   icon: '🛠️', label: 'Tabela de serviços'   },
-    { to: '/oficina/checkup',    icon: '🩺', label: 'Check-up'             },
-    { to: '/oficina/importar',   icon: '📷', label: 'Importar notas'       },
-  ] },
-  { title: 'Equipe', items: [
+  { key: 'equipe', title: 'Equipe', items: [
     { to: '/oficina/equipe',     icon: '👷', label: 'Colaboradores'        },
     { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho e comissões' },
-    { to: '/oficina/comissoes',  icon: '🏅', label: 'Fechar comissões'     },
-    { to: '/oficina/folha',      icon: '💼', label: 'Fechar folha'         },
-    { to: '/oficina/acessos',    icon: '🔐', label: 'Acessos e funções'    },
+    { icon: '🧮', label: 'Fechamentos', children: [
+      { to: '/oficina/comissoes', icon: '🏅', label: 'Fechar comissões'    },
+      { to: '/oficina/folha',     icon: '💼', label: 'Fechar folha'        },
+    ] },
   ] },
-  { title: 'Plataforma', items: [
+  { key: 'plataforma', title: 'Plataforma', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
     { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar mecânicos'     },
     { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens'            },
-    { to: '/oficina/avisos',     icon: '🔔', label: 'Avisos'               },
   ] },
-  { title: 'Oficina', items: [
+  { key: 'config', title: 'Configurações', items: [
     { to: '/oficina/perfil',     icon: '🏪', label: 'Perfil e vitrine'     },
+    { to: '/oficina/servicos',   icon: '🛠️', label: 'Tabela de serviços'   },
+    { to: '/oficina/acessos',    icon: '🔐', label: 'Acessos e funções'    },
+    { to: '/oficina/importar',   icon: '📷', label: 'Importar notas antigas' },
     { to: '/oficina/vip',        icon: '⭐', label: 'Plano VIP'            },
   ] },
 ];
 
-// Gestão Avançada oculta por enquanto — mudar para true quando for retomar o módulo
-const SHOW_ADVANCED = false;
+/** Grupos que começam recolhidos (até a pessoa abrir) */
+const DEFAULT_COLLAPSED = ['config'];
+const LS_COLLAPSED = 'oficina_menu_collapsed';
 
-// Todos os módulos premium agrupados por departamento
-const ADVANCED: SoonDept[] = [
-  {
-    dept: '🚀 Captação & Inteligência',
-    items: [
-      { icon: '🔍', label: 'Check-up Premium', desc: 'Captação gratuita + banco de OS' },
-      { icon: '🤖', label: 'Análise com IA',   desc: 'Insights automáticos do negócio' },
-    ],
-  },
-  {
-    dept: '👥 RH & Pessoal',
-    items: [
-      { icon: '💵', label: 'Folha de Salário', desc: 'Pagamentos e holerites'         },
-      { icon: '%',  label: 'Comissões',        desc: 'Metas, bonificações e ranking'  },
-      { icon: '📆', label: 'Ponto Digital',    desc: 'Controle de jornada'            },
-    ],
-  },
-  {
-    dept: '💰 Financeiro',
-    items: [
-      { icon: '📊', label: 'DRE & Caixa',     desc: 'Receitas, despesas, lucro'      },
-      { icon: '🧾', label: 'NF-e / Fiscal',   desc: 'Emissão de notas fiscais'       },
-      { icon: '💳', label: 'Contas a Receber', desc: 'Cobranças e inadimplência'      },
-      { icon: '🏦', label: 'Contas a Pagar',   desc: 'Fornecedores e vencimentos'     },
-    ],
-  },
-  {
-    dept: '⚙️ Operações',
-    items: [
-      { icon: '📅', label: 'Agenda Online',    desc: 'Agendamento pelo cliente'       },
-      { icon: '📌', label: 'POPs',             desc: 'Proc. Operacionais Padrão'      },
-      { icon: '🗂️', label: 'Garantias',        desc: 'Controle de garantia de peças'  },
-      { icon: '🖨️', label: 'OS Impressa',      desc: 'PDF e assinatura digital'       },
-    ],
-  },
-  {
-    dept: '📦 Estoque & Compras',
-    items: [
-      { icon: '📦', label: 'Estoque',          desc: 'Peças, insumos e alertas'       },
-      { icon: '🛒', label: 'Pedidos',          desc: 'Compras a fornecedores'         },
-    ],
-  },
-  {
-    dept: '⭐ CRM & Marketing',
-    items: [
-      { icon: '⭐', label: 'NPS & Avaliações', desc: 'Reputação e feedback'           },
-      { icon: '🎁', label: 'Fidelidade',       desc: 'Pontos e promoções'             },
-      { icon: '📲', label: 'Campanhas',        desc: 'WhatsApp e notificações'        },
-      { icon: '📈', label: 'Relatórios',       desc: 'BI e indicadores de gestão'     },
-    ],
-  },
-];
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_COLLAPSED);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch { /* localStorage indisponível */ }
+  return new Set(DEFAULT_COLLAPSED);
+}
 
-const BOTTOM_TABS: NavItem[] = [
-  { to: '/oficina/painel',     icon: '📊', label: 'Vendas'    },
-  { to: '/oficina/os',         icon: '📋', label: 'OS'        },
-  { to: '/oficina/caixa',      icon: '💰', label: 'Caixa'     },
-  { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'  },
-  { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens' },
-];
+/** Barra inferior (celular) por função; o resto fica no "Mais". Sem modo balcão = gestor. */
+const TAB = {
+  painel:    { to: '/oficina/painel',    icon: '📊', label: 'Vendas'    },
+  os:        { to: '/oficina/os',        icon: '📋', label: 'OS'        },
+  caixa:     { to: '/oficina/caixa',     icon: '💰', label: 'Caixa'     },
+  agenda:    { to: '/oficina/agenda',    icon: '📅', label: 'Agenda'    },
+  clientes:  { to: '/oficina/clientes',  icon: '👥', label: 'Clientes'  },
+  checkup:   { to: '/oficina/checkup',   icon: '🩺', label: 'Check-up'  },
+  comercial: { to: '/oficina/comercial', icon: '🤝', label: 'Comercial' },
+} satisfies Record<string, NavItem>;
+
+const BOTTOM_TABS: Record<OperatorRole, NavItem[]> = {
+  gestor:    [TAB.painel, TAB.os, TAB.caixa, TAB.agenda],
+  caixa:     [TAB.caixa, TAB.os, TAB.agenda, TAB.clientes],
+  atendente: [TAB.os, TAB.agenda, TAB.clientes, TAB.checkup],
+  vendedor:  [TAB.comercial, TAB.clientes, TAB.agenda, TAB.os],
+  mecanico:  [TAB.os, TAB.agenda, TAB.checkup],
+};
 
 const LS_KEY = 'oficina_msgs_last_seen';
 
@@ -135,6 +112,16 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const [open, setOpen]         = useState(false);
   const [unread, setUnread]     = useState(0);
   const unreadNotif = useUnreadNotifications();
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+
+  function toggleGroup(key: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem(LS_COLLAPSED, JSON.stringify([...next])); } catch { /* ignora */ }
+      return next;
+    });
+  }
 
   const shopId = currentWorkshop?.id ?? null;
 
@@ -387,7 +374,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       .select('id', { count: 'exact', head: true })
       .eq('workshop_id', shopId).eq('active', true).eq('has_pin', true).contains('roles', ['gestor']);
     if (!count) {
-      toast.warning('Antes, cadastre o seu PIN de gestor em Acessos e funções.');
+      toast.warning('Antes, cadastre o seu PIN de gestor em Configurações → Acessos e funções.');
       nav('/oficina/acessos');
       setOpen(false);
       return;
@@ -400,7 +387,11 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   if (shopId && op.wid !== shopId) return null;
   if (op.balcao && !op.session) return <OperatorLock />;
 
-  const bottomTabs = BOTTOM_TABS.filter(t => allowed(t.to));
+  const bottomTabs = BOTTOM_TABS[role ?? 'gestor'].filter(t => allowed(t.to));
+  // No celular, o "Mais" abre este mesmo menu sem repetir o que já está na barra inferior
+  const inBottom = (to: string) => bottomTabs.some(t => t.to === to);
+  const path = location.pathname;
+  const showMsgs = allowed('/oficina/mensagens');
 
   return (
     <div className="min-h-screen flex bg-steel-50">
@@ -514,9 +505,24 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:z-auto lg:shrink-0
       `}>
 
-        {/* Logo */}
-        <div className="px-5 py-5 border-b border-steel-800">
+        {/* Logo + sino de avisos */}
+        <div className="px-5 py-5 border-b border-steel-800 flex items-center justify-between gap-2">
           <Logo light />
+          <button
+            onClick={() => { nav('/oficina/avisos'); setOpen(false); }}
+            aria-label="Avisos"
+            title="Avisos"
+            className={`relative shrink-0 h-9 w-9 grid place-items-center rounded-xl transition ${
+              onRoute(path, '/oficina/avisos') ? 'bg-brand-500 text-white' : 'text-steel-400 hover:bg-steel-800 hover:text-white'
+            }`}
+          >
+            <span className="text-lg">🔔</span>
+            {unreadNotif > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
+                {unreadNotif > 9 ? '9+' : unreadNotif}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Seletor de oficina */}
@@ -532,27 +538,58 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         )}
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
-          {SECTIONS.filter(sec => sec.items.some(i => allowed(i.to))).map(sec => (
-            <div key={sec.title}>
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest px-3 mb-1.5">
-                {sec.title}
-              </div>
-              <div className="space-y-0.5">
-                {sec.items.filter(i => allowed(i.to)).map(item => (
-                  <SideItem
-                    key={item.to}
-                    {...item}
-                    badge={item.to === '/oficina/mensagens' ? unread : item.to === '/oficina/avisos' ? unreadNotif : 0}
-                    onClick={() => setOpen(false)}
-                  />
-                ))}
-              </div>
-            </div>
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-3">
+          {TOP_ITEMS.filter(i => allowed(i.to)).map(i => (
+            <SideItem key={i.to} {...i} badge={0} mobileHidden={inBottom(i.to)} onClick={() => setOpen(false)} />
           ))}
 
-          {/* ── Gestão Avançada (upgrade) ── */}
-          {SHOW_ADVANCED && !role && <AdvancedSection />}
+          {SECTIONS.map(sec => {
+            // Só o que a função pode abrir; submenu sem nenhum filho liberado some
+            const entries = sec.items
+              .map(e => (isSub(e) ? { ...e, children: e.children.filter(c => allowed(c.to)) } : e))
+              .filter(e => (isSub(e) ? e.children.length > 0 : allowed(e.to)));
+            if (!entries.length) return null;
+            const items = leaves(entries);
+            const hasActive = items.some(i => onRoute(path, i.to));
+            const isOpen = hasActive || !collapsed.has(sec.key);
+            const groupBadge = items.some(i => i.to === '/oficina/mensagens') ? unread : 0;
+            // No "Mais" do celular, grupo cujos itens já estão todos na barra inferior não aparece
+            const mobileHidden = items.every(i => inBottom(i.to));
+            return (
+              <div key={sec.key} className={mobileHidden ? 'hidden lg:block' : ''}>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(sec.key)}
+                  disabled={hasActive}
+                  aria-expanded={isOpen}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold text-steel-500 uppercase tracking-widest hover:text-steel-300 disabled:hover:text-steel-500 transition"
+                >
+                  <span className="flex-1 text-left">{sec.title}</span>
+                  {!isOpen && groupBadge > 0 && (
+                    <span className="h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center normal-case tracking-normal">
+                      {groupBadge > 9 ? '9+' : groupBadge}
+                    </span>
+                  )}
+                  {!hasActive && <span className={`text-[9px] transition-transform ${isOpen ? '' : '-rotate-90'}`}>▼</span>}
+                </button>
+                {isOpen && (
+                  <div className="space-y-0.5 mt-0.5">
+                    {entries.map(e => isSub(e) ? (
+                      <SideSub key={e.label} {...e} path={path} inBottom={inBottom} onClick={() => setOpen(false)} />
+                    ) : (
+                      <SideItem
+                        key={e.to}
+                        {...e}
+                        badge={e.to === '/oficina/mensagens' ? unread : 0}
+                        mobileHidden={inBottom(e.to)}
+                        onClick={() => setOpen(false)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Quem está operando (modo balcão) */}
@@ -615,18 +652,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Topbar mobile */}
+        {/* Topbar mobile (o menu completo abre pelo "Mais" da barra inferior) */}
         <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-steel-200 flex items-center gap-2 px-3 h-14 shrink-0">
-          <button
-            onClick={() => setOpen(true)}
-            className="h-10 w-10 rounded-xl bg-steel-100 grid place-items-center shrink-0"
-            aria-label="Menu"
-          >
-            <svg className="w-5 h-5 text-steel-700" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-
           {/* Switcher mobile (ocupa o espaço central) */}
           {currentWorkshop && canSwitchStore ? (
             <div className="flex-1 min-w-0">
@@ -655,18 +682,6 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
               </span>
             )}
           </button>
-
-          {/* Avatar + badge mobile no topo */}
-          <div className="relative shrink-0">
-            <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm">
-              {initials}
-            </div>
-            {unread > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
-                {unread > 9 ? '9+' : unread}
-              </span>
-            )}
-          </div>
         </header>
 
         {/* Page content */}
@@ -677,28 +692,43 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
       {/* ── Bottom tab bar (mobile only) ── */}
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-steel-200 z-20 lg:hidden safe-area-inset-bottom">
-        <div className="grid h-16" style={{ gridTemplateColumns: `repeat(${Math.max(bottomTabs.length, 1)}, minmax(0, 1fr))` }}>
+        <div className="grid h-16" style={{ gridTemplateColumns: `repeat(${bottomTabs.length + 1}, minmax(0, 1fr))` }}>
           {bottomTabs.map(tab => (
             <NavLink
               key={tab.to}
               to={tab.to}
+              onClick={() => setOpen(false)}
               className={({ isActive }) =>
                 `flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors relative ${
-                  isActive ? 'text-brand-500' : 'text-steel-400'
+                  isActive && !open ? 'text-brand-500' : 'text-steel-400'
                 }`
               }
             >
-              <span className="relative text-xl leading-none">
-                {tab.icon}
-                {tab.to === '/oficina/mensagens' && unread > 0 && (
-                  <span className="absolute -top-1 -right-2 h-4 w-4 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
-                    {unread > 9 ? '9+' : unread}
-                  </span>
-                )}
-              </span>
+              <span className="text-xl leading-none">{tab.icon}</span>
               <span>{tab.label}</span>
             </NavLink>
           ))}
+
+          {/* Mais: abre o menu completo (sem repetir as abas acima) */}
+          <button
+            type="button"
+            onClick={() => setOpen(o => !o)}
+            aria-label="Mais opções"
+            aria-expanded={open}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors ${
+              open || !bottomTabs.some(t => onRoute(path, t.to)) ? 'text-brand-500' : 'text-steel-400'
+            }`}
+          >
+            <span className="relative text-xl leading-none">
+              ☰
+              {showMsgs && unread > 0 && (
+                <span className="absolute -top-1 -right-2 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              )}
+            </span>
+            <span>Mais</span>
+          </button>
         </div>
       </nav>
     </div>
@@ -783,13 +813,15 @@ function WorkshopSwitcher({
   );
 }
 
-function SideItem({ to, icon, label, badge, onClick }: NavItem & { badge: number; onClick: () => void }) {
+function SideItem({ to, icon, label, badge, mobileHidden = false, nested = false, onClick }: NavItem & {
+  badge: number; mobileHidden?: boolean; nested?: boolean; onClick: () => void;
+}) {
   return (
     <NavLink
       to={to}
       onClick={onClick}
       className={({ isActive }) => `
-        flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all
+        ${mobileHidden ? 'hidden lg:flex' : 'flex'} items-center gap-3 px-3 ${nested ? 'py-2.5' : 'py-3'} rounded-xl text-sm font-medium transition-all
         ${isActive
           ? 'bg-brand-500 text-white shadow-brand'
           : 'text-steel-400 hover:text-white hover:bg-steel-800'
@@ -807,65 +839,34 @@ function SideItem({ to, icon, label, badge, onClick }: NavItem & { badge: number
   );
 }
 
-/* ── Gestão Avançada — acordeão colapsável ── */
-function AdvancedSection() {
-  const [open, setOpen] = useState(false);
+/* ── Submenu (ex.: Fechamentos → comissões / folha) — abre sozinho quando a tela atual é um dos filhos ── */
+function SideSub({ icon, label, children, path, inBottom, onClick }: NavSub & {
+  path: string; inBottom: (to: string) => boolean; onClick: () => void;
+}) {
+  const hasActive = children.some(c => onRoute(path, c.to));
+  const [open, setOpen] = useState(hasActive);
+  useEffect(() => { if (hasActive) setOpen(true); }, [hasActive]);
+  const isOpen = open || hasActive;
 
   return (
-    <div className="mt-2">
-      {/* Botão cabeçalho */}
+    <div className={children.every(c => inBottom(c.to)) ? 'hidden lg:block' : ''}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all select-none
-          ${open
-            ? 'bg-brand-500/15 text-brand-300'
-            : 'text-steel-400 hover:bg-steel-800 hover:text-steel-200'
-          }`}
+        aria-expanded={isOpen}
+        className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all ${
+          hasActive ? 'text-white' : 'text-steel-400 hover:text-white hover:bg-steel-800'
+        }`}
       >
-        <span className="text-base w-5 text-center">🚀</span>
-        <div className="flex-1 text-left">
-          <div className="text-sm font-semibold leading-none">Gestão Avançada</div>
-          <div className="text-[10px] text-steel-500 mt-0.5">Módulos premium</div>
-        </div>
-        <span className="text-[9px] font-bold bg-brand-500/25 text-brand-400 px-1.5 py-0.5 rounded-full uppercase tracking-wide shrink-0">
-          Upgrade
-        </span>
-        <span className={`text-steel-500 text-xs transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>
-          ▼
-        </span>
+        <span className="text-base w-5 text-center">{icon}</span>
+        <span className="flex-1 text-left">{label}</span>
+        <span className={`text-[9px] transition-transform ${isOpen ? '' : '-rotate-90'}`}>▼</span>
       </button>
-
-      {/* Conteúdo colapsável */}
-      {open && (
-        <div className="mt-1 ml-2 border-l border-steel-700 pl-3 space-y-4 py-2">
-          {ADVANCED.map(dept => (
-            <div key={dept.dept}>
-              <div className="text-[9px] font-bold text-steel-600 uppercase tracking-widest mb-1.5 px-1">
-                {dept.dept}
-              </div>
-              <div className="space-y-0.5">
-                {dept.items.map(item => (
-                  <div key={item.label}
-                    className="flex items-center gap-2.5 px-2 py-2 rounded-lg cursor-not-allowed select-none opacity-45 hover:opacity-60 transition-opacity">
-                    <span className="text-sm w-4 text-center text-steel-500">{item.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-steel-400 leading-none">{item.label}</div>
-                      <div className="text-[9px] text-steel-600 mt-0.5 truncate">{item.desc}</div>
-                    </div>
-                    <span className="text-steel-700 text-[10px] shrink-0">🔒</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+      {isOpen && (
+        <div className="ml-5 pl-2 border-l border-steel-700 space-y-0.5">
+          {children.map(c => (
+            <SideItem key={c.to} {...c} badge={0} nested mobileHidden={inBottom(c.to)} onClick={onClick} />
           ))}
-
-          {/* CTA upgrade */}
-          <NavLink to="/oficina/vip"
-            className="block mx-1 mt-2 bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/20 rounded-xl px-3 py-2.5 text-center transition">
-            <div className="text-[10px] font-bold text-brand-400 uppercase tracking-wider">⭐ Quer acesso?</div>
-            <div className="text-[9px] text-steel-400 mt-0.5">Solicite o plano VIP — nosso time entra em contato</div>
-          </NavLink>
         </div>
       )}
     </div>

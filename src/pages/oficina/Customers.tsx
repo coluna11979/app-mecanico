@@ -53,7 +53,8 @@ export default function Customers() {
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('money');
   const [shown, setShown] = useState(PAGE);
-  const [creating, setCreating] = useState(false);
+  // ?novo=1 (atalho do Início) abre o cadastro direto
+  const [creating, setCreating] = useState(() => new URLSearchParams(window.location.search).get('novo') === '1');
   const [view, setView] = useState<'all' | 'reactivate'>('all');
   const [period, setPeriod] = useState<PeriodKey>('all');
   const [dateMode, setDateMode] = useState<DateMode>('served');
