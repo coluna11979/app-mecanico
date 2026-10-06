@@ -25,8 +25,11 @@ const isSub = (e: NavEntry): e is NavSub => 'children' in e;
 const leaves = (entries: NavEntry[]): NavItem[] => entries.flatMap(e => (isSub(e) ? e.children : [e]));
 const onRoute = (path: string, to: string) => path === to || path.startsWith(`${to}/`);
 
-/** Item solto no topo do menu (tela de entrada do gestor) */
-const TOP_ITEM: NavItem = { to: '/oficina/painel', icon: '📊', label: 'Painel de vendas' };
+/** Itens soltos no topo do menu (telas de entrada do gestor) */
+const TOP_ITEMS: NavItem[] = [
+  { to: '/oficina/inicio', icon: '🏠', label: 'Início'           },
+  { to: '/oficina/painel', icon: '📊', label: 'Painel de vendas' },
+];
 
 /** Menu por fluxo de trabalho. Só muda a organização: as rotas (e as permissões do modo balcão) são as mesmas. */
 const SECTIONS: NavGroup[] = [
@@ -536,9 +539,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-3">
-          {allowed(TOP_ITEM.to) && (
-            <SideItem {...TOP_ITEM} badge={0} mobileHidden={inBottom(TOP_ITEM.to)} onClick={() => setOpen(false)} />
-          )}
+          {TOP_ITEMS.filter(i => allowed(i.to)).map(i => (
+            <SideItem key={i.to} {...i} badge={0} mobileHidden={inBottom(i.to)} onClick={() => setOpen(false)} />
+          ))}
 
           {SECTIONS.map(sec => {
             // Só o que a função pode abrir; submenu sem nenhum filho liberado some
