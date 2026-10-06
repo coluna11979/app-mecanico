@@ -4,7 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { canDo, useOperator } from '@/lib/operators';
+import { canDo, sessionAllows, useOperator } from '@/lib/operators';
 import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
@@ -15,6 +15,8 @@ import ServiceTimer from '@/components/os/ServiceTimer';
 import PaymentsList from '@/components/cash/PaymentsList';
 import { OsCommissionCard } from '@/components/cash/OsCommission';
 import { PLATFORM, ResponsibleModal, responsibleOf } from '@/components/cash/ResponsiblePicker';
+import CallMechanicModal from '@/components/cash/CallMechanicModal';
+import ResponsibleCard from '@/components/os/ResponsibleCard';
 import {
   durationMin, fmtBRL, fmtDateTime, fmtDur, osNumber, osStatusColor, osStatusLabel, waNumber, fmtPhone,
   statusChange, APPROVAL_CHANNELS, PAUSE_REASONS, openPause, workedMinutes,
@@ -46,6 +48,10 @@ export default function OsDetail() {
   /* false = fechado · 'edit' = escolher · 'platform' = já abre com a plataforma marcada */
   const [scheduling, setScheduling] = useState(false);
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
+  /** Publicar demanda no MecânicoApp (OS já marcada como da plataforma, sem demanda ligada) */
+  const [publishing, setPublishing] = useState(false);
+  /** Aviso ao iniciar sem responsável (não bloqueia) */
+  const [startWarn, setStartWarn] = useState(false);
   /** Concluir escolhendo a data (OS de outro dia, ex.: nota importada ou reaberta para corrigir) */
   const [concluding, setConcluding] = useState(false);
   /** Abre a correção do pagamento (sem mudar o status da OS) */
@@ -281,6 +287,11 @@ export default function OsDetail() {
   const dur = os.completed_at ? workedMinutes(os.started_at, os.completed_at, os.pauses) : null;
   // Concluída ou cancelada fica travada: para mudar, é preciso reabrir (protege o histórico)
   const closed = os.status === 'cancelled' || os.status === 'completed';
+  const canOpen = (path: string) => !balcao || !session || sessionAllows(session, path);
+  const perService = items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id));
+  const noResponsible = responsibleOf(os) === '' && !perService;
+  /** Iniciar: sem responsável, avisa antes (dá para seguir mesmo assim) */
+  const startService = () => (noResponsible ? setStartWarn(true) : changeStatus('in_progress'));
 
   return (
     <WorkshopLayout>
@@ -352,7 +363,7 @@ export default function OsDetail() {
               </>
             )}
             {os.status === 'approved' && (
-              <button onClick={() => changeStatus('in_progress')} disabled={busy} className="btn-primary text-sm !py-2">▶ Iniciar serviço</button>
+              <button onClick={startService} disabled={busy} className="btn-primary text-sm !py-2">▶ Iniciar serviço</button>
             )}
             {(os.status === 'open' || os.status === 'awaiting_approval' || os.status === 'approved') && (
               <button onClick={() => setConcluding(true)} disabled={busy} className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700"
@@ -417,6 +428,22 @@ export default function OsDetail() {
             <ConcludeAt createdAt={os.created_at} busy={busy}
               onCancel={() => setConcluding(false)}
               onConfirm={iso => { setConcluding(false); changeStatus('completed', { completedAt: iso }); }} />
+          )}
+
+          {/* Iniciar sem responsável: só avisa */}
+          {startWarn && (
+            <div className="mt-3 bg-pending-50 border border-pending-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-pending-800 mr-1">Esta OS ainda está sem responsável.</span>
+              <button onClick={() => { setStartWarn(false); setSettingResp('edit'); }}
+                className="text-sm px-3 py-1.5 rounded-lg bg-white border border-pending-300 hover:bg-pending-100 font-medium">Definir responsável</button>
+              {canOpen('/oficina/dashboard') && (
+                <button onClick={() => { setStartWarn(false); setSettingResp('platform'); }}
+                  className="text-sm px-3 py-1.5 rounded-lg bg-white border border-pending-300 hover:bg-pending-100 font-medium">Buscar profissional no MecânicoApp</button>
+              )}
+              <button onClick={() => { setStartWarn(false); changeStatus('in_progress'); }} disabled={busy}
+                className="text-sm px-3 py-1.5 rounded-lg font-medium text-steel-600 hover:underline">Iniciar mesmo assim</button>
+              <button onClick={() => setStartWarn(false)} className="text-xs text-steel-500 hover:underline ml-auto">Cancelar</button>
+            </div>
           )}
 
           {/* Motivo da pausa */}
@@ -509,6 +536,17 @@ export default function OsDetail() {
         <div className="grid lg:grid-cols-3 gap-5">
           {/* ── Coluna principal ── */}
           <div className="lg:col-span-2 space-y-5 min-w-0">
+            {/* Responsável (equipe ou MecânicoApp) — fica no topo para achar fácil */}
+            <ResponsibleCard
+              os={{ id: os.id, status: os.status, executor: os.executor ?? null, workshop_mechanic_id: os.workshop_mechanic_id,
+                    mechanic: os.mechanic ?? null, estimated_hours: os.estimated_hours }}
+              split={perService ? <ServiceSplit items={items} team={team} osMechanic={os.mechanic?.name ?? null} /> : undefined}
+              canTrack={canOpen('/oficina/job')}
+              canPublish={canOpen('/oficina/dashboard')}
+              onDefine={() => setSettingResp('edit')}
+              onCallPlatform={() => setSettingResp('platform')}
+              onPublish={() => setPublishing(true)} />
+
             <OsItemsEditor
               osId={os.id}
               workshopId={os.workshop_id}
@@ -613,58 +651,6 @@ export default function OsDetail() {
                 vehicleId={os.vehicle_id} osId={os.id} />
             )}
 
-            {/* Responsável */}
-            <div className="card">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Responsável</div>
-                {os.status !== 'cancelled' && (
-                  (os.executor === 'platform' || os.mechanic) && (
-                    <button onClick={() => setSettingResp('edit')} className="text-xs font-semibold text-brand-600 hover:underline">Alterar</button>
-                  )
-                )}
-              </div>
-              {items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id)) ? (
-                <ServiceSplit items={items} team={team} osMechanic={os.mechanic?.name ?? null} />
-              ) : os.executor === 'platform' ? (
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-full bg-brand-500/10 grid place-items-center">🌐</div>
-                  <div className="text-sm">
-                    <div className="font-semibold text-steel-900">Mecânico da plataforma</div>
-                    <div className="text-steel-500">Profissional de fora</div>
-                  </div>
-                </div>
-              ) : os.mechanic ? (
-                <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold">{os.mechanic.name.charAt(0).toUpperCase()}</div>
-                  <div className="text-sm">
-                    <div className="font-semibold text-steel-900">{os.mechanic.name}</div>
-                    {os.mechanic.specialty && <div className="text-steel-500">{os.mechanic.specialty}</div>}
-                  </div>
-                </div>
-              ) : (
-                os.status === 'cancelled' ? (
-                  <EmptyLink text="Nenhum mecânico definido" />
-                ) : (
-                  <div className="grid gap-2">
-                    <div className="text-sm text-steel-500">Quem vai fazer o serviço?</div>
-                    <button onClick={() => setSettingResp('edit')}
-                      className="rounded-xl border-2 border-steel-200 hover:border-brand-300 px-3 py-2.5 text-left transition">
-                      <div className="font-semibold text-sm">🔧 Mecânico da loja</div>
-                      <div className="text-xs text-steel-500">Escolher alguém da equipe</div>
-                    </button>
-                    <button onClick={() => setSettingResp('platform')}
-                      className="rounded-xl border-2 border-steel-200 hover:border-brand-300 px-3 py-2.5 text-left transition">
-                      <div className="font-semibold text-sm">🌐 Mecânico da plataforma</div>
-                      <div className="text-xs text-steel-500">Chamar um profissional de fora</div>
-                    </button>
-                  </div>
-                )
-              )}
-              {os.estimated_hours != null && (
-                <div className="text-xs text-steel-500 mt-2">⏱ Tempo estimado: {String(os.estimated_hours).replace('.', ',')}h</div>
-              )}
-            </div>
-
             {/* Orçamento original (importado do papel) */}
             {paperUrl && (
               <a href={paperUrl} target="_blank" rel="noopener noreferrer" className="card block hover:shadow-md transition">
@@ -728,7 +714,14 @@ export default function OsDetail() {
       {settingResp && (
         <ResponsibleModal wid={os.workshop_id} team={team} current={settingResp === 'platform' ? PLATFORM : responsibleOf(os)}
           os={{ id: os.id, number: os.number ?? null, title: os.title, vehicle: os.vehicle ?? null }}
+          allowCall={!closed && canOpen('/oficina/dashboard')}
           onClose={() => setSettingResp(false)} onSaved={load} />
+      )}
+
+      {publishing && (
+        <CallMechanicModal wid={os.workshop_id}
+          os={{ id: os.id, number: os.number ?? null, title: os.title, vehicle: os.vehicle ?? null }}
+          onClose={() => setPublishing(false)} />
       )}
 
       {editing && currentWorkshop && (
@@ -859,10 +852,7 @@ function ServiceSplit({ items, team, osMechanic }: {
         </div>
       ))}
       {hasParts && (
-        <div className="flex justify-between gap-3 pt-1.5 border-t border-steel-100 text-xs">
-          <span className="text-steel-500">Comissão das peças sem serviço</span>
-          <span className="font-semibold text-steel-700">{osMechanic ?? 'ninguém da equipe'}</span>
-        </div>
+        <div className="text-[11px] text-steel-400 pt-1">Peças sem serviço ligado: comissão do responsável geral.</div>
       )}
     </div>
   );

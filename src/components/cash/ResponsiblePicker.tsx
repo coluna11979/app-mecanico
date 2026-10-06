@@ -43,9 +43,11 @@ export function ResponsiblePicker({ team, value, onChange }: {
 }
 
 /** OS já recebida: define/corrige o responsável e, se for da plataforma, chama o mecânico */
-export function ResponsibleModal({ wid, os, team, current, onClose, onSaved }: {
+export function ResponsibleModal({ wid, os, team, current, onClose, onSaved, allowCall = true }: {
   wid: string; os: CallMechanicOs; team: Pick<WorkshopMechanic, 'id' | 'name'>[]; current: Responsible;
   onClose: () => void; onSaved: () => void;
+  /** false = só registra "plataforma", sem oferecer publicar demanda (ex.: OS já concluída) */
+  allowCall?: boolean;
 }) {
   const [value, setValue] = useState<Responsible>(current);
   const [busy, setBusy] = useState(false);
@@ -72,7 +74,7 @@ export function ResponsibleModal({ wid, os, team, current, onClose, onSaved }: {
           <button onClick={onClose} className="text-steel-400 hover:text-steel-700 text-xl leading-none" aria-label="Fechar">×</button>
         </div>
         <ResponsiblePicker team={team} value={value} onChange={setValue} />
-        {value === PLATFORM ? (
+        {value === PLATFORM && allowCall ? (
           <div className="grid gap-2 mt-5">
             <button onClick={() => save(true)} disabled={busy} className="btn-primary">🔧 Salvar e chamar mecânico da plataforma</button>
             <button onClick={() => save(false)} disabled={busy} className="btn-secondary">Só salvar (já combinei com o mecânico)</button>
