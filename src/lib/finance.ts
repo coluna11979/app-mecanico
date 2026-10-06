@@ -11,6 +11,7 @@
  */
 import type { CashEntry, CashRegister, PayMethod } from '@/lib/cash';
 import type { PanelOs, Range } from '@/lib/workshopMetrics';
+import { PAYABLE_GROUPS, groupOf, type PayableGroupKey } from '@/lib/purchasing';
 
 export type FinEntry = Pick<CashEntry, 'id' | 'kind' | 'method' | 'amount' | 'installments' | 'category' | 'mechanic_id' | 'created_at'>;
 export type FinPayment = { id: string; discount: number; created_at: string };
@@ -164,4 +165,93 @@ export function flowSeries(entries: FinEntry[], r: Range) {
     else if (x.kind === 'despesa' || x.kind === 'vale') b.outflow += Number(x.amount);
   }
   return [...buckets.values()];
+}
+
+/* ── Visão financeira: saídas operacionais e resultado operacional estimado ──────────────
+ * Saídas operacionais = despesas e vales do caixa + contas pagas pelo banco no período.
+ *   (conta paga pelo caixa já virou despesa do caixa → não entra de novo; sangria/suprimento ficam fora)
+ * Resultado operacional estimado = faturado − custo das peças vendidas − demais despesas.
+ *   "Demais despesas" = saídas operacionais SEM as compras de peças (fornecedor / peça comprada no dia),
+ *   que já entram pelo custo das peças vendidas — evita contar a mesma peça duas vezes.
+ *   Comissões, salários e vales entram como despesa quando já foram pagos/registrados.
+ */
+
+export type FinPayable = {
+  amount: number; due_date: string; paid_at: string | null; paid_from: 'banco' | 'caixa' | null;
+  category: string | null; invoice_id: string | null;
+};
+
+/** Compra de peças: já entra pelo custo das peças vendidas, não pelas despesas */
+export const isPartsPurchase = (category: string | null | undefined) =>
+  category === 'Fornecedor' || category === 'Peça comprada no dia';
+
+/** "AAAA-MM-DD" local de uma data */
+const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const dayInRange = (iso: string | null, r: Range) => !!iso && iso.slice(0, 10) >= localDay(r.from) && iso.slice(0, 10) < localDay(r.to);
+
+export function outflowsOf(entries: FinEntry[], payables: FinPayable[], r: Range) {
+  const items: { amount: number; category: string; vale?: boolean }[] = [];
+  for (const x of entries) {
+    if (!inRange(x.created_at, r)) continue;
+    if (x.kind === 'despesa') items.push({ amount: Number(x.amount), category: x.category ?? 'Outros' });
+    else if (x.kind === 'vale') items.push({ amount: Number(x.amount), category: 'Vales', vale: true });
+  }
+  for (const p of payables) {
+    if (p.paid_from !== 'banco' || !dayInRange(p.paid_at, r)) continue;
+    items.push({ amount: Number(p.amount), category: p.category ?? 'Outros' });
+  }
+  const total = sum(items, i => i.amount);
+  const parts = sum(items.filter(i => isPartsPurchase(i.category)), i => i.amount);
+  const byGroup = new Map<PayableGroupKey, number>();
+  for (const i of items) {
+    if (isPartsPurchase(i.category)) continue;
+    const g: PayableGroupKey = i.vale ? 'pessoal' : groupOf(i.category).key;
+    byGroup.set(g, (byGroup.get(g) ?? 0) + i.amount);
+  }
+  const groups = PAYABLE_GROUPS.filter(g => (byGroup.get(g.key) ?? 0) > 0)
+    .map(g => ({ key: g.key, label: g.label, icon: g.icon, total: round2(byGroup.get(g.key) ?? 0) }));
+  return { total: round2(total), partsPurchases: round2(parts), operating: round2(total - parts), groups };
+}
+
+/** Faturado − custo das peças vendidas − demais despesas (estimativa: só com os custos cadastrados) */
+export function operatingResult(revenue: number, partsCost: number, operatingExpenses: number) {
+  const result = round2(revenue - partsCost - operatingExpenses);
+  return { result, margin: revenue > 0 ? (result / revenue) * 100 : null };
+}
+
+/** Entradas × saídas por dia/mês, com as contas pagas pelo banco nas saídas */
+export function flowSeriesFull(entries: FinEntry[], payables: FinPayable[], r: Range) {
+  const series = flowSeries(entries, r);
+  const days = Math.ceil((r.to.getTime() - r.from.getTime()) / 86400000);
+  const byMonth = days > 62;
+  const keys = (() => {
+    const out: string[] = [];
+    const c = new Date(r.from); c.setHours(0, 0, 0, 0); if (byMonth) c.setDate(1);
+    while (c < r.to) { out.push(byMonth ? `${c.getFullYear()}-${c.getMonth()}` : localDay(c)); if (byMonth) c.setMonth(c.getMonth() + 1); else c.setDate(c.getDate() + 1); }
+    return out;
+  })();
+  for (const p of payables) {
+    if (p.paid_from !== 'banco' || !dayInRange(p.paid_at, r)) continue;
+    const d = new Date(`${p.paid_at!.slice(0, 10)}T12:00:00`);
+    const i = keys.indexOf(byMonth ? `${d.getFullYear()}-${d.getMonth()}` : localDay(d));
+    if (i >= 0 && series[i]) series[i].outflow += Number(p.amount);
+  }
+  return series;
+}
+
+/** Recebido agrupado como o dono pensa: PIX, cartão, dinheiro e outros */
+export function receivedGroups(entries: FinEntry[], r: Range) {
+  const m = byMethod(entries, r);
+  const get = (k: PayMethod) => m.find(x => x.method === k)?.total ?? 0;
+  const card = get('debito') + get('credito');
+  const other = m.filter(x => !['pix', 'debito', 'credito', 'dinheiro'].includes(x.method)).reduce((a, x) => a + x.total, 0);
+  return {
+    rows: [
+      { key: 'pix', label: '⚡ PIX', total: get('pix') },
+      { key: 'cartao', label: '💳 Cartão', total: card },
+      { key: 'dinheiro', label: '💵 Dinheiro', total: get('dinheiro') },
+      { key: 'outros', label: 'Outros', total: other },
+    ].filter(x => x.total > 0),
+    installments: m.find(x => x.method === 'credito')?.installmentTotal ?? 0,
+  };
 }
