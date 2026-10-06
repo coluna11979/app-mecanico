@@ -487,6 +487,10 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
   // "Pagar depois" (uma das formas): vencimento e observação
   const [dueDate, setDueDate] = useState(os.pay_later_due ?? (() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })());
   const [laterNote, setLaterNote] = useState(os.pay_later_note ?? '');
+  /** Data do pagamento: hoje (entra neste caixa) ou dia anterior (fora do caixa, com aquela data) */
+  const todayYmd = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  const [payDay, setPayDay] = useState(todayYmd);
+  const pastPay = payDay < todayYmd;
 
   const disc = parseMoney(discount);
   const due = Math.max(0, Math.round((open - disc) * 100) / 100);
@@ -513,7 +517,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
     if (!comm.valid) return toast.error('Escolha quem recebe cada comissão');
     if (total <= 0) return toast.error('Informe o valor recebido');
     if (missing < -0.004) return toast.error('O total passa do valor em aberto');
-    if (given && givenN < cashPart) return toast.error('O valor entregue é menor que a parte em dinheiro');
+    if (!pastPay && given && givenN < cashPart) return toast.error('O valor entregue é menor que a parte em dinheiro');
     if (deferring && !dueDate) return toast.error('Informe até quando o cliente vai pagar');
     if (deferring && missing > 0.004) return toast.error(`Falta ${brl(missing)} — some no "Pagar depois" ou em outra forma`);
     if (missing > 0.004 && !confirm(`Vai ficar faltando ${brl(missing)} nesta OS. Confirmar recebimento parcial?`)) return;
@@ -522,7 +526,16 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
     if (rErr) { setBusy(false); return toast.error('Não consegui salvar quem fez: ' + rErr.message); }
     const { error: cErr } = await comm.save(wid, sid);
     if (cErr) { setBusy(false); return toast.error('Não consegui salvar as comissões: ' + cErr.message); }
-    if (paidNow > 0) {
+    if (paidNow > 0 && pastPay) {
+      // Pago em dia anterior: fora do caixa de hoje, com a data em que o cliente pagou
+      if (disc > 0) { setBusy(false); return toast.error('Desconto só no recebimento de hoje. Para pagamento antigo, ajuste o valor da OS.'); }
+      const { error } = await supabase.rpc('cash_receive_os_past', {
+        p_workshop: wid, p_session: sid, p_os: os.id,
+        p_parts: paidParts.map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
+        p_paid_at: new Date(`${payDay}T12:00:00`).toISOString(),
+      });
+      if (error) { setBusy(false); return toast.error(error.message); }
+    } else if (paidNow > 0) {
       const { error } = await supabase.rpc('cash_receive_os', {
         p_workshop: wid, p_session: sid, p_os: os.id,
         p_parts: paidParts.map(p => ({ method: p.method, amount: parseMoney(p.amount), installments: p.installments })),
@@ -579,6 +592,23 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
           </div>
         )}
 
+        <div className="mt-4 rounded-2xl border border-steel-200 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="label !mb-0">📅 Data do pagamento</span>
+            <button type="button" onClick={() => setPayDay(todayYmd)}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${!pastPay ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+              Hoje
+            </button>
+            <input type="date" className="input !py-1.5 !text-xs !w-auto ml-auto" max={todayYmd} value={payDay}
+              onChange={e => setPayDay(e.target.value && e.target.value <= todayYmd ? e.target.value : todayYmd)} />
+          </div>
+          {pastPay && (
+            <p className="text-[11px] text-brand-700 mt-1.5">
+              Pago em {new Date(`${payDay}T12:00:00`).toLocaleDateString('pt-BR')}: entra nessa data, <strong>fora do caixa de hoje</strong> (não conta na gaveta) e aparece nos Recebimentos daquele dia.
+            </p>
+          )}
+        </div>
+
         <div className="label mt-4 mb-2">Formas de pagamento</div>
         <div className="space-y-2">
           {parts.map((p, i) => (
@@ -621,7 +651,7 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
           </div>
         )}
 
-        {cashPart > 0 && (
+        {cashPart > 0 && !pastPay && (
           <div className="mt-4 grid grid-cols-2 gap-3 items-end">
             <div>
               <div className="label mb-1">Cliente entregou (R$)</div>
@@ -637,7 +667,8 @@ function ReceiveModal({ os, wid, sid, canDiscount, team, onClose, onDone }: {
         <div className="flex gap-2 mt-6">
           <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
           <button onClick={confirmReceive} disabled={busy || !who.valid || total <= 0 || missing < -0.004} className="btn-primary flex-[2] btn-lg">
-            {busy ? 'Registrando…' : deferring ? (paidNow > 0 ? `Receber ${brl(paidNow)} · ${brl(laterAmount)} depois` : `Confirmar ${brl(laterAmount)} para depois`) : `Confirmar ${brl(total)}`}
+            {busy ? 'Registrando…' : deferring ? (paidNow > 0 ? `Receber ${brl(paidNow)} · ${brl(laterAmount)} depois` : `Confirmar ${brl(laterAmount)} para depois`)
+              : pastPay ? `Confirmar ${brl(total)} pago em ${new Date(`${payDay}T12:00:00`).toLocaleDateString('pt-BR')}` : `Confirmar ${brl(total)}`}
           </button>
         </div>
       </div>
