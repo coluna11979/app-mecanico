@@ -251,6 +251,8 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canFix, c
   const [picked, setPicked] = useState<OpenOs | null>(null);
   const [newOs, setNewOs] = useState(false);
   const [selling, setSelling] = useState(false);
+  /** Lista "Pagar depois" fica fechada até o caixa pedir (abre sozinha numa busca) */
+  const [showLater, setShowLater] = useState(false);
   const [calling, setCalling] = useState<CallMechanicOs | null>(null);
   /* OS já recebida: definir/corrigir responsável (e chamar mecânico da plataforma) */
   const [setting, setSetting] = useState<PaidOs | null>(null);
@@ -385,7 +387,7 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canFix, c
         <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
       ) : shown.length === 0 ? (
         <div className="card text-center py-10 text-sm text-steel-500">
-          {list.length === 0 ? 'Nenhuma OS com valor em aberto.' : later.length && !list.some(o => !o.pay_later_due) ? 'Nenhuma OS para receber agora — veja as combinadas para pagar depois abaixo.' : 'Nenhuma OS encontrada.'}
+          {list.length === 0 ? 'Nenhuma OS com valor em aberto.' : later.length && !list.some(o => !o.pay_later_due) ? 'Nenhuma OS para receber agora. As combinadas para pagar depois ficam no botão “🕒 Pagar depois” abaixo.' : 'Nenhuma OS encontrada.'}
         </div>
       ) : (
         <div className="card p-0 divide-y divide-steel-100">
@@ -393,22 +395,28 @@ function ReceiveTab({ wid, sid, registerId, entriesCount, canDiscount, canFix, c
         </div>
       )}
 
-      {later.length > 0 && (
-        <div className="mt-6">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-            <h2 className="text-sm font-bold text-steel-700">🕒 Pagar depois</h2>
-            <span className="text-xs text-steel-500">
-              {later.length} OS · <strong className="text-steel-700">{brl(later.reduce((a, o) => a + remainingOf(o), 0))}</strong>
-              {later.some(o => daysToDue(o.pay_later_due!) < 0) && (
-                <span className="text-alert-600 font-semibold"> · {brl(later.filter(o => daysToDue(o.pay_later_due!) < 0).reduce((a, o) => a + remainingOf(o), 0))} vencido</span>
-              )}
-            </span>
+      {later.length > 0 && (() => {
+        const open = showLater || !!q.trim();
+        const overdue = later.filter(o => daysToDue(o.pay_later_due!) < 0);
+        return (
+          <div className="mt-6">
+            <button type="button" onClick={() => setShowLater(v => !v)}
+              className="w-full flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-steel-200 bg-white px-4 py-3 hover:border-brand-300 transition text-left">
+              <span className="text-sm font-bold text-steel-700">🕒 Pagar depois <span className="font-normal text-steel-500">({later.length} OS)</span></span>
+              <span className="text-xs text-steel-500 flex items-center gap-2">
+                <strong className="text-steel-700">{brl(later.reduce((a, o) => a + remainingOf(o), 0))}</strong>
+                {overdue.length > 0 && <span className="text-alert-600 font-semibold">· {brl(overdue.reduce((a, o) => a + remainingOf(o), 0))} vencido</span>}
+                <span className="font-semibold text-brand-600">{open ? 'Fechar ▴' : 'Ver ▾'}</span>
+              </span>
+            </button>
+            {open && (
+              <div className="card p-0 divide-y divide-steel-100 mt-2">
+                {later.map(osRow)}
+              </div>
+            )}
           </div>
-          <div className="card p-0 divide-y divide-steel-100">
-            {later.map(osRow)}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       <div className="mt-6">
         <PaymentsList filter={paidFilter} reloadKey={`${entriesCount}-${paidKey}`} fix={canFix ? { wid, sid } : undefined} title={paidTitle} empty={paidFilter && 'registerId' in paidFilter ? 'Nenhuma OS recebida neste caixa ainda.' : 'Nenhuma OS recebida neste período.'}
