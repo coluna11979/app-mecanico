@@ -291,6 +291,8 @@ export default function OsDetail() {
   const dur = os.completed_at ? workedMinutes(os.started_at, os.completed_at, os.pauses) : null;
   // Concluída ou cancelada fica travada: para mudar, é preciso reabrir (protege o histórico)
   const closed = os.status === 'cancelled' || os.status === 'completed';
+  /** Venda de peças no balcão (Caixa → Venda de peças): tela enxuta, sem fluxo de serviço */
+  const isSale = os.source === 'balcao';
   const canOpen = (path: string) => !balcao || !session || sessionAllows(session, path);
   const perService = items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id));
   const noResponsible = responsibleOf(os) === '' && !perService;
@@ -321,9 +323,11 @@ export default function OsDetail() {
           <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono text-sm font-bold text-steel-500">OS nº {osNumber(os)}</span>
-                <span className={`badge ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>
-                {os.category && <span className="badge bg-steel-100 text-steel-600">{os.category}</span>}
+                <span className="font-mono text-sm font-bold text-steel-500">{isSale ? 'Venda' : 'OS'} nº {osNumber(os)}</span>
+                {isSale
+                  ? <span className={`badge ${os.status === 'cancelled' ? 'bg-steel-100 text-steel-600' : 'bg-signal-100 text-signal-700'}`}>🛒 {os.status === 'cancelled' ? 'Venda cancelada' : 'Venda de balcão'}</span>
+                  : <span className={`badge ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>}
+                {os.category && !isSale && <span className="badge bg-steel-100 text-steel-600">{os.category}</span>}
               </div>
               <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1.5">{os.title}</h1>
               {(os.customer || os.vehicle) && (
@@ -331,7 +335,7 @@ export default function OsDetail() {
                   {[os.customer?.full_name, os.vehicle ? `${os.vehicle.make} ${os.vehicle.model} · ${os.vehicle.plate}` : null].filter(Boolean).join(' · ')}
                 </div>
               )}
-              <div className="text-xs text-steel-500 mt-0.5">Aberta em {fmtDateTime(os.created_at)}</div>
+              <div className="text-xs text-steel-500 mt-0.5">{isSale ? 'Vendida em' : 'Aberta em'} {fmtDateTime(os.created_at)}</div>
             </div>
             <div className="text-left lg:text-right shrink-0">
               <div className="text-[10px] text-steel-400 uppercase tracking-wider">Total</div>
@@ -344,8 +348,8 @@ export default function OsDetail() {
             </div>
           </div>
 
-          {/* Etapa atual do fluxo */}
-          <FlowSteps os={os} />
+          {/* Etapa atual do fluxo (venda de balcão não tem etapas) */}
+          {!isSale && <FlowSteps os={os} />}
 
           {/* Ações: a da etapa em destaque; o resto em "Mais ações" */}
           <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap items-center gap-2">
@@ -389,7 +393,7 @@ export default function OsDetail() {
                 💰 Receber no caixa · {fmtBRL(osOpenAmount)}
               </button>
             )}
-            {os.status === 'completed' && !os.quote_status && (
+            {os.status === 'completed' && !os.quote_status && !isSale && (
               <button onClick={() => setReworkForm(v => !v)} disabled={busy} className={`${SEC} !border-alert-200 text-alert-700 hover:bg-alert-50`}>
                 🔁 Cliente voltou
               </button>
@@ -404,7 +408,7 @@ export default function OsDetail() {
 
             <MoreActions items={moreActions} />
 
-            {os.status === 'completed' && (
+            {os.status === 'completed' && !isSale && (
               <span className="text-xs text-steel-400">🔒 OS concluída — reabra para editar</span>
             )}
           </div>
@@ -521,8 +525,8 @@ export default function OsDetail() {
         <div className="grid lg:grid-cols-3 gap-5">
           {/* ── Coluna principal ── */}
           <div className="lg:col-span-2 space-y-5 min-w-0">
-            {/* Responsável (equipe ou MecânicoApp) — fica no topo para achar fácil */}
-            <ResponsibleCard
+            {/* Responsável (equipe ou MecânicoApp) — fica no topo para achar fácil; venda de balcão não tem */}
+            {!isSale && <ResponsibleCard
               os={{ id: os.id, status: os.status, executor: os.executor ?? null, workshop_mechanic_id: os.workshop_mechanic_id,
                     mechanic: os.mechanic ?? null, estimated_hours: os.estimated_hours }}
               split={perService ? <ServiceSplit items={items} team={team} osMechanic={os.mechanic?.name ?? null} /> : undefined}
@@ -530,10 +534,10 @@ export default function OsDetail() {
               canPublish={canOpen('/oficina/dashboard')}
               onDefine={() => setSettingResp('edit')}
               onCallPlatform={() => setSettingResp('platform')}
-              onPublish={() => setPublishing(true)} />
+              onPublish={() => setPublishing(true)} />}
 
             {/* Cronômetros: do serviço e de cada responsável */}
-            {['approved', 'in_progress', 'completed'].includes(os.status) && (
+            {!isSale && ['approved', 'in_progress', 'completed'].includes(os.status) && (
               <div className="card !p-4 empty:hidden [&>*:first-child]:mt-0">
                 {/* Tempo que o mecânico levou: do Iniciar ao Concluir */}
                 {(os.status === 'in_progress' || os.status === 'completed') && (
@@ -563,6 +567,7 @@ export default function OsDetail() {
               osMechanicId={os.workshop_mechanic_id}
               canAssign={canDo(session, balcao, 'caixa')}
               customerBroughtParts={!!os.customer_brought_parts}
+              saleMode={isSale}
               osLabel={`OS nº ${os.number != null ? String(os.number).padStart(4, '0') : os.id.slice(0, 8)}`}
               onSaved={load}
             />
@@ -586,7 +591,12 @@ export default function OsDetail() {
               fix={canDo(session, balcao, 'cancelar_recebimento') ? { wid: os.workshop_id, sid: balcao ? session?.session_id ?? null : null } : undefined} />
 
             {/* Comissões desta OS: pela regra, com opção de alterar/incluir pessoas */}
-            {os.status !== 'cancelled' && canDo(session, balcao, 'caixa') && (
+            {isSale && os.status !== 'cancelled' && (
+              <p className="text-xs text-steel-400 px-1">
+                💡 Venda de peças: não gera comissão por item. Só quem ganha % sobre o faturamento da loja (ex.: gerente) recebe, no fechamento.
+              </p>
+            )}
+            {!isSale && os.status !== 'cancelled' && canDo(session, balcao, 'caixa') && (
               <OsCommissionCard
                 key={items.map(i => `${i.id}:${i.kind}:${i.executor ?? ''}:${i.workshop_mechanic_id ?? ''}:${i.quantity}:${i.unit_price}`).join('|') + `|${os.workshop_mechanic_id ?? ''}`}
                 os={{ id: os.id, executor: os.executor ?? null, workshop_mechanic_id: os.workshop_mechanic_id ?? null }}
@@ -632,7 +642,7 @@ export default function OsDetail() {
             </div>
 
             {/* Veículo */}
-            <div className="card">
+            {!isSale && <div className="card">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-2">Veículo</div>
               {os.vehicle ? (
                 <div className="flex items-center gap-3">
@@ -648,10 +658,28 @@ export default function OsDetail() {
               ) : (
                 <EmptyLink text="Sem veículo vinculado" onClick={closed ? undefined : () => setEditing(true)} />
               )}
-            </div>
+            </div>}
+
+            {/* Venda de balcão: resumo no lugar da linha do tempo do serviço */}
+            {isSale && (
+              <div className="card">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">Resumo da venda</div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-steel-500">Vendida em</span><span>{fmtDateTime(os.created_at)}</span></div>
+                  <div className="flex justify-between"><span className="text-steel-500">Itens</span><span>{items.length}</span></div>
+                  <div className="flex justify-between"><span className="text-steel-500">Total</span><strong>{fmtBRL(os.price)}</strong></div>
+                  <div className="flex justify-between">
+                    <span className="text-steel-500">Pagamento</span>
+                    <span className={os.paid_at ? 'text-signal-700 font-semibold' : 'text-pending-800 font-semibold'}>
+                      {os.status === 'cancelled' ? '—' : os.paid_at ? `✓ Pago ${fmtDateTime(os.paid_at)}` : `falta ${fmtBRL(osOpenAmount)}`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Recomendado para o futuro (base da reativação de clientes) */}
-            {os.customer_id && (
+            {os.customer_id && !isSale && (
               <Recommendations workshopId={os.workshop_id} customerId={os.customer_id}
                 vehicleId={os.vehicle_id} osId={os.id} />
             )}
@@ -666,7 +694,7 @@ export default function OsDetail() {
             )}
 
             {/* Linha do tempo */}
-            <div className="card">
+            {!isSale && <div className="card">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">Linha do tempo</div>
               <ol className="space-y-3">
                 {os.scheduled_at && <Step label="Agendada para" value={fmtDateTime(os.scheduled_at)} done />}
@@ -704,7 +732,7 @@ export default function OsDetail() {
                   Tempo trabalhado (sem pausas): <strong className="text-brand-600">{fmtDur(dur)}</strong>
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         </div>
       </div>

@@ -115,10 +115,12 @@ interface Props {
   canAssign?: boolean;
   /** Cliente trouxe a peça (comissão da mão de obra usa a % própria) */
   customerBroughtParts?: boolean;
+  /** Venda de peças no balcão: só peças, sem serviço/mão de obra nem "cliente trouxe a peça" */
+  saleMode?: boolean;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -374,11 +376,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     <div className="card !p-0 overflow-hidden">
       <div className="px-5 pt-5 pb-3 flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="font-bold text-lg text-steel-900">Peças e serviços</h2>
-          <p className="text-xs text-steel-500">O total da OS é calculado a partir destes itens.</p>
+          <h2 className="font-bold text-lg text-steel-900">{saleMode ? 'Itens da venda' : 'Peças e serviços'}</h2>
+          <p className="text-xs text-steel-500">{saleMode ? 'Peças vendidas no balcão.' : 'O total da OS é calculado a partir destes itens.'}</p>
         </div>
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
+            {!saleMode && (<>
             <button type="button" onClick={() => addRow('labor')}
               title="Valor fechado: serviço com as peças incluídas (ex.: troca de óleo completa). Comissão 4% sobre o total."
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
@@ -389,6 +392,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 transition">
               + Mão de obra
             </button>
+            </>)}
             <button type="button" onClick={() => addRow('part')}
               title="Opcional: detalhar uma peça ou vender peça avulsa"
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
@@ -404,7 +408,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         )}
       </div>
 
-      {(!readOnly || canAssign || ownParts) && (
+      {!saleMode && (!readOnly || canAssign || ownParts) && (
         <label className={`mx-5 mb-3 flex items-center gap-2 text-sm ${!readOnly || canAssign ? 'cursor-pointer' : ''}`}>
           <input type="checkbox" checked={ownParts} disabled={readOnly && !canAssign}
             onChange={e => toggleOwnParts(e.target.checked)} />
