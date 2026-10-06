@@ -122,11 +122,8 @@ export function baseByMechanic(rows: CommissionBaseRow[]) {
     if (!r.mechanic_id) continue;
     const e = map.get(r.mechanic_id) ?? { labor: 0, laborOwn: 0, parts: 0, svc: 0, mo: 0 };
     if (Number(r.fixed ?? 0) > 0) e.fixed = (e.fixed ?? 0) + Number(r.fixed);
-    if (Number(r.manual ?? 0) > 0) {
-      e.manual = (e.manual ?? 0) + Number(r.manual);
-      map.set(r.mechanic_id, e);
-      continue;
-    }
+    // Valor digitado (na OS inteira ou num serviço) soma direto; o resto da linha segue a regra
+    if (Number(r.manual ?? 0) > 0) e.manual = (e.manual ?? 0) + Number(r.manual);
     if (r.rule_v2) {
       e.svc += Number(r.svc_base ?? 0);
       e.mo += Number(r.mo_base ?? 0);
