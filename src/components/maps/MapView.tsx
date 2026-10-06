@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { getSetting } from '@/lib/settings';
 
 export interface Marker { id: string; lat: number; lng: number; color?: string; label?: string }

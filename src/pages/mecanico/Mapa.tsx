@@ -11,6 +11,7 @@ import { mechanicNet } from '@/lib/payment';
 import { isScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint } from '@/components/ArrivalDeadline';
 import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
 type JobWithShop = Job & { workshop: Workshop | null };
