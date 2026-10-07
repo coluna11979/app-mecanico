@@ -230,3 +230,58 @@ export function birthdaySoon(birth: string | null | undefined, now = new Date())
 }
 
 export const fmtMonthYear = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }) : '—');
+
+/* ── CRM: quem chamar e por quê (só leitura; não muda os segmentos acima) ─────────────── */
+
+/** Dias até a próxima troca de óleo/revisão pelo tempo (última + 6 meses); negativo = vencida. Mesma regra de vehicleUsage, sem km. */
+export function serviceDueDays(ins: CustomerInsight, now = Date.now()): number | null {
+  if (!ins.lastOil) return null;
+  return Math.round((new Date(ins.lastOil).getTime() + 182 * DAY - now) / DAY);
+}
+
+/** Revisão próxima: vence nos próximos 30 dias ou venceu há até 60 */
+export const serviceDueSoon = (days: number | null) => days != null && days <= 30 && days >= -60;
+
+export type CallReason =
+  | { kind: 'quote'; osId: string; days: number; value: number }
+  | { kind: 'service'; days: number }
+  | { kind: 'risk'; intervalDays: number; sinceDays: number }
+  | { kind: 'gone'; sinceDays: number };
+
+/** Orçamento parado: OS aguardando o cliente há 2 dias ou mais (a mais antiga) */
+export function staleQuote(os: Pick<InsOs, 'id' | 'status' | 'price' | 'created_at' | 'approval_requested_at'>[], now = Date.now()) {
+  const waiting = os
+    .filter(o => o.status === 'awaiting_approval')
+    .map(o => ({ o, days: Math.floor((now - new Date(o.approval_requested_at ?? o.created_at).getTime()) / DAY) }))
+    .filter(x => x.days >= 2)
+    .sort((a, b) => b.days - a.days);
+  return waiting[0] ? { osId: waiting[0].o.id, days: waiting[0].days, value: Number(waiting[0].o.price) } : null;
+}
+
+/**
+ * Motivo para chamar o cliente hoje, por prioridade: orçamento parado → revisão próxima → em risco → sumido (até 18 meses).
+ * Quem está sendo atendido (OS aberta, aprovada ou em andamento) não entra; orçamento recém-enviado (menos de 2 dias) também não.
+ */
+export function callReason(ins: CustomerInsight, os: Pick<InsOs, 'id' | 'status' | 'price' | 'created_at' | 'approval_requested_at'>[], now = Date.now()): CallReason | null {
+  if (os.some(o => o.status === 'open' || o.status === 'approved' || o.status === 'in_progress')) return null;
+  const quote = staleQuote(os, now);
+  if (quote) return { kind: 'quote', ...quote };
+  if (os.some(o => o.status === 'awaiting_approval')) return null;
+  const due = serviceDueDays(ins, now);
+  if (serviceDueSoon(due)) return { kind: 'service', days: due! };
+  const sinceDays = ins.lastVisit ? Math.floor((now - new Date(ins.lastVisit).getTime()) / DAY) : null;
+  if (ins.segment === 'risk' && sinceDays != null) return { kind: 'risk', intervalDays: ins.avgIntervalDays ?? 0, sinceDays };
+  if (ins.segment === 'gone' && sinceDays != null && sinceDays <= 548) return { kind: 'gone', sinceDays };
+  return null;
+}
+
+/** Texto curto do motivo ("Orçamento parado há 5 dias") */
+export function reasonLabel(r: CallReason): string {
+  const span = (d: number) => (d < 60 ? `${d} dias` : `${Math.round(d / 30)} meses`);
+  switch (r.kind) {
+    case 'quote':   return `Orçamento parado há ${r.days} dia${r.days === 1 ? '' : 's'}`;
+    case 'service': return r.days >= 0 ? (r.days === 0 ? 'Revisão vence hoje' : `Revisão vence em ${r.days} dia${r.days === 1 ? '' : 's'}`) : `Revisão vencida há ${-r.days} dia${r.days === -1 ? '' : 's'}`;
+    case 'risk':    return r.intervalDays ? `Em risco: volta a cada ${span(r.intervalDays)}, faz ${span(r.sinceDays)}` : `Em risco: faz ${span(r.sinceDays)}`;
+    case 'gone':    return `Sumido há ${span(r.sinceDays)}`;
+  }
+}
