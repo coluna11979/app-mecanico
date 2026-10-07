@@ -13,6 +13,7 @@ import { PLATFORM, ResponsibleModal } from '@/components/cash/ResponsiblePicker'
 import { DEFAULT_SCHEDULE, addDays, type ScheduleConfig } from '@/lib/agenda';
 import { cashFlowOf, receivables, type FinEntry, type FinOs } from '@/lib/finance';
 import { timeAgo } from '@/lib/relativeTime';
+import { Icon, type IconName } from '@/components/home/ui';
 import { ABSENCE_REASONS, fmtDay } from '@/lib/team';
 import {
   agendaDay, greeting, openWorkload, osAttention, teamToday,
@@ -59,6 +60,9 @@ export default function Inicio() {
   const [reload, setReload] = useState(0);
   const [newOs, setNewOs] = useState<NewOsPreset | null>(null);
   const [resp, setResp] = useState<{ os: TodayOs; platform: boolean } | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());   // pendências com detalhes abertos
+  const [showAll, setShowAll] = useState(false);
+  const [showCap, setShowCap] = useState(false);   // Equipe: detalhes de capacidade
 
   // Cada bloco só aparece para quem pode abrir a tela de destino (no modo balcão, pela função/permissões)
   const modAllows = useModuleAllows();
@@ -162,296 +166,372 @@ export default function Inicio() {
     };
   }, [data]);
 
-  // Algum alerta visível? (senão mostra "Tudo em dia")
-  const anyAttention = !!data && !!v && (
-    (can('/oficina/dashboard') && data.pendingJobs.length > 0)
-    || v.att.noResponsible.length > 0 || v.att.late.length > 0 || v.att.stopped.length > 0
-    || v.att.awaitingCustomer.length > 0 || (can('/oficina/comercial') && data.checkups.length > 0)
-    || v.att.unconfirmed.length > 0 || (can('/oficina/checkup') && data.reminders.length > 0)
-    || (can('/oficina/financeiro') && data.toReceive.overdue.length > 0)
-    || (can('/oficina/contas-a-pagar') && data.payables.length > 0)
-    || (can('/oficina/caixa') && v.cashClosed));
-
   const name = (balcao && session ? session.name : profile?.full_name ?? '').split(' ')[0];
   const dateRaw = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   const dateLabel = dateRaw.charAt(0).toUpperCase() + dateRaw.slice(1);
 
-  const shortcuts = (
-    <Shortcuts items={[
-      can('/oficina/os')        && { label: '+ Nova OS',      onClick: () => setNewOs({}) },
-      can('/oficina/clientes')  && { label: '+ Novo cliente', onClick: () => nav('/oficina/clientes?novo=1') },
-      can('/oficina/os')        && { label: '+ Agendar',      onClick: () => setNewOs({ schedule: true }) },
-      can('/oficina/caixa')     && { label: '💰 Receber',     onClick: () => nav('/oficina/caixa') },
-      can('/oficina/dashboard') && { label: '+ Nova demanda', onClick: () => nav('/oficina/dashboard?nova=1') },
-    ]} />
-  );
+  /* ── Pendências: mesmas condições de antes; só viraram linhas com prioridade ── */
+  const items: Pending[] = [];
+  if (data && v) {
+    const toggle = (key: string) => setOpen(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+    const osSub = (o: TodayOs) => [o.title, carOf(o.vehicle), o.customer?.full_name].filter(Boolean).join(' · ');
+
+    if (can('/oficina/dashboard') && data.pendingJobs.length > 0) {
+      const n = data.pendingJobs.length;
+      items.push({
+        key: 'platform', sev: 'urgent', icon: 'check',
+        title: n === 1 ? 'Profissional da plataforma terminou o serviço' : `${n} serviços da plataforma terminados`,
+        meta: 'Confirme para liberar o pagamento',
+        actions: [{ label: 'Confirmar', to: n === 1 ? `/oficina/job/${data.pendingJobs[0].id}/tracking` : '/oficina/dashboard', primary: true }],
+        details: n > 1 ? data.pendingJobs.slice(0, 5).map(j => (
+          <Row key={j.id} to={`/oficina/job/${j.id}/tracking`} label={j.title} sub={j.completed_at ? `finalizou ${timeAgo(j.completed_at)}` : undefined} />
+        )) : undefined,
+      });
+    }
+
+    const late = v.att.late;
+    if (late.length > 0) {
+      const one = late.length === 1 ? late[0] : null;
+      items.push({
+        key: 'late', sev: 'urgent', icon: 'clock',
+        title: one ? `OS ${osNumber(one)} passou da hora agendada` : `${late.length} agendamentos passaram da hora`,
+        meta: one ? osSub(one) : 'Ainda não começaram',
+        actions: [one ? { label: 'Abrir OS', to: `/oficina/os/${one.id}`, primary: true } : { label: 'Abrir agenda', to: '/oficina/agenda', primary: true }],
+        details: one ? undefined : late.slice(0, 5).map(o => (
+          <Row key={o.id} to={`/oficina/os/${o.id}`} label={`OS ${osNumber(o)} · ${o.title}`}
+            sub={`marcado ${new Date(o.scheduled_at!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`} />
+        )),
+      });
+    }
+
+    if (can('/oficina/contas-a-pagar') && data.payables.length > 0) {
+      const lateSum = v.payablesLate.reduce((a, p) => a + Number(p.amount), 0);
+      const todaySum = v.payablesToday.reduce((a, p) => a + Number(p.amount), 0);
+      items.push({
+        key: 'payables', sev: v.payablesLate.length > 0 ? 'urgent' : 'important', icon: 'receipt',
+        title: v.payablesLate.length > 0
+          ? `${fmtBRL(lateSum)} em contas vencidas`
+          : `${plural(v.payablesToday.length, 'conta vence hoje', 'contas vencem hoje')} · ${fmtBRL(todaySum)}`,
+        meta: [
+          v.payablesLate.length > 0 && plural(v.payablesLate.length, 'conta vencida', 'contas vencidas'),
+          v.payablesLate.length > 0 && v.payablesToday.length > 0 && `+ ${plural(v.payablesToday.length, 'vence hoje', 'vencem hoje')}`,
+        ].filter(Boolean).join(' '),
+        actions: [{ label: 'Ver contas', to: '/oficina/contas-a-pagar', primary: true }],
+        details: data.payables.slice(0, 5).map(p => (
+          <Row key={p.id} to="/oficina/contas-a-pagar" label={p.description} sub={`vence ${fmtDay(p.due_date)}`} right={fmtBRL(p.amount)} />
+        )),
+      });
+    }
+
+    const noResp = v.att.noResponsible;
+    if (noResp.length > 0) {
+      const one = noResp.length === 1 ? noResp[0] : null;
+      const canCall = can('/oficina/dashboard');
+      items.push({
+        key: 'noresp', sev: 'important', icon: 'user',
+        title: one ? `OS ${osNumber(one)} sem responsável` : `${noResp.length} OS sem responsável`,
+        meta: one ? osSub(one) : noResp.slice(0, 3).map(o => `OS ${osNumber(o)}`).join(', ') + (noResp.length > 3 ? ` +${noResp.length - 3}` : ''),
+        actions: one
+          ? [
+              { label: 'Definir responsável', onClick: () => setResp({ os: one, platform: false }), primary: true },
+              ...(canCall ? [{ label: 'Buscar profissional', onClick: () => setResp({ os: one, platform: true }) }] : []),
+            ]
+          : [{ label: 'Definir responsáveis', onClick: () => toggle('noresp'), primary: true }],
+        details: one ? undefined : noResp.slice(0, 5).map(o => (
+          <div key={o.id} className="flex flex-col sm:flex-row sm:items-center gap-2 py-2">
+            <Link to={`/oficina/os/${o.id}`} className="flex-1 min-w-0 hover:underline">
+              <div className="text-sm font-medium text-steel-900 truncate">OS {osNumber(o)} · {o.title}</div>
+              <div className="text-xs text-steel-500 truncate">{[carOf(o.vehicle), o.customer?.full_name].filter(Boolean).join(' · ')}</div>
+            </Link>
+            <div className="flex gap-2 shrink-0">
+              <button onClick={() => setResp({ os: o, platform: false })} className={`${BTN_SEC} flex-1 sm:flex-none`}>Definir</button>
+              {canCall && <button onClick={() => setResp({ os: o, platform: true })} className={`${BTN_GHOST} flex-1 sm:flex-none`}>Buscar profissional</button>}
+            </div>
+          </div>
+        )),
+      });
+    }
+
+    const stopped = v.att.stopped;
+    if (stopped.length > 0) {
+      const one = stopped.length === 1 ? stopped[0] : null;
+      items.push({
+        key: 'stopped', sev: 'important', icon: 'pause',
+        title: one ? `OS ${osNumber(one.os)} parada` : `${stopped.length} serviços parados`,
+        meta: one ? `${one.pause.reason} · ${timeAgo(one.pause.started_at)}` : stopped.slice(0, 2).map(x => x.pause.reason).join(', '),
+        actions: [one ? { label: 'Abrir OS', to: `/oficina/os/${one.os.id}`, primary: true } : { label: 'Ver OS', to: '/oficina/os', primary: true }],
+        details: one ? undefined : stopped.slice(0, 5).map(({ os: o, pause }) => (
+          <Row key={o.id} to={`/oficina/os/${o.id}`} label={`OS ${osNumber(o)} · ${o.title}`} sub={`${pause.reason} · ${timeAgo(pause.started_at)}`} />
+        )),
+      });
+    }
+
+    const quotes = v.att.awaitingCustomer.length + (can('/oficina/comercial') ? data.checkups.length : 0);
+    if (quotes > 0) {
+      items.push({
+        key: 'quotes', sev: 'important', icon: 'clipboard',
+        title: `${plural(quotes, 'orçamento aguardando', 'orçamentos aguardando')} o cliente`,
+        meta: v.awaitingValue > 0 ? fmtBRL(v.awaitingValue) : undefined,
+        actions: [{ label: 'Ver orçamentos', onClick: () => toggle('quotes'), primary: true }],
+        details: [
+          ...v.att.awaitingCustomer.slice(0, 5).map(o => (
+            <Row key={o.id} to={`/oficina/os/${o.id}`} label={`OS ${osNumber(o)} · ${o.title}`}
+              sub={`${o.customer?.full_name ?? 'Sem cliente'}${o.approval_requested_at ? ` · enviado ${timeAgo(o.approval_requested_at)}` : ''}`}
+              right={fmtBRL(o.price)} />
+          )),
+          ...(can('/oficina/comercial') ? data.checkups.slice(0, 5).map(c => (
+            <Row key={c.id} to="/oficina/comercial" label={`Check-up · ${c.customer_name ?? c.plate ?? 'cliente'}`} sub={`enviado ${timeAgo(c.quote_sent_at)}`} />
+          )) : []),
+        ],
+      });
+    }
+
+    if (can('/oficina/financeiro') && data.toReceive.overdue.length > 0) {
+      items.push({
+        key: 'receive', sev: 'important', icon: 'wallet',
+        title: `${fmtBRL(data.toReceive.overdueTotal)} a receber vencido`,
+        meta: plural(data.toReceive.overdue.length, 'OS', 'OS'),
+        actions: [{ label: 'Ver a receber', to: '/oficina/financeiro?aba=receber', primary: true }],
+        details: data.toReceive.overdue.slice(0, 5).map(r => (
+          <Row key={r.os.id} to={`/oficina/os/${r.os.id}`} label={`OS ${osNumber(r.os)} · ${r.os.title}`}
+            sub={[r.os.customer?.full_name, r.dueIn != null ? `venceu há ${plural(-r.dueIn, 'dia', 'dias')}` : `concluída há ${plural(r.days, 'dia', 'dias')}`].filter(Boolean).join(' · ')}
+            right={fmtBRL(r.open)} />
+        )),
+      });
+    }
+
+    if (can('/oficina/caixa') && v.cashClosed) {
+      items.push({
+        key: 'cash', sev: 'important', icon: 'lock', title: 'Caixa de hoje ainda fechado',
+        actions: [{ label: 'Abrir caixa', to: '/oficina/caixa', primary: true }],
+      });
+    }
+
+    if (v.att.unconfirmed.length > 0) {
+      items.push({
+        key: 'unconfirmed', sev: 'info', icon: 'calendar',
+        title: `${plural(v.att.unconfirmed.length, 'agendamento', 'agendamentos')} sem confirmação`,
+        meta: 'Hoje e amanhã',
+        actions: [{ label: 'Confirmar na agenda', to: '/oficina/agenda', primary: true }],
+        details: v.att.unconfirmed.slice(0, 5).map(o => (
+          <Row key={o.id} to={`/oficina/os/${o.id}`} label={`${o.customer?.full_name ?? 'Sem cliente'} · ${o.title}`}
+            sub={new Date(o.scheduled_at!).toLocaleString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} />
+        )),
+      });
+    }
+
+    if (can('/oficina/checkup') && data.reminders.length > 0) {
+      items.push({
+        key: 'reminders', sev: 'info', icon: 'repeat',
+        title: `${plural(data.reminders.length, 'cliente pediu', 'clientes pediram')} para ser lembrado`,
+        meta: 'Pedido feito no check-up',
+        actions: [{ label: 'Ver', onClick: () => toggle('reminders') }],
+        details: data.reminders.slice(0, 5).map(r => (
+          <Row key={r.id} to={`/oficina/checkup/${r.checkup.id}`} label={`${r.checkup.customer_name ?? r.checkup.plate ?? 'Cliente'} · ${r.label}`}
+            sub={`lembrar em ${fmtDay(r.remind_on)}`} />
+        )),
+      });
+    }
+  }
+  // Urgente primeiro; dentro do mesmo nível, a ordem acima
+  const RANK: Record<Sev, number> = { urgent: 0, important: 1, info: 2 };
+  const sorted = items.map((it, i) => ({ it, i })).sort((a, b) => RANK[a.it.sev] - RANK[b.it.sev] || a.i - b.i).map(x => x.it);
+  const visible = showAll ? sorted : sorted.slice(0, 3);
+
+  const quotesCount = v ? v.att.awaitingCustomer.length + (data && can('/oficina/comercial') ? data.checkups.length : 0) : 0;
+  const shortcutList = [
+    can('/oficina/os')       && { label: 'Nova OS',      icon: 'plus' as IconName,     onClick: () => setNewOs({}), primary: true },
+    can('/oficina/clientes') && { label: 'Novo cliente', icon: 'user' as IconName,     onClick: () => nav('/oficina/clientes?novo=1') },
+    can('/oficina/os')       && { label: 'Agendar',      icon: 'calendar' as IconName, onClick: () => setNewOs({ schedule: true }) },
+    can('/oficina/caixa')    && { label: 'Receber',      icon: 'wallet' as IconName,   onClick: () => nav('/oficina/caixa') },
+  ].filter((x): x is { label: string; icon: IconName; onClick: () => void; primary?: boolean } => !!x);
+
+  const needReinforcement = !!v && can('/oficina/buscar')
+    && (v.att.noResponsible.length > 0 || (v.team.away.length > 0 && v.workload.count > 0));
 
   return (
     <WorkshopLayout>
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Saudação */}
-        <div>
-          <div className="text-sm text-steel-500">{dateLabel}</div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{greeting()}{name ? `, ${name}` : ''}.</h1>
-          <p className="text-steel-600 mt-1">Veja o que precisa da sua atenção hoje.</p>
-        </div>
-
-        <div className="lg:hidden">{shortcuts}</div>
+      <div className="max-w-6xl mx-auto space-y-5">
+        {/* ── Cabeçalho executivo ── */}
+        <header className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-steel-500">{dateLabel}</div>
+            <h1 className="text-2xl lg:text-[28px] font-bold tracking-tight text-steel-900 leading-tight mt-0.5">
+              {greeting()}{name ? `, ${name}` : ''}.
+            </h1>
+            <p className="text-sm text-steel-600 mt-1">
+              {!data ? 'Carregando o dia…'
+                : sorted.length === 0 ? <span className="inline-flex items-center gap-1.5 text-signal-700"><Icon name="check" size={16} /> Tudo em dia por aqui.</span>
+                : <><strong className="text-steel-900">{plural(sorted.length, 'item precisa', 'itens precisam')}</strong> da sua atenção hoje.</>}
+            </p>
+          </div>
+          {shortcutList.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 pb-1 lg:pb-0">
+              {shortcutList.map(s => (
+                <button key={s.label} onClick={s.onClick}
+                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 h-10 lg:h-9 text-sm font-semibold transition ${
+                    s.primary ? 'bg-brand-500 text-white hover:bg-brand-600' : 'bg-white text-steel-700 ring-1 ring-steel-200 hover:ring-steel-300 hover:bg-steel-50'}`}>
+                  <Icon name={s.icon} size={16} />{s.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </header>
 
         {!data || !v ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-white rounded-2xl animate-pulse" />)}
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[1, 2, 3, 4].map(i => <div key={i} className="h-[76px] rounded-xl bg-white ring-1 ring-steel-200/70 animate-pulse" />)}
+            </div>
+            <div className="h-48 rounded-xl bg-white ring-1 ring-steel-200/70 animate-pulse" />
           </div>
         ) : (
           <>
-            {/* ── Precisa da sua atenção ── */}
-            <section>
-              <SectionTitle>Precisa da sua atenção</SectionTitle>
-              <div className="space-y-3">
-                {can('/oficina/dashboard') && data.pendingJobs.length > 0 && (
-                  <Attention tone="urgent" icon="✅"
-                    title={data.pendingJobs.length === 1
-                      ? 'Mecânico da plataforma terminou — confirme a conclusão'
-                      : `${data.pendingJobs.length} serviços da plataforma aguardando sua confirmação`}
-                    hint="O mecânico está esperando a confirmação para receber."
-                    actions={[{ label: 'Confirmar', to: data.pendingJobs.length === 1 ? `/oficina/job/${data.pendingJobs[0].id}/tracking` : '/oficina/dashboard', primary: true }]}>
-                    {data.pendingJobs.slice(0, 3).map(j => (
-                      <Row key={j.id} to={`/oficina/job/${j.id}/tracking`} label={j.title}
-                        sub={j.completed_at ? `finalizou ${timeAgo(j.completed_at)}` : undefined} />
-                    ))}
-                  </Attention>
-                )}
+            {/* ── Resumo rápido ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Stat to="/oficina/os" icon="wrench" label="Em andamento" value={String(v.inProgress)} muted={v.inProgress === 0} />
+              {(can('/oficina/caixa') || can('/oficina/financeiro')) && (
+                <Stat to={can('/oficina/caixa') ? '/oficina/caixa' : '/oficina/financeiro'} icon="wallet" label="Recebido hoje"
+                  value={fmtBRL(v.receivedToday)} muted={v.receivedToday === 0} tone={v.receivedToday > 0 ? 'good' : undefined} />
+              )}
+              <Stat to="/oficina/os" icon="clipboard" label="Orçamentos aguardando" value={String(quotesCount)} muted={quotesCount === 0}
+                note={v.awaitingValue > 0 ? fmtBRL(v.awaitingValue) : undefined} />
+              <Stat to="/oficina/os" icon="user" label="Sem responsável" value={String(v.att.noResponsible.length)}
+                tone={v.att.noResponsible.length > 0 ? 'warn' : 'good'} note={v.att.noResponsible.length === 0 ? 'tudo atribuído' : undefined} />
+            </div>
 
-                {v.att.noResponsible.length > 0 && (
-                  <Attention tone="warn" icon="👷"
-                    title={`${plural(v.att.noResponsible.length, 'OS sem responsável', 'OS sem responsável')}`}
-                    hint="Defina quem da equipe vai fazer. Se ninguém puder, chame um profissional da rede."
-                    actions={[{ label: 'Ver OS', to: '/oficina/os' }]}>
-                    {v.att.noResponsible.slice(0, 3).map(o => (
-                      <div key={o.id} className="flex flex-col sm:flex-row sm:items-center gap-2 py-2">
-                        <Link to={`/oficina/os/${o.id}`} className="flex-1 min-w-0 hover:underline">
-                          <div className="text-sm font-semibold truncate">OS {osNumber(o)} · {o.title}</div>
-                          <div className="text-xs text-steel-500 truncate">{[carOf(o.vehicle), o.customer?.full_name].filter(Boolean).join(' · ')}</div>
-                        </Link>
-                        <div className="flex gap-2 shrink-0">
-                          <button onClick={() => setResp({ os: o, platform: false })} className="btn-secondary !py-1.5 !px-3 text-xs flex-1 sm:flex-none">Definir responsável</button>
-                          {can('/oficina/dashboard') && (
-                            <button onClick={() => setResp({ os: o, platform: true })} className="btn-ghost !py-1.5 !px-3 text-xs flex-1 sm:flex-none">Chamar da plataforma</button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    <More n={v.att.noResponsible.length - 3} to="/oficina/os" />
-                  </Attention>
-                )}
-
-                {v.att.late.length > 0 && (
-                  <Attention tone="warn" icon="⏰"
-                    title={v.att.late.length === 1 ? '1 agendamento passou da hora e não começou' : `${v.att.late.length} agendamentos passaram da hora e não começaram`}
-                    actions={[{ label: 'Abrir agenda', to: '/oficina/agenda' }]}>
-                    {v.att.late.slice(0, 3).map(o => (
-                      <Row key={o.id} to={`/oficina/os/${o.id}`} label={`OS ${osNumber(o)} · ${o.title}`}
-                        sub={`marcado ${new Date(o.scheduled_at!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${o.customer?.full_name ? ` · ${o.customer.full_name}` : ''}`} />
-                    ))}
-                    <More n={v.att.late.length - 3} to="/oficina/agenda" />
-                  </Attention>
-                )}
-
-                {v.att.stopped.length > 0 && (
-                  <Attention tone="warn" icon="⏸️"
-                    title={v.att.stopped.length === 1 ? '1 serviço parado' : `${v.att.stopped.length} serviços parados`}
-                    actions={[{ label: 'Ver OS', to: '/oficina/os' }]}>
-                    {v.att.stopped.slice(0, 3).map(({ os: o, pause }) => (
-                      <Row key={o.id} to={`/oficina/os/${o.id}`} label={`OS ${osNumber(o)} · ${o.title}`}
-                        sub={`${pause.reason} · ${timeAgo(pause.started_at)}`} />
-                    ))}
-                    <More n={v.att.stopped.length - 3} to="/oficina/os" />
-                  </Attention>
-                )}
-
-                {(v.att.awaitingCustomer.length > 0 || (can('/oficina/comercial') && data.checkups.length > 0)) && (
-                  <Attention tone="info" icon="📞"
-                    title={`${plural(v.att.awaitingCustomer.length + (can('/oficina/comercial') ? data.checkups.length : 0), 'orçamento esperando o cliente', 'orçamentos esperando o cliente')}`
-                      + (v.awaitingValue > 0 ? ` · ${fmtBRL(v.awaitingValue)}` : '')}
-                    hint="Vale um lembrete para não esfriar."
-                    actions={can('/oficina/comercial') && data.checkups.length > 0 ? [{ label: 'Ver no Comercial', to: '/oficina/comercial' }] : []}>
-                    {v.att.awaitingCustomer.slice(0, 3).map(o => (
-                      <Row key={o.id} to={`/oficina/os/${o.id}`} label={`OS ${osNumber(o)} · ${o.title}`}
-                        sub={`${o.customer?.full_name ?? 'Sem cliente'}${o.approval_requested_at ? ` · enviado ${timeAgo(o.approval_requested_at)}` : ''}`}
-                        right={fmtBRL(o.price)} />
-                    ))}
-                    {can('/oficina/comercial') && data.checkups.slice(0, Math.max(0, 3 - v.att.awaitingCustomer.length)).map(c => (
-                      <Row key={c.id} to="/oficina/comercial" label={`Check-up · ${c.customer_name ?? c.plate ?? 'cliente'}`}
-                        sub={`orçamento enviado ${timeAgo(c.quote_sent_at)}`} />
-                    ))}
-                  </Attention>
-                )}
-
-                {v.att.unconfirmed.length > 0 && (
-                  <Attention tone="info" icon="📅"
-                    title={v.att.unconfirmed.length === 1 ? '1 agendamento de hoje/amanhã sem confirmação' : `${v.att.unconfirmed.length} agendamentos de hoje/amanhã sem confirmação`}
-                    hint="Confirme com o cliente para evitar faltas."
-                    actions={[{ label: 'Confirmar na agenda', to: '/oficina/agenda', primary: true }]}>
-                    {v.att.unconfirmed.slice(0, 3).map(o => (
-                      <Row key={o.id} to={`/oficina/os/${o.id}`} label={`${o.customer?.full_name ?? 'Sem cliente'} · ${o.title}`}
-                        sub={new Date(o.scheduled_at!).toLocaleString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} />
-                    ))}
-                  </Attention>
-                )}
-
-                {can('/oficina/checkup') && data.reminders.length > 0 && (
-                  <Attention tone="info" icon="🔁"
-                    title={`${plural(data.reminders.length, 'item que o cliente pediu para lembrar', 'itens que os clientes pediram para lembrar')}`}
-                    hint="No check-up, o cliente escolheu “me lembre depois” — chegou a data.">
-                    {data.reminders.slice(0, 3).map(r => (
-                      <Row key={r.id} to={`/oficina/checkup/${r.checkup.id}`} label={`${r.checkup.customer_name ?? r.checkup.plate ?? 'Cliente'} · ${r.label}`}
-                        sub={`lembrar em ${fmtDay(r.remind_on)}`} />
-                    ))}
-                    <More n={data.reminders.length - 3} to="/oficina/checkup" />
-                  </Attention>
-                )}
-
-                {can('/oficina/financeiro') && data.toReceive.overdue.length > 0 && (
-                  <Attention tone="money" icon="💸"
-                    title={`${fmtBRL(data.toReceive.overdueTotal)} a receber vencido · ${plural(data.toReceive.overdue.length, 'OS', 'OS')}`}
-                    actions={[{ label: 'Ver a receber', to: '/oficina/financeiro?aba=receber', primary: true }]}>
-                    {data.toReceive.overdue.slice(0, 3).map(r => (
-                      <Row key={r.os.id} to={`/oficina/os/${r.os.id}`} label={`OS ${osNumber(r.os)} · ${r.os.title}`}
-                        sub={[r.os.customer?.full_name, r.dueIn != null ? `venceu há ${plural(-r.dueIn, 'dia', 'dias')}` : `concluída há ${plural(r.days, 'dia', 'dias')}`].filter(Boolean).join(' · ')}
-                        right={fmtBRL(r.open)} />
-                    ))}
-                    <More n={data.toReceive.overdue.length - 3} to="/oficina/financeiro?aba=receber" />
-                  </Attention>
-                )}
-
-                {can('/oficina/contas-a-pagar') && (v.payablesLate.length > 0 || v.payablesToday.length > 0) && (
-                  <Attention tone="money" icon="📤"
-                    title={[
-                      v.payablesLate.length > 0 && `${plural(v.payablesLate.length, 'conta vencida', 'contas vencidas')}`,
-                      v.payablesToday.length > 0 && `${plural(v.payablesToday.length, 'conta vence hoje', 'contas vencem hoje')}`,
-                    ].filter(Boolean).join(' · ') + ` · ${fmtBRL(data.payables.reduce((a, p) => a + Number(p.amount), 0))}`}
-                    actions={[{ label: 'Pagar', to: '/oficina/contas-a-pagar', primary: true }]}>
-                    {data.payables.slice(0, 3).map(p => (
-                      <Row key={p.id} to="/oficina/contas-a-pagar" label={p.description}
-                        sub={`vence ${fmtDay(p.due_date)}`} right={fmtBRL(p.amount)} />
-                    ))}
-                  </Attention>
-                )}
-
-                {can('/oficina/caixa') && v.cashClosed && (
-                  <Attention tone="money" icon="💰" title="O caixa de hoje ainda não foi aberto"
-                    actions={[{ label: 'Abrir caixa', to: '/oficina/caixa', primary: true }]} />
-                )}
-
-                {!anyAttention && (
-                  <div className="card text-center py-8">
-                    <div className="text-3xl">✅</div>
-                    <div className="font-bold mt-2">Tudo em dia por aqui.</div>
-                    <div className="text-sm text-steel-500">Nenhuma pendência no momento.</div>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* ── Hoje na oficina ── */}
-            <section>
-              <SectionTitle>Hoje na oficina</SectionTitle>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {can('/oficina/agenda') && (
-                  <Tile to="/oficina/agenda" label="Agendados hoje" value={String(v.agendaToday.booked)}
-                    note={v.agendaToday.booked > 0 && v.agendaToday.capacity ? `${v.agendaToday.booked} de ${v.agendaToday.capacity} vagas` : undefined} />
-                )}
-                <Tile to="/oficina/os" label="Em andamento" value={String(v.inProgress)} />
-                {(can('/oficina/caixa') || can('/oficina/financeiro')) && (
-                  <Tile to={can('/oficina/caixa') ? '/oficina/caixa' : '/oficina/financeiro'} label="Recebido hoje" value={fmtBRL(v.receivedToday)} />
-                )}
-                {can('/oficina/financeiro') && v.dueToday.count > 0 && (
-                  <Tile to="/oficina/financeiro?aba=receber" label="A receber hoje" value={fmtBRL(v.dueToday.total)}
-                    note={plural(v.dueToday.count, 'OS combinada', 'OS combinadas')} />
-                )}
-              </div>
-            </section>
-
-            {/* ── Equipe hoje ── */}
-            {can('/oficina/equipe') && (
-              <section>
-                <SectionTitle>Equipe hoje</SectionTitle>
-                <div className="card space-y-3">
-                  {v.team.total === 0 ? (
-                    <p className="text-sm text-steel-500">
-                      Cadastre sua equipe em <Link to="/oficina/equipe" className="text-brand-600 hover:underline">Colaboradores</Link> para ver quem está trabalhando.
-                    </p>
-                  ) : (
-                    <>
-                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        <span className="text-2xl font-bold font-display">{v.team.working} de {v.team.total}</span>
-                        <span className="text-steel-600">trabalhando hoje</span>
-                        {v.team.dayOff > 0 && <span className="text-sm text-steel-500">· {plural(v.team.dayOff, 'de folga', 'de folga')}</span>}
-                        {v.team.away.length > 0 && <span className="text-sm text-steel-500">· {plural(v.team.away.length, 'afastado', 'afastados')}</span>}
-                      </div>
-                      {v.team.away.length > 0 && (
-                        <ul className="text-sm space-y-1">
-                          {v.team.away.map(a => (
-                            <li key={a.id} className="text-steel-600">
-                              {a.reason ? ABSENCE_REASONS[a.reason].icon : '⏸️'} <strong className="text-steel-800">{a.name}</strong>
-                              {a.reason && ` · ${ABSENCE_REASONS[a.reason].label}`}
-                              {a.expected_return && ` · volta ${fmtDay(a.expected_return)}`}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {v.team.withoutSchedule > 0 && (
-                        <p className="text-xs text-steel-400">
-                          {plural(v.team.withoutSchedule, 'colaborador sem jornada cadastrada', 'colaboradores sem jornada cadastrada')} (contado como trabalhando).
-                        </p>
-                      )}
-                    </>
-                  )}
-
-                  <div className="grid sm:grid-cols-2 gap-2 pt-3 border-t border-steel-100 text-sm">
-                    <Fact label="Serviço em aberto"
-                      value={v.workload.count === 0 ? 'nenhum'
-                        : v.workload.hours === 0 ? `${plural(v.workload.count, 'OS', 'OS')} (sem estimativa)`
-                        : `~${String(Math.round(v.workload.hours * 10) / 10).replace('.', ',')} h estimadas · ${plural(v.workload.count, 'OS', 'OS')}`} />
-                    {v.workload.hours > 0 && v.workload.withoutEstimate > 0 && <Fact label="Sem tempo estimado" value={plural(v.workload.withoutEstimate, 'OS', 'OS')} />}
-                    <Fact label="Sem responsável" value={v.att.noResponsible.length ? plural(v.att.noResponsible.length, 'OS', 'OS') : 'nenhuma'}
-                      warn={v.att.noResponsible.length > 0} />
-                    {/* Agenda: só quando há agendamentos, senão "0% ocupada" engana */}
-                    {v.agendaToday.booked > 0 && v.agendaToday.pct != null && (
-                      <Fact label="Agenda de hoje" value={`${v.agendaToday.booked} de ${v.agendaToday.capacity} vagas (${v.agendaToday.pct}%)`} />
-                    )}
-                    {v.agendaTomorrow.booked > 0 && v.agendaTomorrow.pct != null && (
-                      <Fact label="Agenda de amanhã" value={`${v.agendaTomorrow.booked} de ${v.agendaTomorrow.capacity} vagas (${v.agendaTomorrow.pct}%)`} />
-                    )}
-                  </div>
-
-                  {/* Reforço: só com necessidade concreta (OS sem ninguém, ou equipe desfalcada com serviço em aberto) */}
-                  {can('/oficina/buscar') && (v.att.noResponsible.length > 0 || (v.team.away.length > 0 && v.workload.count > 0)) && (
-                    <div className="rounded-xl bg-brand-50 border border-brand-100 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
-                      <div className="flex-1 text-sm text-steel-700">
-                        <strong className="text-steel-900">Precisa de reforço?</strong>{' '}
-                        {v.att.noResponsible.length > 0
-                          ? `${plural(v.att.noResponsible.length, 'serviço está', 'serviços estão')} sem ninguém da equipe. Se não der conta, um profissional da rede pode fazer.`
-                          : `Equipe desfalcada hoje e ${plural(v.workload.count, 'OS', 'OS')} em aberto. Se não der conta, um profissional da rede pode ajudar.`}
-                      </div>
-                      <button
-                        onClick={() => (v.att.noResponsible.length === 1
-                          ? setResp({ os: v.att.noResponsible[0], platform: true })
-                          : nav('/oficina/buscar'))}
-                        className="btn-primary shrink-0"
-                      >
-                        Buscar profissional
-                      </button>
-                    </div>
+            <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-5 items-start">
+              {/* ── Atenção agora ── */}
+              <section className="min-w-0">
+                <div className="flex items-center justify-between h-6 mb-2">
+                  <h2 className="text-sm font-semibold text-steel-900">Atenção agora</h2>
+                  {sorted.length > 3 && (
+                    <button onClick={() => setShowAll(s => !s)} className="text-xs font-semibold text-brand-600 hover:underline">
+                      {showAll ? 'Mostrar só as principais' : `Ver todas as pendências (${sorted.length})`}
+                    </button>
                   )}
                 </div>
+                {sorted.length === 0 ? (
+                  <div className="rounded-xl bg-white ring-1 ring-steel-200/70 px-4 py-5 flex items-center gap-3">
+                    <span className="h-9 w-9 rounded-full bg-signal-50 text-signal-600 grid place-items-center"><Icon name="check" size={18} /></span>
+                    <div>
+                      <div className="font-semibold text-steel-900">Nenhuma pendência agora</div>
+                      <div className="text-sm text-steel-500">Quando algo precisar de você, aparece aqui.</div>
+                    </div>
+                  </div>
+                ) : (
+                  <ul className="rounded-xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
+                    {visible.map(it => (
+                      <PendingRow key={it.key} item={it} expanded={open.has(it.key)}
+                        onToggle={() => setOpen(prev => { const n = new Set(prev); if (n.has(it.key)) n.delete(it.key); else n.add(it.key); return n; })} />
+                    ))}
+                  </ul>
+                )}
               </section>
-            )}
 
-            <section className="hidden lg:block">
-              <SectionTitle>Atalhos</SectionTitle>
-              {shortcuts}
-            </section>
+              {/* ── Coluna lateral: hoje + equipe ── */}
+              <aside className="space-y-5 min-w-0">
+                <section>
+                  <h2 className="flex items-center h-6 mb-2 text-sm font-semibold text-steel-900">Hoje na oficina</h2>
+                  <div className="rounded-xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100">
+                    {can('/oficina/agenda') && (
+                      <Line to="/oficina/agenda" icon="calendar" label="Agendados hoje"
+                        value={String(v.agendaToday.booked)} muted={v.agendaToday.booked === 0}
+                        note={[
+                          v.agendaToday.booked > 0 && v.agendaToday.capacity ? `${v.agendaToday.booked} de ${v.agendaToday.capacity} vagas` : null,
+                          v.agendaTomorrow.booked > 0 ? `amanhã: ${v.agendaTomorrow.booked}` : null,
+                        ].filter(Boolean).join(' · ') || undefined} />
+                    )}
+                    {can('/oficina/financeiro') && (
+                      <Line to="/oficina/financeiro?aba=receber" icon="wallet" label="A receber hoje" value={fmtBRL(v.dueToday.total)}
+                        muted={v.dueToday.count === 0} note={v.dueToday.count > 0 ? plural(v.dueToday.count, 'OS combinada', 'OS combinadas') : undefined} />
+                    )}
+                    {can('/oficina/contas-a-pagar') && (
+                      <Line to="/oficina/contas-a-pagar" icon="receipt" label="Contas de hoje"
+                        value={fmtBRL(v.payablesToday.reduce((a, p) => a + Number(p.amount), 0))} muted={v.payablesToday.length === 0}
+                        note={v.payablesToday.length > 0 ? plural(v.payablesToday.length, 'conta', 'contas') : undefined} />
+                    )}
+                  </div>
+                </section>
+
+                {can('/oficina/equipe') && (
+                  <section>
+                    <h2 className="flex items-center h-6 mb-2 text-sm font-semibold text-steel-900">Equipe</h2>
+                    <div className="rounded-xl bg-white ring-1 ring-steel-200/70 p-4">
+                      {v.team.total === 0 ? (
+                        <p className="text-sm text-steel-500">
+                          Cadastre a equipe em <Link to="/oficina/equipe" className="text-brand-600 hover:underline">Colaboradores</Link>.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-bold text-steel-900 tabular-nums">{v.team.working}<span className="text-steel-400 font-semibold"> / {v.team.total}</span></span>
+                            <span className="text-sm text-steel-600">disponíveis hoje</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-steel-100 mt-2 overflow-hidden">
+                            <div className="h-full rounded-full bg-signal-500" style={{ width: `${Math.round((v.team.working / Math.max(1, v.team.total)) * 100)}%` }} />
+                          </div>
+                          {(v.team.away.length > 0 || v.att.noResponsible.length > 0) && (
+                            <div className="flex flex-wrap gap-1.5 mt-3">
+                              {v.team.away.length > 0 && (
+                                <span className="inline-flex items-center rounded-md bg-steel-100 px-2 py-0.5 text-xs font-medium text-steel-700">
+                                  {plural(v.team.away.length, 'afastado', 'afastados')}
+                                </span>
+                              )}
+                              {v.att.noResponsible.length > 0 && (
+                                <span className="inline-flex items-center rounded-md bg-pending-50 px-2 py-0.5 text-xs font-medium text-pending-700">
+                                  {plural(v.att.noResponsible.length, 'OS sem responsável', 'OS sem responsável')}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          <button onClick={() => setShowCap(c => !c)} aria-expanded={showCap}
+                            className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-steel-500 hover:text-steel-800">
+                            {showCap ? 'Ocultar capacidade' : 'Ver capacidade'}
+                            <Icon name="chevron" size={14} className={`transition-transform ${showCap ? 'rotate-180' : ''}`} />
+                          </button>
+                          {showCap && (
+                            <dl className="mt-2 pt-2 border-t border-steel-100 space-y-1.5 text-sm">
+                              {v.team.away.length > 0 && (
+                                <Fact label="Afastados"
+                                  value={v.team.away.map(a => a.name.split(' ')[0] + (a.reason ? ` · ${ABSENCE_REASONS[a.reason].label}` : '')).join(', ')} />
+                              )}
+                              {v.team.dayOff > 0 && <Fact label="De folga" value={String(v.team.dayOff)} />}
+                              <Fact label="Serviço em aberto"
+                                value={v.workload.count === 0 ? 'nenhum'
+                                  : v.workload.hours === 0 ? `${plural(v.workload.count, 'OS', 'OS')} sem estimativa`
+                                  : `~${String(Math.round(v.workload.hours * 10) / 10).replace('.', ',')} h · ${plural(v.workload.count, 'OS', 'OS')}`} />
+                              {v.workload.hours > 0 && v.workload.withoutEstimate > 0 && (
+                                <Fact label="Sem estimativa" value={plural(v.workload.withoutEstimate, 'OS', 'OS')} />
+                              )}
+                              {v.agendaToday.booked > 0 && v.agendaToday.pct != null && (
+                                <Fact label="Agenda de hoje" value={`${v.agendaToday.pct}% ocupada`} />
+                              )}
+                              {v.team.withoutSchedule > 0 && (
+                                <p className="text-[11px] text-steel-400 pt-1">{plural(v.team.withoutSchedule, 'pessoa sem jornada cadastrada', 'pessoas sem jornada cadastrada')}, contadas como disponíveis.</p>
+                              )}
+                            </dl>
+                          )}
+                        </>
+                      )}
+
+                      {/* Reforço: só com necessidade concreta */}
+                      {needReinforcement && (
+                        <div className="mt-3 pt-3 border-t border-steel-100">
+                          <p className="text-xs text-steel-500 mb-2">Precisa de reforço? Um profissional da rede pode ajudar.</p>
+                          <button
+                            onClick={() => (v.att.noResponsible.length === 1 ? setResp({ os: v.att.noResponsible[0], platform: true }) : nav('/oficina/buscar'))}
+                            className={`${BTN_PRI} w-full gap-1.5`}>
+                            <Icon name="search" size={16} /> Buscar reforço
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
+              </aside>
+            </div>
           </>
         )}
       </div>
@@ -489,44 +569,51 @@ export default function Inicio() {
 
 /* ── Peças da tela ── */
 
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <h2 className="text-[11px] font-bold text-steel-500 uppercase tracking-widest mb-2">{children}</h2>;
-}
+type Sev = 'urgent' | 'important' | 'info';
+type PendingAction = { label: string; to?: string; onClick?: () => void; primary?: boolean };
+type Pending = { key: string; sev: Sev; icon: IconName; title: string; meta?: string; actions: PendingAction[]; details?: ReactNode };
 
-type Action = { label: string; to: string; primary?: boolean };
-const TONE = {
-  urgent: 'border-l-signal-500',
-  warn:   'border-l-pending-500',
-  info:   'border-l-brand-500',
-  money:  'border-l-steel-400',
-} as const;
+/** Laranja = ação · vermelho = urgente · amarelo = importante · cinza = informativo · verde = em dia */
+const SEV: Record<Sev, { icon: string; bar: string }> = {
+  urgent:    { icon: 'bg-alert-50 text-alert-600',     bar: 'bg-alert-500' },
+  important: { icon: 'bg-pending-50 text-pending-700', bar: 'bg-pending-400' },
+  info:      { icon: 'bg-steel-100 text-steel-500',    bar: 'bg-transparent' },
+};
+const BTN_PRI = 'inline-flex items-center justify-center rounded-lg bg-brand-500 text-white px-3.5 h-10 sm:h-8 text-sm font-semibold hover:bg-brand-600 transition';
+const BTN_SEC = 'inline-flex items-center justify-center rounded-lg bg-white text-steel-700 ring-1 ring-steel-200 px-3.5 h-10 sm:h-8 text-sm font-semibold hover:bg-steel-50 transition';
+const BTN_GHOST = 'inline-flex items-center justify-center rounded-lg text-steel-600 px-3 h-10 sm:h-8 text-sm font-semibold hover:bg-steel-100 transition';
 
-function Attention({ tone, icon, title, hint, actions = [], children }: {
-  tone: keyof typeof TONE; icon: string; title: string; hint?: string; actions?: Action[]; children?: ReactNode;
-}) {
+function PendingRow({ item, expanded, onToggle }: { item: Pending; expanded: boolean; onToggle: () => void }) {
+  const s = SEV[item.sev];
   return (
-    <div className={`card !p-4 border-l-4 ${TONE[tone]}`}>
-      <div className="flex flex-col sm:flex-row sm:items-start gap-3">
-        <div className="flex items-start gap-3 flex-1 min-w-0">
-          <span className="text-xl leading-none mt-0.5">{icon}</span>
+    <li className="relative">
+      <span className={`absolute left-0 top-0 bottom-0 w-[3px] ${s.bar}`} aria-hidden />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <span className={`h-8 w-8 rounded-lg grid place-items-center shrink-0 ${s.icon}`}><Icon name={item.icon} size={16} /></span>
           <div className="min-w-0">
-            <div className="font-bold text-steel-900">{title}</div>
-            {hint && <div className="text-sm text-steel-500 mt-0.5">{hint}</div>}
+            <div className="text-sm font-semibold text-steel-900 truncate">{item.title}</div>
+            {item.meta && <div className="text-xs text-steel-500 truncate">{item.meta}</div>}
           </div>
         </div>
-        {actions.length > 0 && (
-          <div className="flex gap-2 shrink-0">
-            {actions.map(a => (
-              <Link key={a.label} to={a.to}
-                className={`${a.primary ? 'btn-primary' : 'btn-secondary'} !py-2 !px-4 text-sm flex-1 sm:flex-none text-center`}>
-                {a.label}
-              </Link>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-2 sm:shrink-0">
+          {item.actions.map(a => {
+            const cls = `${a.primary ? BTN_PRI : BTN_SEC} flex-1 sm:flex-none ${a.primary ? 'sm:min-w-[132px]' : ''}`;
+            return a.to
+              ? <Link key={a.label} to={a.to} className={cls}>{a.label}</Link>
+              : <button key={a.label} onClick={a.onClick} className={cls}>{a.label}</button>;
+          })}
+          {!item.details && <span className="hidden sm:block w-8 shrink-0" aria-hidden />}
+          {item.details && (
+            <button onClick={onToggle} aria-expanded={expanded} aria-label={expanded ? 'Recolher' : 'Ver detalhes'}
+              className="h-10 w-10 sm:h-8 sm:w-8 shrink-0 grid place-items-center rounded-lg text-steel-400 hover:text-steel-700 hover:bg-steel-100 transition">
+              <Icon name="chevron" size={16} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+        </div>
       </div>
-      {children && <div className="mt-2 sm:ml-8 divide-y divide-steel-100">{children}</div>}
-    </div>
+      {expanded && item.details && <div className="px-4 pb-3 sm:pl-[60px] divide-y divide-steel-100">{item.details}</div>}
+    </li>
   );
 }
 
@@ -534,49 +621,54 @@ function Row({ to, label, sub, right }: { to: string; label: string; sub?: strin
   return (
     <Link to={to} className="flex items-center justify-between gap-3 py-2 hover:bg-steel-50 -mx-2 px-2 rounded-lg">
       <div className="min-w-0">
-        <div className="text-sm font-semibold truncate">{label}</div>
+        <div className="text-sm font-medium text-steel-900 truncate">{label}</div>
         {sub && <div className="text-xs text-steel-500 truncate">{sub}</div>}
       </div>
-      {right && <div className="text-sm font-bold shrink-0">{right}</div>}
+      {right && <div className="text-sm font-semibold text-steel-900 shrink-0 tabular-nums">{right}</div>}
     </Link>
   );
 }
 
-function More({ n, to }: { n: number; to: string }) {
-  if (n <= 0) return null;
-  return <Link to={to} className="block py-2 text-xs font-semibold text-brand-600 hover:underline">+ {n} mais</Link>;
+/** Número do resumo rápido */
+function Stat({ to, icon, label, value, note, muted = false, tone }: {
+  to: string; icon: IconName; label: string; value: string; note?: string; muted?: boolean; tone?: 'good' | 'warn';
+}) {
+  const valueCls = tone === 'warn' ? 'text-pending-700' : tone === 'good' && !muted ? 'text-signal-700' : muted ? 'text-steel-300' : 'text-steel-900';
+  return (
+    <Link to={to} className="group flex flex-col justify-between min-h-[88px] rounded-xl bg-white ring-1 ring-steel-200/70 hover:ring-steel-300 px-4 py-3 transition">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-steel-500">
+        <Icon name={icon} size={14} className="text-steel-400" />
+        <span className="truncate">{label}</span>
+      </div>
+      <div>
+        <div className={`text-xl lg:text-2xl font-bold tracking-tight tabular-nums truncate ${valueCls}`}>{value}</div>
+        <div className="text-[11px] text-steel-500 truncate h-4">{note}</div>
+      </div>
+    </Link>
+  );
 }
 
-function Tile({ to, label, value, note }: { to: string; label: string; value: string; note?: string }) {
+/** Linha de "Hoje na oficina" */
+function Line({ to, icon, label, value, note, muted = false }: {
+  to: string; icon: IconName; label: string; value: string; note?: string; muted?: boolean;
+}) {
   return (
-    <Link to={to} className="card !p-4 hover:shadow-md transition">
-      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">{label}</div>
-      <div className={`text-2xl font-bold font-display mt-1 truncate ${/^(R\$\s*)?0(,00)?$/.test(value) ? 'text-steel-300' : ''}`}>{value}</div>
-      {note && <div className="text-xs text-steel-500 mt-0.5">{note}</div>}
+    <Link to={to} className="flex items-center gap-3 px-4 min-h-[60px] py-2.5 hover:bg-steel-50 transition first:rounded-t-xl last:rounded-b-xl">
+      <span className="h-8 w-8 rounded-lg bg-steel-100 text-steel-500 grid place-items-center shrink-0"><Icon name={icon} size={16} /></span>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-steel-800 truncate">{label}</div>
+        {note && <div className="text-[11px] text-steel-500 truncate">{note}</div>}
+      </div>
+      <div className={`text-base font-bold tabular-nums ${muted ? 'text-steel-300' : 'text-steel-900'}`}>{value}</div>
     </Link>
   );
 }
 
 function Fact({ label, value, warn = false }: { label: string; value: string; warn?: boolean }) {
   return (
-    <div className="flex justify-between gap-3 rounded-lg bg-steel-50 px-3 py-2">
-      <span className="text-steel-600">{label}</span>
-      <span className={`font-semibold text-right ${warn ? 'text-pending-700' : 'text-steel-900'}`}>{value}</span>
-    </div>
-  );
-}
-
-function Shortcuts({ items }: { items: (false | { label: string; onClick: () => void })[] }) {
-  const list = items.filter((i): i is { label: string; onClick: () => void } => !!i);
-  if (!list.length) return null;
-  return (
-    <div className="flex gap-2 overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0 lg:flex-wrap pb-1">
-      {list.map(i => (
-        <button key={i.label} onClick={i.onClick}
-          className="shrink-0 rounded-xl border border-steel-200 bg-white px-4 py-2.5 text-sm font-semibold text-steel-800 hover:border-brand-300 hover:bg-brand-50 transition">
-          {i.label}
-        </button>
-      ))}
+    <div className="flex justify-between gap-3">
+      <dt className="text-steel-500">{label}</dt>
+      <dd className={`font-medium text-right truncate ${warn ? 'text-pending-700' : 'text-steel-800'}`}>{value}</dd>
     </div>
   );
 }
