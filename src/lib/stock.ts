@@ -104,7 +104,7 @@ export type Situation = 'todas' | 'atencao' | 'baixo' | 'zerada' | 'negativo' | 
 
 export const SITUATIONS: { value: Situation; label: string }[] = [
   { value: 'todas',       label: 'Todas as peças' },
-  { value: 'atencao',     label: 'Precisam de atenção' },
+  { value: 'atencao',     label: 'Em falta' },
   { value: 'os',          label: 'Faltando para OS' },
   { value: 'negativo',    label: 'Estoque negativo' },
   { value: 'baixo',       label: 'Abaixo do mínimo' },

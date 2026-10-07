@@ -89,7 +89,8 @@ export default function Pecas() {
       && (!supplierF || p.supplier_id === supplierF)
       && (!cat || p.category === cat)
       && (!t || p.name.toLowerCase().includes(t) || p.code?.toLowerCase().includes(t)
-        || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supplierName.get(p.supplier_id)?.toLowerCase().includes(t))))
+        || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supplierName.get(p.supplier_id)?.toLowerCase().includes(t))
+        || partCategory(p.category).label.toLowerCase().includes(t)))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }, [data, parts, q, showInactive, situation, supplierF, cat, supplierName]);
 
@@ -100,6 +101,13 @@ export default function Pecas() {
     for (const s of SITUATIONS) c[s.value] = act.filter(p => matchSituation(p, s.value, data)).length;
     return c;
   }, [data]);
+
+  // Peças ativas por categoria (só as categorias que a oficina usa)
+  const catCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of parts ?? []) if (p.active) m.set(p.category, (m.get(p.category) ?? 0) + 1);
+    return PART_CATEGORIES.filter(c => m.has(c.value)).map(c => ({ ...c, n: m.get(c.value)! }));
+  }, [parts]);
 
   if (!allowed) {
     return (
@@ -115,7 +123,7 @@ export default function Pecas() {
 
   const inactiveCount = (parts ?? []).filter(p => !p.active).length;
   const usedSuppliers = suppliers.filter(s => (parts ?? []).some(p => p.supplier_id === s.id));
-  const extraFilters = (cat ? 1 : 0) + (showInactive ? 1 : 0);
+  const extraFilters = showInactive ? 1 : 0;
   const buyLink = (p: WorkshopPart) => `/oficina/compras/nova?peca=${p.id}${p.supplier_id ? `&fornecedor=${p.supplier_id}` : ''}`;
   const actions = (p: WorkshopPart) => [
     { label: '＋ Entrada', run: () => setMoving({ part: p, mode: 'entrada' }) },
@@ -157,17 +165,37 @@ export default function Pecas() {
           </div>
           {more && (
             <div className="flex flex-wrap items-center gap-3 rounded-xl bg-steel-50 px-3 py-2">
-              <select className="input !py-1.5 !w-auto text-sm" value={cat} onChange={e => setCat(e.target.value as PartCategory | '')}>
-                <option value="">Todas as categorias</option>
-                {PART_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
-              </select>
-              {inactiveCount > 0 && (
+              {inactiveCount > 0 ? (
                 <label className="text-sm text-steel-600 flex items-center gap-2">
                   <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
                   Mostrar desativadas ({inactiveCount})
                 </label>
-              )}
+              ) : <span className="text-sm text-steel-500">Nenhuma peça desativada.</span>}
             </div>
+          )}
+
+          {/* Atalhos: em falta, com estoque e categoria */}
+          {data && parts && parts.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <QuickChip on={situation === 'todas'} onClick={() => setSituation('todas')}>Todas</QuickChip>
+              <QuickChip on={situation === 'atencao'} warn={counts.atencao > 0} onClick={() => setSituation(situation === 'atencao' ? 'todas' : 'atencao')}>
+                ⚠️ Em falta ({counts.atencao ?? 0})
+              </QuickChip>
+              <QuickChip on={situation === 'com_estoque'} onClick={() => setSituation(situation === 'com_estoque' ? 'todas' : 'com_estoque')}>
+                Com estoque ({counts.com_estoque ?? 0})
+              </QuickChip>
+              {catCounts.length > 1 && (
+                <select value={cat} onChange={e => setCat(e.target.value as PartCategory | '')}
+                  className={`text-xs font-semibold pl-3 pr-7 py-1.5 rounded-full border bg-white ${cat ? 'border-steel-900 text-steel-900' : 'border-steel-200 text-steel-600'}`}>
+                  <option value="">📂 Todas as categorias</option>
+                  {catCounts.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label} ({c.n})</option>)}
+                </select>
+              )}
+              <span className="ml-auto text-xs text-steel-500">{list.length} peça{list.length === 1 ? '' : 's'}</span>
+            </div>
+          )}
+          {situation === 'atencao' && (
+            <p className="text-xs text-steel-500">Em falta: estoque negativo, faltando para OS aberta, abaixo do mínimo ou zerada depois de comprada. Peça que nunca foi comprada por nota não entra aqui.</p>
           )}
           {situation === 'custo' && (
             <p className="text-xs text-steel-500">Peças com estoque (ou sem custo) que nunca entraram por uma nota de compra. O custo veio do cadastro ou da importação: confira e lance a próxima compra pela nota.</p>
@@ -195,8 +223,6 @@ export default function Pecas() {
           </div>
         ) : (
           <>
-            <div className="text-xs text-steel-500">{list.length} peça{list.length === 1 ? '' : 's'}</div>
-
             {/* Desktop: tabela compacta */}
             <div className="hidden md:block card !p-0">
               <div className="grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_88px_88px_88px_minmax(0,1.2fr)_96px_40px] gap-3 px-5 py-2 bg-steel-50 border-b border-steel-100 rounded-t-2xl text-[10px] font-bold text-steel-500 uppercase tracking-wider">
@@ -285,6 +311,16 @@ export default function Pecas() {
       )}
       {history && <StockHistoryModal part={history} onClose={() => setHistory(null)} />}
     </WorkshopLayout>
+  );
+}
+
+function QuickChip({ on, warn, onClick, children }: { on: boolean; warn?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick}
+      className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${on ? 'bg-steel-900 text-white border-steel-900'
+        : warn ? 'bg-alert-50 text-alert-700 border-alert-200' : 'bg-white text-steel-600 border-steel-200 hover:border-steel-300'}`}>
+      {children}
+    </button>
   );
 }
 
