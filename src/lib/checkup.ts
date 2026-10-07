@@ -156,6 +156,49 @@ export const CHECKUP_TEMPLATE: { system: string; icon: string; items: TemplateIt
   ]},
 ];
 
+/* ─── Motivos rápidos por item ─────────────────────────────────
+   O que o mecânico mais encontra em cada item: um toque em vez de digitar.
+   Item incluído à mão (ou sem lista) usa os genéricos. */
+export const GENERIC_REASONS = ['Gasto', 'Vazando', 'Quebrado', 'Folga', 'Barulho', 'Ressecado', 'Trocar'];
+const PNEU = ['Sulco baixo', 'Desgaste irregular', 'Bolha', 'Corte', 'Calibragem errada'];
+export const ITEM_REASONS: Record<string, string[]> = {
+  oleo_nivel:      ['Nível baixo', 'Óleo escuro', 'Troca vencida', 'Vazando', 'Contaminado'],
+  filtro_ar:       ['Sujo', 'Entupido', 'Rasgado'],
+  correia:         ['Ressecada', 'Trincada', 'Desfiada', 'Barulho', 'Troca vencida'],
+  velas:           ['Desgastadas', 'Falhando', 'Cabo danificado'],
+  vazamentos:      ['Óleo', 'Água/arrefecimento', 'Fluido de freio', 'Combustível'],
+  coxins:          ['Rachado', 'Folga', 'Vibração'],
+  fluido_arref:    ['Nível baixo', 'Sujo/ferrugem', 'Vazando'],
+  mangueiras:      ['Ressecada', 'Vazando', 'Inchada', 'Abraçadeira solta'],
+  radiador:        ['Vazando', 'Ventoinha não liga', 'Entupido', 'Aquecendo'],
+  pastilhas_diant: ['Gastas', 'No limite', 'Barulho', 'Vibração'],
+  discos:          ['Empenado', 'Riscado', 'Abaixo da espessura'],
+  freio_tras:      ['Gasto', 'Desregulado', 'Barulho'],
+  fluido_freio:    ['Nível baixo', 'Escuro/vencido', 'Vazando'],
+  freio_mao:       ['Desregulado', 'Não segura', 'Cabo travado'],
+  amortecedores:   ['Vazando', 'Batendo', 'Fraco', 'Barulho'],
+  pivos_bandejas:  ['Folga', 'Bucha gasta', 'Barulho'],
+  terminais:       ['Folga', 'Barulho', 'Caixa vazando'],
+  homocineticas:   ['Coifa rasgada', 'Estalando', 'Folga'],
+  pneu_de: PNEU, pneu_dd: PNEU, pneu_te: PNEU, pneu_td: PNEU,
+  estepe:          ['Furado/vazio', 'Sem macaco', 'Sem chave de roda'],
+  bateria:         ['Fraca', 'Terminais oxidados', 'Não segura carga', 'Vencida'],
+  farois:          ['Queimado', 'Desregulado', 'Lente amarelada'],
+  lanternas:       ['Queimada', 'Lente quebrada'],
+  setas:           ['Queimada', 'Não pisca'],
+  painel:          ['Luz de injeção', 'Luz do ABS', 'Luz do airbag', 'Outra luz acesa'],
+  ar_cond:         ['Não gela', 'Mau cheiro', 'Barulho', 'Sem gás'],
+  limpadores:      ['Palhetas ressecadas', 'Esguicho não funciona'],
+  escapamento:     ['Furado', 'Barulho', 'Solto'],
+  cintos:          ['Não trava', 'Desfiado'],
+};
+
+/** Motivos do item + "Trocar" (sempre útil para o comercial) */
+export const reasonsFor = (itemKey: string) => {
+  const list = ITEM_REASONS[itemKey];
+  return list ? [...list, 'Trocar'] : GENERIC_REASONS;
+};
+
 export const TEMPLATE_BY_KEY: Record<string, TemplateItem> = Object.fromEntries(
   CHECKUP_TEMPLATE.flatMap(s => s.items.map(i => [i.key, i])),
 );

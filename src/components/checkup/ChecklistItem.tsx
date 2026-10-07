@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
-import { STATUS_META, TEMPLATE_BY_KEY, checkupPhotoUrl, type CheckupItem, type CheckupItemStatus } from '@/lib/checkup';
+import { STATUS_META, TEMPLATE_BY_KEY, checkupPhotoUrl, reasonsFor, type CheckupItem, type CheckupItemStatus } from '@/lib/checkup';
 
 /* Linha do checklist — usada na tela da oficina e no link do mecânico (celular). */
 
@@ -50,9 +50,6 @@ export function AddItem({ system, onAdd }: { system: string; onAdd: (label: stri
     </form>
   );
 }
-
-/** O que o mecânico mais encontra — um toque em vez de digitar */
-const QUICK_TAGS = ['Gasto', 'Vazando', 'Quebrado', 'Folga', 'Barulho', 'Ressecado', 'Trocar'];
 
 /* ─── Item do checklist ────────────────────────────────────── */
 export function ItemRow({ item, uploadPhoto, onPatch, onRemove }: {
@@ -126,7 +123,7 @@ export function ItemRow({ item, uploadPhoto, onPatch, onRemove }: {
               Peça, serviço e preço ficam com o comercial, no orçamento. */}
           {flagged && (
             <div className="flex flex-wrap gap-1.5">
-              {QUICK_TAGS.map(t => (
+              {reasonsFor(item.item_key).map(t => (
                 <button key={t} type="button" onClick={() => toggleTag(t)}
                   className={`text-xs font-semibold px-3 py-2 rounded-full border transition active:scale-95 ${
                     tagOn(t) ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
