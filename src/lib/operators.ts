@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 export type OperatorRole = 'gestor' | 'caixa' | 'atendente' | 'mecanico' | 'vendedor';
 export type OperatorPerm =
   | 'dar_desconto' | 'cancelar_recebimento' | 'reabrir_caixa'
-  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe';
+  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe' | 'plataforma';
 
 export type WorkshopOperator = {
   id: string; workshop_id: string; mechanic_id: string | null; name: string;
@@ -58,6 +58,7 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   compras:              { label: 'Compras e fornecedores', desc: 'Notas de compra e cadastro de fornecedores' },
   pecas_estoque:        { label: 'Peças e estoque',       desc: 'Catálogo, estoque e custo das peças; tabela de serviços' },
   folha:                { label: 'Fechar comissões e folha', desc: 'Fechar comissões, salários, vales e faltas da equipe' },
+  plataforma:           { label: 'Plataforma completa',   desc: 'Demandas, buscar mecânicos, mensagens e acompanhar o serviço do mecânico da plataforma' },
   equipe:               { label: 'Equipe',                desc: 'Colaboradores (ficha, salário, documentos) e Desempenho e comissões' },
 };
 
@@ -67,6 +68,7 @@ export const PERM_GROUPS: { label: string; perms: OperatorPerm[] }[] = [
   { label: 'Financeiro',         perms: ['ver_financeiro', 'contas_pagar', 'folha'] },
   { label: 'Equipe',             perms: ['equipe'] },
   { label: 'Compras e estoque',  perms: ['compras', 'pecas_estoque'] },
+  { label: 'Plataforma',         perms: ['plataforma'] },
 ];
 
 /** A rota está liberada para a função? */
@@ -83,6 +85,7 @@ const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
   pecas_estoque:  ['/oficina/pecas', '/oficina/servicos'],
   folha:          ['/oficina/folha', '/oficina/comissoes'],
   equipe:         ['/oficina/equipe', '/oficina/desempenho'],
+  plataforma:     ['/oficina/dashboard', '/oficina/buscar', '/oficina/mensagens', '/oficina/job'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */
