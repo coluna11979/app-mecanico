@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
 import { toast } from '@/components/ui/Toast';
 import { canDo, sessionAllows, useOperator } from '@/lib/operators';
+import { useModuleAllows } from '@/lib/modules';
 import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
@@ -312,7 +313,8 @@ export default function OsDetail() {
   const closed = os.status === 'cancelled' || os.status === 'completed';
   /** Venda de peças no balcão (Caixa → Venda de peças): tela enxuta, sem fluxo de serviço */
   const isSale = os.source === 'balcao';
-  const canOpen = (path: string) => !balcao || !session || sessionAllows(session, path);
+  const modAllows = useModuleAllows();
+  const canOpen = (path: string) => modAllows(path) && (!balcao || !session || sessionAllows(session, path));
   const perService = items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id));
   const noResponsible = responsibleOf(os) === '' && !perService;
   const moreActions: MoreItem[] = [
