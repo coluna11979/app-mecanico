@@ -24,7 +24,7 @@ type Row = {
   mechanic_id: string;
   /** Só peças: key da linha do serviço em que foi usada ('' = nenhum) — a comissão da peça segue quem fez esse serviço */
   used_in: string;
-  /** Só serviços: 'servico' (leva peças → 4% sobre serviço + peças) · 'mao_de_obra' (sem peça → 10%) */
+  /** Só serviços: 'servico' / 'mao_de_obra'. Com peça da loja abaixo → 4% sobre serviço + peças; sem peça → 10% */
   stype: '' | 'servico' | 'mao_de_obra';
   /** Só serviços: comissão digitada para quem fez (R$, substitui a regra deste serviço); '' = regra */
   comm: string;
@@ -331,11 +331,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         part_id: r.kind === 'part' ? r.part_id : null,
         ...whoPatch(r.kind === 'labor' ? r.mechanic_id : ''),
         commission_amount: r.kind === 'labor' && r.comm.trim() ? Math.max(0, parseMoney(r.comm)) : null,
-        // Peça → serviço logo acima (só se for "Serviço"; abaixo de "Mão de obra" fica sem serviço)
+        // Peça → serviço/mão de obra logo acima (com peça, a comissão vira 4% sobre serviço + peças)
         used_in_item_id: (() => {
           if (r.kind !== 'part') return null;
           const svc = grp.get(r.key);
-          return svc && svc.stype === 'servico' && laborKeys.has(svc.key) ? idOf.get(svc.key)! : null;
+          return svc && laborKeys.has(svc.key) ? idOf.get(svc.key)! : null;
         })(),
         service_type: r.kind === 'labor' ? r.stype || 'servico' : null,
         position: idx,
@@ -623,13 +623,13 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Peça: pertence ao serviço logo acima (a comissão segue quem fez esse serviço) */}
             {r.kind === 'part' && rows.some(x => x.kind === 'labor') && (() => {
               const svc = groups.get(r.key);
-              return svc && svc.stype === 'servico' ? (
+              return svc ? (
                 <div className="col-span-12 -mt-1 text-xs text-steel-500">
-                  ↳ peça do serviço <strong className="text-steel-700">{svc.description.trim() || 'sem nome'}</strong> · {whoLabel(svc)}
+                  ↳ peça {svc.stype === 'mao_de_obra' ? 'da mão de obra' : 'do serviço'} <strong className="text-steel-700">{svc.description.trim() || 'sem nome'}</strong> · {whoLabel(svc)}
                 </div>
               ) : (
                 <div className="col-span-12 -mt-1 text-xs text-pending-800">
-                  ⚠️ {svc ? `Peça abaixo de uma “Mão de obra”` : 'Peça fora de um serviço'} — use as setas ↑↓ para colocá-la logo abaixo do “Serviço” em que foi usada{svc ? ', ou mude a mão de obra para “Serviço”' : ''}.
+                  ⚠️ Peça fora de um serviço — use as setas ↑↓ para colocá-la logo abaixo do serviço em que foi usada.
                 </div>
               );
             })()}

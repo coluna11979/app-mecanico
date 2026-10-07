@@ -44,8 +44,8 @@ const lineAmt = (i: Line) => r2(Number(i.quantity) * Number(i.unit_price));
 
 /**
  * Comissão de UM serviço pela regra (mesma conta da view os_commission_base, regra atual):
- * "Serviço" + peças dele → 4% sobre a soma; "Mão de obra" → 10%; item com regra da loja sai da conta;
- * valor fixo de regra por item para quem fez. Cliente trouxe a peça → o serviço conta como mão de obra.
+ * "Serviço" (ou "Mão de obra") + peças dele → 4% sobre a soma; mão de obra sem peça → 10%; item com regra
+ * da loja sai da conta; valor fixo de regra por item para quem fez. Cliente trouxe a peça → conta como mão de obra (10%).
  */
 export function serviceCommission(o: {
   service: Line; parts: Line[]; type: 'servico' | 'mao_de_obra'; who: string;
@@ -55,7 +55,8 @@ export function serviceCommission(o: {
   let value = 0;
   const keepLabor = !isExcluded(o.service.description, o.rules);
   const keepParts = o.parts.filter(p => !isExcluded(p.description, o.rules));
-  if (o.type === 'servico' && !o.brought) {
+  // Tem peça da loja → 4% sobre serviço + peças, mesmo se marcado como "Mão de obra"
+  if ((o.type === 'servico' || o.parts.length > 0) && !o.brought) {
     const base = (keepLabor ? lineAmt(o.service) : 0) + keepParts.reduce((s, p) => s + lineAmt(p), 0);
     if (base > 0) { value += base * o.pct.service / 100; out.push(`${o.pct.service}% de ${brl2(base)}`); }
   } else if (keepLabor) {
