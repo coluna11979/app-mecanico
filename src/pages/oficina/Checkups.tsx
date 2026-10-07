@@ -5,23 +5,22 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import NewOsModal from '@/components/os/NewOsModal';
-import { checkupForOs, createCheckup } from '@/lib/checkup';
+import { CHECKUP_MODELS, CHECKUP_TEMPLATE, checkupForOs, createCheckup, modelItemKeys, type CheckupModelKey } from '@/lib/checkup';
 import { DEMO_MECHANICS, demoPanel, startDemo } from '@/lib/checkupDemo';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { fetchAll } from '@/lib/fetchAll';
 import type { PanelCheckup, ScheduledOs } from '@/lib/checkupPanel';
 import MechanicQueue from '@/components/checkup/MechanicQueue';
 import ManagerPanel, { type Tab } from '@/components/checkup/ManagerPanel';
-import type { Customer, Vehicle, WorkshopMechanic } from '@/types/database';
+import CustomerCarPicker, { EMPTY_PICK, plateNorm, type Pick as CarPick } from '@/components/checkup/CustomerCarPicker';
+import { findDuplicatesRemote } from '@/components/customers/CustomerForm';
+import type { WorkshopMechanic } from '@/types/database';
 
 /* Check-up — área própria do sistema.
    Gestor: Painel · Inspeções · Histórico (· Modelos, em breve).
    Mecânico (PIN): só a fila dele. */
 
-const EMPTY = {
-  customer_id: '', vehicle_id: '', workshop_mechanic_id: '',
-  plate: '', make: '', model: '', year: '', km: '', customer_name: '', customer_phone: '',
-};
+const EMPTY = { workshop_mechanic_id: '', km: '' };
 
 const TABS: Tab[] = ['painel', 'inspecoes', 'historico', 'modelos'];
 
@@ -36,11 +35,15 @@ export default function WorkshopCheckups() {
 
   const [list, setList]           = useState<PanelCheckup[] | null>(() => demo ? demoPanel().list as PanelCheckup[] : null);
   const [scheduled, setScheduled] = useState<ScheduledOs[]>(() => demo ? demoPanel().scheduled : []);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [vehicles, setVehicles]   = useState<Vehicle[]>([]);
   const [mechs, setMechs]         = useState<Pick<WorkshopMechanic, 'id' | 'name'>[]>(demo ? DEMO_MECHANICS : []);
   const [showNew, setShowNew]     = useState(false);
   const [form, setForm]           = useState(EMPTY);
+  // Cliente e carro: cadastrado (busca) ou novo (entra no cadastro ao criar)
+  const [carPick, setCarPick]     = useState<CarPick>(EMPTY_PICK);
+  const [dups, setDups]           = useState<{ id: string; full_name: string; reason: string }[]>([]);
+  // Tipo do check-up: completo, revisão, troca de óleo… ou montado na hora (sistemas escolhidos)
+  const [modelKey, setModelKey]   = useState<CheckupModelKey>('completo');
+  const [systems, setSystems]     = useState<string[]>([]);
   const [saving, setSaving]       = useState(false);
   const [scheduling, setScheduling] = useState(false);
 
@@ -63,16 +66,14 @@ export default function WorkshopCheckups() {
     const osId = params.get('os');
     if (osId) { startFromOs(osId); return; }
     if (!access.isMechanic) load();
-    else loadCustomers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wid, access.isMechanic]);
 
   async function load() {
-    const [c, cu, m, s] = await Promise.all([
+    const [c, m, s] = await Promise.all([
       fetchAll<PanelCheckup>((a, b) => supabase.from('vehicle_checkups')
-        .select('*, mechanic:workshop_mechanics(name, phone), items:checkup_items(status, updated_at, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, workshop_mechanic_id, executor)')
+        .select('*, mechanic:workshop_mechanics(name, phone), items:checkup_items(status, updated_at, system, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, workshop_mechanic_id, executor)')
         .eq('workshop_id', wid!).order('created_at', { ascending: false }).order('id').range(a, b) as unknown as PromiseLike<{ data: PanelCheckup[] | null; error: unknown }>),
-      supabase.from('customers').select('*').eq('workshop_id', wid!).order('full_name'),
       supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', wid!).eq('active', true).order('name'),
       supabase.from('service_orders')
         .select('id, number, scheduled_at, workshop_mechanic_id, customer:customers(full_name), vehicle:vehicles(plate, make, model, year), mechanic:workshop_mechanics!fk_so_workshop_mechanic(name)')
@@ -86,14 +87,7 @@ export default function WorkshopCheckups() {
     const withCheckup = new Set(rows.map(r => r.service_order_id).filter(Boolean));
     setList(rows);
     setScheduled(((s.data as unknown as ScheduledOs[]) ?? []).filter(o => !withCheckup.has(o.id)));
-    setCustomers((cu.data as Customer[]) ?? []);
     setMechs(m.data ?? []);
-  }
-
-  /** Mecânico: só os clientes, para o formulário de novo check-up */
-  async function loadCustomers() {
-    const { data } = await supabase.from('customers').select('*').eq('workshop_id', wid!).order('full_name');
-    setCustomers((data as Customer[]) ?? []);
   }
 
   /** Veio de uma OS (?os=id) ou "Iniciar" de um agendado: abre o check-up dela ou cria um já preenchido. */
@@ -108,47 +102,80 @@ export default function WorkshopCheckups() {
     }
   }
 
-  // Veículos do cliente escolhido
-  useEffect(() => {
-    if (demo || !form.customer_id) { setVehicles([]); return; }
-    supabase.from('vehicles').select('*').eq('customer_id', form.customer_id)
-      .then(({ data }) => setVehicles((data as Vehicle[]) ?? []));
-  }, [form.customer_id, demo]);
-
-  function pickCustomer(id: string) {
-    const c = customers.find(x => x.id === id);
-    setForm(f => ({ ...f, customer_id: id, vehicle_id: '',
-      customer_name: c?.full_name ?? '', customer_phone: c?.phone ?? '' }));
-  }
-  function pickVehicle(id: string) {
-    const v = vehicles.find(x => x.id === id);
-    setForm(f => ({ ...f, vehicle_id: id,
-      plate: v?.plate ?? '', make: v?.make ?? '', model: v?.model ?? '', year: v?.year ? String(v.year) : '' }));
-  }
-
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    if (!form.plate.trim() && !form.model.trim()) { toast.error('Informe ao menos a placa ou o modelo'); return; }
-    const payload = {
-      customer_id:          form.customer_id || null,
-      vehicle_id:           form.vehicle_id || null,
-      workshop_mechanic_id: access.isMechanic ? access.mechanicId : form.workshop_mechanic_id || null,
-      plate:          form.plate.trim().toUpperCase() || null,
-      make:           form.make.trim() || null,
-      model:          form.model.trim() || null,
-      year:           form.year ? parseInt(form.year) : null,
-      km_reading:     form.km ? parseInt(form.km.replace(/\D/g, '')) : null,
-      customer_name:  form.customer_name.trim() || null,
-      customer_phone: form.customer_phone.trim() || null,
-    };
-    if (demo) {
-      startDemo(payload);
-      navigate('/demo/checkup/demo');
-      return;
+  /** Cliente e carro do check-up: usa o cadastro escolhido ou cria cliente/carro novos */
+  async function resolveCustomer(force: boolean) {
+    const pk = carPick;
+    if (pk.mode === 'search') {
+      if (!pk.match) return null;
+      const { customer, vehicle } = pk.match;
+      let v = vehicle;
+      const car = pk.car;
+      if (!v && car && (car.plate.trim() || car.make.trim())) {
+        if (!force && car.plate.trim()) {
+          const found = await findDuplicatesRemote(wid!, { plate: car.plate }, customer.id);
+          if (found.length) { setDups(found); return 'dups' as const; }
+        }
+        const { data, error } = await supabase.from('vehicles').insert({
+          workshop_id: wid!, customer_id: customer.id, plate: plateNorm(car.plate) || 'S/P',
+          make: car.make.trim() || 'Não informado', model: car.model.trim() || 'Não informado',
+          year: car.year ? parseInt(car.year, 10) || null : null,
+        }).select('*').single();
+        if (error) throw error;
+        v = data;
+      }
+      return { customer_id: customer.id, vehicle_id: v?.id ?? null, customer_name: customer.full_name, customer_phone: customer.phone ?? null,
+        plate: v?.plate ?? null, make: v?.make ?? null, model: v?.model ?? null, year: v?.year ?? null };
     }
+    const d = pk.data;
+    const base = { customer_name: d.name.trim() || null, customer_phone: d.phone.trim() || null,
+      plate: plateNorm(d.plate) || null, make: d.make.trim() || null, model: d.model.trim() || null,
+      year: d.year ? parseInt(d.year, 10) || null : null };
+    // Sem nome: check-up avulso (sem cadastro)
+    if (demo || !d.name.trim()) return { customer_id: null, vehicle_id: null, ...base };
+    if (!force) {
+      const found = await findDuplicatesRemote(wid!, { phone: d.phone, plate: d.plate });
+      if (found.length) { setDups(found); return 'dups' as const; }
+    }
+    const { data: cu, error } = await supabase.from('customers').insert({
+      workshop_id: wid!, full_name: d.name.trim(), phone: d.phone.trim() || null,
+    }).select('id').single();
+    if (error) throw error;
+    let vehicleId: string | null = null;
+    if (d.plate.trim() || d.make.trim()) {
+      const { data: ve, error: vErr } = await supabase.from('vehicles').insert({
+        workshop_id: wid!, customer_id: cu.id, plate: plateNorm(d.plate) || 'S/P',
+        make: d.make.trim() || 'Não informado', model: d.model.trim() || 'Não informado', year: base.year,
+      }).select('id').single();
+      if (vErr) throw vErr;
+      vehicleId = ve.id;
+    }
+    return { ...base, customer_id: cu.id, vehicle_id: vehicleId };
+  }
+
+  async function create(e: FormEvent, force = false) {
+    e.preventDefault();
+    const pk = carPick;
+    const hasCar = pk.mode === 'search' ? !!pk.match : !!(pk.data.plate.trim() || pk.data.model.trim() || pk.data.name.trim());
+    if (!hasCar) { toast.error('Escolha o cliente ou cadastre um novo'); return; }
+    const itemKeys = modelItemKeys(modelKey, systems);
+    if (!itemKeys.length) { toast.error('Escolha ao menos um sistema para verificar'); return; }
     setSaving(true);
     try {
-      const id = await createCheckup({ workshop_id: wid!, ...payload });
+      const who = await resolveCustomer(force);
+      if (who === 'dups') return;
+      if (!who) { toast.error('Escolha o cliente ou cadastre um novo'); return; }
+      const payload = {
+        ...who,
+        template_key:         modelKey === 'completo' ? null : modelKey,
+        workshop_mechanic_id: access.isMechanic ? access.mechanicId : form.workshop_mechanic_id || null,
+        km_reading:           form.km ? parseInt(form.km.replace(/\D/g, '')) : null,
+      };
+      if (demo) {
+        startDemo(payload);
+        navigate('/demo/checkup/demo');
+        return;
+      }
+      const id = await createCheckup({ workshop_id: wid!, ...payload }, itemKeys);
       navigate(`/oficina/checkup/${id}`);
     } catch {
       toast.error('Erro ao criar check-up');
@@ -159,10 +186,12 @@ export default function WorkshopCheckups() {
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
-  const closeNew = () => { setShowNew(false); setForm(EMPTY); };
+  const closeNew = () => { setShowNew(false); setForm(EMPTY); setModelKey('completo'); setSystems([]); setCarPick(EMPTY_PICK); setDups([]); };
 
   const newForm = (
     <form onSubmit={create} className="space-y-4">
+      <CustomerCarPicker workshopId={demo ? null : wid} value={carPick} onChange={p => { setCarPick(p); setDups([]); }} />
+
       <div className="grid sm:grid-cols-3 gap-3">
         <label className="block sm:col-span-1">
           <span className="label">Mecânico que vai inspecionar</span>
@@ -176,38 +205,51 @@ export default function WorkshopCheckups() {
             </select>
           )}
         </label>
-        {!demo && customers.length > 0 && (
-          <>
-            <label className="block">
-              <span className="label">Cliente cadastrado</span>
-              <select className="input mt-1" value={form.customer_id} onChange={e => pickCustomer(e.target.value)}>
-                <option value="">— Cliente novo / avulso —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-              </select>
-            </label>
-            <label className="block">
-              <span className="label">Veículo</span>
-              <select className="input mt-1" value={form.vehicle_id} disabled={!form.customer_id}
-                onChange={e => pickVehicle(e.target.value)}>
-                <option value="">{form.customer_id ? (vehicles.length ? '— Escolher —' : 'Nenhum veículo cadastrado') : 'Escolha o cliente'}</option>
-                {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} · {v.make} {v.model}</option>)}
-              </select>
-            </label>
-          </>
+        <Field label="KM" value={form.km} onChange={set('km')} placeholder="85000" inputMode="numeric" />
+      </div>
+
+      {/* Tipo do check-up */}
+      <div>
+        <span className="label">O que vamos verificar?</span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
+          {CHECKUP_MODELS.map(m => {
+            const n = m.key === 'custom' ? null : modelItemKeys(m.key).length;
+            const on = modelKey === m.key;
+            return (
+              <button key={m.key} type="button" onClick={() => setModelKey(m.key)}
+                className={`text-left rounded-xl border px-3 py-2 transition ${on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-steel-200 bg-white hover:bg-steel-50'}`}>
+                <div className="text-sm font-semibold text-steel-800">{m.icon} {m.label}</div>
+                <div className="text-[11px] text-steel-500 leading-tight mt-0.5">{n != null ? `${n} itens · ` : ''}{m.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+        {modelKey === 'custom' && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {CHECKUP_TEMPLATE.map(s => {
+              const on = systems.includes(s.system);
+              return (
+                <button key={s.system} type="button"
+                  onClick={() => setSystems(v => on ? v.filter(x => x !== s.system) : [...v, s.system])}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${on ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                  {s.icon} {s.system} <span className="opacity-60">({s.items.length})</span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Field label="Placa"  value={form.plate} onChange={set('plate')} placeholder="ABC1D23" upper />
-        <Field label="Marca"  value={form.make}  onChange={set('make')}  placeholder="Fiat" />
-        <Field label="Modelo" value={form.model} onChange={set('model')} placeholder="Argo" />
-        <Field label="Ano"    value={form.year}  onChange={set('year')}  placeholder="2019" inputMode="numeric" />
-        <Field label="KM"     value={form.km}    onChange={set('km')}    placeholder="85000" inputMode="numeric" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Nome do cliente" value={form.customer_name}  onChange={set('customer_name')}  placeholder="João Silva" />
-        <Field label="WhatsApp"        value={form.customer_phone} onChange={set('customer_phone')} placeholder="(11) 99999-9999" inputMode="tel" />
-      </div>
+      {dups.length > 0 && (
+        <div className="rounded-xl bg-pending-50 border border-pending-200 px-3 py-2.5 text-sm space-y-1.5">
+          <div className="font-semibold text-steel-800">Parece que esse cliente já tem cadastro:</div>
+          {dups.map(d => <div key={d.id} className="text-xs text-steel-600">• {d.full_name} — {d.reason}</div>)}
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={() => { setDups([]); setCarPick(EMPTY_PICK); }} className="btn-ghost text-xs !py-1.5 border border-steel-200 bg-white">Buscar o cadastro</button>
+            <button type="button" onClick={e => create(e as unknown as FormEvent, true)} className="btn-primary text-xs !py-1.5">Criar mesmo assim</button>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={closeNew} className="btn-ghost text-sm border border-steel-200">Cancelar</button>

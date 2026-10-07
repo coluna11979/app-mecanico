@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LicensePlate from '@/components/os/LicensePlate';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
-import { itemQuote, mechanicWhatsappLink, publicReportUrl } from '@/lib/checkup';
+import { CHECKUP_MODELS, CHECKUP_TEMPLATE, itemQuote, mechanicWhatsappLink, modelItemKeys, modelLabel, modelOf, publicReportUrl } from '@/lib/checkup';
+import { systemsOf } from '@/lib/checkupStatus';
 import {
   ACTION_LABEL, attentionOf, kpisOf, rowOf, sinceLabel,
   type Action, type Attention, type PanelCheckup, type Row, type ScheduledOs,
@@ -10,7 +11,7 @@ import {
 import type { Situation } from '@/lib/checkupStatus';
 import type { WorkshopMechanic } from '@/types/database';
 
-/* Painel do gestor: Painel · Inspeções · Histórico · Modelos (em breve).
+/* Painel do gestor: Painel · Inspeções · Histórico · Modelos.
    Um botão principal por card/linha; tudo calculado em lib/checkupPanel. */
 
 export type Tab = 'painel' | 'inspecoes' | 'historico' | 'modelos';
@@ -99,7 +100,7 @@ export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, w
           <button key={t} onClick={() => onTab(t)}
             className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition ${
               tab === t ? 'border-brand-500 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-800'}`}>
-            {TAB_LABEL[t]}{t === 'modelos' && <span className="ml-1.5 text-[10px] font-bold uppercase text-steel-400">em breve</span>}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
@@ -311,6 +312,9 @@ function CheckupCard({ r, onAct, replacedOn }: {
           <div className="text-xs text-steel-500 truncate">
             {[c.customer_name, c.mechanic?.name ? `🔧 ${c.mechanic.name}` : '🔧 sem responsável'].filter(Boolean).join(' · ')}
           </div>
+          {c.template_key && (
+            <div className="text-[11px] font-semibold text-steel-600 truncate">{modelOf(c.template_key).icon} {modelLabel(c.template_key, systemsOf(c.items))}</div>
+          )}
         </div>
         <span className={`text-[10px] font-bold uppercase tracking-wide rounded-md px-2 py-1 shrink-0 ${pill.cls}`}>{pill.label}</span>
       </div>
@@ -416,22 +420,32 @@ function History({ rows, onAct }: { rows: Row[]; onAct: (a: Action, r?: Row) => 
   );
 }
 
-/* ─── Modelos (etapa futura) ───────────────────────────────── */
+/* ─── Modelos: o que cada tipo de check-up verifica ────────── */
 function ModelsSoon() {
-  const models = ['Check-up completo', 'Revisão básica', 'Troca de óleo', 'Pré-viagem', 'Freios e suspensão', 'Veículo usado'];
   return (
-    <div className="card space-y-3">
-      <div className="font-bold text-steel-800">Modelos de check-up — em breve</div>
+    <section className="space-y-3">
       <p className="text-sm text-steel-500">
-        Hoje todo check-up usa o <strong>Check-up completo</strong>. Em breve dá para escolher o modelo na hora de criar:
+        Escolha o tipo na hora de criar o check-up. Check-up de uma OS já sugere o tipo pelo serviço (ex.: freio → Freios e suspensão),
+        e dá para trocar antes de começar. O mecânico sempre pode incluir um item fora do modelo.
       </p>
-      <div className="flex flex-wrap gap-2">
-        {models.map((m, i) => (
-          <span key={m} className={`text-xs font-semibold rounded-lg px-3 py-1.5 ${i === 0 ? 'bg-signal-100 text-signal-800' : 'bg-steel-100 text-steel-500'}`}>
-            {i === 0 ? '✓ ' : ''}{m}
-          </span>
-        ))}
+      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {CHECKUP_MODELS.map(m => {
+          const keys = m.key === 'custom' ? [] : modelItemKeys(m.key);
+          const systems = CHECKUP_TEMPLATE.filter(s => s.items.some(i => keys.includes(i.key))).map(s => s.system);
+          return (
+            <div key={m.key} className="card !p-4 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-steel-800">{m.icon} {m.label}</span>
+                <span className="text-xs font-semibold text-steel-500">{m.key === 'custom' ? 'você escolhe' : `${keys.length} itens`}</span>
+              </div>
+              <div className="text-xs text-steel-500">{m.desc}</div>
+              {systems.length > 0 && <div className="text-[11px] text-steel-400">{systems.join(' · ')}</div>}
+              {m.partial && <div className="text-[11px] text-pending-700">Relatório do cliente: “estado dos itens verificados”</div>}
+            </div>
+          );
+        })}
       </div>
-    </div>
+      <p className="text-[11px] text-steel-400">Modelos criados pela própria oficina (com itens seus): em breve.</p>
+    </section>
   );
 }

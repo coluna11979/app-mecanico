@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import {
-  DECISION_META, SYSTEM_ICON, STATUS_META, checkupPhotoUrl, itemQuote,
+  DECISION_META, SYSTEM_ICON, STATUS_META, checkupPhotoUrl, itemQuote, modelLabel, modelOf,
   type CheckupItemStatus, type CustomerDecision,
 } from '@/lib/checkup';
 import { fmtBRL } from '@/components/os/osHelpers';
@@ -41,6 +41,9 @@ interface PublicCheckup {
   mechanic_name: string | null;
   responded_at: string | null;
   scheduled_at: string | null;
+  /** Tipo do check-up (0079) e total de itens do checklist */
+  template_key?: string | null;
+  items_total?: number;
   items: PublicItem[];
 }
 
@@ -90,6 +93,8 @@ export default function CheckupReport() {
   const okCount = data.items.filter(i => i.status === 'ok').length;
   const date    = new Date(data.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
   const overall = overallState(countsOf(data.items));
+  // Verificação parcial (ex.: só freios): o relatório fala dos itens verificados, não do carro inteiro
+  const partial = modelOf(data.template_key).partial;
 
   return (
     <div className="min-h-screen bg-steel-50 text-steel-800">
@@ -108,7 +113,7 @@ export default function CheckupReport() {
         <section className="card !p-5 space-y-4">
           <div>
             <div className="text-xs text-steel-500 font-semibold uppercase tracking-wider">
-              Check-up do veículo{data.customer_first_name ? ` · ${data.customer_first_name}` : ''}
+              {partial ? `Verificação · ${modelLabel(data.template_key, systemsOf(data.items))}` : 'Check-up do veículo'}{data.customer_first_name ? ` · ${data.customer_first_name}` : ''}
             </div>
             <h1 className="text-xl font-bold mt-1">{car}</h1>
             <div className="flex items-center gap-2 mt-1 text-sm text-steel-500">
@@ -119,7 +124,7 @@ export default function CheckupReport() {
           {/* Estado geral (substitui a nota 0–100) */}
           <div className="space-y-3">
             <div>
-              <div className="text-xs text-steel-500 font-semibold uppercase tracking-wider">Estado geral</div>
+              <div className="text-xs text-steel-500 font-semibold uppercase tracking-wider">{partial ? 'Estado dos itens verificados' : 'Estado geral'}</div>
               <div className="font-bold text-xl" style={{ color: overall ? TONE_COLOR[OVERALL_META[overall].tone] : undefined }}>
                 {overall ? OVERALL_META[overall].label : "—"}
               </div>
@@ -138,7 +143,7 @@ export default function CheckupReport() {
                 <div className="text-[11px] font-semibold mt-1">Urgente</div>
               </div>
             </div>
-            <div className="text-xs text-steel-400">{data.items.length} itens avaliados</div>
+            <div className="text-xs text-steel-400">{data.items_total ? `${data.items.length} de ${data.items_total}` : data.items.length} itens avaliados</div>
           </div>
         </section>
 
@@ -165,7 +170,7 @@ export default function CheckupReport() {
 
         {/* ── Tudo por sistema ── */}
         <section className="space-y-3">
-          <h2 className="font-bold text-steel-800">Inspeção completa</h2>
+          <h2 className="font-bold text-steel-800">{partial ? 'Itens verificados' : 'Inspeção completa'}</h2>
           {systemsOf(data.items).map(system => {
             const list = data.items.filter(i => i.system === system);
             if (!list.length) return null;

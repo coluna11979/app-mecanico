@@ -8,7 +8,8 @@ import LicensePlate from '@/components/os/LicensePlate';
 import {
   DECISION_META, MECHANIC_STAGE_META, SYSTEM_ICON, STATUS_META,
   computeScore, itemQuote, mechanicLinkUrl, mechanicStage, mechanicWhatsappLink, publicReportUrl, uploadCheckupPhoto, whatsappLink,
-  type CheckupItem, type VehicleCheckup,
+  CHECKUP_MODELS, CHECKUP_TEMPLATE, changeCheckupModel, modelItemKeys, modelLabel, modelOf,
+  type CheckupItem, type CheckupModelKey, type VehicleCheckup,
 } from '@/lib/checkup';
 import { AddItem, ItemRow, type CatalogNames } from '@/components/checkup/ChecklistItem';
 import { useCheckupAccess } from '@/lib/checkupAccess';
@@ -331,6 +332,9 @@ export default function WorkshopCheckupRun() {
                 📋 OS nº {checkup.os?.number ?? '—'}
               </Link>
             )}
+            <ModelLine checkup={checkup} items={items}
+              canChange={!done && !demo && items.every(i => !i.status)}
+              onChanged={load} />
           </div>
           {/* Celular: resumo compacto + responsável aqui em cima (no desktop ficam ao lado) */}
           <div className="lg:hidden space-y-3 pt-3 border-t border-steel-100">
@@ -435,6 +439,74 @@ export default function WorkshopCheckupRun() {
   );
 }
 
+
+/* ─── Tipo do check-up (e trocar antes de começar) ─────────── */
+function ModelLine({ checkup, items, canChange, onChanged }: {
+  checkup: VehicleCheckup; items: CheckupItem[]; canChange: boolean; onChanged: () => void;
+}) {
+  const m = modelOf(checkup.template_key);
+  const systems = systemsOf(items);
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState<CheckupModelKey>(m.key);
+  const [picked, setPicked] = useState<string[]>(m.key === 'custom' ? systems : []);
+  const [busy, setBusy] = useState(false);
+
+  async function apply() {
+    setBusy(true);
+    try {
+      await changeCheckupModel(checkup.id, key, picked);
+      toast.success('Tipo do check-up trocado ✓');
+      setOpen(false);
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível trocar o tipo');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="badge bg-steel-100 text-steel-700">{m.icon} {modelLabel(checkup.template_key, systems)} · {items.length} itens</span>
+        {canChange && !open && (
+          <button onClick={() => setOpen(true)} className="font-semibold text-brand-600 hover:underline">Trocar tipo</button>
+        )}
+      </div>
+      {open && (
+        <div className="rounded-xl border border-steel-200 bg-steel-50 p-3 space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {CHECKUP_MODELS.map(x => (
+              <button key={x.key} type="button" onClick={() => setKey(x.key)}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${key === x.key ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                {x.icon} {x.label}{x.key !== 'custom' ? ` (${modelItemKeys(x.key).length})` : ''}
+              </button>
+            ))}
+          </div>
+          {key === 'custom' && (
+            <div className="flex flex-wrap gap-1.5">
+              {CHECKUP_TEMPLATE.map(s => {
+                const on = picked.includes(s.system);
+                return (
+                  <button key={s.system} type="button" onClick={() => setPicked(v => on ? v.filter(x => x !== s.system) : [...v, s.system])}
+                    className={`text-xs px-2.5 py-1 rounded-lg border ${on ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-600 border-steel-200'}`}>
+                    {s.icon} {s.system}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setOpen(false)} className="btn-ghost text-xs !py-1.5">Cancelar</button>
+            <button onClick={apply} disabled={busy || (key === 'custom' && !picked.length)} className="btn-primary text-xs !py-1.5">
+              {busy ? 'Trocando…' : 'Usar este tipo'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ─── Resumo: progresso + Estado geral + contagens ─────────── */
 function stateLine(items: CheckupItem[]) {
