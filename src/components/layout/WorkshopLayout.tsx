@@ -10,6 +10,7 @@ import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
 import { ROLES, sessionAllows, useOperator, type OperatorRole } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
+import { moduleAllows, useWorkshopModules } from '@/lib/modules';
 
 type ArrivalAlert = { jobId: string; title: string };
 type FinishedAlert = { jobId: string; title: string; price: number };
@@ -351,7 +352,10 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const op = useOperator();
   useEffect(() => { op.bind(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
   const role = op.balcao ? op.session?.role ?? null : null;
-  const allowed = (to: string) => !role || sessionAllows(op.session!, to);
+  // Módulos liberados para a oficina (superadmin) valem para todos, inclusive o gestor
+  const mods = useWorkshopModules();
+  useEffect(() => { mods.load(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allowed = (to: string) => moduleAllows(mods.disabled, to) && (!role || sessionAllows(op.session!, to));
   // Permissões alteradas pelo gestor valem sem precisar digitar o PIN de novo
   useEffect(() => {
     if (!op.session) return;
@@ -365,8 +369,24 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
   /* Tela fora da função → volta pra tela inicial da função */
   useEffect(() => {
-    if (role && !sessionAllows(op.session!, location.pathname)) nav(ROLES[role].home, { replace: true });
+    if (role && !sessionAllows(op.session!, location.pathname)) nav(homePath(), { replace: true });
   }, [role, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Tela inicial que a função e os módulos da oficina deixam abrir (evita ficar pulando entre telas bloqueadas) */
+  function homePath() {
+    const candidates = role
+      ? [ROLES[role].home, '/oficina/inicio', ...(ROLES[role].routes ?? [])]
+      : ['/oficina/inicio'];
+    return candidates.find(allowed) ?? '/oficina/avisos';
+  }
+
+  /* Módulo desligado pra esta oficina → volta pra tela inicial */
+  useEffect(() => {
+    if (mods.loaded && mods.workshopId === shopId && !moduleAllows(mods.disabled, location.pathname)) {
+      toast.warning('Esse módulo não está liberado para esta oficina.');
+      nav(homePath(), { replace: true });
+    }
+  }, [mods.loaded, mods.disabled, shopId, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function enterBalcao() {
     if (!shopId) return;

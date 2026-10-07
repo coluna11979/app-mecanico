@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { canDo, sessionAllows, useOperator, type WorkshopOperator } from '@/lib/operators';
+import { useModuleAllows } from '@/lib/modules';
 import {
   EXPENSE_CATEGORIES, KINDS, METHODS, RECEIVE_METHODS, brl, hhmm, moneyStr, parseMoney,
   type CashEntry, type CashRegister, type CashSummary, type EntryKind, type PayMethod,
@@ -69,7 +70,8 @@ export default function Caixa() {
   const sid = balcao ? session?.session_id ?? null : null;
   const can = (p: Parameters<typeof canDo>[2]) => canDo(session, balcao, p);
   /* Chamar mecânico publica demanda: só quem tem acesso à tela de Demandas */
-  const canCallMechanic = !balcao || (!!session && sessionAllows(session, '/oficina/dashboard'));
+  const modAllows = useModuleAllows();
+  const canCallMechanic = modAllows('/oficina/dashboard') && (!balcao || (!!session && sessionAllows(session, '/oficina/dashboard')));
 
   const [reg, setReg]         = useState<CashRegister | null | undefined>(undefined);
   const [lastClosed, setLastClosed] = useState<CashRegister | null>(null);
