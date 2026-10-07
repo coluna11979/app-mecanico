@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
+import TeamTabs from '@/components/team/TeamTabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
@@ -50,6 +51,7 @@ export default function Acessos() {
   return (
     <WorkshopLayout>
       <div className="max-w-4xl mx-auto">
+        <TeamTabs />
         <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">🔐 Acessos e funções</h1>

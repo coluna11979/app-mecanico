@@ -210,7 +210,7 @@ export default function Painel() {
 
             {/* Onde foram parar as outras seções */}
             <p className="text-[11px] text-steel-400">
-              Produtividade e comissões da equipe estão em <Link to="/oficina/desempenho?aba=comissoes" className="text-brand-600 hover:underline">Equipe → Desempenho e comissões</Link>.
+              Desempenho e comissões da equipe estão em <Link to="/oficina/desempenho" className="text-brand-600 hover:underline">Equipe → Desempenho</Link> e <Link to="/oficina/comissoes" className="text-brand-600 hover:underline">Comissões</Link>.
               O resumo dos mecânicos da plataforma está em <Link to="/oficina/dashboard" className="text-brand-600 hover:underline">Demandas</Link>.
             </p>
           </>

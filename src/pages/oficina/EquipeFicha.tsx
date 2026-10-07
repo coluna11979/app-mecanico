@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { resizeImage } from '@/lib/imageResize';
 import AbsencePanel from '@/components/team/AbsencePanel';
 import ScheduleEditor from '@/components/team/ScheduleEditor';
+import { useTeamAccess } from '@/lib/teamAccess';
 import { fmtBRL, fmtDur, moneyInput, osNumber, parseMoney, workedMinutes } from '@/components/os/osHelpers';
 import { RULE } from '@/lib/commission';
 import {
@@ -49,6 +50,7 @@ export default function EquipeFicha() {
   const isNew = id === 'novo';
   const nav = useNavigate();
   const { currentWorkshop, workshops, user } = useAuth();
+  const { canSensitive, canRevenue } = useTeamAccess();
   const wid = currentWorkshop?.id ?? null;
 
   const [tab, setTab]       = useState<Tab>('pessoal');
@@ -66,11 +68,13 @@ export default function EquipeFicha() {
 
   const load = useCallback(async () => {
     if (isNew || !id) return;
+    // Dados pessoais, salário, banco e documentos: só para o gestor (no modo balcão, quem não é gestor nem carrega)
+    const none = Promise.resolve({ data: null });
     const [m, p, c, d, o] = await Promise.all([
       supabase.from('workshop_mechanics').select('*').eq('id', id).maybeSingle(),
-      supabase.from('workshop_mechanic_private').select('*').eq('mechanic_id', id).maybeSingle(),
+      canSensitive ? supabase.from('workshop_mechanic_private').select('*').eq('mechanic_id', id).maybeSingle() : none,
       supabase.from('workshop_mechanic_certifications').select('*').eq('mechanic_id', id).order('expires_at'),
-      supabase.from('workshop_mechanic_documents').select('*').eq('mechanic_id', id).order('created_at', { ascending: false }),
+      canSensitive ? supabase.from('workshop_mechanic_documents').select('*').eq('mechanic_id', id).order('created_at', { ascending: false }) : none,
       supabase.from('service_orders')
         .select('id, number, title, price, labor_cost, started_at, completed_at, estimated_hours, pauses:service_order_pauses(started_at, ended_at)')
         .eq('workshop_mechanic_id', id).eq('status', 'completed').is('quote_status', null)
@@ -104,7 +108,7 @@ export default function EquipeFicha() {
     } else setPhotoUrl(null);
     setDirty(false);
     setLoading(false);
-  }, [id, isNew]);
+  }, [id, isNew, canSensitive]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -174,7 +178,8 @@ export default function EquipeFicha() {
         if (error) throw error;
         mechId = data.id;
       }
-      const { error: pErr } = await supabase.from('workshop_mechanic_private').upsert({
+      // Sem acesso aos dados pessoais: não grava (senão apagaria o que a pessoa nem viu)
+      const { error: pErr } = !canSensitive ? { error: null } : await supabase.from('workshop_mechanic_private').upsert({
         mechanic_id: mechId, workshop_id: wid,
         cpf: f.cpf.trim() || null, rg: f.rg.trim() || null, birth_date: f.birth_date || null,
         email: f.email.trim() || null, address: f.address.trim() || null,
@@ -280,7 +285,7 @@ export default function EquipeFicha() {
 
         {/* Abas */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 mb-4">
-          {TABS.map(t => {
+          {TABS.filter(t => canSensitive || (t.key !== 'documentos' && t.key !== 'pagamento')).map(t => {
             const disabled = t.needsId && !mech;
             return (
               <button type="button" key={t.key} disabled={disabled} onClick={() => setTab(t.key)}
@@ -390,10 +395,14 @@ export default function EquipeFicha() {
             </div>
           )}
 
-          {tab === 'desempenho' && <Performance list={perf} commissionPct={Number(f.commission.replace(',', '.')) || 0} />}
+          {tab === 'desempenho' && <Performance list={perf} showRevenue={canRevenue} />}
 
           {(tab === 'pessoal' || tab === 'contratacao' || tab === 'pagamento') && (
-            <p className="text-xs text-steel-400 mt-5 pt-4 border-t border-steel-100">🔒 Campos com cadeado são dados pessoais (LGPD): só o dono da oficina tem acesso.</p>
+            <p className="text-xs text-steel-400 mt-5 pt-4 border-t border-steel-100">
+              {canSensitive
+                ? '🔒 Campos com cadeado são dados pessoais (LGPD): só o dono da oficina e o gestor têm acesso.'
+                : '🔒 CPF, endereço, contatos, salário, dados bancários e documentos só o gestor vê.'}
+            </p>
           )}
         </div>
       </form>
@@ -404,6 +413,8 @@ export default function EquipeFicha() {
 function Field({ label, children, className = '', sensitive = false }: {
   label: string; children: React.ReactNode; className?: string; sensitive?: boolean;
 }) {
+  const { canSensitive } = useTeamAccess();
+  if (sensitive && !canSensitive) return null;
   return (
     <div className={className}>
       <label className="label">{label}{sensitive && <span className="ml-1 text-steel-400" title="Dado sensível — só o dono vê">🔒</span>}</label>
@@ -722,7 +733,7 @@ function Documents({ mechanicId, workshopId, list, onChange }: {
 }
 
 /** Desempenho mês a mês (OS concluídas, horas trabalhadas, comissão) */
-function Performance({ list, commissionPct }: { list: PerfOs[]; commissionPct: number }) {
+function Performance({ list, showRevenue }: { list: PerfOs[]; showRevenue: boolean }) {
   if (list.length === 0) return <p className="text-sm text-steel-400">Nenhuma OS concluída por este colaborador ainda.</p>;
 
   const months = new Map<string, { label: string; count: number; worked: number; labor: number; revenue: number; onTime: number; withEst: number }>();
@@ -736,6 +747,9 @@ function Performance({ list, commissionPct }: { list: PerfOs[]; commissionPct: n
     months.set(key, row);
   }
   const rows = [...months.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 12);
+  // Só mostra colunas com dado (cronômetro e estimativa quase não são usados)
+  const showHours = rows.some(([, r]) => r.worked > 0);
+  const showOnTime = rows.some(([, r]) => r.withEst > 0);
 
   return (
     <div className="space-y-5">
@@ -743,9 +757,10 @@ function Performance({ list, commissionPct }: { list: PerfOs[]; commissionPct: n
         <table className="w-full text-sm">
           <thead className="bg-steel-50 text-[10px] uppercase tracking-wider text-steel-500">
             <tr>
-              <th className="text-left px-3 py-2">Mês</th><th className="text-right px-3 py-2">OS</th>
-              <th className="text-right px-3 py-2">Horas trabalhadas</th><th className="text-right px-3 py-2">No prazo</th>
-              <th className="text-right px-3 py-2">Faturou</th><th className="text-right px-3 py-2">Comissão</th>
+              <th className="text-left px-3 py-2">Mês</th><th className="text-right px-3 py-2">OS concluídas</th>
+              {showHours && <th className="text-right px-3 py-2">Horas trabalhadas</th>}
+              {showOnTime && <th className="text-right px-3 py-2">No prazo</th>}
+              {showRevenue && <th className="text-right px-3 py-2">Faturou</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-steel-100">
@@ -753,10 +768,9 @@ function Performance({ list, commissionPct }: { list: PerfOs[]; commissionPct: n
               <tr key={k}>
                 <td className="px-3 py-2 capitalize">{r.label}</td>
                 <td className="px-3 py-2 text-right">{r.count}</td>
-                <td className="px-3 py-2 text-right">{r.worked ? fmtDur(r.worked) : '—'}</td>
-                <td className="px-3 py-2 text-right">{r.withEst ? `${Math.round((r.onTime / r.withEst) * 100)}%` : '—'}</td>
-                <td className="px-3 py-2 text-right">{fmtBRL(r.revenue)}</td>
-                <td className="px-3 py-2 text-right font-semibold">{fmtBRL(r.labor * commissionPct / 100)}</td>
+                {showHours && <td className="px-3 py-2 text-right">{r.worked ? fmtDur(r.worked) : '—'}</td>}
+                {showOnTime && <td className="px-3 py-2 text-right">{r.withEst ? `${Math.round((r.onTime / r.withEst) * 100)}%` : '—'}</td>}
+                {showRevenue && <td className="px-3 py-2 text-right">{fmtBRL(r.revenue)}</td>}
               </tr>
             ))}
           </tbody>
