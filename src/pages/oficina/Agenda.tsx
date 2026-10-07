@@ -10,6 +10,7 @@ import { osLabel, osColor, waNumber } from '@/components/os/osHelpers';
 import {
   DEFAULT_SCHEDULE, WEEKDAY_SHORT, addDays, dayKey, daySlots, localInput, startOfWeek, type ScheduleConfig,
 } from '@/lib/agenda';
+import { useCheckupAccess } from '@/lib/checkupAccess';
 
 type Appt = {
   id: string; number: number | null; title: string; category: string | null; status: string;
@@ -36,6 +37,9 @@ export default function Agenda() {
   const [mechs, setMechs]     = useState<Mech[]>([]);
   const [newOs, setNewOs]     = useState<NewOsPreset | null>(null);
   const [settings, setSettings] = useState(false);
+  // Mecânico (PIN): só o que está atribuído a ele; sem agendar, confirmar ou remarcar (isso é do balcão)
+  const access = useCheckupAccess();
+  const mech = access.isMechanic;
 
   const range = useMemo(() => view === 'day'
     ? { from: anchor, to: addDays(anchor, 1) }
@@ -59,7 +63,9 @@ export default function Agenda() {
 
   useEffect(() => { setAppts(null); load(); }, [load]);
 
-  const shown = useMemo(() => (appts ?? []).filter(a => !mechFilter || a.workshop_mechanic_id === mechFilter), [appts, mechFilter]);
+  const shown = useMemo(() => (appts ?? []).filter(a => mech
+    ? !!access.mechanicId && a.workshop_mechanic_id === access.mechanicId
+    : !mechFilter || a.workshop_mechanic_id === mechFilter), [appts, mechFilter, mech, access.mechanicId]);
   const stats = useMemo(() => ({
     total: shown.length,
     confirmed: shown.filter(a => a.schedule_status === 'confirmed').length,
@@ -88,14 +94,22 @@ export default function Agenda() {
       <div className="max-w-6xl mx-auto space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">📅 Agenda</h1>
-            <p className="text-sm text-steel-500 mt-1">Serviços e check-ups agendados. Confirme com o cliente pelo WhatsApp e marque quem não veio.</p>
+            <h1 className="text-3xl font-bold tracking-tight">📅 {mech ? 'Minha agenda' : 'Agenda'}</h1>
+            <p className="text-sm text-steel-500 mt-1">{mech
+              ? 'Serviços e check-ups atribuídos a você.'
+              : 'Serviços e check-ups agendados. Confirme com o cliente pelo WhatsApp e marque quem não veio.'}</p>
           </div>
-          <div className="flex gap-2">
+          {!mech && <div className="flex gap-2">
             <button className="btn-ghost border border-steel-200 bg-white" onClick={() => setSettings(true)}>⚙️ Horário de atendimento</button>
             <button className="btn-primary" onClick={() => schedule()}>+ Agendar</button>
-          </div>
+          </div>}
         </div>
+
+        {mech && access.ready && !access.mechanicId && (
+          <div className="card !py-3 bg-pending-50 border-pending-200 text-sm text-steel-700">
+            Seu acesso ainda não está ligado ao seu nome na Equipe. Peça ao gestor para ligar em <strong>Acessos e funções</strong>.
+          </div>
+        )}
 
         {/* Navegação */}
         <div className="card !py-3 flex flex-wrap items-center gap-2">
@@ -113,10 +127,10 @@ export default function Agenda() {
           <input type="date" className="input !w-auto !py-1.5 text-sm" value={dayKey(anchor)}
             onChange={e => { if (e.target.value) setAnchor(new Date(`${e.target.value}T00:00:00`)); }} />
           <div className="font-bold text-steel-800 capitalize ml-1">{title}{view === 'day' && isToday && <span className="ml-2 badge bg-brand-100 text-brand-700">hoje</span>}</div>
-          <select className="input !w-auto !py-1.5 text-sm ml-auto" value={mechFilter} onChange={e => setMechFilter(e.target.value)}>
+          {!mech && <select className="input !w-auto !py-1.5 text-sm ml-auto" value={mechFilter} onChange={e => setMechFilter(e.target.value)}>
             <option value="">Todos os mecânicos</option>
             {mechs.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+          </select>}
         </div>
 
         {/* Números */}
@@ -131,7 +145,7 @@ export default function Agenda() {
           <div className="card h-64 animate-pulse" />
         ) : view === 'day' ? (
           <DayView day={anchor} cfg={cfg} appts={shown} mechs={mechs} workshopName={currentWorkshop?.business_name}
-            onNew={schedule} onPatch={patch} />
+            onNew={schedule} onPatch={patch} mech={mech} />
         ) : (
           <WeekView start={range.from} cfg={cfg} appts={shown}
             onOpenDay={d => { setAnchor(d); setView('day'); }} />
@@ -163,9 +177,11 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 }
 
 /* ─── Dia: horários com vagas ─────────────────────────────────────────── */
-function DayView({ day, cfg, appts, mechs, workshopName, onNew, onPatch }: {
+function DayView({ day, cfg, appts, mechs, workshopName, onNew, onPatch, mech }: {
   day: Date; cfg: ScheduleConfig; appts: Appt[]; mechs: Mech[]; workshopName?: string;
   onNew: (when: Date) => void; onPatch: (a: Appt, row: Record<string, unknown>, msg?: string) => void;
+  /** Mecânico: só vê; sem vagas, sem agendar */
+  mech?: boolean;
 }) {
   const slots = daySlots(day, cfg);
   const inSlot = (a: Appt, s: Date) => {
@@ -183,7 +199,7 @@ function DayView({ day, cfg, appts, mechs, workshopName, onNew, onPatch }: {
       {outside.length > 0 && (
         <div className="card space-y-2">
           <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">Fora do horário de atendimento</div>
-          {outside.map(a => <ApptCard key={a.id} a={a} mechs={mechs} workshopName={workshopName} onPatch={onPatch} />)}
+          {outside.map(a => <ApptCard key={a.id} a={a} mechs={mechs} workshopName={workshopName} onPatch={onPatch} mech={mech} />)}
         </div>
       )}
       {slots.length > 0 && (
@@ -195,13 +211,14 @@ function DayView({ day, cfg, appts, mechs, workshopName, onNew, onPatch }: {
               <div key={s.toISOString()} className={`flex gap-3 px-4 py-3 ${past(s) ? 'bg-steel-50/60' : ''}`}>
                 <div className="w-16 shrink-0">
                   <div className="font-bold text-steel-800">{fmtTime(s)}</div>
-                  <div className={`text-[10px] font-semibold ${full ? 'text-alert-600' : 'text-steel-400'}`}>
+                  {!mech && <div className={`text-[10px] font-semibold ${full ? 'text-alert-600' : 'text-steel-400'}`}>
                     {list.length}/{cfg.cars_per_slot} {full ? 'lotado' : 'vagas'}
-                  </div>
+                  </div>}
                 </div>
                 <div className="flex-1 min-w-0 space-y-2">
-                  {list.map(a => <ApptCard key={a.id} a={a} mechs={mechs} workshopName={workshopName} onPatch={onPatch} />)}
-                  {!full && !past(s) && (
+                  {list.map(a => <ApptCard key={a.id} a={a} mechs={mechs} workshopName={workshopName} onPatch={onPatch} mech={mech} />)}
+                  {mech && !list.length && <div className="text-xs text-steel-300 py-2">—</div>}
+                  {!mech && !full && !past(s) && (
                     <button onClick={() => onNew(s)}
                       className="w-full text-left text-xs font-semibold text-steel-400 hover:text-brand-600 border border-dashed border-steel-200 hover:border-brand-300 rounded-xl px-3 py-2 transition">
                       + Agendar às {fmtTime(s)}
@@ -217,9 +234,10 @@ function DayView({ day, cfg, appts, mechs, workshopName, onNew, onPatch }: {
   );
 }
 
-function ApptCard({ a, mechs, workshopName, onPatch }: {
+function ApptCard({ a, mechs, workshopName, onPatch, mech }: {
   a: Appt; mechs: Mech[]; workshopName?: string;
   onPatch: (a: Appt, row: Record<string, unknown>, msg?: string) => void;
+  mech?: boolean;
 }) {
   const [moving, setMoving] = useState(false);
   const [when, setWhen] = useState(localInput(new Date(a.scheduled_at)));
@@ -231,7 +249,7 @@ function ApptCard({ a, mechs, workshopName, onPatch }: {
     `Confirmando seu horário ${dayTxt} às ${fmtTime(a.scheduled_at)}` +
     `${car ? ` para o ${car}${a.vehicle?.plate ? ` (${a.vehicle.plate})` : ''}` : ''} — ${a.title}. ` +
     `Podemos confirmar? Se precisar mudar, é só responder aqui. 🙂`;
-  const done = a.status === 'completed';
+  const done = a.status === 'completed' || !!mech;
 
   const tone = a.schedule_status === 'no_show' ? 'border-l-alert-500 bg-alert-50/40'
     : a.schedule_status === 'confirmed' ? 'border-l-signal-500' : 'border-l-pending-500';
@@ -257,11 +275,11 @@ function ApptCard({ a, mechs, workshopName, onPatch }: {
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
-        <select className="input !py-1 !px-2 !w-auto text-xs" value={a.workshop_mechanic_id ?? ''}
+        {!mech && <select className="input !py-1 !px-2 !w-auto text-xs" value={a.workshop_mechanic_id ?? ''}
           onChange={e => onPatch(a, { workshop_mechanic_id: e.target.value || null }, 'Mecânico definido ✓')}>
           <option value="">🔧 Sem mecânico</option>
           {mechs.map(m => <option key={m.id} value={m.id}>🔧 {m.name}</option>)}
-        </select>
+        </select>}
         {!done && phone && a.schedule_status !== 'confirmed' && (
           <a href={`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer"
             onClick={() => onPatch(a, { schedule_reminded_at: new Date().toISOString() })}

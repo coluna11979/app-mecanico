@@ -15,6 +15,8 @@ import { toast } from '@/components/ui/Toast';
 import NewOsModal, { type NewOsPreset } from '@/components/os/NewOsModal';
 import { OS_STATUS_FLOW, openPause, statusChange } from '@/components/os/osHelpers';
 import { sessionAllows, useOperator } from '@/lib/operators';
+import { useCheckupAccess } from '@/lib/checkupAccess';
+import { MyCommissionSummary, useMyCommission } from '@/components/os/MyCommission';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 /* ─── tipos locais ──────────────────────────────────────────── */
@@ -72,6 +74,12 @@ export default function ServiceOrders() {
   const [onlyScheduled, setOnlyScheduled] = useState(false);
   const [showFilters, setShowFilters]     = useState(false);   // celular: período e responsável ficam atrás de "Filtros"
   const op = useOperator();
+  // Mecânico (PIN): só as OS dele (responsável ou que fez algum serviço), sem valores e sem ações comerciais
+  const access = useCheckupAccess();
+  const mech = access.isMechanic;
+  const [myOsIds, setMyOsIds] = useState<Set<string> | null>(null);
+  // Comissão dele (só leitura)
+  const myComm = useMyCommission(currentWorkshop?.id, mech ? access.mechanicId : null);
   const canOpen = (path: string) => !op.balcao || !op.session || sessionAllows(op.session, path);
   const [newOs, setNewOs]                 = useState<NewOsPreset | null>(null);
   /* ── links antigos (?os=<id>) → página da OS ── */
@@ -94,7 +102,8 @@ export default function ServiceOrders() {
   const openOs = (os: OsRow) => nav(`/oficina/os/${os.id}`);
 
   /* ── persistência de filtros (localStorage por oficina) ── */
-  const prefsKey = currentWorkshop ? `os-prefs:${currentWorkshop.id}` : null;
+  // Mecânico tem os filtros dele (não herda os do gestor no mesmo aparelho)
+  const prefsKey = currentWorkshop ? `os-prefs:${currentWorkshop.id}${mech ? ':mecanico' : ''}` : null;
   useEffect(() => {
     if (!prefsKey) return;
     try {
@@ -117,6 +126,13 @@ export default function ServiceOrders() {
       localStorage.setItem(prefsKey, JSON.stringify({ filterStatus, filterMech, filterPeriod, onlyScheduled }));
     } catch { /* ignore */ }
   }, [prefsKey, filterStatus, filterMech, filterPeriod, onlyScheduled]);
+
+  // OS em que o mecânico fez algum serviço (sem ser o responsável da OS)
+  useEffect(() => {
+    if (!mech || !access.mechanicId) { setMyOsIds(null); return; }
+    supabase.from('service_order_items').select('service_order_id').eq('workshop_mechanic_id', access.mechanicId)
+      .then(({ data }) => setMyOsIds(new Set(((data ?? []) as { service_order_id: string }[]).map(r => r.service_order_id))));
+  }, [mech, access.mechanicId]);
 
   useEffect(() => {
     if (!user || !currentWorkshop) return;
@@ -189,8 +205,12 @@ export default function ServiceOrders() {
     });
   /* ─── listas filtradas ───────────────────────────────────── */
   // Filtros de período, mecânico e busca (sem o de status) — os contadores dos chips usam esta base
+  const mine = (o: OsRow) => !!access.mechanicId
+    && o.status !== 'cancelled'
+    && (o.workshop_mechanic_id === access.mechanicId || !!myOsIds?.has(o.id));
   const base = list.filter(o => {
-    if (filterMech !== 'all') {
+    if (mech) { if (!mine(o)) return false; }
+    else if (filterMech !== 'all') {
       const who = o.executor === 'platform' ? 'platform' : o.workshop_mechanic_id ?? 'none';
       if (who !== filterMech) return false;
     }
@@ -230,16 +250,25 @@ export default function ServiceOrders() {
       {/* Cabeçalho */}
       <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-2 mb-5">
         <div className="min-w-0">
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight leading-tight">Ordens de serviço</h1>
-          <p className="text-sm text-steel-500">{list.length} OS cadastradas</p>
+          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight leading-tight">{mech ? 'Minhas OS' : 'Ordens de serviço'}</h1>
+          <p className="text-sm text-steel-500">{mech ? `${list.filter(mine).length} OS suas` : `${list.length} OS cadastradas`}</p>
         </div>
         <div className="flex gap-2 shrink-0">
           {canOpen('/oficina/agenda') && (
             <button onClick={() => nav('/oficina/agenda')} className="btn-secondary !py-2 !px-4 text-sm">📅 Agenda</button>
           )}
-          <button onClick={() => setNewOs({})} className="btn-primary !py-2 !px-4 text-sm">+ Nova OS</button>
+          {!mech && <button onClick={() => setNewOs({})} className="btn-primary !py-2 !px-4 text-sm">+ Nova OS</button>}
         </div>
       </div>
+
+      {mech && access.mechanicId && <MyCommissionSummary c={myComm} />}
+
+      {mech && access.ready && !access.mechanicId && (
+        <div className="card !py-3 mb-4 bg-pending-50 border-pending-200 text-sm text-steel-700">
+          Seu acesso ainda não está ligado ao seu nome na Equipe. Peça ao gestor para ligar em <strong>Acessos e funções</strong> —
+          aí aparecem aqui as suas OS.
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Busca + situação */}
@@ -256,7 +285,7 @@ export default function ServiceOrders() {
             </div>
             <button type="button" onClick={() => setShowFilters(v => !v)} aria-expanded={showFilters}
               className={`lg:hidden shrink-0 text-sm font-semibold px-3 py-2.5 rounded-xl border transition ${
-                showFilters || filterPeriod !== 'all' || filterMech !== 'all' ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-700 border-steel-200'}`}>
+                showFilters || filterPeriod !== 'all' || (!mech && filterMech !== 'all') ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-700 border-steel-200'}`}>
               Filtros{(filterPeriod !== 'all' || filterMech !== 'all') ? ' •' : ''}
             </button>
           </div>
@@ -298,18 +327,21 @@ export default function ServiceOrders() {
               </div>
             )}
           </div>
-          <select className="input lg:max-w-[220px] text-sm" value={filterMech} onChange={e => setFilterMech(e.target.value)}>
+          {!mech && <select className="input lg:max-w-[220px] text-sm" value={filterMech} onChange={e => setFilterMech(e.target.value)}>
             <option value="all">Todos os responsáveis</option>
             <option value="none">Sem responsável</option>
             <option value="platform">🌐 Mecânico da plataforma</option>
             {internalMechs.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+          </select>}
         </div>
 
-        {loading ? (
+        {loading || (mech && (!access.ready || (!!access.mechanicId && myOsIds === null))) ? (
           <OsSkeleton count={3} />
         ) : filtered.length === 0 ? (
-          list.length === 0 ? (
+          mech ? (
+            <EmptyState icon="🔧" title={hasFilters ? 'Nenhuma OS sua com esses filtros' : 'Nenhuma OS sua ainda'}
+              description="Aqui aparecem as OS em que você é o responsável ou fez algum serviço." />
+          ) : list.length === 0 ? (
             <EmptyState
               icon="📋"
               title="Nenhuma OS ainda"
@@ -345,6 +377,8 @@ export default function ServiceOrders() {
                 onClick={() => openOs(os)}
                 onChangeStatus={(status, opts) => updateStatus(os, status, opts)}
                 onCopyLink={() => copyOsLink(os)}
+                mechanicView={mech}
+                myCommission={mech ? myComm.byOs.get(os.id)?.value : undefined}
               />
             ))}
           </div>

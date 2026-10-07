@@ -151,6 +151,10 @@ export default function App() {
       <Route path="/oficina/vip" element={<ProtectedRoute allow={['workshop']}><WorkshopPlanoVip /></ProtectedRoute>} />      <Route path="/admin/vip" element={<ProtectedRoute allow={['admin']}><AdminVip /></ProtectedRoute>} />
       <Route path="/oficina/os" element={<ProtectedRoute allow={['workshop']}><WorkshopServiceOrders /></ProtectedRoute>} />
       <Route path="/oficina/checkup" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
+      {/* Telas do módulo (rotas fixas têm prioridade sobre /:id) */}
+      <Route path="/oficina/checkup/inspecoes" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
+      <Route path="/oficina/checkup/historico" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
+      <Route path="/oficina/checkup/modelos" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
       <Route path="/oficina/checkup/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckupRun /></ProtectedRoute>} />
       <Route path="/oficina/os/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopOsDetail /></ProtectedRoute>} />
       <Route path="/oficina/importar" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopImportar /></Suspense></ProtectedRoute>} />

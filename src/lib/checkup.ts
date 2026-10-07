@@ -38,6 +38,8 @@ export interface VehicleCheckup {
   mechanic_opened_at?: string | null;
   mechanic_started_at?: string | null;
   mechanic_finished_at?: string | null;
+  /** Check-up refeito: aponta para o novo (migration 0078). O antigo fica no histórico e o link segue valendo. */
+  replaced_by?: string | null;
 }
 
 export interface CheckupItem {
@@ -176,6 +178,7 @@ export function computeScore(items: Pick<CheckupItem, 'status'>[]) {
   return urgent > 0 ? Math.min(score, 69) : score;
 }
 
+/** @deprecated a nota 0–100 saiu da interface (Estado geral em checkupStatus); a coluna score segue gravada */
 export function scoreMeta(score: number) {
   if (score >= 80) return { label: 'Bom estado',       color: 'signal' as const };
   if (score >= 50) return { label: 'Requer atenção',   color: 'pending' as const };
@@ -237,6 +240,8 @@ export function whatsappLink(
   c: Pick<VehicleCheckup, 'customer_name' | 'customer_phone' | 'plate' | 'make' | 'model' | 'score' | 'public_token'>,
   workshopName?: string,
   quoteTotal = 0,
+  /** Estado geral já montado (ex.: "Bom, com pontos de atenção — 28 OK, 3 atenção, 1 urgente") */
+  summary?: string,
 ) {
   const first = c.customer_name?.trim().split(' ')[0];
   const car   = [c.make, c.model].filter(Boolean).join(' ') || 'seu veículo';
@@ -244,7 +249,7 @@ export function whatsappLink(
   const text =
     `Olá${first ? ` ${first}` : ''}! Aqui é da ${workshopName || 'oficina'}. ` +
     `Fizemos o check-up do ${car}${plate}. ` +
-    `Nota de saúde: ${c.score ?? '—'}/100.\n\n` +
+    (summary ? `Estado geral: ${summary}.\n\n` : '\n') +
     (quoteTotal > 0
       ? `Separamos o orçamento do que precisa de atenção. No link você vê as fotos, aprova o que quiser fazer e já escolhe o melhor horário para trazer o carro: ${publicReportUrl(c.public_token)}`
       : `Veja o relatório completo com fotos: ${publicReportUrl(c.public_token)}`);
@@ -271,4 +276,39 @@ export function mechanicWhatsappLink(
   const digits = (link.mechanic_phone ?? '').replace(/\D/g, '');
   const phone  = digits ? (digits.length <= 11 ? `55${digits}` : digits) : '';
   return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+}
+
+/* ─── Criar ──────────────────────────────────────────────────── */
+/** Cria o check-up + itens do checklist e devolve o id. */
+export async function createCheckup(payload: Partial<VehicleCheckup> & { workshop_id: string }) {
+  const { data: c, error } = await supabase.from('vehicle_checkups').insert(payload).select('id').single();
+  if (error || !c) throw error ?? new Error('insert');
+  const { error: itemsErr } = await supabase.from('checkup_items').insert(templateRows(c.id));
+  if (itemsErr) throw itemsErr;
+  return c.id as string;
+}
+
+/**
+ * Check-up de uma OS (agendada ou aberta): devolve o que já existe ou cria um preenchido.
+ * `mechanicId` (opcional) define quem vai inspecionar — senão usa o mecânico da OS.
+ * Devolve null se a OS não existe.
+ */
+export async function checkupForOs(osId: string, mechanicId?: string | null) {
+  const { data: existing } = await supabase.from('vehicle_checkups').select('id')
+    .eq('service_order_id', osId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (existing) return existing.id as string;
+  const { data: os } = await supabase.from('service_orders')
+    .select('id, workshop_id, customer_id, vehicle_id, workshop_mechanic_id, km_reading, customer:customers(full_name, phone), vehicle:vehicles(plate, make, model, year)')
+    .eq('id', osId).maybeSingle();
+  if (!os) return null;
+  const cu = os.customer as unknown as { full_name: string; phone: string | null } | null;
+  const ve = os.vehicle as unknown as { plate: string; make: string; model: string; year: number | null } | null;
+  return createCheckup({
+    workshop_id: os.workshop_id, service_order_id: os.id,
+    customer_id: os.customer_id, vehicle_id: os.vehicle_id,
+    workshop_mechanic_id: mechanicId ?? os.workshop_mechanic_id,
+    km_reading: os.km_reading,
+    customer_name: cu?.full_name ?? null, customer_phone: cu?.phone ?? null,
+    plate: ve?.plate ?? null, make: ve?.make ?? null, model: ve?.model ?? null, year: ve?.year ?? null,
+  });
 }

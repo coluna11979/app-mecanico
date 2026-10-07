@@ -37,9 +37,15 @@ const SECTIONS: NavGroup[] = [
   { key: 'atendimento', title: 'Atendimento', items: [
     { to: '/oficina/os',         icon: '📋', label: 'Ordens de serviço'    },
     { to: '/oficina/agenda',     icon: '📅', label: 'Agenda'               },
-    { to: '/oficina/checkup',    icon: '🩺', label: 'Check-up'             },
     { to: '/oficina/clientes',   icon: '👥', label: 'Clientes'             },
     { to: '/oficina/comercial',  icon: '🤝', label: 'Comercial'            },
+  ] },
+  // Check-up é módulo próprio (um dos diferenciais do sistema)
+  { key: 'checkup', title: 'Check-up', items: [
+    { to: '/oficina/checkup',            icon: '🩺', label: 'Painel do check-up' },
+    { to: '/oficina/checkup/inspecoes',  icon: '🔍', label: 'Inspeções'          },
+    { to: '/oficina/checkup/historico',  icon: '🗂️', label: 'Histórico'          },
+    { to: '/oficina/checkup/modelos',    icon: '🧩', label: 'Modelos (em breve)' },
   ] },
   { key: 'financeiro', title: 'Financeiro', items: [
     { to: '/oficina/caixa',      icon: '💰', label: 'Caixa'                },
@@ -71,6 +77,9 @@ const SECTIONS: NavGroup[] = [
     { to: '/oficina/vip',        icon: '⭐', label: 'Plano VIP'            },
   ] },
 ];
+
+/** Telas do Check-up que são do gestor (o mecânico vê só a fila dele em /oficina/checkup) */
+const CHECKUP_MANAGER_ONLY = ['/oficina/checkup/inspecoes', '/oficina/checkup/historico', '/oficina/checkup/modelos'];
 
 /** Grupos que começam recolhidos (até a pessoa abrir) */
 const DEFAULT_COLLAPSED = ['config'];
@@ -351,6 +360,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const op = useOperator();
   useEffect(() => { op.bind(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
   const role = op.balcao ? op.session?.role ?? null : null;
+  const isMechanicSession = role === 'mecanico';
   // Módulos liberados para a oficina (superadmin) valem para todos, inclusive o gestor
   const mods = useWorkshopModules();
   useEffect(() => { mods.load(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -566,7 +576,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             // Só o que a função pode abrir; submenu sem nenhum filho liberado some
             const entries = sec.items
               .map(e => (isSub(e) ? { ...e, children: e.children.filter(c => allowed(c.to)) } : e))
-              .filter(e => (isSub(e) ? e.children.length > 0 : allowed(e.to)));
+              .filter(e => (isSub(e) ? e.children.length > 0 : allowed(e.to)))
+              // Mecânico: no Check-up só a fila dele
+              .filter(e => !(isMechanicSession && !isSub(e) && CHECKUP_MANAGER_ONLY.includes(e.to)));
             if (!entries.length) return null;
             const items = leaves(entries);
             const hasActive = items.some(i => onRoute(path, i.to));
@@ -838,8 +850,8 @@ function SideItem({ to, icon, label, badge, mobileHidden = false, nested = false
   return (
     <NavLink
       to={to}
-      // Peças tem a sub-rota Painel do estoque (item próprio no menu)
-      end={to === '/oficina/pecas'}
+      // Peças e Check-up têm sub-rotas com item próprio no menu
+      end={to === '/oficina/pecas' || to === '/oficina/checkup'}
       onClick={onClick}
       className={({ isActive }) => `
         ${mobileHidden ? 'hidden lg:flex' : 'flex'} items-center gap-3 px-3 ${nested ? 'py-2.5' : 'py-3'} rounded-xl text-sm font-medium transition-all

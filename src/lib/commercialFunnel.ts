@@ -50,7 +50,8 @@ export const daysSince = (iso: string | null | undefined, now = Date.now()) =>
 const flagged = (r: CkRow) => r.items.filter(i => i.status === 'warn' || i.status === 'urgent');
 
 export function fromCheckup(r: CkRow): Opp | null {
-  if (r.status !== 'completed') return null;
+  // Refeito: quem conta é o check-up novo (o antigo só fica no histórico)
+  if (r.status !== 'completed' || r.replaced_by) return null;
   const items = flagged(r);
   const quoted = items.reduce((a, i) => a + itemQuote(i), 0);
   const approved = items.filter(i => i.customer_decision === 'approve').reduce((a, i) => a + itemQuote(i), 0);
