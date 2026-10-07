@@ -37,6 +37,8 @@ export default function OsDetail() {
   const { id } = useParams();
   const { currentWorkshop } = useAuth();
   const { balcao, session } = useOperator();
+  // Hook no topo: abaixo dos returns de carregamento ele mudaria a ordem dos hooks e a tela ficaria em branco
+  const modAllows = useModuleAllows();
   const showCost = canDo(session, balcao, 'ver_financeiro') || canDo(session, balcao, 'pecas_estoque');
   const [os, setOs]         = useState<OsRow | null>(null);
   const [items, setItems]   = useState<ServiceOrderItem[]>([]);
@@ -313,7 +315,6 @@ export default function OsDetail() {
   const closed = os.status === 'cancelled' || os.status === 'completed';
   /** Venda de peças no balcão (Caixa → Venda de peças): tela enxuta, sem fluxo de serviço */
   const isSale = os.source === 'balcao';
-  const modAllows = useModuleAllows();
   const canOpen = (path: string) => modAllows(path) && (!balcao || !session || sessionAllows(session, path));
   const perService = items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id));
   const noResponsible = responsibleOf(os) === '' && !perService;
