@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import NewOsModal from '@/components/os/NewOsModal';
-import { checkupForOs, createCheckup } from '@/lib/checkup';
+import { CHECKUP_MODELS, CHECKUP_TEMPLATE, checkupForOs, createCheckup, modelItemKeys, type CheckupModelKey } from '@/lib/checkup';
 import { DEMO_MECHANICS, demoPanel, startDemo } from '@/lib/checkupDemo';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { fetchAll } from '@/lib/fetchAll';
@@ -41,6 +41,9 @@ export default function WorkshopCheckups() {
   const [mechs, setMechs]         = useState<Pick<WorkshopMechanic, 'id' | 'name'>[]>(demo ? DEMO_MECHANICS : []);
   const [showNew, setShowNew]     = useState(false);
   const [form, setForm]           = useState(EMPTY);
+  // Tipo do check-up: completo, revisão, troca de óleo… ou montado na hora (sistemas escolhidos)
+  const [modelKey, setModelKey]   = useState<CheckupModelKey>('completo');
+  const [systems, setSystems]     = useState<string[]>([]);
   const [saving, setSaving]       = useState(false);
   const [scheduling, setScheduling] = useState(false);
 
@@ -70,7 +73,7 @@ export default function WorkshopCheckups() {
   async function load() {
     const [c, cu, m, s] = await Promise.all([
       fetchAll<PanelCheckup>((a, b) => supabase.from('vehicle_checkups')
-        .select('*, mechanic:workshop_mechanics(name, phone), items:checkup_items(status, updated_at, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, workshop_mechanic_id, executor)')
+        .select('*, mechanic:workshop_mechanics(name, phone), items:checkup_items(status, updated_at, system, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, workshop_mechanic_id, executor)')
         .eq('workshop_id', wid!).order('created_at', { ascending: false }).order('id').range(a, b) as unknown as PromiseLike<{ data: PanelCheckup[] | null; error: unknown }>),
       supabase.from('customers').select('*').eq('workshop_id', wid!).order('full_name'),
       supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', wid!).eq('active', true).order('name'),
@@ -129,7 +132,10 @@ export default function WorkshopCheckups() {
   async function create(e: FormEvent) {
     e.preventDefault();
     if (!form.plate.trim() && !form.model.trim()) { toast.error('Informe ao menos a placa ou o modelo'); return; }
+    const itemKeys = modelItemKeys(modelKey, systems);
+    if (!itemKeys.length) { toast.error('Escolha ao menos um sistema para verificar'); return; }
     const payload = {
+      template_key:   modelKey === 'completo' ? null : modelKey,
       customer_id:          form.customer_id || null,
       vehicle_id:           form.vehicle_id || null,
       workshop_mechanic_id: access.isMechanic ? access.mechanicId : form.workshop_mechanic_id || null,
@@ -148,7 +154,7 @@ export default function WorkshopCheckups() {
     }
     setSaving(true);
     try {
-      const id = await createCheckup({ workshop_id: wid!, ...payload });
+      const id = await createCheckup({ workshop_id: wid!, ...payload }, itemKeys);
       navigate(`/oficina/checkup/${id}`);
     } catch {
       toast.error('Erro ao criar check-up');
@@ -159,7 +165,7 @@ export default function WorkshopCheckups() {
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
-  const closeNew = () => { setShowNew(false); setForm(EMPTY); };
+  const closeNew = () => { setShowNew(false); setForm(EMPTY); setModelKey('completo'); setSystems([]); };
 
   const newForm = (
     <form onSubmit={create} className="space-y-4">
@@ -194,6 +200,38 @@ export default function WorkshopCheckups() {
               </select>
             </label>
           </>
+        )}
+      </div>
+
+      {/* Tipo do check-up */}
+      <div>
+        <span className="label">O que vamos verificar?</span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
+          {CHECKUP_MODELS.map(m => {
+            const n = m.key === 'custom' ? null : modelItemKeys(m.key).length;
+            const on = modelKey === m.key;
+            return (
+              <button key={m.key} type="button" onClick={() => setModelKey(m.key)}
+                className={`text-left rounded-xl border px-3 py-2 transition ${on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-steel-200 bg-white hover:bg-steel-50'}`}>
+                <div className="text-sm font-semibold text-steel-800">{m.icon} {m.label}</div>
+                <div className="text-[11px] text-steel-500 leading-tight mt-0.5">{n != null ? `${n} itens · ` : ''}{m.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+        {modelKey === 'custom' && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {CHECKUP_TEMPLATE.map(s => {
+              const on = systems.includes(s.system);
+              return (
+                <button key={s.system} type="button"
+                  onClick={() => setSystems(v => on ? v.filter(x => x !== s.system) : [...v, s.system])}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${on ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                  {s.icon} {s.system} <span className="opacity-60">({s.items.length})</span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
 

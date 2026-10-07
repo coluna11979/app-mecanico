@@ -9,7 +9,7 @@ import {
 } from '@/lib/checkupStatus';
 
 export type PanelItem = {
-  status: CheckupItemStatus | null; updated_at: string | null;
+  status: CheckupItemStatus | null; updated_at: string | null; system?: string;
   quote_labor: number | null; quote_parts: number | null; customer_decision: string | null;
 };
 export type PanelCheckup = VehicleCheckup & {

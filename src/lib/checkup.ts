@@ -40,6 +40,8 @@ export interface VehicleCheckup {
   mechanic_finished_at?: string | null;
   /** Check-up refeito: aponta para o novo (migration 0078). O antigo fica no histórico e o link segue valendo. */
   replaced_by?: string | null;
+  /** Modelo do check-up (migration 0079): null = completo */
+  template_key?: string | null;
 }
 
 export interface CheckupItem {
@@ -185,10 +187,81 @@ export function scoreMeta(score: number) {
   return               { label: 'Estado crítico',   color: 'alert' as const };
 }
 
-/** Linhas iniciais de checkup_items para um check-up novo. */
-export function templateRows(checkupId: string) {
+/* ─── Modelos de check-up ──────────────────────────────────────
+   O modelo só escolhe quais itens do checklist padrão nascem no check-up.
+   'custom' = montado na hora (só os sistemas que o cliente apontou). */
+export type CheckupModelKey = 'completo' | 'revisao' | 'troca_oleo' | 'pre_viagem' | 'freios_suspensao' | 'usado' | 'custom';
+
+type CheckupModel = {
+  key: CheckupModelKey; label: string; icon: string; desc: string;
+  /** Itens do modelo; null = todos */
+  items: string[] | null;
+  /** Inspeção parcial: o relatório fala dos "itens verificados", não do carro inteiro */
+  partial: boolean;
+};
+
+const ALL_KEYS = CHECKUP_TEMPLATE.flatMap(s => s.items.map(i => i.key));
+const PNEUS = ['pneu_de', 'pneu_dd', 'pneu_te', 'pneu_td'];
+const FREIOS = ['pastilhas_diant', 'discos', 'freio_tras', 'fluido_freio', 'freio_mao'];
+const SUSPENSAO = ['amortecedores', 'pivos_bandejas', 'terminais', 'homocineticas'];
+
+export const CHECKUP_MODELS: CheckupModel[] = [
+  { key: 'completo', label: 'Check-up completo', icon: '🩺', partial: false, items: null,
+    desc: 'O carro inteiro, sistema por sistema' },
+  { key: 'revisao', label: 'Revisão básica', icon: '🧰', partial: true,
+    desc: 'Óleo, fluidos, pastilhas, pneus, bateria, luzes e palhetas',
+    items: ['oleo_nivel', 'filtro_ar', 'fluido_arref', 'fluido_freio', 'pastilhas_diant', ...PNEUS, 'bateria', 'farois', 'lanternas', 'setas', 'limpadores'] },
+  { key: 'troca_oleo', label: 'Troca de óleo', icon: '🛢️', partial: true,
+    desc: 'Óleo, filtro de ar, vazamentos, arrefecimento e correia',
+    items: ['oleo_nivel', 'filtro_ar', 'vazamentos', 'correia', 'fluido_arref', 'mangueiras', 'radiador'] },
+  { key: 'pre_viagem', label: 'Pré-viagem', icon: '🛣️', partial: true,
+    desc: 'Pneus e estepe, freios, luzes, palhetas, fluidos e bateria',
+    items: ['oleo_nivel', 'fluido_arref', 'pastilhas_diant', 'discos', 'freio_tras', 'fluido_freio', 'amortecedores',
+            ...PNEUS, 'estepe', 'bateria', 'farois', 'lanternas', 'setas', 'painel', 'limpadores'] },
+  { key: 'freios_suspensao', label: 'Freios e suspensão', icon: '🛑', partial: true,
+    desc: 'Freios, suspensão e direção, pneus',
+    items: [...FREIOS, ...SUSPENSAO, ...PNEUS] },
+  { key: 'usado', label: 'Veículo usado', icon: '🚙', partial: false, items: null,
+    desc: 'Avaliação completa para compra e venda' },
+  { key: 'custom', label: 'Montar na hora', icon: '✍️', partial: true, items: null,
+    desc: 'Só os sistemas que o cliente apontou' },
+];
+
+export const MODEL_BY_KEY: Record<string, CheckupModel> = Object.fromEntries(CHECKUP_MODELS.map(m => [m.key, m]));
+
+/** Modelo do check-up (null/desconhecido = completo) */
+export const modelOf = (key: string | null | undefined) => MODEL_BY_KEY[key ?? ''] ?? MODEL_BY_KEY.completo;
+
+/** Nome para mostrar: "Freios e suspensão"; montado na hora → os sistemas ("Freios + Pneus") */
+export function modelLabel(key: string | null | undefined, systems?: string[]) {
+  const m = modelOf(key);
+  if (m.key === 'custom') return systems?.length ? systems.join(' + ') : 'Check-up personalizado';
+  return m.label;
+}
+
+/** Itens que o modelo cria (custom: todos os itens dos sistemas escolhidos) */
+export function modelItemKeys(key: CheckupModelKey, systems: string[] = []): string[] {
+  const m = modelOf(key);
+  if (m.key === 'custom') return CHECKUP_TEMPLATE.filter(s => systems.includes(s.system)).flatMap(s => s.items.map(i => i.key));
+  return m.items ?? ALL_KEYS;
+}
+
+/** Modelo sugerido pela OS (categoria/título): freio → Freios e suspensão, óleo → Troca de óleo… */
+export function suggestModel(text: string | null | undefined): CheckupModelKey {
+  const t = (text ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/freio|pastilha|suspens|amortec|direcao|pivo|bandeja/.test(t)) return 'freios_suspensao';
+  if (/oleo|lubrific/.test(t)) return 'troca_oleo';
+  if (/viagem/.test(t)) return 'pre_viagem';
+  if (/revis/.test(t)) return 'revisao';
+  if (/usado|vistoria|compra/.test(t)) return 'usado';
+  return 'completo';
+}
+
+/** Linhas iniciais de checkup_items para um check-up novo (só os itens do modelo, se informado). */
+export function templateRows(checkupId: string, itemKeys?: string[]) {
+  const only = itemKeys ? new Set(itemKeys) : null;
   let pos = 0;
-  return CHECKUP_TEMPLATE.flatMap(s => s.items.map(i => ({
+  return CHECKUP_TEMPLATE.flatMap(s => s.items.filter(i => !only || only.has(i.key)).map(i => ({
     checkup_id: checkupId,
     system:     s.system,
     item_key:   i.key,
@@ -237,7 +310,7 @@ export function publicReportUrl(token: string) {
 }
 
 export function whatsappLink(
-  c: Pick<VehicleCheckup, 'customer_name' | 'customer_phone' | 'plate' | 'make' | 'model' | 'score' | 'public_token'>,
+  c: Pick<VehicleCheckup, 'customer_name' | 'customer_phone' | 'plate' | 'make' | 'model' | 'score' | 'public_token' | 'template_key'>,
   workshopName?: string,
   quoteTotal = 0,
   /** Estado geral já montado (ex.: "Bom, com pontos de atenção — 28 OK, 3 atenção, 1 urgente") */
@@ -248,7 +321,9 @@ export function whatsappLink(
   const plate = c.plate ? ` (${c.plate})` : '';
   const text =
     `Olá${first ? ` ${first}` : ''}! Aqui é da ${workshopName || 'oficina'}. ` +
-    `Fizemos o check-up do ${car}${plate}. ` +
+    (modelOf(c.template_key).partial
+      ? `Fizemos a verificação (${modelLabel(c.template_key).toLowerCase()}) do ${car}${plate}. `
+      : `Fizemos o check-up do ${car}${plate}. `) +
     (summary ? `Estado geral: ${summary}.\n\n` : '\n') +
     (quoteTotal > 0
       ? `Separamos o orçamento do que precisa de atenção. No link você vê as fotos, aprova o que quiser fazer e já escolhe o melhor horário para trazer o carro: ${publicReportUrl(c.public_token)}`
@@ -279,11 +354,11 @@ export function mechanicWhatsappLink(
 }
 
 /* ─── Criar ──────────────────────────────────────────────────── */
-/** Cria o check-up + itens do checklist e devolve o id. */
-export async function createCheckup(payload: Partial<VehicleCheckup> & { workshop_id: string }) {
+/** Cria o check-up + itens do checklist e devolve o id. `itemKeys` = só os itens do modelo escolhido. */
+export async function createCheckup(payload: Partial<VehicleCheckup> & { workshop_id: string }, itemKeys?: string[]) {
   const { data: c, error } = await supabase.from('vehicle_checkups').insert(payload).select('id').single();
   if (error || !c) throw error ?? new Error('insert');
-  const { error: itemsErr } = await supabase.from('checkup_items').insert(templateRows(c.id));
+  const { error: itemsErr } = await supabase.from('checkup_items').insert(templateRows(c.id, itemKeys));
   if (itemsErr) throw itemsErr;
   return c.id as string;
 }
@@ -298,11 +373,13 @@ export async function checkupForOs(osId: string, mechanicId?: string | null) {
     .eq('service_order_id', osId).order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (existing) return existing.id as string;
   const { data: os } = await supabase.from('service_orders')
-    .select('id, workshop_id, customer_id, vehicle_id, workshop_mechanic_id, km_reading, customer:customers(full_name, phone), vehicle:vehicles(plate, make, model, year)')
+    .select('id, workshop_id, customer_id, vehicle_id, workshop_mechanic_id, km_reading, title, category, customer:customers(full_name, phone), vehicle:vehicles(plate, make, model, year)')
     .eq('id', osId).maybeSingle();
   if (!os) return null;
   const cu = os.customer as unknown as { full_name: string; phone: string | null } | null;
   const ve = os.vehicle as unknown as { plate: string; make: string; model: string; year: number | null } | null;
+  // Modelo sugerido pelo serviço da OS (dá para trocar na tela, antes de começar)
+  const model = suggestModel(`${os.category ?? ''} ${os.title ?? ''}`);
   return createCheckup({
     workshop_id: os.workshop_id, service_order_id: os.id,
     customer_id: os.customer_id, vehicle_id: os.vehicle_id,
@@ -310,5 +387,22 @@ export async function checkupForOs(osId: string, mechanicId?: string | null) {
     km_reading: os.km_reading,
     customer_name: cu?.full_name ?? null, customer_phone: cu?.phone ?? null,
     plate: ve?.plate ?? null, make: ve?.make ?? null, model: ve?.model ?? null, year: ve?.year ?? null,
-  });
+    template_key: model === 'completo' ? null : model,
+  }, modelItemKeys(model));
+}
+
+/** Troca o modelo de um check-up que ainda não começou (nenhum item avaliado): refaz os itens. */
+export async function changeCheckupModel(checkupId: string, key: CheckupModelKey, systems: string[] = []) {
+  const keys = modelItemKeys(key, systems);
+  if (!keys.length) throw new Error('Escolha ao menos um sistema');
+  const { data: answered } = await supabase.from('checkup_items').select('id')
+    .eq('checkup_id', checkupId).not('status', 'is', null).limit(1);
+  if (answered?.length) throw new Error('Este check-up já começou — não dá para trocar o tipo');
+  const { error: delErr } = await supabase.from('checkup_items').delete().eq('checkup_id', checkupId);
+  if (delErr) throw delErr;
+  const { error: insErr } = await supabase.from('checkup_items').insert(templateRows(checkupId, keys));
+  if (insErr) throw insErr;
+  const { error: upErr } = await supabase.from('vehicle_checkups')
+    .update({ template_key: key === 'completo' ? null : key, updated_at: new Date().toISOString() }).eq('id', checkupId);
+  if (upErr) throw upErr;
 }

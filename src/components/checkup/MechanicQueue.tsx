@@ -3,8 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
-import { checkupForOs, type CheckupItemStatus } from '@/lib/checkup';
-import { ago, countsOf, hoursSince, lastActivity, weekStart } from '@/lib/checkupStatus';
+import { checkupForOs, modelLabel, modelOf, type CheckupItemStatus } from '@/lib/checkup';
+import { ago, countsOf, hoursSince, lastActivity, systemsOf, weekStart } from '@/lib/checkupStatus';
 
 /* Fila do mecânico (modo balcão): só o que é dele + o que está sem responsável.
    Um botão por card, sem preço e sem nada comercial.
@@ -14,7 +14,8 @@ type Draft = {
   id: string; plate: string | null; make: string | null; model: string | null; year: number | null;
   customer_name: string | null; workshop_mechanic_id: string | null;
   created_at: string; updated_at: string;
-  items: { status: CheckupItemStatus | null; updated_at: string | null }[];
+  template_key: string | null;
+  items: { status: CheckupItemStatus | null; updated_at: string | null; system: string }[];
 };
 type Sched = {
   id: string; scheduled_at: string; workshop_mechanic_id: string | null;
@@ -31,6 +32,10 @@ const FINISHED_LIMIT = 10;
 
 /** Parado há mais que isso → avisa "parado" */
 const STALE_HOURS = 2;
+
+/** Cliente + tipo do check-up (quando não é o completo): o mecânico sabe o que vai olhar */
+const subOf = (d: Draft) => [d.customer_name, d.template_key && `${modelOf(d.template_key).icon} ${modelLabel(d.template_key, systemsOf(d.items))}`]
+  .filter(Boolean).join(' · ') || null;
 
 const carOf = (v: { make: string | null; model: string | null; year: number | null } | null) =>
   v ? [v.make, v.model, v.year].filter(Boolean).join(' ') || 'Veículo' : 'Veículo';
@@ -68,7 +73,7 @@ export default function MechanicQueue({ workshopId, mechanicId, mechanicName, on
     const mine = mechanicId ? `workshop_mechanic_id.eq.${mechanicId},workshop_mechanic_id.is.null` : 'workshop_mechanic_id.is.null';
     const [d, s, used, w, f] = await Promise.all([
       supabase.from('vehicle_checkups')
-        .select('id, plate, make, model, year, customer_name, workshop_mechanic_id, created_at, updated_at, items:checkup_items(status, updated_at)')
+        .select('id, plate, make, model, year, customer_name, workshop_mechanic_id, created_at, updated_at, template_key, items:checkup_items(status, updated_at, system)')
         .eq('workshop_id', workshopId).eq('status', 'draft').or(mine)
         .order('created_at', { ascending: false }),
       supabase.from('service_orders')
@@ -185,7 +190,7 @@ export default function MechanicQueue({ workshopId, mechanicId, mechanicName, on
               const last = lastActivity(d, d.items);
               const stale = (hoursSince(last) ?? 0) >= STALE_HOURS;
               return (
-                <Card key={d.id} plate={d.plate} car={carOf(d)} sub={d.customer_name}
+                <Card key={d.id} plate={d.plate} car={carOf(d)} sub={subOf(d)}
                   extra={<>
                     <Progress done={c.answered} total={c.total} />
                     <div className="text-xs text-steel-500 flex flex-wrap gap-x-3">
@@ -207,7 +212,7 @@ export default function MechanicQueue({ workshopId, mechanicId, mechanicName, on
                 action="Começar" busy={busy === o.id} onClick={() => openOs(o.id)} />
             ))}
             {toStart.map(d => (
-              <Card key={d.id} plate={d.plate} car={carOf(d)} sub={d.customer_name}
+              <Card key={d.id} plate={d.plate} car={carOf(d)} sub={subOf(d)}
                 extra={<div className="text-xs text-steel-500">{d.items.length} itens para olhar</div>}
                 action="Começar" busy={busy === d.id} onClick={() => navigate(`/oficina/checkup/${d.id}`)} />
             ))}
@@ -220,7 +225,7 @@ export default function MechanicQueue({ workshopId, mechanicId, mechanicName, on
                 action="Pegar este" secondary disabled={!mechanicId} busy={busy === o.id} onClick={() => openOs(o.id)} />
             ))}
             {freeDrafts.map(d => (
-              <Card key={d.id} plate={d.plate} car={carOf(d)} sub={d.customer_name}
+              <Card key={d.id} plate={d.plate} car={carOf(d)} sub={subOf(d)}
                 extra={<div className="text-xs text-steel-500">Criado {ago(d.created_at)}</div>}
                 action="Pegar este" secondary disabled={!mechanicId} busy={busy === d.id} onClick={() => take(d)} />
             ))}

@@ -45,7 +45,7 @@ const SECTIONS: NavGroup[] = [
     { to: '/oficina/checkup',            icon: '🩺', label: 'Painel do check-up' },
     { to: '/oficina/checkup/inspecoes',  icon: '🔍', label: 'Inspeções'          },
     { to: '/oficina/checkup/historico',  icon: '🗂️', label: 'Histórico'          },
-    { to: '/oficina/checkup/modelos',    icon: '🧩', label: 'Modelos (em breve)' },
+    { to: '/oficina/checkup/modelos',    icon: '🧩', label: 'Modelos'            },
   ] },
   { key: 'financeiro', title: 'Financeiro', items: [
     { to: '/oficina/caixa',      icon: '💰', label: 'Caixa'                },
