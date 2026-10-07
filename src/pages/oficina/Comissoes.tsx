@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,6 +12,7 @@ import {
 } from '@/lib/commissionClosing';
 import { Restricted } from './Fornecedores';
 import ItemRulesCard from '@/components/team/ItemRulesCard';
+import TeamTabs from '@/components/team/TeamTabs';
 
 export default function Comissoes() {
   const { currentWorkshop } = useAuth();
@@ -19,13 +20,22 @@ export default function Comissoes() {
   const { balcao, session } = useOperator();
   const allowed = canDo(session, balcao, 'folha');
 
-  const start = currentHalf();
+  // ?quinzena=2026-09-2 abre direto numa quinzena (vem dos alertas do Painel da equipe)
+  const [params] = useSearchParams();
+  const start = (() => {
+    const m = /^(\d{4}-\d{2})-([12])$/.exec(params.get('quinzena') ?? '');
+    return m ? { competence: m[1], half: Number(m[2]) as Half } : currentHalf();
+  })();
   const [competence, setCompetence] = useState(start.competence);
   const [half, setHalf] = useState<Half>(start.half);
   const [due, setDue] = useState(payDate(start.competence, start.half));
   const [rows, setRows] = useState<CommissionRow[] | null>(null);
   const [include, setInclude] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  /** Situação das contas geradas: pago em / vence em */
+  const [paid, setPaid] = useState<Record<string, { paid_at: string | null; due_date: string | null }>>({});
+  /** Quinzena anterior à atual com comissão sem fechar */
+  const [prevOpen, setPrevOpen] = useState<{ competence: string; half: Half; total: number } | null>(null);
 
   useEffect(() => { setDue(payDate(competence, half)); }, [competence, half]);
 
@@ -33,15 +43,45 @@ export default function Comissoes() {
     if (!wid) return;
     setRows(null);
     const data = await loadCommissionHalf(wid, competence, half);
+    const ids = data.map(r => r.closed?.payable_id).filter(Boolean) as string[];
+    const { data: pays } = ids.length
+      ? await supabase.from('payables').select('id, paid_at, due_date').in('id', ids)
+      : { data: [] as { id: string; paid_at: string | null; due_date: string | null }[] };
+    setPaid(Object.fromEntries(((pays ?? []) as { id: string; paid_at: string | null; due_date: string | null }[]).map(p => [p.id, p])));
     setRows(data);
     setInclude(Object.fromEntries(data.map(r => [r.mechanicId, !r.closed && r.calc.commission > 0])));
   }, [wid, competence, half]);
 
   useEffect(() => { if (allowed) load(); }, [load, allowed]);
 
+  // Pendência: a última quinzena que já terminou ainda tem comissão sem fechar?
+  useEffect(() => {
+    if (!wid || !allowed) return;
+    const now = currentHalf();
+    const p = shiftHalf(now.competence, now.half, -1);
+    loadCommissionHalf(wid, p.competence, p.half).then(list => {
+      const open = list.filter(r => !r.closed && r.calc.commission > 0);
+      setPrevOpen(open.length ? { ...p, total: open.reduce((a, r) => a + r.calc.commission, 0) } : null);
+    });
+  }, [wid, allowed, rows]);
+
   const toClose = useMemo(() => (rows ?? []).filter(r => !r.closed && include[r.mechanicId] && r.calc.commission > 0), [rows, include]);
   const total = toClose.reduce((a, r) => a + r.calc.commission, 0);
   const label = halfLabel(competence, half);
+  const sum = useMemo(() => {
+    const out = { total: 0, paid: 0, toPay: 0, open: 0, overdue: 0 };
+    for (const r of rows ?? []) {
+      if (r.closed) {
+        const v = Number(r.closed.commission);
+        out.total += v;
+        const p = r.closed.payable_id ? paid[r.closed.payable_id] : null;
+        if (p?.paid_at) out.paid += v;
+        else if (r.closed.payable_id) { out.toPay += v; if (p?.due_date && p.due_date < todayISO()) out.overdue += v; }
+      } else if (r.calc.commission > 0) { out.total += r.calc.commission; out.open += r.calc.commission; }
+    }
+    return out;
+  }, [rows, paid]);
+  const showingPrev = prevOpen && prevOpen.competence === competence && prevOpen.half === half;
 
   function go(dir: -1 | 1) {
     const n = shiftHalf(competence, half, dir);
@@ -106,9 +146,12 @@ export default function Comissoes() {
   return (
     <WorkshopLayout>
       <div className="max-w-5xl mx-auto space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <TeamTabs />
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-3 !mt-0">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">🏅 Fechar comissões</h1>
+            <h1 className="text-3xl font-bold tracking-tight">🏅 Comissões</h1>
             <p className="text-sm text-steel-500 mt-1">Quinzenal: OS concluídas do dia 1 ao 15 pagas no dia 15; do 16 ao fim do mês, no dia 30.</p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
@@ -126,6 +169,23 @@ export default function Comissoes() {
             </div>
           </div>
         </div>
+
+        {prevOpen && !showingPrev && (
+          <div className="card !py-3 border-l-4 border-l-pending-500 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span>🏅 A <strong>{halfLabel(prevOpen.competence, prevOpen.half)}</strong> já terminou e tem <strong>{fmtBRL(prevOpen.total)}</strong> de comissão sem fechar.</span>
+            <button className="text-xs font-semibold px-3 py-1.5 rounded-full border border-steel-200 bg-white hover:border-brand-300"
+              onClick={() => { setCompetence(prevOpen.competence); setHalf(prevOpen.half); }}>Ir para essa quinzena →</button>
+          </div>
+        )}
+
+        {rows && rows.length > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <SumCard label="Total da quinzena" value={fmtBRL(sum.total)} />
+            <SumCard label="Pago" value={fmtBRL(sum.paid)} tone="text-signal-700" />
+            <SumCard label="A pagar" value={fmtBRL(sum.toPay)} sub={sum.overdue > 0 ? `${fmtBRL(sum.overdue)} vencido` : 'contas já geradas'} tone={sum.overdue > 0 ? 'text-alert-600' : undefined} />
+            <SumCard label="Em aberto" value={fmtBRL(sum.open)} sub={sum.open > 0 ? 'falta fechar' : 'nada a fechar'} tone={sum.open > 0 ? 'text-pending-700' : undefined} />
+          </div>
+        )}
 
         {rows === null ? (
           <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
@@ -160,7 +220,14 @@ export default function Comissoes() {
                       <div className="font-semibold truncate">{r.name}{!r.active && <span className="badge bg-steel-100 text-steel-500 ml-2">inativo</span>}</div>
                       <div className="text-[11px] mt-0.5">
                         {r.closed ? (
-                          <span className="text-signal-700">✓ Fechada · conta gerada · <button className="underline text-steel-500" onClick={() => reopen(r)}>reabrir</button></span>
+                          (() => {
+                            const p = r.closed.payable_id ? paid[r.closed.payable_id] : null;
+                            return p?.paid_at
+                              ? <span className="text-signal-700">✓ Paga em {fmtDate(p.paid_at.slice(0, 10))}</span>
+                              : <span className={p?.due_date && p.due_date < todayISO() ? 'text-alert-600 font-semibold' : 'text-pending-800'}>
+                                  Fechada · a pagar{p?.due_date ? ` em ${fmtDate(p.due_date)}` : ''} · <button className="underline text-steel-500 font-normal" onClick={() => reopen(r)}>reabrir</button>
+                                </span>;
+                          })()
                         ) : <span className="text-steel-400">{r.rule || 'sem % definido'}</span>}
                       </div>
                     </div>
@@ -196,6 +263,16 @@ export default function Comissoes() {
         </p>
       </div>
     </WorkshopLayout>
+  );
+}
+
+function SumCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+  return (
+    <div className="card !p-4">
+      <div className="text-[11px] text-steel-500">{label}</div>
+      <div className={`text-xl font-bold mt-0.5 ${tone ?? 'text-steel-900'}`}>{value}</div>
+      {sub && <div className="text-[11px] text-steel-400 mt-0.5">{sub}</div>}
+    </div>
   );
 }
 

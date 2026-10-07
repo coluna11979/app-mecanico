@@ -200,3 +200,38 @@ export function tenure(hiredAt?: string | null, until?: string | null) {
   const ms = m ? `${m} ${m > 1 ? 'meses' : 'mês'}` : '';
   return [ys, ms].filter(Boolean).join(' e ');
 }
+
+/* ── Status do dia (Painel da equipe) ─────────────────────────────────────── */
+
+export type DayState = 'on' | 'out' | 'off' | 'absent' | 'none';
+
+/** Rótulos dos estados confiáveis com os dados atuais (jornada + afastamentos) */
+export const DAY_STATE: Record<DayState, { label: string; dot: string; text: string }> = {
+  on:     { label: 'Em horário',      dot: 'bg-signal-500', text: 'text-signal-700' },
+  out:    { label: 'Fora do horário', dot: 'bg-steel-400',  text: 'text-steel-600' },
+  off:    { label: 'Folga',           dot: 'bg-steel-300',  text: 'text-steel-500' },
+  absent: { label: 'Ausente',         dot: 'bg-pending-500', text: 'text-pending-800' },
+  none:   { label: 'Sem jornada',     dot: 'bg-steel-200',  text: 'text-steel-400' },
+};
+
+const JS_DAY: WeekDay[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+/** Afastamento que vale hoje (já começou e ainda não voltou) */
+export function absenceToday(list: Absence[], mechanicId: string, today = todayIso()) {
+  return list.find(a => a.mechanic_id === mechanicId && a.started_on <= today && (!a.returned_on || a.returned_on > today)) ?? null;
+}
+
+/**
+ * Status do dia pela jornada cadastrada. Não diz se a pessoa está livre ou ocupada:
+ * isso só com o relógio da OS, que ainda não é usado.
+ */
+export function dayState(schedule: string | null | undefined, absent: boolean, now = new Date()): DayState {
+  if (absent) return 'absent';
+  const w = parseSchedule(schedule);
+  if (!w || !Object.keys(w.days).length) return 'none';
+  const d = w.days[JS_DAY[now.getDay()]];
+  if (!d) return 'off';
+  const m = now.getHours() * 60 + now.getMinutes();
+  const s = toMin(d.start), e = toMin(d.end);
+  return s != null && e != null && m >= s && m < e ? 'on' : 'out';
+}

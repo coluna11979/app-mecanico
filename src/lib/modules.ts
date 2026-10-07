@@ -41,9 +41,9 @@ export const MODULE_GROUPS: { label: string; keys: ModuleKey[] }[] = [
   { label: 'Atendimento',       keys: ['painel', 'os', 'agenda', 'checkup', 'clientes', 'comercial'] },
   { label: 'Financeiro',        keys: ['caixa', 'financeiro', 'contas_pagar'] },
   { label: 'Estoque e compras', keys: ['pecas', 'compras'] },
-  { label: 'Equipe',            keys: ['equipe', 'fechamentos'] },
+  { label: 'Equipe',            keys: ['equipe', 'fechamentos', 'acessos'] },
   { label: 'Plataforma',        keys: ['plataforma'] },
-  { label: 'Configurações',     keys: ['servicos', 'acessos', 'importar', 'vip'] },
+  { label: 'Configurações',     keys: ['servicos', 'importar', 'vip'] },
 ];
 
 export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];

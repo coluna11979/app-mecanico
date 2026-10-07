@@ -53,12 +53,11 @@ const SECTIONS: NavGroup[] = [
     { to: '/oficina/fornecedores', icon: '🚚', label: 'Fornecedores'       },
   ] },
   { key: 'equipe', title: 'Equipe', items: [
-    { to: '/oficina/equipe',     icon: '👷', label: 'Colaboradores'        },
-    { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho e comissões' },
-    { icon: '🧮', label: 'Fechamentos', children: [
-      { to: '/oficina/comissoes', icon: '🏅', label: 'Fechar comissões'    },
-      { to: '/oficina/folha',     icon: '💼', label: 'Fechar folha'        },
-    ] },
+    { to: '/oficina/equipe',     icon: '👷', label: 'Painel da equipe'     },
+    { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho'           },
+    { to: '/oficina/comissoes',  icon: '🏅', label: 'Comissões'            },
+    { to: '/oficina/folha',      icon: '💼', label: 'Folha'                },
+    { to: '/oficina/acessos',    icon: '🔐', label: 'Acessos e funções'    },
   ] },
   { key: 'plataforma', title: 'Plataforma', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
@@ -68,7 +67,6 @@ const SECTIONS: NavGroup[] = [
   { key: 'config', title: 'Configurações', items: [
     { to: '/oficina/perfil',     icon: '🏪', label: 'Perfil e vitrine'     },
     { to: '/oficina/servicos',   icon: '🛠️', label: 'Tabela de serviços'   },
-    { to: '/oficina/acessos',    icon: '🔐', label: 'Acessos e funções'    },
     { to: '/oficina/importar',   icon: '📷', label: 'Importar notas antigas' },
     { to: '/oficina/vip',        icon: '⭐', label: 'Plano VIP'            },
   ] },

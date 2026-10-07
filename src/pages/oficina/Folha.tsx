@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,6 +10,7 @@ import { addMonthsISO, fmtDate, todayISO } from '@/lib/purchasing';
 import { addMonthsCompetence, fmtCompetence } from '@/lib/payableForms';
 import { breakdown, calcNet, loadPayroll, type PayrollRow } from '@/lib/payroll';
 import { Restricted } from './Fornecedores';
+import TeamTabs from '@/components/team/TeamTabs';
 
 type Edit = { days: string; other: string; include: boolean };
 
@@ -21,12 +22,21 @@ export default function Folha() {
   const { balcao, session } = useOperator();
   const allowed = canDo(session, balcao, 'folha');
 
-  const [competence, setCompetence] = useState(todayISO().slice(0, 7));
+  // ?competencia=2026-09 abre direto num mês (vem dos alertas do Painel da equipe)
+  const [params] = useSearchParams();
+  const [competence, setCompetence] = useState(() => {
+    const c = params.get('competencia') ?? '';
+    return /^\d{4}-\d{2}$/.test(c) ? c : todayISO().slice(0, 7);
+  });
   // Vencimento padrão: dia 5 do mês seguinte à competência
   const [due, setDue] = useState(`${addMonthsCompetence(todayISO().slice(0, 7), 1)}-05`);
   const [rows, setRows] = useState<PayrollRow[] | null>(null);
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [busy, setBusy] = useState(false);
+  /** Situação das contas de salário geradas */
+  const [paid, setPaid] = useState<Record<string, { paid_at: string | null; due_date: string | null }>>({});
+  /** Mês anterior com salário sem fechar */
+  const [prevOpen, setPrevOpen] = useState<{ competence: string; count: number } | null>(null);
 
   useEffect(() => { setDue(`${addMonthsCompetence(competence, 1)}-05`); }, [competence]);
 
@@ -46,6 +56,42 @@ export default function Folha() {
   })), [rows, edits]);
 
   const toClose = (rows ?? []).filter(r => !r.closed && !r.manual && edits[r.mechanicId]?.include);
+
+  useEffect(() => {
+    const ids = (rows ?? []).map(r => r.closed?.payable_id).filter(Boolean) as string[];
+    if (!ids.length) { setPaid({}); return; }
+    supabase.from('payables').select('id, paid_at, due_date').in('id', ids).then(({ data }) =>
+      setPaid(Object.fromEntries(((data ?? []) as { id: string; paid_at: string | null; due_date: string | null }[]).map(p => [p.id, p]))));
+  }, [rows]);
+
+  useEffect(() => {
+    if (!wid || !allowed) return;
+    const prev = addMonthsCompetence(todayISO().slice(0, 7), -1);
+    loadPayroll(wid, prev).then(list => {
+      const open = list.filter(r => r.active && !r.closed && !r.manual && r.base > 0);
+      setPrevOpen(open.length ? { competence: prev, count: open.length } : null);
+    });
+  }, [wid, allowed, rows]);
+
+  // Resumo do mês: só quem tem salário (ou já foi fechado)
+  const summary = useMemo(() => {
+    const out = { total: 0, paid: 0, toPay: 0, open: 0, openCount: 0, overdue: 0 };
+    for (const r of rows ?? []) {
+      if (r.closed) {
+        const v = Number(r.closed.net);
+        out.total += v;
+        const p = r.closed.payable_id ? paid[r.closed.payable_id] : null;
+        if (p?.paid_at) out.paid += v;
+        else if (r.closed.payable_id) { out.toPay += v; if (p?.due_date && p.due_date < todayISO()) out.overdue += v; }
+      } else if (!r.manual && r.base > 0 && r.active) {
+        const v = calc[r.mechanicId]?.net ?? 0;
+        out.total += v; out.open += v; out.openCount += 1;
+      }
+    }
+    return out;
+  }, [rows, paid, calc]);
+  const monthOver = competence < todayISO().slice(0, 7);
+  const status = !rows ? '' : summary.openCount === 0 ? 'Fechada' : monthOver ? 'Atrasada' : 'Aberta';
   const totalNet = toClose.reduce((a, r) => a + calc[r.mechanicId].net, 0);
 
   function setEdit(id: string, patch: Partial<Edit>) {
@@ -112,9 +158,12 @@ export default function Folha() {
   return (
     <WorkshopLayout>
       <div className="max-w-6xl mx-auto space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <TeamTabs />
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-3 !mt-0">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">💼 Fechar folha</h1>
+            <h1 className="text-3xl font-bold tracking-tight">💼 Folha</h1>
             <p className="text-sm text-steel-500 mt-1">
               Salário − faltas − vales. A comissão é paga à parte, nos dias 15 e 30: <Link to="/oficina/comissoes" className="font-semibold text-brand-700">Fechar comissões →</Link>
             </p>
@@ -130,6 +179,26 @@ export default function Folha() {
             </div>
           </div>
         </div>
+
+        {prevOpen && prevOpen.competence !== competence && (
+          <div className="card !py-3 border-l-4 border-l-pending-500 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span>💼 A folha de <strong>{fmtCompetence(prevOpen.competence)}</strong> ainda não foi fechada ({prevOpen.count} colaborador{prevOpen.count === 1 ? '' : 'es'} com salário).</span>
+            <button className="text-xs font-semibold px-3 py-1.5 rounded-full border border-steel-200 bg-white hover:border-brand-300"
+              onClick={() => setCompetence(prevOpen.competence)}>Ir para esse mês →</button>
+          </div>
+        )}
+
+        {rows && rows.length > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <SumCard label={`Folha de ${fmtCompetence(competence)}`} value={status}
+              tone={status === 'Atrasada' ? 'text-alert-600' : status === 'Fechada' ? 'text-signal-700' : 'text-pending-700'}
+              sub={summary.openCount ? `${summary.openCount} sem fechar` : 'todos fechados'} />
+            <SumCard label="Líquido do mês" value={fmtBRL(summary.total)} sub="salário − faltas − vales" />
+            <SumCard label="Pago" value={fmtBRL(summary.paid)} tone="text-signal-700" />
+            <SumCard label="A pagar" value={fmtBRL(summary.toPay)} sub={summary.overdue > 0 ? `${fmtBRL(summary.overdue)} vencido` : 'contas já geradas'}
+              tone={summary.overdue > 0 ? 'text-alert-600' : undefined} />
+          </div>
+        )}
 
         {missingSalary.length > 0 && (
           <div className="card !py-3 text-sm text-pending-800 bg-pending-50 border border-pending-200">
@@ -179,7 +248,15 @@ export default function Folha() {
                       </div>
                       <div className="text-[11px] mt-0.5">
                         {closed ? (
-                          <span className="text-signal-700">✓ Fechada{closed.payable_id ? ' · conta gerada' : ' · nada a pagar'} · <button className="underline text-steel-500" onClick={() => reopen(r)}>reabrir</button></span>
+                          (() => {
+                            const p = closed.payable_id ? paid[closed.payable_id] : null;
+                            if (p?.paid_at) return <span className="text-signal-700">✓ Paga em {fmtDate(p.paid_at.slice(0, 10))}</span>;
+                            return (
+                              <span className={p?.due_date && p.due_date < todayISO() ? 'text-alert-600 font-semibold' : 'text-signal-700'}>
+                                ✓ Fechada{closed.payable_id ? ` · a pagar${p?.due_date ? ` em ${fmtDate(p.due_date)}` : ''}` : ' · nada a pagar'} · <button className="underline text-steel-500 font-normal" onClick={() => reopen(r)}>reabrir</button>
+                              </span>
+                            );
+                          })()
                         ) : r.manual ? (
                           <span className="text-steel-500">Salário já lançado à mão em Contas a pagar ({fmtBRL(r.manual.amount)})</span>
                         ) : r.commissionRule ? (
@@ -241,6 +318,16 @@ export default function Folha() {
         </p>
       </div>
     </WorkshopLayout>
+  );
+}
+
+function SumCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+  return (
+    <div className="card !p-4">
+      <div className="text-[11px] text-steel-500">{label}</div>
+      <div className={`text-xl font-bold mt-0.5 ${tone ?? 'text-steel-900'}`}>{value}</div>
+      {sub && <div className="text-[11px] text-steel-400 mt-0.5">{sub}</div>}
+    </div>
   );
 }
 
