@@ -3,10 +3,11 @@ import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import {
-  CHECKUP_TEMPLATE, DECISION_META, SYSTEM_ICON, STATUS_META, checkupPhotoUrl, itemQuote, scoreMeta,
+  DECISION_META, SYSTEM_ICON, STATUS_META, checkupPhotoUrl, itemQuote,
   type CheckupItemStatus, type CustomerDecision,
 } from '@/lib/checkup';
 import { fmtBRL } from '@/components/os/osHelpers';
+import { OVERALL_META, countsOf, overallState, systemsOf } from '@/lib/checkupStatus';
 import { DEMO_ID, demoMechanicName, demoResult } from '@/lib/checkupDemo';
 
 function demoReport(): PublicCheckup {
@@ -43,7 +44,7 @@ interface PublicCheckup {
   items: PublicItem[];
 }
 
-const SCORE_RING = { signal: '#16C784', pending: '#F5A524', alert: '#E5484D' };
+const TONE_COLOR = { signal: '#16C784', pending: '#F5A524', alert: '#E5484D' };
 const ROW_STYLE: Record<CheckupItemStatus, string> = {
   urgent: 'border-alert-500/40 bg-alert-500/5',
   warn:   'border-pending-500/40 bg-pending-500/5',
@@ -83,13 +84,12 @@ export default function CheckupReport() {
     );
   }
 
-  const meta    = scoreMeta(data.score);
   const car     = [data.make, data.model, data.year].filter(Boolean).join(' ') || 'Veículo';
   const urgent  = data.items.filter(i => i.status === 'urgent');
   const warn    = data.items.filter(i => i.status === 'warn');
   const okCount = data.items.filter(i => i.status === 'ok').length;
   const date    = new Date(data.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-  const circumference = 2 * Math.PI * 42;
+  const overall = overallState(countsOf(data.items));
 
   return (
     <div className="min-h-screen bg-steel-50 text-steel-800">
@@ -104,7 +104,7 @@ export default function CheckupReport() {
           </div>
         </header>
 
-        {/* ── Veículo + nota ── */}
+        {/* ── Veículo + estado geral ── */}
         <section className="card !p-5 space-y-4">
           <div>
             <div className="text-xs text-steel-500 font-semibold uppercase tracking-wider">
@@ -116,22 +116,29 @@ export default function CheckupReport() {
               {data.km_reading != null && <span>{data.km_reading.toLocaleString('pt-BR')} km</span>}
             </div>
           </div>
-          <div className="flex items-center gap-5">
-            <svg viewBox="0 0 100 100" className="w-28 h-28 shrink-0 -rotate-90">
-              <circle cx="50" cy="50" r="42" fill="none" stroke="#E8ECF1" strokeWidth="10" />
-              <circle cx="50" cy="50" r="42" fill="none" stroke={SCORE_RING[meta.color]} strokeWidth="10" strokeLinecap="round"
-                strokeDasharray={circumference} strokeDashoffset={circumference * (1 - data.score / 100)} />
-              <text x="50" y="50" textAnchor="middle" dominantBaseline="central" transform="rotate(90 50 50)"
-                className="font-display font-bold" fontSize="28" fill="currentColor">{data.score}</text>
-            </svg>
-            <div className="space-y-1.5">
-              <div className="font-bold text-lg" style={{ color: SCORE_RING[meta.color] }}>{meta.label}</div>
-              <div className="text-sm text-steel-600 space-y-0.5">
-                <div>🔴 {urgent.length} {urgent.length === 1 ? 'item urgente' : 'itens urgentes'}</div>
-                <div>🟡 {warn.length} {warn.length === 1 ? 'item' : 'itens'} para atenção</div>
-                <div>🟢 {okCount} {okCount === 1 ? 'item' : 'itens'} em ordem</div>
+          {/* Estado geral (substitui a nota 0–100) */}
+          <div className="space-y-3">
+            <div>
+              <div className="text-xs text-steel-500 font-semibold uppercase tracking-wider">Estado geral</div>
+              <div className="font-bold text-xl" style={{ color: overall ? TONE_COLOR[OVERALL_META[overall].tone] : undefined }}>
+                {overall ? OVERALL_META[overall].label : "—"}
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-signal-50 text-signal-800 py-2.5">
+                <div className="text-2xl font-bold font-display leading-none">{okCount}</div>
+                <div className="text-[11px] font-semibold mt-1">OK</div>
+              </div>
+              <div className="rounded-xl bg-pending-50 text-pending-800 py-2.5">
+                <div className="text-2xl font-bold font-display leading-none">{warn.length}</div>
+                <div className="text-[11px] font-semibold mt-1">Atenção</div>
+              </div>
+              <div className="rounded-xl bg-alert-50 text-alert-800 py-2.5">
+                <div className="text-2xl font-bold font-display leading-none">{urgent.length}</div>
+                <div className="text-[11px] font-semibold mt-1">Urgente</div>
+              </div>
+            </div>
+            <div className="text-xs text-steel-400">{data.items.length} itens avaliados</div>
           </div>
         </section>
 
@@ -159,13 +166,13 @@ export default function CheckupReport() {
         {/* ── Tudo por sistema ── */}
         <section className="space-y-3">
           <h2 className="font-bold text-steel-800">Inspeção completa</h2>
-          {CHECKUP_TEMPLATE.map(({ system }) => {
+          {systemsOf(data.items).map(system => {
             const list = data.items.filter(i => i.system === system);
             if (!list.length) return null;
             return (
               <div key={system} className="card !p-0 overflow-hidden">
                 <div className="px-4 py-3 font-semibold text-sm bg-steel-50 border-b border-steel-100">
-                  {SYSTEM_ICON[system]} {system}
+                  {SYSTEM_ICON[system] ?? '🔹'} {system}
                 </div>
                 <div className="divide-y divide-steel-100">
                   {list.map((i, idx) => (

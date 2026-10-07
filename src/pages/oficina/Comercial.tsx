@@ -231,8 +231,8 @@ export default function Comercial() {
                 <div className="px-5 py-3 flex flex-wrap gap-2 bg-steel-50 border-b border-steel-100">
                   <select className="input !py-1.5 !w-auto text-sm" value={origin} onChange={e => setOrigin(e.target.value as typeof origin)}>
                     <option value="all">Origem: todas</option>
-                    <option value="checkup">Check-up</option>
-                    <option value="os">Orçamento da OS</option>
+                    <option value="checkup">Veio do check-up (inclui os que viraram OS)</option>
+                    <option value="os">Orçamento direto na OS</option>
                   </select>
                   {mechanics.length > 0 && (
                     <select className="input !py-1.5 !w-auto text-sm" value={mechanic} onChange={e => setMechanic(e.target.value)}>
@@ -282,7 +282,7 @@ function Who({ o }: { o: Opp }) {
       <div className="min-w-0">
         <div className="text-sm font-semibold truncate">{o.customerName ?? 'Cliente avulso'} <span className="font-normal text-steel-500">· {o.car}</span></div>
         <div className="text-[11px] text-steel-400 truncate">
-          {o.origin === 'checkup' ? 'Check-up' : `Orçamento da OS${o.saleOsNumber != null ? ` nº ${String(o.saleOsNumber).padStart(4, '0')}` : ''}`}
+          {o.origin === 'checkup' ? `Check-up${o.saleOsNumber != null ? ` · virou OS nº ${String(o.saleOsNumber).padStart(4, '0')}` : ''}` : `Orçamento da OS${o.saleOsNumber != null ? ` nº ${String(o.saleOsNumber).padStart(4, '0')}` : ''}`}
           {o.mechanicName && ` · 🔧 ${o.mechanicName}`}
         </div>
       </div>

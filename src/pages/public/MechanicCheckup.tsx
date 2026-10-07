@@ -6,9 +6,10 @@ import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import { AddItem, ItemRow, type CatalogNames, type ItemPatch } from '@/components/checkup/ChecklistItem';
 import {
-  CHECKUP_TEMPLATE, STATUS_META, SYSTEM_ICON, computeScore, scoreMeta, uploadMechanicPhoto,
+  STATUS_META, SYSTEM_ICON, uploadMechanicPhoto,
   type CheckupItem,
 } from '@/lib/checkup';
+import { OVERALL_META, countsOf, nextPendingSystem, overallState, systemsOf } from '@/lib/checkupStatus';
 
 /* Check-up pelo celular do mecânico, aberto pelo link que a oficina mandou no
    WhatsApp. Sem login: tudo passa pelas funções mech_checkup_* com o token do
@@ -28,7 +29,7 @@ const DEVICE_KEY = 'mec-checkup-device';
 const readDevice = () => { try { return localStorage.getItem(DEVICE_KEY); } catch { return null; } };
 const saveDevice = (d: string) => { try { localStorage.setItem(DEVICE_KEY, d); } catch { /* ignora */ } };
 
-const SCORE_TEXT = { signal: 'text-signal-600', pending: 'text-pending-600', alert: 'text-alert-600' };
+const TONE_TEXT = { signal: 'text-signal-600', pending: 'text-pending-600', alert: 'text-alert-600' };
 
 export default function MechanicCheckup() {
   const { token } = useParams<{ token: string }>();
@@ -57,8 +58,7 @@ export default function MechanicCheckup() {
     setNotes(r.checkup!.notes ?? '');
     setItems(list);
     setCatalog((r as { catalog?: CatalogNames }).catalog);
-    const firstPending = CHECKUP_TEMPLATE.find(s => list.some(i => i.system === s.system && !i.status));
-    setOpen(firstPending?.system ?? null);
+    setOpen(nextPendingSystem(list));
     setState('ok');
   }
 
@@ -82,9 +82,7 @@ export default function MechanicCheckup() {
   async function markSystemOk(system: string) {
     const ids = items.filter(i => i.system === system && !i.status).map(i => i.id);
     if (!ids.length || !(await patchItems(ids, { status: 'ok' }))) return;
-    const idx  = CHECKUP_TEMPLATE.findIndex(s => s.system === system);
-    const next = CHECKUP_TEMPLATE.slice(idx + 1).find(s => items.some(i => i.system === s.system && !i.status));
-    setOpen(next?.system ?? null);
+    setOpen(nextPendingSystem(items.map(i => ids.includes(i.id) ? { ...i, status: 'ok' as const } : i), system));
   }
 
   async function addItem(system: string, label: string) {
@@ -108,8 +106,8 @@ export default function MechanicCheckup() {
     if (!answered) { toast.error('Avalie ao menos um item'); return; }
     const missing = items.length - answered;
     if (!confirm(missing > 0
-      ? `${missing} ${missing === 1 ? 'item não foi avaliado' : 'itens não foram avaliados'}. Finalizar e mandar para a oficina mesmo assim?`
-      : 'Finalizar e mandar para a oficina? Depois não dá mais pra alterar.')) return;
+      ? `${missing} ${missing === 1 ? 'item não foi avaliado' : 'itens não foram avaliados'}. Terminar e mandar para o gestor mesmo assim?`
+      : 'Terminar e mandar para o gestor? Depois não dá mais pra alterar.')) return;
     setFinishing(true);
     const { error } = await supabase.rpc('mech_checkup_finish', { p_token: token, p_device: device, p_notes: notes });
     setFinishing(false);
@@ -182,8 +180,8 @@ export default function MechanicCheckup() {
   const urgentCnt = items.filter(i => i.status === 'urgent').length;
 
   if (done) {
-    const score = info?.score ?? computeScore(items);
-    const meta  = scoreMeta(score);
+    const cnt   = countsOf(items);
+    const state = overallState(cnt);
     const flagged = items.filter(i => i.status === 'warn' || i.status === 'urgent');
     return (
       <div className="min-h-screen bg-steel-50">
@@ -191,9 +189,11 @@ export default function MechanicCheckup() {
         <div className="max-w-xl mx-auto p-4 space-y-4">
           <div className="card text-center space-y-2 py-8">
             <div className="text-5xl">✅</div>
-            <div className="text-lg font-bold">Check-up enviado para a oficina</div>
-            <div className={`text-sm font-semibold ${SCORE_TEXT[meta.color]}`}>Nota {score} · {meta.label}</div>
-            <p className="text-xs text-steel-500">Pode fechar esta página. Obrigado!</p>
+            <div className="text-lg font-bold">Pronto! O gestor já recebeu.</div>
+            {state && <div className={`text-sm font-semibold ${TONE_TEXT[OVERALL_META[state].tone]}`}>{OVERALL_META[state].label}</div>}
+            <div className="text-sm text-steel-600">🟢 {cnt.ok} OK · 🟡 {cnt.warn} Atenção · 🔴 {cnt.urgent} Urgente</div>
+            <div className="text-xs text-steel-400">{cnt.answered} de {cnt.total} itens avaliados</div>
+            <p className="text-xs text-steel-500 pt-2">Pode fechar esta página. Obrigado!</p>
           </div>
           {flagged.length > 0 && (
             <div className="card space-y-2">
@@ -225,7 +225,7 @@ export default function MechanicCheckup() {
           </div>
         </div>
 
-        {CHECKUP_TEMPLATE.map(({ system }) => {
+        {systemsOf(items).map(system => {
           const list = bySystem[system] ?? [];
           if (!list.length) return null;
           const doneCnt = list.filter(i => i.status).length;
@@ -235,7 +235,7 @@ export default function MechanicCheckup() {
             <div key={system} className="card !p-0 overflow-hidden">
               <button onClick={() => setOpen(isOpen ? null : system)}
                 className="w-full flex items-center gap-3 px-4 py-4 text-left active:bg-steel-50">
-                <span className="text-xl">{SYSTEM_ICON[system]}</span>
+                <span className="text-xl">{SYSTEM_ICON[system] ?? '🔹'}</span>
                 <span className="flex-1 font-semibold text-steel-800">{system}</span>
                 {flags > 0 && <span className="text-xs text-pending-600 font-semibold">{flags} ⚠</span>}
                 <span className={`text-xs font-semibold ${doneCnt === list.length ? 'text-signal-600' : 'text-steel-400'}`}>
@@ -271,7 +271,7 @@ export default function MechanicCheckup() {
               placeholder="Ex.: freio dianteiro no limite, trocar logo." />
           </label>
           <button onClick={finish} disabled={finishing} className="btn-primary w-full !py-3.5">
-            {finishing ? 'Enviando…' : 'Finalizar e enviar para a oficina'}
+            {finishing ? 'Enviando…' : 'Terminar check-up'}
           </button>
         </div>
       </div>

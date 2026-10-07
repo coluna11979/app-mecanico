@@ -117,7 +117,7 @@ export function ItemRow({ item, uploadPhoto, onPatch, onRemove, catalog }: {
           {/* Item com problema: o mecânico aponta o que trocar — vai direto para o orçamento do comercial */}
           {flagged && (
             <div className="rounded-lg bg-white border border-steel-200 p-2.5 space-y-2">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">O que precisa (vai para o orçamento)</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">O que precisa fazer (peça e serviço)</div>
               {catalog && (
                 <>
                   <datalist id={`ck-p-${item.id}`}>{catalog.parts.map(n => <option key={n} value={n} />)}</datalist>

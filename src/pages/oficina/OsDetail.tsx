@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
 import { toast } from '@/components/ui/Toast';
 import { canDo, sessionAllows, useOperator } from '@/lib/operators';
+import { useCheckupAccess } from '@/lib/checkupAccess';
+import { halfOf, useMyCommission } from '@/components/os/MyCommission';
 import { useModuleAllows } from '@/lib/modules';
 import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
@@ -40,6 +42,10 @@ export default function OsDetail() {
   // Hook no topo: abaixo dos returns de carregamento ele mudaria a ordem dos hooks e a tela ficaria em branco
   const modAllows = useModuleAllows();
   const showCost = canDo(session, balcao, 'ver_financeiro') || canDo(session, balcao, 'pecas_estoque');
+  // Mecânico (PIN): só a OS dele, sem valores, sem contato do cliente e sem ações comerciais
+  const access = useCheckupAccess();
+  const mech = access.isMechanic;
+  const myComm = useMyCommission(currentWorkshop?.id, mech ? access.mechanicId : null);
   const [os, setOs]         = useState<OsRow | null>(null);
   const [items, setItems]   = useState<ServiceOrderItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -306,8 +312,22 @@ export default function OsDetail() {
     );
   }
 
-  const wa = waNumber(os.customer?.phone);
-  const tel = os.customer?.phone?.replace(/\D/g, '');
+  if (mech && access.ready && !(access.mechanicId
+      && (os.workshop_mechanic_id === access.mechanicId || items.some(i => i.workshop_mechanic_id === access.mechanicId)))) {
+    return (
+      <WorkshopLayout>
+        <div className="card max-w-md text-center py-10 mx-auto">
+          <div className="text-4xl mb-2">🔒</div>
+          <h1 className="text-xl font-bold">Esta OS não é sua</h1>
+          <p className="text-sm text-steel-500 mt-1">Você vê as OS em que é o responsável ou fez algum serviço.</p>
+          <Link to="/oficina/os" className="btn-primary mt-5 inline-block">Ver minhas OS</Link>
+        </div>
+      </WorkshopLayout>
+    );
+  }
+
+  const wa = mech ? null : waNumber(os.customer?.phone);
+  const tel = mech ? null : os.customer?.phone?.replace(/\D/g, '');
   const osOpenAmount = Math.round((os.price - Number(os.counter_discount ?? 0) - Number(os.paid_amount ?? 0)) * 100) / 100;
   const canReceive = osOpenAmount > 0.004 && ['open', 'approved', 'in_progress', 'completed'].includes(os.status);
   const dur = os.completed_at ? workedMinutes(os.started_at, os.completed_at, os.pauses) : null;
@@ -318,7 +338,9 @@ export default function OsDetail() {
   const canOpen = (path: string) => modAllows(path) && (!balcao || !session || sessionAllows(session, path));
   const perService = items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id));
   const noResponsible = responsibleOf(os) === '' && !perService;
-  const moreActions: MoreItem[] = [
+  const moreActions: MoreItem[] = mech ? [
+    ...(canOpen('/oficina/checkup') ? [{ label: '🔍 Check-up do veículo', onClick: () => nav(`/oficina/checkup?os=${os.id}`) }] : []),
+  ] : [
     ...(['open', 'awaiting_approval', 'approved'].includes(os.status)
       ? [{ label: '✓ Já foi concluída (escolher a data)', onClick: () => setConcluding(true) }] : []),
     ...(!closed && !os.scheduled_at ? [{ label: '📅 Agendar serviço', onClick: () => setScheduling(true) }] : []),
@@ -336,7 +358,7 @@ export default function OsDetail() {
   return (
     <WorkshopLayout>
       <div className="max-w-6xl mx-auto">
-        <Link to="/oficina/os" className="text-sm text-steel-500 hover:text-steel-800">← Ordens de Serviço</Link>
+        <Link to="/oficina/os" className="text-sm text-steel-500 hover:text-steel-800">← {mech ? 'Minhas OS' : 'Ordens de Serviço'}</Link>
 
         {/* ── Cabeçalho ── */}
         <div className="card mt-3 mb-5">
@@ -357,7 +379,7 @@ export default function OsDetail() {
               )}
               <div className="text-xs text-steel-500 mt-0.5">{isSale ? 'Vendida em' : 'Aberta em'} {fmtDateTime(os.created_at)}</div>
             </div>
-            <div className="text-left lg:text-right shrink-0">
+            {!mech && <div className="text-left lg:text-right shrink-0">
               <div className="text-[10px] text-steel-400 uppercase tracking-wider">Total</div>
               <div className="text-3xl font-bold font-display text-steel-900">{fmtBRL(os.price)}</div>
               {Number(os.paid_amount ?? 0) > 0 && (
@@ -365,7 +387,7 @@ export default function OsDetail() {
                   {os.paid_at ? '✓ Paga' : `Pago ${fmtBRL(Number(os.paid_amount))} · falta ${fmtBRL(osOpenAmount)}`}
                 </div>
               )}
-            </div>
+            </div>}
           </div>
 
           {/* Etapa atual do fluxo (venda de balcão não tem etapas) */}
@@ -373,13 +395,13 @@ export default function OsDetail() {
 
           {/* Ações: a da etapa em destaque; o resto em "Mais ações" */}
           <div className="mt-4 pt-4 border-t border-steel-100 flex flex-wrap items-center gap-2">
-            {os.status === 'open' && (
+            {os.status === 'open' && !mech && (
               <>
                 <button onClick={sendForApproval} disabled={busy} className={BTN}>📤 Enviar orçamento para aprovação</button>
                 <button onClick={() => setApproving(true)} disabled={busy} className={SEC}>✅ Cliente já aprovou</button>
               </>
             )}
-            {os.status === 'awaiting_approval' && (
+            {os.status === 'awaiting_approval' && !mech && (
               <>
                 <button onClick={() => setApproving(true)} disabled={busy} className={`${BTN} !bg-signal-500`}>✅ Cliente aprovou</button>
                 <button onClick={() => changeStatus('cancelled', { declined: true })} disabled={busy} className={`${SEC} text-alert-600`}>✕ Não aprovou</button>
@@ -402,34 +424,34 @@ export default function OsDetail() {
                 </>
               )
             )}
-            {os.status === 'cancelled' && os.quote_status === 'declined' && (
+            {os.status === 'cancelled' && os.quote_status === 'declined' && !mech && (
               <button onClick={() => setApproving(true)} disabled={busy} className={`${BTN} !bg-signal-500`}>✅ Cliente aprovou agora</button>
             )}
 
             {/* Receber: principal na OS concluída; antes disso (adiantamento) fica como secundária */}
-            {canReceive && canOpen('/oficina/caixa') && (
+            {canReceive && canOpen('/oficina/caixa') && !mech && (
               <button onClick={() => nav(`/oficina/caixa?os=${os.id}`)}
                 className={os.status === 'completed' ? `${BTN} !bg-signal-500` : `${SEC} !border-signal-500/40 text-signal-700`}>
                 💰 Receber no caixa · {fmtBRL(osOpenAmount)}
               </button>
             )}
-            {os.status === 'completed' && !os.quote_status && !isSale && (
+            {os.status === 'completed' && !os.quote_status && !isSale && !mech && (
               <button onClick={() => setReworkForm(v => !v)} disabled={busy} className={`${SEC} !border-alert-200 text-alert-700 hover:bg-alert-50`}>
                 🔁 Cliente voltou
               </button>
             )}
             {os.scheduled_at && !closed && (
-              <button onClick={() => setScheduling(true)} className={SEC}>
+              <button onClick={() => !mech && setScheduling(true)} className={`${SEC} ${mech ? 'pointer-events-none' : ''}`}>
                 📅 Agendado · {new Date(os.scheduled_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às {new Date(os.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
               </button>
             )}
             {/* Imprimir fica à vista no computador; no celular está em "Mais ações" */}
-            <button onClick={() => setWaOpen(true)} className={`${SEC} !border-signal-500/40 text-signal-700`}>📲 WhatsApp</button>
-            <Link to={`/oficina/os/${os.id}/imprimir`} className={`${SEC} hidden lg:inline-flex`}>🖨️ Imprimir / PDF</Link>
+            {!mech && <button onClick={() => setWaOpen(true)} className={`${SEC} !border-signal-500/40 text-signal-700`}>📲 WhatsApp</button>}
+            {!mech && <Link to={`/oficina/os/${os.id}/imprimir`} className={`${SEC} hidden lg:inline-flex`}>🖨️ Imprimir / PDF</Link>}
 
-            <MoreActions items={moreActions} />
+            {moreActions.length > 0 && <MoreActions items={moreActions} />}
 
-            {os.status === 'completed' && !isSale && (
+            {os.status === 'completed' && !isSale && !mech && (
               <span className="text-xs text-steel-400">🔒 OS concluída — reabra para editar</span>
             )}
           </div>
@@ -547,7 +569,7 @@ export default function OsDetail() {
           {/* ── Coluna principal ── */}
           <div className="lg:col-span-2 space-y-5 min-w-0">
             {/* Responsável (equipe ou MecânicoApp) — fica no topo para achar fácil; venda de balcão não tem */}
-            {!isSale && <ResponsibleCard
+            {!isSale && !mech && <ResponsibleCard
               os={{ id: os.id, status: os.status, executor: os.executor ?? null, workshop_mechanic_id: os.workshop_mechanic_id,
                     mechanic: os.mechanic ?? null, estimated_hours: os.estimated_hours }}
               split={perService ? <ServiceSplit items={items} team={team} osMechanic={os.mechanic?.name ?? null} /> : undefined}
@@ -577,7 +599,27 @@ export default function OsDetail() {
               </div>
             )}
 
-            <OsItemsEditor
+            {mech && myComm.loaded && myComm.mech && (() => {
+              const mine = myComm.byOs.get(os.id);
+              return (
+                <div className="card !py-3 space-y-1">
+                  <div className="text-xs font-bold uppercase tracking-widest text-steel-500">💰 Sua comissão nesta OS</div>
+                  {myComm.mech.no_commission ? (
+                    <div className="text-sm text-steel-600">Salário fixo — sem comissão por OS.</div>
+                  ) : mine ? (
+                    <>
+                      <div className="text-2xl font-bold font-display text-signal-700">{fmtBRL(mine.value)}</div>
+                      {mine.doneAt && <div className="text-xs text-steel-500">Entra na {halfOf(mine.doneAt)}</div>}
+                      <div className="text-[11px] text-steel-400">{myComm.rule} · valor previsto até o gestor fechar a quinzena</div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-steel-500">Aparece aqui quando o seu serviço for finalizado.</div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {mech ? <MechanicItems items={items} /> : <OsItemsEditor
               osId={os.id}
               workshopId={os.workshop_id}
               items={items}
@@ -591,10 +633,10 @@ export default function OsDetail() {
               saleMode={isSale}
               osLabel={`OS nº ${os.number != null ? String(os.number).padStart(4, '0') : os.id.slice(0, 8)}`}
               onSaved={load}
-            />
+            />}
 
             {/* Total mudou depois de pago (ex.: corrigiu o valor da nota): o pagamento ficou maior que a OS */}
-            {Number(os.paid_amount ?? 0) > Number(os.price) - Number(os.counter_discount ?? 0) + 0.004 && (
+            {!mech && Number(os.paid_amount ?? 0) > Number(os.price) - Number(os.counter_discount ?? 0) + 0.004 && (
               <div className="rounded-2xl border-2 border-alert-200 bg-alert-50 px-4 py-3 flex flex-wrap items-center gap-3">
                 <div className="flex-1 min-w-[220px] text-sm text-alert-700">
                   ⚠️ O pagamento ({fmtBRL(Number(os.paid_amount))}) está <strong>maior que o total da OS</strong> ({fmtBRL(Number(os.price) - Number(os.counter_discount ?? 0))}).
@@ -607,9 +649,9 @@ export default function OsDetail() {
             )}
 
             {/* Pagamentos recebidos no caixa: quando, como e quem recebeu */}
-            <PaymentsList filter={{ serviceOrderId: os.id }} showOs={false} empty={null} reloadKey={os.paid_amount}
+            {!mech && <PaymentsList filter={{ serviceOrderId: os.id }} showOs={false} empty={null} reloadKey={os.paid_amount}
               title="💰 Pagamentos desta OS" openFix={fixPay}
-              fix={canDo(session, balcao, 'cancelar_recebimento') ? { wid: os.workshop_id, sid: balcao ? session?.session_id ?? null : null } : undefined} />
+              fix={canDo(session, balcao, 'cancelar_recebimento') ? { wid: os.workshop_id, sid: balcao ? session?.session_id ?? null : null } : undefined} />}
 
             {/* Comissões desta OS: pela regra, com opção de alterar/incluir pessoas */}
             {isSale && os.status !== 'cancelled' && (
@@ -653,12 +695,12 @@ export default function OsDetail() {
                   <div className="mt-2 space-y-1 text-sm">
                     {tel && <a href={`tel:${tel}`} className="block text-steel-600 hover:text-brand-600">📞 {fmtPhone(os.customer.phone)}</a>}
                     {wa && <a href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" className="block text-signal-700 hover:underline">💬 WhatsApp</a>}
-                    {os.customer.email && <div className="text-steel-600 truncate">✉️ {os.customer.email}</div>}
-                    {os.customer.cpf && <div className="text-steel-500">🪪 {os.customer.cpf}</div>}
+                    {!mech && os.customer.email && <div className="text-steel-600 truncate">✉️ {os.customer.email}</div>}
+                    {!mech && os.customer.cpf && <div className="text-steel-500">🪪 {os.customer.cpf}</div>}
                   </div>
                 </>
               ) : (
-                <EmptyLink text="Sem cliente vinculado" onClick={closed ? undefined : () => setEditing(true)} />
+                <EmptyLink text="Sem cliente vinculado" onClick={closed || mech ? undefined : () => setEditing(true)} />
               )}
             </div>
 
@@ -677,7 +719,7 @@ export default function OsDetail() {
                   </div>
                 </div>
               ) : (
-                <EmptyLink text="Sem veículo vinculado" onClick={closed ? undefined : () => setEditing(true)} />
+                <EmptyLink text="Sem veículo vinculado" onClick={closed || mech ? undefined : () => setEditing(true)} />
               )}
             </div>}
 
@@ -700,13 +742,13 @@ export default function OsDetail() {
             )}
 
             {/* Recomendado para o futuro (base da reativação de clientes) */}
-            {os.customer_id && !isSale && (
+            {os.customer_id && !isSale && !mech && (
               <Recommendations workshopId={os.workshop_id} customerId={os.customer_id}
                 vehicleId={os.vehicle_id} osId={os.id} />
             )}
 
             {/* Orçamento original (importado do papel) */}
-            {paperUrl && (
+            {paperUrl && !mech && (
               <a href={paperUrl} target="_blank" rel="noopener noreferrer" className="card block hover:shadow-md transition">
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-2">📷 Orçamento original</div>
                 <img src={paperUrl} alt="Orçamento em papel" className="w-full max-h-48 object-cover rounded-lg" />
@@ -803,6 +845,37 @@ export default function OsDetail() {
 }
 
 /** Formulário "Cliente voltou": causa (pode definir depois) + relato */
+/* ─── Mecânico: o que fazer na OS, sem valores ─────────────── */
+function MechanicItems({ items }: { items: ServiceOrderItem[] }) {
+  const labor = items.filter(i => i.kind === 'labor');
+  const parts = items.filter(i => i.kind !== 'labor');
+  const row = (i: ServiceOrderItem) => (
+    <li key={i.id} className="px-5 py-2.5 flex items-start gap-3 text-sm">
+      <span className="text-steel-800 flex-1 min-w-0">{i.description}</span>
+      {Number(i.quantity) !== 1 && <span className="text-steel-500 shrink-0">× {Number(i.quantity).toLocaleString('pt-BR')}</span>}
+    </li>
+  );
+  return (
+    <div className="card !p-0 overflow-hidden">
+      <div className="px-5 pt-4 pb-2 font-bold text-steel-800">O que fazer nesta OS</div>
+      {items.length === 0 ? (
+        <p className="px-5 pb-4 text-sm text-steel-500">Nenhum serviço lançado ainda — fale com o gestor.</p>
+      ) : (
+        <>
+          {labor.length > 0 && <>
+            <div className="px-5 pt-2 text-[10px] font-bold uppercase tracking-widest text-steel-500">🔧 Serviços</div>
+            <ul className="divide-y divide-steel-100">{labor.map(row)}</ul>
+          </>}
+          {parts.length > 0 && <>
+            <div className="px-5 pt-3 text-[10px] font-bold uppercase tracking-widest text-steel-500">🔩 Peças</div>
+            <ul className="divide-y divide-steel-100 pb-2">{parts.map(row)}</ul>
+          </>}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ReworkForm({ busy, mechanicName, onCancel, onSubmit }: {
   busy: boolean; mechanicName: string | null;
   onCancel: () => void; onSubmit: (cause: ReworkCause | null, notes: string) => void;

@@ -19,7 +19,7 @@ export const MODULES: Record<ModuleKey, {
   painel:       { label: 'Painel de vendas',   icon: '📊', desc: 'Faturamento e vendas do dia/mês',               routes: ['/oficina/painel'] },
   os:           { label: 'Ordens de serviço',  icon: '📋', desc: 'Abrir, acompanhar e imprimir OS',               routes: ['/oficina/os'] },
   agenda:       { label: 'Agenda',             icon: '📅', desc: 'Agendamentos da oficina',                       routes: ['/oficina/agenda'] },
-  checkup:      { label: 'Check-up',           icon: '🩺', desc: 'Check-up do veículo e orçamento pelo link',     routes: ['/oficina/checkup'] },
+  checkup:      { label: 'Check-up',           icon: '🩺', desc: 'Painel, inspeções, histórico e orçamento pelo link', routes: ['/oficina/checkup'] },
   clientes:     { label: 'Clientes',           icon: '👥', desc: 'Cadastro e ficha dos clientes',                 routes: ['/oficina/clientes'] },
   comercial:    { label: 'Comercial',          icon: '🤝', desc: 'Mesa comercial: retorno de orçamentos',         routes: ['/oficina/comercial'] },
   caixa:        { label: 'Caixa',              icon: '💰', desc: 'Abrir/fechar caixa, receber OS, PDV balcão',    routes: ['/oficina/caixa'] },
@@ -38,7 +38,8 @@ export const MODULES: Record<ModuleKey, {
 
 /** Agrupado como no menu da oficina, para a tela do superadmin */
 export const MODULE_GROUPS: { label: string; keys: ModuleKey[] }[] = [
-  { label: 'Atendimento',       keys: ['painel', 'os', 'agenda', 'checkup', 'clientes', 'comercial'] },
+  { label: 'Atendimento',       keys: ['painel', 'os', 'agenda', 'clientes', 'comercial'] },
+  { label: 'Check-up',          keys: ['checkup'] },
   { label: 'Financeiro',        keys: ['caixa', 'financeiro', 'contas_pagar'] },
   { label: 'Estoque e compras', keys: ['pecas', 'compras'] },
   { label: 'Equipe',            keys: ['equipe', 'fechamentos', 'acessos'] },
