@@ -156,6 +156,8 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
   const op = row.op;
   const [roles, setRoles]   = useState<OperatorRole[]>(op?.roles ?? (row.isOwner ? ['gestor'] : []));
   const [perms, setPerms]   = useState<OperatorPerm[]>(op?.permissions ?? []);
+  /** Em quais funções cada permissão vale (só quando a pessoa tem mais de uma função) */
+  const [permRoles, setPermRoles] = useState<Partial<Record<OperatorPerm, OperatorRole[]>>>(op?.perm_roles ?? {});
   const [active, setActive] = useState(op?.active ?? true);
   const [pin, setPin]       = useState('');
   const [pin2, setPin2]     = useState('');
@@ -164,6 +166,15 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
   const isGestor = roles.includes('gestor');
   const toggleRole = (r: OperatorRole) => setRoles(rs => rs.includes(r) ? rs.filter(x => x !== r) : [...rs, r]);
   const togglePerm = (p: OperatorPerm) => setPerms(ps => ps.includes(p) ? ps.filter(x => x !== p) : [...ps, p]);
+  const multiRole = roles.length > 1;
+  /** Funções em que a permissão vale (vazio = todas) */
+  const rolesOf = (p: OperatorPerm) => { const only = (permRoles[p] ?? []).filter(r => roles.includes(r)); return only.length ? only : roles; };
+  function togglePermRole(p: OperatorPerm, r: OperatorRole) {
+    const cur = rolesOf(p);
+    const next = cur.includes(r) ? cur.filter(x => x !== r) : [...cur, r];
+    if (!next.length) { toast.info('A permissão precisa valer em pelo menos uma função. Para tirar, desmarque a permissão.'); return; }
+    setPermRoles(m => ({ ...m, [p]: next.length === roles.length ? [] : next }));
+  }
 
   async function save() {
     if (row.isOwner && !isGestor) return toast.error('O dono precisa ter a função Gestor.');
@@ -176,6 +187,10 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
       workshop_id: workshopId, mechanic_id: row.mechanicId, name: row.name, is_owner: row.isOwner,
       roles: ROLE_ORDER.filter(r => roles.includes(r)),
       permissions: isGestor ? [] : perms,
+      // Só guarda as permissões restritas a algumas funções (e só das funções que a pessoa ainda tem)
+      perm_roles: isGestor ? {} : Object.fromEntries(perms
+        .map(p => [p, (permRoles[p] ?? []).filter(r => roles.includes(r))] as const)
+        .filter(([, rs]) => rs.length > 0 && rs.length < roles.length)),
       active: row.isOwner ? true : active,
       updated_at: new Date().toISOString(),
     };
@@ -236,13 +251,32 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
                 <div className="text-[11px] font-semibold text-steel-400 mb-1.5">{g.label}</div>
                 <div className="grid sm:grid-cols-2 gap-2">
                   {g.perms.map(p => (
-                    <label key={p} className={`flex items-start gap-2 rounded-xl border px-3 py-2 cursor-pointer transition ${perms.includes(p) ? 'border-brand-300 bg-brand-50/40' : 'border-steel-200'}`}>
-                      <input type="checkbox" className="mt-1" checked={perms.includes(p)} onChange={() => togglePerm(p)} />
-                      <div>
-                        <div className="text-sm font-semibold">{PERMS[p].label}</div>
-                        <div className="text-[11px] text-steel-500">{PERMS[p].desc}</div>
-                      </div>
-                    </label>
+                    <div key={p} className={`rounded-xl border px-3 py-2 transition ${perms.includes(p) ? 'border-brand-300 bg-brand-50/40' : 'border-steel-200'}`}>
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" className="mt-1" checked={perms.includes(p)} onChange={() => togglePerm(p)} />
+                        <div>
+                          <div className="text-sm font-semibold">{PERMS[p].label}</div>
+                          <div className="text-[11px] text-steel-500">{PERMS[p].desc}</div>
+                        </div>
+                      </label>
+                      {multiRole && perms.includes(p) && (
+                        <div className="mt-2 pt-2 border-t border-brand-100">
+                          <div className="text-[10px] text-steel-500 mb-1">Vale quando entrar como:</div>
+                          <div className="flex flex-wrap gap-1">
+                            {ROLE_ORDER.filter(r => roles.includes(r)).map(r => {
+                              const on = rolesOf(p).includes(r);
+                              return (
+                                <button type="button" key={r} onClick={() => togglePermRole(p, r)}
+                                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition ${
+                                    on ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-400 border-steel-200 line-through'}`}>
+                                  {ROLES[r].icon} {ROLES[r].label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
