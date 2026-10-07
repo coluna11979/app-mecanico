@@ -3,205 +3,341 @@ import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { sessionAllows, useOperator } from '@/lib/operators';
 import LicensePlate from '@/components/os/LicensePlate';
-import { fmtBRL, waNumber } from '@/components/os/osHelpers';
-import { itemQuote, publicReportUrl, saleStage, type VehicleCheckup } from '@/lib/checkup';
+import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
+import { fmtBRL } from '@/components/os/osHelpers';
+import { publicReportUrl } from '@/lib/checkup';
 import { fetchAll } from '@/lib/fetchAll';
-import PeriodPicker, { usePeriod } from '@/components/PeriodPicker';
+import PeriodPicker, { PRESETS, usePeriod, type Preset } from '@/components/PeriodPicker';
+import {
+  buildOpps, daysSince, followUps, funnelOf, type CkRow, type FollowUp, type Opp, type OsQuote, type Stage,
+} from '@/lib/commercialFunnel';
 
-type Item = { status: string | null; quote_labor: number | null; quote_parts: number | null; customer_decision: string | null };
-type Row = VehicleCheckup & {
-  mechanic: { name: string } | null;
-  items: Item[];
-  sale_os: { number: number | null; status: string; price: number } | null;
+const STAGES: { key: Stage; title: string; icon: string; hint: string }[] = [
+  { key: 'montando',   title: 'Montando orçamento', icon: '🛠', hint: 'agora' },
+  { key: 'aguardando', title: 'Aguardando cliente', icon: '⏳', hint: 'agora' },
+  { key: 'aprovado',   title: 'Aprovado',           icon: '✅', hint: 'no período' },
+  { key: 'recusado',   title: 'Perdido',            icon: '✕',  hint: 'recusados no período' },
+];
+const STAGE_LABEL: Record<Stage, string> = {
+  montando: 'Montando', aguardando: 'Aguardando', aprovado: 'Aprovado', recusado: 'Recusado', lembrar: 'Lembrar depois',
+};
+const STAGE_BADGE: Record<Stage, string> = {
+  montando: 'bg-steel-100 text-steel-700', aguardando: 'bg-pending-100 text-pending-800', aprovado: 'bg-signal-100 text-signal-700',
+  recusado: 'bg-alert-100 text-alert-700', lembrar: 'bg-brand-50 text-brand-700',
 };
 
-/** Colunas do funil de venda do check-up */
-const COLUMNS = [
-  { key: 'quote',    title: '💰 Montar orçamento', hint: 'Finalizado, falta colocar valor ou enviar' },
-  { key: 'sent',     title: '📤 Enviado',          hint: 'Cliente ainda não abriu o link' },
-  { key: 'viewed',   title: '👀 Cliente viu',       hint: 'Abriu e não respondeu — ligue' },
-  { key: 'won',      title: '✅ Aprovado',          hint: 'Virou OS' },
-  { key: 'answered', title: '❌ Não aprovou',       hint: 'Respondeu sem aprovar agora' },
-] as const;
-type ColKey = typeof COLUMNS[number]['key'];
+const MONTHS_BACK = 12;
 
-
-const flaggedOf = (r: Row) => r.items.filter(i => i.status === 'warn' || i.status === 'urgent');
-const quoted = (r: Row) => flaggedOf(r).reduce((a, i) => a + itemQuote(i), 0);
-const approvedValue = (r: Row) => flaggedOf(r).filter(i => i.customer_decision === 'approve').reduce((a, i) => a + itemQuote(i), 0);
-const daysSince = (iso: string | null | undefined) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null;
-
+/**
+ * Comercial: funil simples dos orçamentos (check-up e OS enviada para aprovação),
+ * quem precisa de retorno hoje e a lista da etapa escolhida.
+ */
 export default function Comercial() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
+  const { balcao, session } = useOperator();
+  const canOpen = (path: string) => !balcao || !session || sessionAllows(session, path);
   const period = usePeriod('comercial-periodo', 'month');
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const fromIso = period.range.from.toISOString();
-  const toIso = period.range.to.toISOString();
+  const { preset, range } = period;
+
+  const [checkups, setCheckups] = useState<CkRow[] | null>(null);
+  const [osQuotes, setOsQuotes] = useState<OsQuote[]>([]);
+  const [ckSaleOs, setCkSaleOs] = useState<Set<string>>(new Set());
+  const [stage, setStage] = useState<Stage>('aguardando');
+  const [origin, setOrigin] = useState<'all' | 'checkup' | 'os'>('all');
+  const [mechanic, setMechanic] = useState('all');
+  const [moreFilters, setMoreFilters] = useState(false);
+  const [showAllFu, setShowAllFu] = useState(false);
+  const [wa, setWa] = useState<Opp | null>(null);
 
   useEffect(() => {
     if (!wid) return;
-    setRows(null);
-    // Entra no período o check-up feito nele OU respondido pelo cliente nele
-    // (ex.: em "Hoje" aparece o orçamento de dias atrás que o cliente aprovou hoje)
-    fetchAll((a, b) => supabase.from('vehicle_checkups')
-      .select('*, mechanic:workshop_mechanics(name), items:checkup_items(status, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, price)')
-      .eq('workshop_id', wid).eq('status', 'completed')
-      .or(`and(completed_at.gte.${fromIso},completed_at.lt.${toIso}),and(customer_responded_at.gte.${fromIso},customer_responded_at.lt.${toIso})`)
-      .order('completed_at', { ascending: false }).order('id').range(a, b))
-      .then(({ data }) => setRows((data as unknown as Row[]) ?? []));
-  }, [wid, fromIso, toIso]);
+    setCheckups(null);
+    const since = new Date(); since.setMonth(since.getMonth() - MONTHS_BACK);
+    const s = since.toISOString();
+    (async () => {
+      const [ck, os, links] = await Promise.all([
+        // Check-ups finalizados: os em aberto (qualquer data) e os dos últimos 12 meses
+        fetchAll((a, b) => supabase.from('vehicle_checkups')
+          .select('*, mechanic:workshop_mechanics(name), items:checkup_items(status, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, price)')
+          .eq('workshop_id', wid).eq('status', 'completed')
+          .or(`and(sale_os_id.is.null,customer_responded_at.is.null),completed_at.gte.${s},customer_responded_at.gte.${s}`)
+          .order('completed_at', { ascending: false }).order('id').range(a, b)),
+        // Orçamentos de OS que foram enviados para aprovação
+        fetchAll((a, b) => supabase.from('service_orders')
+          .select('id, number, title, status, quote_status, price, approval_requested_at, approved_at, customer_id, customer:customers(id, full_name, phone), vehicle:vehicles(make, model, plate)')
+          .eq('workshop_id', wid).not('approval_requested_at', 'is', null)
+          .or(`status.eq.awaiting_approval,approval_requested_at.gte.${s}`)
+          .order('id').range(a, b)),
+        // OS que nasceram de check-up (não entram de novo como orçamento de OS)
+        fetchAll((a, b) => supabase.from('vehicle_checkups').select('sale_os_id')
+          .eq('workshop_id', wid).not('sale_os_id', 'is', null).order('id').range(a, b)),
+      ]);
+      setOsQuotes((os.data as unknown as OsQuote[]) ?? []);
+      setCkSaleOs(new Set(((links.data ?? []) as { sale_os_id: string }[]).map(x => x.sale_os_id)));
+      setCheckups((ck.data as unknown as CkRow[]) ?? []);
+    })();
+  }, [wid]);
 
-  const byCol = useMemo(() => {
-    const m: Record<ColKey, Row[]> = { quote: [], sent: [], viewed: [], won: [], answered: [] };
-    for (const r of rows ?? []) {
-      const st = saleStage(r);
-      if (st !== 'draft') m[st].push(r);
+  const opps = useMemo(() => buildOpps(checkups ?? [], osQuotes, ckSaleOs), [checkups, osQuotes, ckSaleOs]);
+  const fu = useMemo(() => followUps(opps), [opps]);
+  const fn = useMemo(() => funnelOf(opps, range), [opps, range]);
+  const prevFn = useMemo(() => {
+    const len = range.to.getTime() - range.from.getTime();
+    return funnelOf(opps, { from: new Date(range.from.getTime() - len), to: range.from });
+  }, [opps, range]);
+
+  const mechanics = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of opps) if (o.mechanicId && o.mechanicName) m.set(o.mechanicId, o.mechanicName);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [opps]);
+
+  const list = useMemo(() => {
+    const base = stage === 'montando' ? fn.montando : stage === 'aguardando' ? fn.aguardando
+      : stage === 'aprovado' ? fn.aprovado : stage === 'recusado' ? fn.recusado : fn.lembrar;
+    return base
+      .filter(o => origin === 'all' || o.origin === origin)
+      .filter(o => mechanic === 'all' || o.mechanicId === mechanic)
+      .sort((a, b) => (a.stage === 'montando' || a.stage === 'aguardando')
+        ? (daysSince(b.since) ?? 0) - (daysSince(a.since) ?? 0)
+        : (b.since ?? '').localeCompare(a.since ?? ''));
+  }, [fn, stage, origin, mechanic]);
+
+  const loading = checkups === null;
+  const convDelta = fn.conversion != null && prevFn.conversion != null ? Math.round(fn.conversion - prevFn.conversion) : null;
+  const shownFu = showAllFu ? fu : fu.slice(0, 5);
+  const shop = currentWorkshop?.business_name ?? 'a oficina';
+
+  function waMessage(o: Opp) {
+    const first = o.customerName?.trim().split(' ')[0];
+    const car = `${o.car}${o.plate ? ` (${o.plate})` : ''}`;
+    if (o.origin === 'checkup' && o.publicToken) {
+      return `Olá${first ? ` ${first}` : ''}! Aqui é da ${shop}. Conseguiu ver o orçamento do check-up do ${car}? ` +
+        `Pelo link você aprova o que quiser e já escolhe o horário: ${publicReportUrl(o.publicToken)}`;
     }
-    return m;
-  }, [rows]);
-
-  const k = useMemo(() => {
-    const list = rows ?? [];
-    const sent = list.filter(r => r.quote_sent_at || r.customer_viewed_at || r.customer_responded_at);
-    const won = list.filter(r => r.sale_os_id);
-    const quotedSum = list.reduce((a, r) => a + quoted(r), 0);
-    const approvedSum = list.reduce((a, r) => a + approvedValue(r), 0);
-    return {
-      total: list.length, sent: sent.length, won: won.length,
-      conversion: sent.length ? Math.round((won.length / sent.length) * 100) : null,
-      quotedSum, approvedSum,
-      onTable: quotedSum - approvedSum,
-      ticket: won.length ? approvedSum / won.length : 0,
-      waiting: byCol.viewed.length + byCol.sent.length,
-    };
-  }, [rows, byCol]);
+    return `Olá${first ? ` ${first}` : ''}! Aqui é da ${shop}. Conseguiu ver o orçamento do ${car}` +
+      `${o.saleOsNumber != null ? ` (OS nº ${String(o.saleOsNumber).padStart(4, '0')})` : ''} no valor de ${fmtBRL(o.value)}? ` +
+      `É só responder SIM para aprovar ou me chamar se tiver dúvida.`;
+  }
+  const openLink = (o: Opp) => (o.origin === 'checkup' ? `/oficina/checkup/${o.id}` : `/oficina/os/${o.id}`);
 
   return (
     <WorkshopLayout>
-      <div className="max-w-7xl mx-auto space-y-5">
+      <div className="max-w-6xl mx-auto space-y-5">
+        {/* Topo */}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">💼 Comercial</h1>
-            <p className="text-sm text-steel-500 mt-1">Cada check-up é uma venda: acompanhe do orçamento até virar OS e cobre quem não respondeu.</p>
+            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Comercial</h1>
+            <p className="text-xs text-steel-500 mt-0.5">Orçamentos de check-up e de OS: do envio até a aprovação.</p>
           </div>
-          <Link to="/oficina/checkup" className="btn-primary !py-1.5 text-sm">+ Novo check-up</Link>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs text-steel-500">{period.label} · check-ups feitos ou respondidos pelo cliente no período</div>
-          <PeriodPicker period={period} />
-        </div>
-
-        {/* Números */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          <Kpi label="Check-ups" value={String(k.total)} sub={`${k.sent} enviados ao cliente`} />
-          <Kpi label="Conversão" value={k.conversion == null ? '—' : `${k.conversion}%`} sub={`${k.won} viraram OS`} tone="text-signal-700" />
-          <Kpi label="Vendido" value={fmtBRL(k.approvedSum)} sub={k.won ? `ticket ${fmtBRL(k.ticket)}` : 'aprovado pelos clientes'} tone="text-signal-700" dark />
-          <Kpi label="Orçado" value={fmtBRL(k.quotedSum)} sub="soma dos orçamentos" />
-          <Kpi label="Dinheiro na mesa" value={fmtBRL(k.onTable)} sub={k.waiting ? `${k.waiting} esperando resposta` : 'orçado e não aprovado'} tone="text-pending-700" />
-        </div>
-
-        {rows === null ? (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">{COLUMNS.map(c => <div key={c.key} className="card h-48 animate-pulse" />)}</div>
-        ) : rows.length === 0 ? (
-          <div className="card text-center py-12 space-y-3">
-            <div className="text-4xl">🩺</div>
-            <h2 className="text-lg font-bold">Nada no período — {period.label.toLowerCase()}</h2>
-            <p className="text-sm text-steel-500 max-w-md mx-auto">
-              Faça o check-up, coloque o valor de cada item e envie pelo WhatsApp. O cliente aprova pelo link e a venda aparece aqui.
-            </p>
-            <Link to="/oficina/checkup" className="btn-primary inline-block">Fazer um check-up</Link>
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <select className="input !py-2 text-sm flex-1 sm:hidden" value={preset} onChange={e => period.setPreset(e.target.value as Preset)}>
+              {PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+            <div className="hidden sm:block"><PeriodPicker period={period} /></div>
+            {canOpen('/oficina/checkup') && <Link to="/oficina/checkup" className="btn-primary text-sm !py-2 shrink-0">+ Novo check-up</Link>}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-start">
-            {COLUMNS.map(c => {
-              const list = byCol[c.key];
-              const sum = list.reduce((a, r) => a + (c.key === 'won' ? approvedValue(r) : quoted(r)), 0);
-              return (
-                <div key={c.key} className="rounded-2xl bg-steel-100/70 p-2 space-y-2">
-                  <div className="px-2 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm text-steel-800">{c.title}</span>
-                      <span className="text-xs font-bold text-steel-500">{list.length}</span>
-                    </div>
-                    <div className="text-[11px] text-steel-500">{c.hint}{sum > 0 && <> · <strong>{fmtBRL(sum)}</strong></>}</div>
-                  </div>
-                  {list.map(r => <SaleCard key={r.id} r={r} col={c.key} workshopName={currentWorkshop?.business_name} />)}
-                  {list.length === 0 && <div className="text-[11px] text-steel-400 px-2 pb-2">Nada aqui</div>}
-                </div>
-              );
-            })}
+        </div>
+        {preset === 'custom' && (
+          <div className="sm:hidden flex items-center gap-1.5">
+            <input type="date" className="input !py-1.5 text-sm" value={period.custom.from} onChange={e => period.setCustom(c => ({ ...c, from: e.target.value }))} />
+            <span className="text-steel-400 text-sm">a</span>
+            <input type="date" className="input !py-1.5 text-sm" value={period.custom.to} onChange={e => period.setCustom(c => ({ ...c, to: e.target.value }))} />
           </div>
         )}
+
+        {loading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-white rounded-2xl animate-pulse" />)}</div>
+        ) : (
+          <>
+            {/* KPIs */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Kpi label="Em aberto" value={String(fn.open.length)} sub="montando + aguardando cliente" />
+              <Kpi label="Valor em aberto" value={fmtBRL(fn.openValue)} sub={fn.viewedWaiting ? `${fn.viewedWaiting} já viram o orçamento` : 'aguardando decisão'} />
+              <Kpi label="Conversão" value={fn.conversion == null ? '—' : `${Math.round(fn.conversion)}%`}
+                sub={fn.conversion == null ? 'nenhuma resposta no período' : convDelta != null ? `${convDelta >= 0 ? '▲' : '▼'} ${Math.abs(convDelta)} pts vs. período anterior` : 'dos respondidos no período'}
+                tip="Dos orçamentos respondidos no período, quantos foram aprovados (lembrar depois conta como não aprovado)." />
+              <Kpi label="Aprovados no período" value={`${fn.aprovado.length}`} dark
+                sub={fn.aprovado.length ? `${fmtBRL(fn.approvedValue)} · ticket ${fmtBRL(fn.ticket)}` : 'nenhum no período'} />
+            </div>
+
+            {/* Funil */}
+            <div>
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-4 snap-x">
+                {STAGES.map((s, i) => {
+                  const n = fn[s.key].length;
+                  const v = fn.values[s.key];
+                  const active = stage === s.key;
+                  return (
+                    <button key={s.key} onClick={() => setStage(s.key)}
+                      className={`snap-start shrink-0 w-44 sm:w-auto text-left rounded-2xl border p-3 transition relative ${active ? 'border-steel-900 bg-white shadow-sm ring-1 ring-steel-900' : 'border-steel-200 bg-white hover:border-steel-300'}`}>
+                      <div className="text-xs font-semibold text-steel-600">{s.icon} {s.title}</div>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span className="text-2xl font-bold font-display">{n}</span>
+                        <span className="text-sm text-steel-500">{fmtBRL(v)}</span>
+                      </div>
+                      <div className="text-[10px] text-steel-400 mt-0.5">
+                        {s.key === 'aprovado' && fn.conversion != null ? `${Math.round(fn.conversion)}% dos respondidos · ` : ''}{s.hint}
+                      </div>
+                      {i < 2 && <span className="hidden sm:block absolute -right-2.5 top-1/2 -translate-y-1/2 text-steel-300 text-lg z-10">›</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-2 text-xs">
+                <span className="text-steel-500">
+                  {fn.leaks[0] ? <>Maior gargalo: <strong className="text-steel-700">{fn.leaks[0].n} {fn.leaks[0].label}</strong></> : 'Sem gargalos no momento.'}
+                </span>
+                <button onClick={() => setStage('lembrar')}
+                  className={`rounded-full px-3 py-1 border transition ${stage === 'lembrar' ? 'bg-brand-600 text-white border-brand-600' : 'bg-brand-50 text-brand-700 border-brand-200'}`}>
+                  🔔 Lembrar depois · {fn.lembrar.length} <span className="opacity-70">(retorno futuro, não é perda)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quem precisa de retorno hoje */}
+            <div className="card !p-0 overflow-hidden">
+              <div className="px-5 py-3 flex items-center justify-between border-b border-steel-100">
+                <div className="font-bold text-sm">📞 Quem precisa de retorno hoje {fu.length > 0 && <span className="text-steel-400 font-medium">({fu.length})</span>}</div>
+              </div>
+              {fu.length === 0 ? (
+                <p className="px-5 py-6 text-sm text-steel-500 text-center">Ninguém para cobrar agora. Os orçamentos estão em dia. 👏</p>
+              ) : (
+                <ul className="divide-y divide-steel-100">
+                  {shownFu.map(f => <FollowUpRow key={f.opp.key} f={f} canOpen={canOpen} openLink={openLink(f.opp)} onWa={() => setWa(f.opp)} />)}
+                </ul>
+              )}
+              {fu.length > 5 && (
+                <button onClick={() => setShowAllFu(v => !v)} className="w-full py-2.5 text-sm font-semibold text-brand-700 border-t border-steel-100 hover:bg-steel-50">
+                  {showAllFu ? 'Mostrar menos' : `Ver todos (${fu.length})`}
+                </button>
+              )}
+            </div>
+
+            {/* Lista da etapa */}
+            <div className="card !p-0 overflow-hidden">
+              <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-steel-100">
+                <div className="font-bold text-sm">{STAGE_LABEL[stage]} <span className="text-steel-400 font-medium">({list.length})</span>
+                  <span className="text-xs font-normal text-steel-400 ml-2">{stage === 'montando' || stage === 'aguardando' ? 'situação de agora' : 'no período'}</span>
+                </div>
+                <button onClick={() => setMoreFilters(v => !v)} className="text-xs font-semibold text-steel-600 hover:text-steel-900">
+                  {moreFilters ? 'Menos filtros' : 'Mais filtros'}{(origin !== 'all' || mechanic !== 'all') && ' •'}
+                </button>
+              </div>
+              {moreFilters && (
+                <div className="px-5 py-3 flex flex-wrap gap-2 bg-steel-50 border-b border-steel-100">
+                  <select className="input !py-1.5 !w-auto text-sm" value={origin} onChange={e => setOrigin(e.target.value as typeof origin)}>
+                    <option value="all">Origem: todas</option>
+                    <option value="checkup">Check-up</option>
+                    <option value="os">Orçamento da OS</option>
+                  </select>
+                  {mechanics.length > 0 && (
+                    <select className="input !py-1.5 !w-auto text-sm" value={mechanic} onChange={e => setMechanic(e.target.value)}>
+                      <option value="all">Mecânico do check-up: todos</option>
+                      {mechanics.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                    </select>
+                  )}
+                </div>
+              )}
+              {list.length === 0 ? (
+                <p className="px-5 py-8 text-sm text-steel-500 text-center">
+                  {opps.length === 0
+                    ? 'Ainda não há orçamentos. Faça um check-up ou envie um orçamento pela OS para começar.'
+                    : 'Nada nesta etapa com os filtros escolhidos.'}
+                </p>
+              ) : (
+                <ul className="divide-y divide-steel-100">
+                  {list.map(o => <OppRow key={o.key} o={o} canOpen={canOpen} openLink={openLink(o)} onWa={() => setWa(o)} />)}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
       </div>
+
+      {wa && (
+        <SendWhatsAppModal phone={wa.phone} messages={[{ key: 'cobrar', label: 'Retorno do orçamento', text: waMessage(wa) }]} onClose={() => setWa(null)} />
+      )}
     </WorkshopLayout>
   );
 }
 
-function Kpi({ label, value, sub, tone, dark }: { label: string; value: string; sub?: string; tone?: string; dark?: boolean }) {
+function Kpi({ label, value, sub, tip, dark }: { label: string; value: string; sub?: string; tip?: string; dark?: boolean }) {
   return (
-    <div className={`card !py-3 ${dark ? '!bg-steel-900 text-white' : ''}`}>
-      <div className={`text-[10px] font-bold uppercase tracking-widest ${dark ? 'text-steel-400' : 'text-steel-500'}`}>{label}</div>
-      <div className={`text-xl lg:text-2xl font-bold font-display ${dark ? 'text-white' : tone ?? 'text-steel-900'}`}>{value}</div>
-      {sub && <div className={`text-[11px] ${dark ? 'text-steel-400' : 'text-steel-500'}`}>{sub}</div>}
+    <div className={`card !p-4 ${dark ? '!bg-steel-900 text-white' : ''}`} title={tip}>
+      <div className={`text-[10px] font-bold uppercase tracking-widest ${dark ? 'text-steel-400' : 'text-steel-500'}`}>{label}{tip && <span className="opacity-60 ml-1">ⓘ</span>}</div>
+      <div className="text-xl lg:text-2xl font-bold font-display mt-1">{value}</div>
+      {sub && <div className={`text-[11px] mt-0.5 ${dark ? 'text-steel-300' : 'text-steel-500'}`}>{sub}</div>}
     </div>
   );
 }
 
-function SaleCard({ r, col, workshopName }: { r: Row; col: ColKey; workshopName?: string }) {
-  const car = [r.make, r.model, r.year].filter(Boolean).join(' ') || 'Veículo';
-  const flagged = flaggedOf(r);
-  const q = quoted(r);
-  const ap = approvedValue(r);
-  const since = daysSince(col === 'viewed' ? r.customer_viewed_at : col === 'sent' ? r.quote_sent_at : r.completed_at);
-  const first = r.customer_name?.trim().split(' ')[0];
-  const phone = waNumber(r.customer_phone);
-  const nudge = `Olá${first ? ` ${first}` : ''}! Aqui é da ${workshopName ?? 'oficina'}. ` +
-    `Conseguiu ver o orçamento do check-up do ${car}${r.plate ? ` (${r.plate})` : ''}? ` +
-    `Pelo link você aprova o que quiser e já escolhe o horário: ${publicReportUrl(r.public_token)}`;
-
+function Who({ o }: { o: Opp }) {
   return (
-    <div className="bg-white rounded-xl border border-steel-200 p-3 space-y-2 shadow-sm">
-      <Link to={`/oficina/checkup/${r.id}`} className="block space-y-1">
-        <div className="flex items-center gap-2">
-          {r.plate && <LicensePlate plate={r.plate} size="sm" />}
-          <span className="text-sm font-semibold truncate">{car}</span>
+    <div className="min-w-0 flex items-center gap-2">
+      {o.plate && <LicensePlate plate={o.plate} size="sm" />}
+      <div className="min-w-0">
+        <div className="text-sm font-semibold truncate">{o.customerName ?? 'Cliente avulso'} <span className="font-normal text-steel-500">· {o.car}</span></div>
+        <div className="text-[11px] text-steel-400 truncate">
+          {o.origin === 'checkup' ? 'Check-up' : `Orçamento da OS${o.saleOsNumber != null ? ` nº ${String(o.saleOsNumber).padStart(4, '0')}` : ''}`}
+          {o.mechanicName && ` · 🔧 ${o.mechanicName}`}
         </div>
-        <div className="text-xs text-steel-500 truncate">
-          {[r.customer_name, r.mechanic?.name && `🔧 ${r.mechanic.name}`].filter(Boolean).join(' · ') || 'Cliente avulso'}
-        </div>
-      </Link>
-      <div className="flex items-baseline justify-between text-xs">
-        <span className="text-steel-500">
-          {flagged.length} {flagged.length === 1 ? 'item' : 'itens'}{col !== 'quote' && since != null ? ` · há ${since === 0 ? 'hoje' : `${since}d`}` : ''}
-        </span>
-        <span className="font-bold text-sm">
-          {col === 'won' ? fmtBRL(ap) : q > 0 ? fmtBRL(q) : <span className="text-pending-700 text-xs">sem valor</span>}
-        </span>
       </div>
-      {col === 'won' && r.sale_os && (
-        <Link to={`/oficina/os/${r.sale_os_id}`} className="block text-xs font-semibold text-brand-600 hover:underline">
-          🧾 OS nº {String(r.sale_os.number ?? '').padStart(4, '0')}
-          {r.customer_scheduled_at && ` · ${new Date(r.customer_scheduled_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
-          {r.sale_os.status === 'completed' && ' · faturada ✓'}
-        </Link>
-      )}
-      {col === 'answered' && ap === 0 && (
-        <div className="text-[11px] text-steel-500">Itens com "me lembra depois" foram para a ficha do cliente.</div>
-      )}
-      {(col === 'sent' || col === 'viewed') && phone && (
-        <a href={`https://wa.me/${phone}?text=${encodeURIComponent(nudge)}`} target="_blank" rel="noreferrer"
-          className="block text-center text-xs font-semibold px-2 py-1.5 rounded-lg bg-[#25D366] text-white">
-          💬 Cobrar resposta
-        </a>
-      )}
-      {col === 'quote' && (
-        <Link to={`/oficina/checkup/${r.id}`} className="block text-center text-xs font-semibold px-2 py-1.5 rounded-lg bg-brand-50 text-brand-700 border border-brand-200">
-          {q > 0 ? 'Enviar ao cliente →' : 'Colocar os valores →'}
-        </Link>
-      )}
     </div>
+  );
+}
+
+function FollowUpRow({ f, canOpen, openLink, onWa }: { f: FollowUp; canOpen: (p: string) => boolean; openLink: string; onWa: () => void }) {
+  const o = f.opp;
+  return (
+    <li className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+      <div className="flex-1 min-w-0 space-y-1">
+        <Who o={o} />
+        <div className={`text-xs ${f.days >= 5 ? 'text-alert-600 font-semibold' : 'text-pending-800'}`}>{f.reason}</div>
+      </div>
+      <div className="text-sm font-bold shrink-0">{o.value > 0 ? fmtBRL(o.value) : <span className="text-xs text-pending-700">sem valor</span>}</div>
+      <div className="flex flex-wrap gap-2 shrink-0">
+        {f.action === 'enviar' ? (
+          canOpen(openLink) && <Link to={openLink} className="btn-primary text-sm !py-2">Enviar orçamento</Link>
+        ) : (
+          <>
+            {o.phone && <button onClick={onWa} className="text-sm font-semibold px-3 py-2 rounded-xl bg-[#25D366] text-white">WhatsApp</button>}
+            {canOpen(openLink) && <Link to={openLink} className="btn-secondary text-sm !py-2">{o.origin === 'checkup' ? 'Ver orçamento' : 'Ver OS'}</Link>}
+          </>
+        )}
+        {o.customerId && canOpen('/oficina/clientes') && <Link to={`/oficina/clientes/${o.customerId}`} className="btn-secondary text-sm !py-2">Cliente</Link>}
+      </div>
+    </li>
+  );
+}
+
+function OppRow({ o, canOpen, openLink, onWa }: { o: Opp; canOpen: (p: string) => boolean; openLink: string; onWa: () => void }) {
+  const d = daysSince(o.since);
+  const open = o.stage === 'montando' || o.stage === 'aguardando';
+  return (
+    <li className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+      <div className="flex-1 min-w-0 space-y-1">
+        <Who o={o} />
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className={`badge ${STAGE_BADGE[o.stage]}`}>{STAGE_LABEL[o.stage]}</span>
+          {o.stage === 'aguardando' && o.viewed && <span className="badge bg-steel-100 text-steel-600">👀 viu</span>}
+          {o.stage === 'aprovado' && o.saleOsId && <span className="badge bg-steel-100 text-steel-600">Virou OS{o.saleOsNumber != null ? ` nº ${String(o.saleOsNumber).padStart(4, '0')}` : ''}</span>}
+          {d != null && <span className="text-steel-400">{open ? `parado ${d === 0 ? 'hoje' : `há ${d}d`}` : new Date(o.since!).toLocaleDateString('pt-BR')}</span>}
+        </div>
+      </div>
+      <div className="text-sm font-bold shrink-0">{o.value > 0 ? fmtBRL(o.value) : <span className="text-xs text-pending-700">sem valor</span>}</div>
+      <div className="flex flex-wrap gap-2 shrink-0">
+        {o.stage === 'aguardando' && o.phone && <button onClick={onWa} className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#25D366] text-white">WhatsApp</button>}
+        {o.stage === 'aprovado' && o.saleOsId && canOpen('/oficina/os') && <Link to={`/oficina/os/${o.saleOsId}`} className="btn-secondary text-xs !py-1.5">Ver OS</Link>}
+        {canOpen(openLink) && (
+          <Link to={openLink} className={o.stage === 'montando' ? 'btn-primary text-xs !py-1.5' : 'btn-secondary text-xs !py-1.5'}>
+            {o.stage === 'montando' ? 'Montar e enviar' : o.origin === 'checkup' ? 'Ver orçamento' : 'Ver OS'}
+          </Link>
+        )}
+      </div>
+    </li>
   );
 }
