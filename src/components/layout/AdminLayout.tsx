@@ -27,6 +27,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Superadmin',
+    items: [
+      { to: '/admin/modulos', icon: '🧩', label: 'Módulos por oficina' },
+    ],
+  },
+  {
     label: 'Financeiro',
     items: [
       { to: '/admin/repasses',   icon: '💸', label: 'Repasses'   },

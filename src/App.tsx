@@ -78,6 +78,7 @@ import AdminFinancial from './pages/admin/Financial';
 import AdminLeads from './pages/admin/Leads';
 import AdminAvisos from './pages/admin/Avisos';
 import AdminEmbaixadores from './pages/admin/Embaixadores';
+import AdminModulos from './pages/admin/Modulos';
 
 function LazyFallback() {
   return (
@@ -166,6 +167,7 @@ export default function App() {
       <Route path="/admin/aprovacoes" element={<ProtectedRoute allow={['admin']}><AdminApprovals /></ProtectedRoute>} />
       <Route path="/admin/mecanicos" element={<ProtectedRoute allow={['admin']}><AdminMechanics /></ProtectedRoute>} />
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />
+      <Route path="/admin/modulos" element={<ProtectedRoute allow={['admin']}><AdminModulos /></ProtectedRoute>} />
       <Route path="/admin/usuario/:id"   element={<ProtectedRoute allow={['admin']}><AdminUserDetail /></ProtectedRoute>} />
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />

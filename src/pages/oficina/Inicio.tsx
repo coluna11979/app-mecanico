@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { fetchAll } from '@/lib/fetchAll';
 import { toast } from '@/components/ui/Toast';
 import { sessionAllows, useOperator } from '@/lib/operators';
+import { useModuleAllows } from '@/lib/modules';
 import { fmtBRL, osNumber } from '@/components/os/osHelpers';
 import NewOsModal, { type NewOsPreset } from '@/components/os/NewOsModal';
 import { PLATFORM, ResponsibleModal } from '@/components/cash/ResponsiblePicker';
@@ -60,7 +61,8 @@ export default function Inicio() {
   const [resp, setResp] = useState<{ os: TodayOs; platform: boolean } | null>(null);
 
   // Cada bloco só aparece para quem pode abrir a tela de destino (no modo balcão, pela função/permissões)
-  const can = (path: string) => !balcao || !session || sessionAllows(session, path);
+  const modAllows = useModuleAllows();
+  const can = (path: string) => modAllows(path) && (!balcao || !session || sessionAllows(session, path));
 
   useEffect(() => {
     if (!wid) return;
