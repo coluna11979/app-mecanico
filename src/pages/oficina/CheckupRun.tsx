@@ -11,7 +11,7 @@ import {
   CHECKUP_MODELS, CHECKUP_TEMPLATE, changeCheckupModel, modelItemKeys, modelLabel, modelOf,
   type CheckupItem, type CheckupModelKey, type VehicleCheckup,
 } from '@/lib/checkup';
-import { AddItem, ItemRow, type CatalogNames } from '@/components/checkup/ChecklistItem';
+import { AddItem, ItemRow } from '@/components/checkup/ChecklistItem';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { OVERALL_META, countsOf, itemsWithoutPrice, nextPendingSystem, overallState, overallText, sendMode, systemsOf } from '@/lib/checkupStatus';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
@@ -49,18 +49,6 @@ export default function WorkshopCheckupRun() {
   const access = useCheckupAccess();
   const dispatchOnly = !demo && !access.canInspect;
   const isMechanic = !demo && access.isMechanic;
-  // Nomes do cadastro de peças e da tabela de serviços, para apontar o que trocar
-  const [catalog, setCatalog] = useState<CatalogNames | undefined>(undefined);
-  useEffect(() => {
-    if (demo || !currentWorkshop?.id) return;
-    Promise.all([
-      supabase.from('workshop_parts').select('name').eq('workshop_id', currentWorkshop.id).eq('active', true).order('name'),
-      supabase.from('workshop_services').select('name').eq('workshop_id', currentWorkshop.id).eq('active', true).order('name'),
-    ]).then(([p, s]) => setCatalog({
-      parts: ((p.data ?? []) as { name: string }[]).map(x => x.name),
-      services: ((s.data ?? []) as { name: string }[]).map(x => x.name),
-    }));
-  }, [currentWorkshop?.id, demo]);
 
   const linkSent = !demo && checkup?.status === 'draft' && !!checkup.mechanic_link_sent_at;
   useEffect(() => {
@@ -393,7 +381,7 @@ export default function WorkshopCheckupRun() {
                         </div>
                       )}
                       {list.map(item => (
-                        <ItemRow key={item.id} item={item} catalog={catalog} onPatch={p => patchItem(item, p)}
+                        <ItemRow key={item.id} item={item} onPatch={p => patchItem(item, p)}
                           uploadPhoto={(file, key) => demo ? Promise.resolve(URL.createObjectURL(file))
                             : uploadCheckupPhoto(file, checkup.workshop_id, checkup.id, key)}
                           onRemove={item.item_key.startsWith('extra_') ? () => removeItem(item) : undefined} />

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
-import { AddItem, ItemRow, type CatalogNames, type ItemPatch } from '@/components/checkup/ChecklistItem';
+import { AddItem, ItemRow, type ItemPatch } from '@/components/checkup/ChecklistItem';
 import {
   STATUS_META, SYSTEM_ICON, uploadMechanicPhoto,
   type CheckupItem,
@@ -39,7 +39,6 @@ export default function MechanicCheckup() {
   const [car, setCar]       = useState<Car | null>(null);
   const [info, setInfo]     = useState<Info | null>(null);
   const [items, setItems]   = useState<CheckupItem[]>([]);
-  const [catalog, setCatalog] = useState<CatalogNames | undefined>(undefined);
   const [open, setOpen]     = useState<string | null>(null);
   const [notes, setNotes]   = useState('');
   const [finishing, setFinishing] = useState(false);
@@ -57,7 +56,6 @@ export default function MechanicCheckup() {
     setInfo(r.checkup!);
     setNotes(r.checkup!.notes ?? '');
     setItems(list);
-    setCatalog((r as { catalog?: CatalogNames }).catalog);
     setOpen(nextPendingSystem(list));
     setState('ok');
   }
@@ -253,7 +251,7 @@ export default function MechanicCheckup() {
                     </div>
                   )}
                   {list.map(item => (
-                    <ItemRow key={item.id} item={item} catalog={catalog} onPatch={p => patchItems([item.id], p)}
+                    <ItemRow key={item.id} item={item} onPatch={p => patchItems([item.id], p)}
                       uploadPhoto={(file, key) => uploadMechanicPhoto(file, info!.workshop_id, info!.id, info!.upload_key ?? '', key)}
                       onRemove={item.item_key.startsWith('extra_') ? () => removeItem(item) : undefined} />
                   ))}
