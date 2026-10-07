@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,70 +7,107 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  PART_CATEGORIES, UNITS, fmtPct, fmtQty, loadDefaultMargin, marginOf, needsRestock, partCategory, priceFromMargin,
+  PART_CATEGORIES, UNITS, fmtPct, fmtQty, loadDefaultMargin, marginOf, partCategory, priceFromMargin,
   priceModeOf, salePriceOf, type PartCategory, type PriceMode, type WorkshopPart,
 } from '@/lib/parts';
 import { fmtDate, type StockMovement, type Supplier } from '@/lib/purchasing';
+import {
+  SITUATIONS, ago, costToConfirm, isBelowMin, isNegative, isZeroBought, loadStockData, matchSituation, osShortage,
+  type Situation, type StockData,
+} from '@/lib/stock';
 import SupplierPicker from '@/components/parts/SupplierPicker';
+import StockTabs, { useStockAccess } from '@/components/stock/StockTabs';
+import { StockHistoryModal, StockMoveModal, type MoveMode } from '@/components/stock/StockModals';
 
 const MOVE_LABEL: Record<StockMovement['kind'], string> = {
   compra: 'Compra', estorno_compra: 'Estorno de compra', os: 'Usada em OS', estorno_os: 'OS reaberta', ajuste: 'Ajuste',
 };
+
+const PAGE = 100;
 
 export default function Pecas() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const { balcao, session } = useOperator();
   const allowed = canDo(session, balcao, 'pecas_estoque');
+  const access = useStockAccess();
+  const [params, setParams] = useSearchParams();
 
-  const [parts, setParts]       = useState<WorkshopPart[] | null>(null);
+  const [data, setData]         = useState<StockData | null>(null);
   const [margin, setMargin]     = useState<number | null>(null);
-  const [q, setQ]               = useState('');
-  const [showInactive, setShowInactive] = useState(false);
-  const [onlyRestock, setOnlyRestock] = useState(false);
-  const [cat, setCat]           = useState<PartCategory | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [q, setQ]               = useState('');
+  const [supplierF, setSupplierF] = useState('');
+  const [cat, setCat]           = useState<PartCategory | ''>('');
+  const [showInactive, setShowInactive] = useState(false);
+  const [more, setMore]         = useState(false);
+  const [limit, setLimit]       = useState(PAGE);
   const [editing, setEditing]   = useState<WorkshopPart | 'new' | null>(null);
+  const [pricing, setPricing]   = useState(false);
+  const [moving, setMoving]     = useState<{ part: WorkshopPart; mode: MoveMode } | null>(null);
+  const [history, setHistory]   = useState<WorkshopPart | null>(null);
+  const [menu, setMenu]         = useState<string | null>(null);
+
+  const situation = (SITUATIONS.some(s => s.value === params.get('situacao')) ? params.get('situacao') : 'todas') as Situation;
+  const setSituation = (s: Situation) => setParams(p => { const n = new URLSearchParams(p); if (s === 'todas') n.delete('situacao'); else n.set('situacao', s); return n; }, { replace: true });
 
   const load = useCallback(async () => {
     if (!wid) return;
-    const [p, m, s] = await Promise.all([
-      supabase.from('workshop_parts').select('*').eq('workshop_id', wid).order('name'),
+    const [d, m, s] = await Promise.all([
+      loadStockData(wid),
       loadDefaultMargin(wid),
       supabase.from('suppliers').select('*').eq('workshop_id', wid).order('name'),
     ]);
-    setParts((p.data as WorkshopPart[]) ?? []);
+    setData(d);
     setMargin(m);
     setSuppliers((s.data as Supplier[]) ?? []);
   }, [wid]);
 
   useEffect(() => { if (allowed) load(); }, [load, allowed]);
 
-  const list = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    const supName = new Map(suppliers.map(x => [x.id, x.name.toLowerCase()]));
-    return (parts ?? []).filter(p => (showInactive || p.active) && (!onlyRestock || needsRestock(p))
-      && (!cat || p.category === cat) && (!t
-      || p.name.toLowerCase().includes(t) || p.code?.toLowerCase().includes(t)
-      || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supName.get(p.supplier_id)?.includes(t))
-      || partCategory(p.category).label.toLowerCase().includes(t)));
-  }, [parts, q, showInactive, onlyRestock, cat, suppliers]);
-  const supplierName = useMemo(() => new Map(suppliers.map(x => [x.id, x.name])), [suppliers]);
-  const restockCount = (parts ?? []).filter(p => p.active && needsRestock(p)).length;
+  // Links do painel: ?peca=<id> abre a ficha, ?nova=1 abre o cadastro
+  useEffect(() => {
+    if (!data) return;
+    const id = params.get('peca');
+    const nova = params.get('nova');
+    if (!id && !nova) return;
+    if (nova) setEditing('new');
+    else { const p = data.parts.find(x => x.id === id); if (p) setEditing(p); }
+    setParams(p => { const n = new URLSearchParams(p); n.delete('peca'); n.delete('nova'); return n; }, { replace: true });
+  }, [data, params, setParams]);
 
-  // Quantas peças e quanto dinheiro parado (custo × estoque) em cada categoria
-  const byCat = useMemo(() => {
-    const m = new Map<string, { count: number; stock: number }>();
-    for (const p of parts ?? []) {
-      if (!p.active) continue;
-      const e = m.get(p.category) ?? { count: 0, stock: 0 };
-      e.count++;
-      e.stock += Math.max(0, Number(p.stock_qty)) * Number(p.cost);
-      m.set(p.category, e);
-    }
-    return PART_CATEGORIES.filter(c => m.has(c.value)).map(c => ({ ...c, ...m.get(c.value)! }));
+  useEffect(() => { setLimit(PAGE); }, [q, situation, supplierF, cat, showInactive]);
+
+  const parts = data?.parts ?? null;
+  const supplierName = useMemo(() => new Map(suppliers.map(x => [x.id, x.name])), [suppliers]);
+
+  const list = useMemo(() => {
+    if (!data || !parts) return [];
+    const t = q.trim().toLowerCase();
+    return parts.filter(p => (showInactive || p.active)
+      && matchSituation(p, situation, data)
+      && (!supplierF || p.supplier_id === supplierF)
+      && (!cat || p.category === cat)
+      && (!t || p.name.toLowerCase().includes(t) || p.code?.toLowerCase().includes(t)
+        || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supplierName.get(p.supplier_id)?.toLowerCase().includes(t))
+        || partCategory(p.category).label.toLowerCase().includes(t)))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [data, parts, q, showInactive, situation, supplierF, cat, supplierName]);
+
+  const counts = useMemo(() => {
+    const c = {} as Record<Situation, number>;
+    if (!data) return c;
+    const act = data.parts.filter(p => p.active);
+    for (const s of SITUATIONS) c[s.value] = act.filter(p => matchSituation(p, s.value, data)).length;
+    return c;
+  }, [data]);
+
+  // Peças ativas por categoria (só as categorias que a oficina usa)
+  const catCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of parts ?? []) if (p.active) m.set(p.category, (m.get(p.category) ?? 0) + 1);
+    return PART_CATEGORIES.filter(c => m.has(c.value)).map(c => ({ ...c, n: m.get(c.value)! }));
   }, [parts]);
-  const stockValue = byCat.reduce((s, c) => s + c.stock, 0);
 
   if (!allowed) {
     return (
@@ -85,60 +122,90 @@ export default function Pecas() {
   }
 
   const inactiveCount = (parts ?? []).filter(p => !p.active).length;
+  const usedSuppliers = suppliers.filter(s => (parts ?? []).some(p => p.supplier_id === s.id));
+  const extraFilters = showInactive ? 1 : 0;
+  const buyLink = (p: WorkshopPart) => `/oficina/compras/nova?peca=${p.id}${p.supplier_id ? `&fornecedor=${p.supplier_id}` : ''}`;
+  const actions = (p: WorkshopPart) => [
+    { label: '＋ Entrada', run: () => setMoving({ part: p, mode: 'entrada' }) },
+    { label: '－ Saída', run: () => setMoving({ part: p, mode: 'saida' }) },
+    { label: '⚖️ Ajustar estoque', run: () => setMoving({ part: p, mode: 'ajuste' }) },
+    { label: '🕘 Histórico', run: () => setHistory(p) },
+    { label: '✏️ Editar peça', run: () => setEditing(p) },
+  ];
 
   return (
     <WorkshopLayout>
-      <div className="max-w-5xl mx-auto space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">🔩 Peças e estoque</h1>
-            <p className="text-sm text-steel-500 mt-1">Custo, preço de venda e quantidade. O orçamento puxa o preço daqui e a OS concluída dá baixa no estoque.</p>
-          </div>
-          <div className="flex gap-2">
-            <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200">🧾 Lançar nota</Link>
-            <button className="btn-primary" onClick={() => setEditing('new')}>+ Nova peça</button>
-          </div>
-        </div>
+      <div className="max-w-6xl mx-auto space-y-4">
+        <StockTabs title="Peças" subtitle="Custo, preço e quantidade. O orçamento puxa o preço daqui e a OS concluída dá baixa no estoque."
+          actions={<>
+            <button className="btn-ghost border border-steel-200 text-sm !py-2" onClick={() => setPricing(true)} title="Margem padrão da oficina">⚙️ Preços</button>
+            {access.compras && <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200 text-sm !py-2">🧾 Lançar nota</Link>}
+            <button className="btn-primary text-sm !py-2" onClick={() => setEditing('new')}>+ Nova peça</button>
+          </>} />
 
-        {margin != null && wid && <DefaultMargin wid={wid} value={margin} onSaved={v => setMargin(v)} />}
-
-        <div className="flex flex-wrap items-center gap-3">
-          <input className="input !w-auto flex-1 min-w-[220px]" placeholder="Buscar por nome, código, marca ou fornecedor"
-            value={q} onChange={e => setQ(e.target.value)} />
-          {restockCount > 0 && (
-            <button onClick={() => setOnlyRestock(v => !v)}
-              className={`text-sm font-semibold px-3 py-2 rounded-full border transition ${onlyRestock ? 'bg-alert-600 text-white border-alert-600' : 'bg-alert-50 text-alert-700 border-alert-200'}`}>
-              🛒 Comprar ({restockCount})
-            </button>
-          )}
-          {inactiveCount > 0 && (
-            <label className="text-sm text-steel-600 flex items-center gap-2">
-              <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
-              Mostrar desativadas ({inactiveCount})
-            </label>
-          )}
-        </div>
-
-        {byCat.length > 1 && (
-          <div className="-mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto">
-            <div className="flex gap-2 w-max md:w-auto md:flex-wrap">
-              <button onClick={() => setCat(null)}
-                className={`shrink-0 text-left px-3 py-2 rounded-xl border transition ${cat === null ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 hover:border-steel-300'}`}>
-                <div className="text-sm font-semibold">Todas</div>
-                <div className={`text-[11px] ${cat === null ? 'text-steel-300' : 'text-steel-500'}`}>{fmtBRL(stockValue)} em estoque</div>
+        {/* Filtros */}
+        <div className="space-y-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input className="input flex-1" placeholder="🔍 Buscar por nome, código, marca ou fornecedor" value={q} onChange={e => setQ(e.target.value)} />
+            <div className="flex gap-2">
+              <select className="input !py-2 flex-1 sm:!w-auto text-sm" value={situation} onChange={e => setSituation(e.target.value as Situation)}>
+                {SITUATIONS.filter(s => s.value === 'todas' || s.value === situation || counts[s.value] > 0 || s.value === 'atencao')
+                  .map(s => <option key={s.value} value={s.value}>{s.label}{s.value !== 'todas' && counts[s.value] != null ? ` (${counts[s.value]})` : ''}</option>)}
+              </select>
+              {usedSuppliers.length > 0 && (
+                <select className="input !py-2 flex-1 sm:!w-auto text-sm" value={supplierF} onChange={e => setSupplierF(e.target.value)}>
+                  <option value="">Todos os fornecedores</option>
+                  {usedSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              )}
+              <button onClick={() => setMore(v => !v)} className={`shrink-0 text-sm font-semibold px-3 rounded-xl border ${more || extraFilters ? 'border-steel-900 text-steel-900' : 'border-steel-200 text-steel-600'}`}>
+                Mais filtros{extraFilters > 0 && ` (${extraFilters})`}
               </button>
-              {byCat.map(c => (
-                <button key={c.value} onClick={() => setCat(cat === c.value ? null : c.value)}
-                  className={`shrink-0 text-left px-3 py-2 rounded-xl border transition ${cat === c.value ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 hover:border-steel-300'}`}>
-                  <div className="text-sm font-semibold whitespace-nowrap">{c.icon} {c.label} <span className={cat === c.value ? 'text-steel-300' : 'text-steel-400'}>({c.count})</span></div>
-                  <div className={`text-[11px] ${cat === c.value ? 'text-steel-300' : 'text-steel-500'}`}>{fmtBRL(c.stock)} em estoque</div>
-                </button>
-              ))}
             </div>
           </div>
-        )}
+          {more && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-steel-50 px-3 py-2">
+              {inactiveCount > 0 ? (
+                <label className="text-sm text-steel-600 flex items-center gap-2">
+                  <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+                  Mostrar desativadas ({inactiveCount})
+                </label>
+              ) : <span className="text-sm text-steel-500">Nenhuma peça desativada.</span>}
+            </div>
+          )}
 
-        {parts === null || margin === null ? (
+          {/* Atalhos: em falta, com estoque e categoria */}
+          {data && parts && parts.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <QuickChip on={situation === 'todas'} onClick={() => setSituation('todas')}>Todas</QuickChip>
+              <QuickChip on={situation === 'atencao'} warn={counts.atencao > 0} onClick={() => setSituation(situation === 'atencao' ? 'todas' : 'atencao')}>
+                ⚠️ Em falta ({counts.atencao ?? 0})
+              </QuickChip>
+              <QuickChip on={situation === 'com_estoque'} onClick={() => setSituation(situation === 'com_estoque' ? 'todas' : 'com_estoque')}>
+                Com estoque ({counts.com_estoque ?? 0})
+              </QuickChip>
+              {catCounts.length > 1 && (
+                <select value={cat} onChange={e => setCat(e.target.value as PartCategory | '')}
+                  className={`text-xs font-semibold pl-3 pr-7 py-1.5 rounded-full border bg-white ${cat ? 'border-steel-900 text-steel-900' : 'border-steel-200 text-steel-600'}`}>
+                  <option value="">📂 Todas as categorias</option>
+                  {catCounts.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label} ({c.n})</option>)}
+                </select>
+              )}
+              <span className="ml-auto text-xs text-steel-500">{list.length} peça{list.length === 1 ? '' : 's'}</span>
+            </div>
+          )}
+          {situation === 'atencao' && (
+            <p className="text-xs text-steel-500">Em falta: estoque negativo, faltando para OS aberta, abaixo do mínimo ou zerada depois de comprada. Peça que nunca foi comprada por nota não entra aqui.</p>
+          )}
+          {situation === 'custo' && (
+            <p className="text-xs text-steel-500">Peças com estoque (ou sem custo) que nunca entraram por uma nota de compra. O custo veio do cadastro ou da importação: confira e lance a próxima compra pela nota.</p>
+          )}
+          {situation === 'parada' && data && counts.parada === 0 && (
+            <p className="text-xs text-steel-500">Peças paradas aparecem quando houver 90 dias de histórico de estoque.</p>
+          )}
+        </div>
+
+        {parts === null || margin === null || !data ? (
           <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>
         ) : parts.length === 0 ? (
           <div className="card text-center py-12">
@@ -152,60 +219,77 @@ export default function Pecas() {
           </div>
         ) : list.length === 0 ? (
           <div className="card text-center py-8 text-sm text-steel-500">
-            Nenhuma peça encontrada{q.trim() ? ` para “${q}”` : ''}{cat ? ` em ${partCategory(cat).label}` : ''}.
+            Nenhuma peça encontrada{q.trim() ? ` para “${q}”` : ''} com esses filtros.
           </div>
         ) : (
-          <div className="card !p-0 overflow-hidden">
-            <div className="hidden md:grid grid-cols-12 gap-2 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
-              <div className="col-span-4">Peça</div>
-              <div className="col-span-2 text-right">Estoque</div>
-              <div className="col-span-2 text-right">Custo</div>
-              <div className="col-span-1 text-right">Margem</div>
-              <div className="col-span-2 text-right">Venda</div>
-              <div className="col-span-1" />
-            </div>
-            <ul className="divide-y divide-steel-100">
-              {list.map(p => {
-                const price = salePriceOf(p, margin);
-                const mode = priceModeOf(p);
-                return (
-                  <li key={p.id}>
-                    <button onClick={() => setEditing(p)}
-                      className={`w-full text-left px-5 py-3 grid grid-cols-12 gap-2 items-center hover:bg-steel-50 transition ${p.active ? '' : 'opacity-50'}`}>
-                      <div className="col-span-12 md:col-span-4 min-w-0">
-                        <div className="text-sm font-semibold truncate">{p.name}{!p.active && <span className="badge bg-steel-100 text-steel-500 ml-2">desativada</span>}</div>
-                        <div className="text-xs text-steel-500 truncate">
-                          {!cat && <span className="text-steel-600">{partCategory(p.category).icon} {partCategory(p.category).label} · </span>}
-                          {[p.code, p.brand, p.supplier_id && supplierName.get(p.supplier_id)].filter(Boolean).join(' · ') || `por ${p.unit}`}
-                        </div>
-                      </div>
-                      <div className="col-span-3 md:col-span-2 text-right">
-                        <span className="md:hidden text-[10px] text-steel-400 uppercase block">Estoque</span>
-                        <span className={`text-sm font-semibold ${needsRestock(p) ? 'text-alert-600' : Number(p.stock_qty) < 0 ? 'text-alert-600' : ''}`}>
-                          {fmtQty(p.stock_qty)} <span className="text-xs font-normal text-steel-400">{p.unit}</span>
-                        </span>
-                        {needsRestock(p) && <span className="block text-[10px] text-alert-600">mín. {fmtQty(p.min_qty)}</span>}
-                      </div>
-                      <div className="col-span-3 md:col-span-2 text-right">
-                        <span className="md:hidden text-[10px] text-steel-400 uppercase block">Custo</span>
-                        <span className="text-sm">{fmtBRL(p.cost)}</span>
-                      </div>
-                      <div className="col-span-3 md:col-span-1 text-right">
-                        <span className="md:hidden text-[10px] text-steel-400 uppercase block">Margem</span>
-                        <span className="text-sm">{fmtPct(marginOf(Number(p.cost), price))}</span>
-                        <span className="block text-[10px] text-steel-400">{mode === 'default' ? 'padrão' : mode === 'margin' ? 'própria' : 'preço fixo'}</span>
-                      </div>
-                      <div className="col-span-3 md:col-span-2 text-right">
-                        <span className="md:hidden text-[10px] text-steel-400 uppercase block">Venda</span>
-                        <span className="text-sm font-bold">{fmtBRL(price)}</span>
-                      </div>
-                      <div className="hidden md:block col-span-1 text-right text-steel-300">›</div>
+          <>
+            {/* Desktop: tabela compacta */}
+            <div className="hidden md:block card !p-0">
+              <div className="grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_88px_88px_88px_minmax(0,1.2fr)_96px_40px] gap-3 px-5 py-2 bg-steel-50 border-b border-steel-100 rounded-t-2xl text-[10px] font-bold text-steel-500 uppercase tracking-wider">
+                <div>Peça</div><div>Código</div><div className="text-right">Estoque</div><div className="text-right">Custo</div>
+                <div className="text-right">Preço</div><div>Fornecedor</div><div>Últ. mov.</div><div />
+              </div>
+              <ul className="divide-y divide-steel-100">
+                {list.slice(0, limit).map(p => (
+                  <li key={p.id} className={`grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_88px_88px_88px_minmax(0,1.2fr)_96px_40px] gap-3 px-5 py-2.5 items-center hover:bg-steel-50 ${p.active ? '' : 'opacity-50'}`}>
+                    <button className="min-w-0 text-left" onClick={() => setEditing(p)}>
+                      <div className="text-sm font-semibold truncate">{p.name}</div>
+                      <Flags p={p} d={data} />
                     </button>
+                    <div className="text-xs text-steel-600 truncate">{p.code || <span className="text-steel-300">—</span>}</div>
+                    <div className="text-right"><StockQty p={p} /></div>
+                    <div className="text-right text-sm">{fmtBRL(p.cost)}</div>
+                    <div className="text-right text-sm font-bold">{fmtBRL(salePriceOf(p, margin))}</div>
+                    <div className="text-xs text-steel-600 truncate">{(p.supplier_id && supplierName.get(p.supplier_id)) || <span className="text-steel-300">—</span>}</div>
+                    <div className="text-xs text-steel-500" title={data.lastMove.get(p.id) ? fmtDate(data.lastMove.get(p.id)!) : undefined}>{ago(data.lastMove.get(p.id))}</div>
+                    <div className="relative text-right">
+                      <button onClick={() => setMenu(menu === p.id ? null : p.id)} className="h-8 w-8 rounded-lg text-steel-500 hover:bg-steel-200" aria-label="Ações">⋯</button>
+                      {menu === p.id && <ActionsMenu items={actions(p)} buy={access.compras ? buyLink(p) : null} onClose={() => setMenu(null)} />}
+                    </div>
                   </li>
-                );
-              })}
+                ))}
+              </ul>
+            </div>
+
+            {/* Celular: cards */}
+            <ul className="md:hidden space-y-2">
+              {list.slice(0, limit).map(p => (
+                <li key={p.id} className={`card !p-4 ${p.active ? '' : 'opacity-50'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <button className="min-w-0 text-left" onClick={() => setEditing(p)}>
+                      <div className="text-sm font-semibold">{p.name}</div>
+                      <div className="text-xs text-steel-500 truncate">
+                        {[p.code, p.supplier_id && supplierName.get(p.supplier_id)].filter(Boolean).join(' · ') || partCategory(p.category).label}
+                      </div>
+                      <Flags p={p} d={data} />
+                    </button>
+                    <div className="text-right shrink-0">
+                      <StockQty p={p} big />
+                      <div className="text-xs text-steel-500">{fmtBRL(salePriceOf(p, margin))}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-3">
+                    <button onClick={() => setMoving({ part: p, mode: 'entrada' })} className="flex-1 text-sm font-semibold py-2 rounded-xl bg-steel-100 text-steel-800">＋ Entrada</button>
+                    <button onClick={() => setMoving({ part: p, mode: 'saida' })} className="flex-1 text-sm font-semibold py-2 rounded-xl bg-steel-100 text-steel-800">－ Saída</button>
+                    {access.compras && (isBelowMin(p) || isZeroBought(p, data) || osShortage(p, data) > 0 || isNegative(p)) && (
+                      <Link to={buyLink(p)} className="flex-1 text-center text-sm font-semibold py-2 rounded-xl bg-brand-600 text-white">Comprar</Link>
+                    )}
+                    <div className="relative">
+                      <button onClick={() => setMenu(menu === p.id ? null : p.id)} className="h-9 w-10 rounded-xl bg-steel-100 text-steel-700" aria-label="Mais ações">⋯</button>
+                      {menu === p.id && <ActionsMenu items={actions(p).slice(2)} buy={access.compras ? buyLink(p) : null} onClose={() => setMenu(null)} />}
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-steel-400 mt-2">Custo {fmtBRL(p.cost)} · última movimentação {ago(data.lastMove.get(p.id))}</div>
+                </li>
+              ))}
             </ul>
-          </div>
+
+            {list.length > limit && (
+              <button onClick={() => setLimit(l => l + PAGE)} className="w-full py-3 text-sm font-semibold text-brand-700 rounded-2xl border border-steel-200 bg-white hover:bg-steel-50">
+                Mostrar mais ({list.length - limit} restantes)
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -213,7 +297,74 @@ export default function Pecas() {
         <PartForm wid={wid} part={editing === 'new' ? null : editing} defaultMargin={margin}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}
+      {pricing && wid && margin != null && (
+        <div className="fixed inset-0 bg-steel-900/60 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setPricing(false)}>
+          <div onClick={e => e.stopPropagation()} className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl p-2">
+            <div className="flex justify-end"><button onClick={() => setPricing(false)} className="h-8 w-8 rounded-lg grid place-items-center text-steel-500 hover:bg-steel-100">✕</button></div>
+            <DefaultMargin wid={wid} value={margin} onSaved={v => setMargin(v)} />
+          </div>
+        </div>
+      )}
+      {moving && (
+        <StockMoveModal part={moving.part} mode={moving.mode} canBuy={access.compras}
+          onClose={() => setMoving(null)} onSaved={() => { setMoving(null); load(); }} />
+      )}
+      {history && <StockHistoryModal part={history} onClose={() => setHistory(null)} />}
     </WorkshopLayout>
+  );
+}
+
+function QuickChip({ on, warn, onClick, children }: { on: boolean; warn?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick}
+      className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${on ? 'bg-steel-900 text-white border-steel-900'
+        : warn ? 'bg-alert-50 text-alert-700 border-alert-200' : 'bg-white text-steel-600 border-steel-200 hover:border-steel-300'}`}>
+      {children}
+    </button>
+  );
+}
+
+function StockQty({ p, big }: { p: WorkshopPart; big?: boolean }) {
+  const bad = isNegative(p) || isBelowMin(p);
+  return (
+    <div>
+      <span className={`${big ? 'text-lg' : 'text-sm'} font-bold ${bad ? 'text-alert-600' : Number(p.stock_qty) === 0 ? 'text-steel-400' : ''}`}>
+        {fmtQty(p.stock_qty)} <span className="text-xs font-normal text-steel-400">{p.unit}</span>
+      </span>
+      {Number(p.min_qty) > 0 && <span className={`block text-[10px] ${isBelowMin(p) ? 'text-alert-600' : 'text-steel-400'}`}>mín. {fmtQty(p.min_qty)}</span>}
+    </div>
+  );
+}
+
+/** Selos curtos do que pede atenção na peça */
+function Flags({ p, d }: { p: WorkshopPart; d: StockData }) {
+  const f: { t: string; c: string }[] = [];
+  const short = osShortage(p, d);
+  if (short > 0) f.push({ t: `faltam ${fmtQty(short)} p/ OS`, c: 'bg-alert-50 text-alert-700' });
+  if (isNegative(p)) f.push({ t: 'negativo', c: 'bg-alert-50 text-alert-700' });
+  else if (isBelowMin(p)) f.push({ t: 'abaixo do mínimo', c: 'bg-pending-50 text-pending-800' });
+  else if (isZeroBought(p, d)) f.push({ t: 'zerada', c: 'bg-steel-100 text-steel-600' });
+  if (costToConfirm(p, d)) f.push({ t: 'custo a confirmar', c: 'bg-pending-50 text-pending-800' });
+  if (!p.active) f.push({ t: 'desativada', c: 'bg-steel-100 text-steel-500' });
+  if (!f.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-0.5">
+      {f.map(x => <span key={x.t} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${x.c}`}>{x.t}</span>)}
+    </div>
+  );
+}
+
+function ActionsMenu({ items, buy, onClose }: { items: { label: string; run: () => void }[]; buy: string | null; onClose: () => void }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-30" onClick={onClose} />
+      <div className="absolute right-0 top-full mt-1 z-40 w-48 rounded-xl border border-steel-200 bg-white shadow-lg py-1 text-left">
+        {items.map(i => (
+          <button key={i.label} onClick={() => { onClose(); i.run(); }} className="block w-full text-left px-3 py-2 text-sm hover:bg-steel-50">{i.label}</button>
+        ))}
+        {buy && <Link to={buy} className="block px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-steel-50 border-t border-steel-100">🧾 Comprar (lançar nota)</Link>}
+      </div>
+    </>
   );
 }
 

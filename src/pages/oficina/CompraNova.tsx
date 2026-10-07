@@ -66,6 +66,9 @@ export default function CompraNova() {
       setSuppliers((s.data as Supplier[]) ?? []);
       setParts((p.data as WorkshopPart[]) ?? []);
       setMargin(m);
+      // "Comprar" do estoque: já começa com a peça na nota (custo da última compra)
+      const pre = ((p.data as WorkshopPart[]) ?? []).find(x => x.id === params.get('peca'));
+      if (pre) setRows([{ ...newRow(), part_id: pre.id, name: pre.name, unit: pre.unit, unit_cost: Number(pre.cost) > 0 ? costInput(Number(pre.cost)) : '' }]);
     })();
     hasAiInvoice(wid).then(setAiEnabled);
   }, [wid, allowed]);
