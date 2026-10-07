@@ -7,8 +7,10 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, fmtPhone } from '@/components/os/osHelpers';
 import { fmtCnpj, fmtDate, onlyDigits, type Supplier } from '@/lib/purchasing';
+import { fetchAll } from '@/lib/fetchAll';
+import StockTabs from '@/components/stock/StockTabs';
 
-type Totals = Record<string, { open: number; lastBuy: string | null; bought: number }>;
+type Totals = Record<string, { open: number; lastBuy: string | null; bought: number; count: number }>;
 
 export default function Fornecedores() {
   const { currentWorkshop } = useAuth();
@@ -25,14 +27,15 @@ export default function Fornecedores() {
     if (!wid) return;
     const [s, inv, pay] = await Promise.all([
       supabase.from('suppliers').select('*').eq('workshop_id', wid).order('name'),
-      supabase.from('purchase_invoices').select('supplier_id, issue_date, total').eq('workshop_id', wid).eq('status', 'posted'),
+      fetchAll((a, b) => supabase.from('purchase_invoices').select('id, supplier_id, issue_date, total').eq('workshop_id', wid).eq('status', 'posted').order('id').range(a, b)),
       supabase.from('payables').select('supplier_id, amount').eq('workshop_id', wid).is('cancelled_at', null).is('paid_at', null).not('supplier_id', 'is', null),
     ]);
     const t: Totals = {};
-    const row = (id: string) => (t[id] ??= { open: 0, lastBuy: null, bought: 0 });
+    const row = (id: string) => (t[id] ??= { open: 0, lastBuy: null, bought: 0, count: 0 });
     for (const i of (inv.data ?? []) as { supplier_id: string; issue_date: string; total: number }[]) {
       const r = row(i.supplier_id);
       r.bought += Number(i.total);
+      r.count++;
       if (!r.lastBuy || i.issue_date > r.lastBuy) r.lastBuy = i.issue_date;
     }
     for (const p of (pay.data ?? []) as { supplier_id: string; amount: number }[]) row(p.supplier_id).open += Number(p.amount);
@@ -53,17 +56,12 @@ export default function Fornecedores() {
 
   return (
     <WorkshopLayout>
-      <div className="max-w-5xl mx-auto space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">🚚 Fornecedores</h1>
-            <p className="text-sm text-steel-500 mt-1">De quem você compra. Cada nota lançada atualiza o estoque e as contas a pagar.</p>
-          </div>
-          <div className="flex gap-2">
-            <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200">🧾 Lançar nota</Link>
-            <button className="btn-primary" onClick={() => setEditing('new')}>+ Novo fornecedor</button>
-          </div>
-        </div>
+      <div className="max-w-6xl mx-auto space-y-4">
+        <StockTabs title="Fornecedores" subtitle="De quem você compra, quanto já comprou e quanto ainda deve."
+          actions={<>
+            <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200 text-sm !py-2">🧾 Lançar nota</Link>
+            <button className="btn-primary text-sm !py-2" onClick={() => setEditing('new')}>+ Novo fornecedor</button>
+          </>} />
 
         {list && list.length > 0 && (
           <input className="input" placeholder="Buscar por nome, vendedor, CNPJ ou telefone" value={q} onChange={e => setQ(e.target.value)} />
@@ -86,24 +84,35 @@ export default function Fornecedores() {
               {shown.map(s => {
                 const t = totals[s.id];
                 return (
-                  <li key={s.id} className={`px-5 py-3 flex flex-wrap items-center justify-between gap-3 ${s.active ? '' : 'opacity-50'}`}>
+                  <li key={s.id} className={`px-5 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 ${s.active ? '' : 'opacity-50'}`}>
                     <button className="min-w-0 text-left flex-1" onClick={() => setEditing(s)}>
                       <div className="text-sm font-semibold truncate">{s.name}{!s.active && <span className="badge bg-steel-100 text-steel-500 ml-2">inativo</span>}</div>
                       <div className="text-xs text-steel-500 truncate">
-                        {[s.cnpj && fmtCnpj(s.cnpj), s.contact, s.phone && fmtPhone(s.phone), s.payment_days ? `prazo ${s.payment_days} dias` : 'à vista']
+                        {[s.contact, s.phone && fmtPhone(s.phone), s.cnpj && fmtCnpj(s.cnpj), s.payment_days ? `prazo ${s.payment_days} dias` : 'à vista']
                           .filter(Boolean).join(' · ')}
                       </div>
                     </button>
-                    <div className="flex items-center gap-4 text-right">
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">A pagar</div>
-                        <div className={`text-sm font-bold ${t?.open ? 'text-pending-700' : 'text-steel-400'}`}>{fmtBRL(t?.open ?? 0)}</div>
-                      </div>
-                      <div className="hidden sm:block">
+                    <div className="grid grid-cols-3 md:flex md:items-center gap-3 md:gap-5 md:text-right">
+                      <div className="md:w-28">
                         <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">Última compra</div>
                         <div className="text-sm">{t?.lastBuy ? fmtDate(t.lastBuy) : '—'}</div>
                       </div>
-                      <Link to={`/oficina/compras/nova?fornecedor=${s.id}`} className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-steel-100 hover:bg-steel-200 text-steel-700">
+                      <div className="md:w-28">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">Comprado</div>
+                        <div className="text-sm font-semibold">{fmtBRL(t?.bought ?? 0)}</div>
+                      </div>
+                      <div className="md:w-28">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">A pagar</div>
+                        <div className={`text-sm font-bold ${t?.open ? 'text-pending-700' : 'text-steel-400'}`}>{fmtBRL(t?.open ?? 0)}</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      {t?.count ? (
+                        <Link to={`/oficina/compras?fornecedor=${s.id}`} className="flex-1 md:flex-none text-center text-xs font-semibold px-3 py-1.5 rounded-lg border border-steel-200 hover:bg-steel-50 text-steel-700">
+                          Notas ({t.count})
+                        </Link>
+                      ) : null}
+                      <Link to={`/oficina/compras/nova?fornecedor=${s.id}`} className="flex-1 md:flex-none text-center text-xs font-semibold px-3 py-1.5 rounded-lg bg-steel-100 hover:bg-steel-200 text-steel-700">
                         + Nota
                       </Link>
                     </div>

@@ -47,8 +47,9 @@ const SECTIONS: NavGroup[] = [
     { to: '/oficina/contas-a-pagar', icon: '📤', label: 'Contas a pagar'   },
   ] },
   { key: 'estoque', title: 'Estoque e compras', items: [
-    { to: '/oficina/pecas',      icon: '🔩', label: 'Peças e estoque'      },
-    { to: '/oficina/compras',    icon: '🧾', label: 'Notas de compra'      },
+    { to: '/oficina/pecas/painel', icon: '📦', label: 'Painel do estoque' },
+    { to: '/oficina/pecas',      icon: '🔩', label: 'Peças'                },
+    { to: '/oficina/compras',    icon: '🧾', label: 'Compras'              },
     { to: '/oficina/fornecedores', icon: '🚚', label: 'Fornecedores'       },
   ] },
   { key: 'equipe', title: 'Equipe', items: [
@@ -839,6 +840,8 @@ function SideItem({ to, icon, label, badge, mobileHidden = false, nested = false
   return (
     <NavLink
       to={to}
+      // Peças tem a sub-rota Painel do estoque (item próprio no menu)
+      end={to === '/oficina/pecas'}
       onClick={onClick}
       className={({ isActive }) => `
         ${mobileHidden ? 'hidden lg:flex' : 'flex'} items-center gap-3 px-3 ${nested ? 'py-2.5' : 'py-3'} rounded-xl text-sm font-medium transition-all
