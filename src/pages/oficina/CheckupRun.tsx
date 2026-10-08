@@ -12,6 +12,8 @@ import {
   type CheckupItem, type CheckupModelKey, type VehicleCheckup,
 } from '@/lib/checkup';
 import { AddItem, ItemRow } from '@/components/checkup/ChecklistItem';
+import QuoteSearch, { type CatalogEntry } from '@/components/checkup/QuoteSearch';
+import { loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { OVERALL_META, countsOf, itemsWithoutPrice, nextPendingSystem, overallState, overallText, sendMode, systemsOf } from '@/lib/checkupStatus';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
@@ -708,12 +710,22 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
   const mode = sendMode(items);
   const noPrice = itemsWithoutPrice(items);
 
-  // Sugestões da Tabela de serviços (nome + preço)
-  const [services, setServices] = useState<{ name: string; price: number }[]>([]);
+  // Busca do orçamento: Tabela de serviços + Cadastro de peças (preço de venda)
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   useEffect(() => {
     if (demo) return;
-    supabase.from('workshop_services').select('name, price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name')
-      .then(({ data }) => setServices(((data ?? []) as { name: string; price: number }[]).map(x => ({ name: x.name, price: Number(x.price) }))));
+    (async () => {
+      const [s, p, m] = await Promise.all([
+        supabase.from('workshop_services').select('name, price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name'),
+        supabase.from('workshop_parts').select('name, cost, margin_percent, sale_price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name'),
+        loadDefaultMargin(checkup.workshop_id),
+      ]);
+      setCatalog([
+        ...((s.data ?? []) as { name: string; price: number }[]).map(x => ({ kind: 'service' as const, name: x.name, price: Number(x.price) })),
+        ...((p.data ?? []) as (Pick<WorkshopPart, 'cost' | 'margin_percent' | 'sale_price'> & { name: string })[])
+          .map(x => ({ kind: 'part' as const, name: x.name, price: salePriceOf(x, m) })),
+      ]);
+    })();
   }, [checkup.workshop_id, demo]);
 
   async function copy() {
@@ -759,10 +771,9 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
               </div>
             )}
           </div>
-          <datalist id="ck-services">{services.map(x => <option key={x.name} value={x.name}>{x.price > 0 ? fmtBRL(x.price) : 'preço na hora'}</option>)}</datalist>
           <div className="divide-y divide-steel-100">
             {flagged.map(i => (
-              <QuoteRow key={i.id} item={i} readOnly={pricesLocked} answered={answered} services={services} onPatch={p => onPatchItem(i, p)} />
+              <QuoteRow key={i.id} item={i} readOnly={pricesLocked} answered={answered} catalog={catalog} onPatch={p => onPatchItem(i, p)} />
             ))}
           </div>
           <div className="px-5 py-3 bg-steel-50 border-t border-steel-100 flex justify-between items-center">
@@ -814,9 +825,9 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
   );
 }
 
-function QuoteRow({ item, readOnly, answered, services, onPatch }: {
+function QuoteRow({ item, readOnly, answered, catalog, onPatch }: {
   item: CheckupItem; readOnly: boolean; answered: boolean;
-  services: { name: string; price: number }[];
+  catalog: CatalogEntry[];
   onPatch: (p: Patch) => void;
 }) {
   // Um campo só: "Serviço + peças" (descrição + valor). Vira na OS um item "Serviço + peças" (4% de comissão).
@@ -831,13 +842,17 @@ function QuoteRow({ item, readOnly, answered, services, onPatch }: {
     onPatch({ quote_labor: n, quote_parts: null, quote_part: null, quote_part_id: null });
   }
 
-  function pickService(v: string) {
-    setSvc(v);
-    const s = services.find(x => x.name.toLowerCase() === v.trim().toLowerCase());
-    if (s && s.price > 0 && !value) {
-      setValue(moneyInput(s.price));
-      onPatch({ quote_service: s.name, quote_labor: s.price, quote_parts: null, quote_part: null, quote_part_id: null });
-    }
+  /** Escolheu do cadastro: junta na descrição ("Troca de pastilhas + Pastilha dianteira") e soma o preço */
+  function pick(e: CatalogEntry) {
+    // O pedaço depois do último "+" é o que estava sendo digitado: troca pelo escolhido (se já é um nome completo, mantém e junta)
+    const parts = svc.split('+').map(x => x.trim()).filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last && !catalog.some(c => c.name === last)) parts.pop();
+    const desc = [...parts, e.name].join(' + ');
+    const total = Math.round(((money(value) ?? 0) + e.price) * 100) / 100;
+    setSvc(desc);
+    setValue(total > 0 ? moneyInput(total) : '');
+    onPatch({ quote_service: desc, quote_labor: total > 0 ? total : null, quote_parts: null, quote_part: null, quote_part_id: null });
   }
 
   return (
@@ -862,9 +877,7 @@ function QuoteRow({ item, readOnly, answered, services, onPatch }: {
         )
       ) : (
         <div className="pl-6 flex items-center gap-2">
-          <input className="input !py-1.5 text-sm flex-1 min-w-0" list="ck-services"
-            placeholder="Serviço + peças (ex.: Troca de óleo completa — óleo + filtro)"
-            value={svc} onChange={e => pickService(e.target.value)}
+          <QuoteSearch itemLabel={item.label} catalog={catalog} value={svc} onChange={setSvc} onPick={pick}
             onBlur={() => svc.trim() !== (item.quote_service ?? '') && onPatch({ quote_service: svc.trim() || null })} />
           <div className="relative w-36 shrink-0">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
