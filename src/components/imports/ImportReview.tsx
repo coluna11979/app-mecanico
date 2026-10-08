@@ -13,7 +13,11 @@ import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, W
 import type { EditOs } from '@/lib/importEdit';
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
-type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string; who: string };
+type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string; who: string;
+  /** Só serviços: 'servico' = serviço + peças (ex.: troca de óleo já com óleo e filtro) · 'mao_de_obra' = só o trabalho */
+  stype?: 'servico' | 'mao_de_obra' };
+/** Serviço que já inclui o material no valor (troca de óleo/filtro): na nota vem numa linha só */
+const withMaterial = (desc: string) => /[óo]leo|filtro/i.test(desc);
 /** 'depois' = F na nota (pagar depois): não entra como recebido; vira conta a receber com vencimento */
 type PayRow = { key: number; method: PayMethod | '' | 'depois'; amount: string; installments: number };
 type Op = { id: string; name: string; is_owner: boolean };
@@ -65,6 +69,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
     const unit = i.valor_unitario ?? (i.valor_total_item != null ? Math.round((i.valor_total_item / qty) * 100) / 100 : null);
     return {
       key: ++seq, tipo: i.tipo, descricao: i.descricao,
+      stype: i.tipo === 'labor' ? (withMaterial(i.descricao) ? 'servico' as const : 'mao_de_obra' as const) : undefined,
       quantidade: String(qty).replace('.', ','),
       valor: unit != null ? moneyInput(unit) : '',
       who: '',
@@ -222,7 +227,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
         // Regra por item da loja: item com regra (ex.: alinhamento) sai da conta; fixo para quem tiver
         const lab = isExcluded(g.labor.descricao, itemRules) ? 0 : laborAmt;
         const prt = g.parts.filter(p => !isExcluded(p.descricao, itemRules)).reduce((a, p) => a + rowTotal(p), 0);
-        if (g.parts.length) { if (lab + prt > 0) { e.value += (lab + prt) * RULE.service / 100; e.base.push(`${RULE.service}% de ${fmtBRL(lab + prt)}`); } }
+        if (g.parts.length || g.labor.stype === 'servico') { if (lab + prt > 0) { e.value += (lab + prt) * RULE.service / 100; e.base.push(`${RULE.service}% de ${fmtBRL(lab + prt)}`); } }
         else if (lab > 0) { e.value += lab * RULE.labor / 100; e.base.push(`${RULE.labor}% de ${fmtBRL(lab)}`); }
         for (const it of [g.labor, ...g.parts]) {
           const fx = fixedFor(it.descricao, w, parseMoney(it.quantidade) || 0, itemRules);
@@ -345,6 +350,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
       }
       const rowsFor = (soId: string) => items.map((r, idx) => ({
           service_order_id: soId, workshop_id: wid, kind: r.tipo,
+          service_type: r.tipo === 'labor' ? r.stype ?? 'mao_de_obra' : null,
           description: r.descricao.trim(),
           quantity: parseMoney(r.quantidade),
           unit_price: parseMoney(r.valor || '0'),
@@ -691,7 +697,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
                 <div className="flex gap-1.5">
                   <button type="button" onClick={() => setItems(s => [...s, { key: ++seq, tipo: 'part', descricao: '', quantidade: '1', valor: '', who: '' }])}
                     className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-steel-100 hover:bg-steel-200">+ Peça</button>
-                  <button type="button" onClick={() => setItems(s => [...s, { key: ++seq, tipo: 'labor', descricao: '', quantidade: '1', valor: '', who: '' }])}
+                  <button type="button" onClick={() => setItems(s => [...s, { key: ++seq, tipo: 'labor', stype: 'servico', descricao: '', quantidade: '1', valor: '', who: '' }])}
                     className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100">+ Serviço</button>
                 </div>
               </div>
@@ -712,10 +718,13 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
                 <div key={r.key} className="grid grid-cols-12 gap-1.5 items-center pb-2 border-b border-steel-100 last:border-0">
                   {/* Cada lançamento é 1 item, como num cupom */}
                   <div className="col-span-12 text-[10px] font-bold text-steel-400 uppercase tracking-wider">Item {idx + 1}</div>
-                  <select className="input !py-2 !px-2 text-xs col-span-3" value={r.tipo}
-                    onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, tipo: e.target.value as OsItemKind } : i))}>
+                  <select className="input !py-2 !px-2 text-xs col-span-3" value={r.tipo === 'part' ? 'part' : r.stype ?? 'mao_de_obra'}
+                    onChange={e => setItems(s => s.map(i => i.key === r.key
+                      ? e.target.value === 'part' ? { ...i, tipo: 'part' as const, stype: undefined } : { ...i, tipo: 'labor' as const, stype: e.target.value as 'servico' | 'mao_de_obra' }
+                      : i))}>
                     <option value="part">Peça</option>
-                    <option value="labor">Serviço</option>
+                    <option value="servico">Serviço + peças</option>
+                    <option value="mao_de_obra">Mão de obra</option>
                   </select>
                   <input className={`${cls(`itens[${idx}].descricao`)} col-span-9`} placeholder="Descrição" value={r.descricao}
                     onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: e.target.value } : i))} />
