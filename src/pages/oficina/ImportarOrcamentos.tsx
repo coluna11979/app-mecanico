@@ -9,6 +9,8 @@ import { fmtBRL } from '@/components/os/osHelpers';
 import ImportReview from '@/components/imports/ImportReview';
 import { ensureCatalogParts, partKey, partNameForVehicle } from '@/lib/parts';
 import type { PaperImport, PaperImportStatus } from '@/types/database';
+import { checkUndo, reopenImport } from '@/lib/importUndo';
+import { canDo, useOperator } from '@/lib/operators';
 
 type Tab = 'review' | 'reading' | 'failed' | 'done';
 
@@ -270,6 +272,36 @@ export default function ImportarOrcamentos() {
     toast.success(`Data da nota: ${new Date(`${ymd}T12:00:00`).toLocaleDateString('pt-BR')} ✓`);
   }
 
+  const { balcao, session } = useOperator();
+  const [reopening, setReopening] = useState<string | null>(null);
+  /** Nota já conferida: desfaz a OS e volta para a conferência com os dados conferidos */
+  async function editConfirmed(imp: PaperImport) {
+    setReopening(imp.id);
+    try {
+      const chk = await checkUndo(imp);
+      if (!chk.ok) { toast.error(chk.reason); return; }
+      if (chk.hasPayments && !canDo(session, balcao, 'cancelar_recebimento')) {
+        toast.error('Esta nota tem recebimento lançado. Editar exige a permissão “Cancelar recebimento”.');
+        return;
+      }
+      const n = String(chk.os.number ?? '').padStart(4, '0');
+      if (!confirm(`Editar a nota de novo?
+
+A OS nº ${n} será desfeita${chk.hasPayments ? ', junto com o recebimento dela' : ''}, e a nota volta para a conferência com os dados que você já conferiu.
+
+Ao confirmar de novo, a OS é criada outra vez (com outro número). Se fechar sem confirmar, a nota fica em “Para conferir”.`)) return;
+      const updated = await reopenImport(imp, chk.os);
+      setList(l => l.map(r => (r.id === imp.id ? updated : r)));
+      setTab('review');
+      setReviewing(updated);
+      loadLoose();
+    } catch (e) {
+      toast.error('Não foi possível reabrir a nota: ' + ((e as { message?: string })?.message ?? 'erro'));
+    } finally {
+      setReopening(null);
+    }
+  }
+
   async function discard(imp: PaperImport) {
     if (!confirm('Descartar esta foto?')) return;
     const { error } = await supabase.from('paper_imports').update({ status: 'discarded' }).eq('id', imp.id);
@@ -435,6 +467,12 @@ export default function ImportarOrcamentos() {
                       )}
                       {r.status === 'confirmed' && r.service_order_id && (
                         <Link to={`/oficina/os/${r.service_order_id}`} className="btn-ghost text-sm !py-2 flex-1 border border-steel-200 text-center">Ver OS →</Link>
+                      )}
+                      {r.status === 'confirmed' && r.service_order_id && (
+                        <button onClick={() => editConfirmed(r)} disabled={reopening === r.id}
+                          className="btn-ghost text-sm !py-2 border border-steel-200" title="Desfaz a OS e volta para a conferência">
+                          {reopening === r.id ? '…' : '✏️ Editar'}
+                        </button>
                       )}
                       {r.status !== 'confirmed' && r.status !== 'processing' && (
                         <button onClick={() => discard(r)} className="btn-ghost text-sm !py-2 text-steel-500" title="Descartar">🗑️</button>
