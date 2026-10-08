@@ -16,7 +16,8 @@ interface WelcomeData {
 function destino(role: string, status: string) {
   if (status !== 'approved' && role !== 'admin') return '/aguardando-aprovacao';
   if (role === 'mechanic') return '/mecanico/dashboard';
-  if (role === 'workshop') return '/oficina/painel';
+  // Gestor no celular cai direto no Resultado; no computador, no Painel de vendas
+  if (role === 'workshop') return window.matchMedia('(max-width: 1023px)').matches ? '/oficina/resultado' : '/oficina/painel';
   return '/admin/dashboard';
 }
 

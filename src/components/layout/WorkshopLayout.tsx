@@ -29,6 +29,7 @@ const onRoute = (path: string, to: string) => path === to || path.startsWith(`${
 /** Itens soltos no topo do menu (telas de entrada do gestor) */
 const TOP_ITEMS: NavItem[] = [
   { to: '/oficina/inicio', icon: '🏠', label: 'Início'           },
+  { to: '/oficina/resultado', icon: '📈', label: 'Resultado'      },
   { to: '/oficina/painel', icon: '📊', label: 'Painel de vendas' },
 ];
 
@@ -93,8 +94,15 @@ function loadCollapsed(): Set<string> {
   return new Set(DEFAULT_COLLAPSED);
 }
 
-/** Barra inferior (celular) por função; o resto fica no "Mais". Sem modo balcão = gestor. */
+/**
+ * Barra inferior (celular) por função; o resto fica no "Mais". Sem modo balcão = gestor.
+ * Gestor no celular acompanha resultado (não opera): Resultado, pendências do dia, Plataforma (emergência) e equipe.
+ */
 const TAB = {
+  resultado: { to: '/oficina/resultado', icon: '📈', label: 'Resultado' },
+  hoje:      { to: '/oficina/inicio',    icon: '🏠', label: 'Hoje'      },
+  plataforma:{ to: '/oficina/dashboard', icon: '⚡', label: 'Plataforma' },
+  equipe:    { to: '/oficina/desempenho', icon: '🏆', label: 'Equipe'   },
   painel:    { to: '/oficina/painel',    icon: '📊', label: 'Vendas'    },
   os:        { to: '/oficina/os',        icon: '📋', label: 'OS'        },
   caixa:     { to: '/oficina/caixa',     icon: '💰', label: 'Caixa'     },
@@ -105,7 +113,7 @@ const TAB = {
 } satisfies Record<string, NavItem>;
 
 const BOTTOM_TABS: Record<OperatorRole, NavItem[]> = {
-  gestor:    [TAB.painel, TAB.os, TAB.caixa, TAB.agenda],
+  gestor:    [TAB.resultado, TAB.hoje, TAB.plataforma, TAB.equipe],
   caixa:     [TAB.caixa, TAB.os, TAB.agenda, TAB.clientes],
   atendente: [TAB.os, TAB.agenda, TAB.clientes, TAB.checkup],
   vendedor:  [TAB.comercial, TAB.clientes, TAB.agenda, TAB.os],
