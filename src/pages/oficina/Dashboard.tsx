@@ -356,6 +356,14 @@ export default function WorkshopDashboard() {
     return () => { alive = false; clearTimeout(handle); };
   }, [form.title, modal, currentWorkshop?.state]);
 
+  // Formulário aberto: o fundo não rola junto (no celular a tela "andava" atrás do formulário)
+  useEffect(() => {
+    if (!modal) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [modal]);
+
   const estimated = Number(form.price_per_hour) * Number(form.max_hours);
   // Preferidos no topo; dentro de cada grupo mantém a ordem por nota do fetch
   const filteredMechanics = mechanics
@@ -364,39 +372,31 @@ export default function WorkshopDashboard() {
 
   return (
     <WorkshopLayout>
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6 gap-3">
+      {/* Cabeçalho: no celular o botão de chamar ocupa a largura toda (é o que se faz aqui) */}
+      <div className="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm text-steel-500">Olá,</div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight truncate">{shop?.business_name ?? '...'}</h1>
+          <div className="text-xs font-medium text-steel-500">Plataforma · mecânicos sob demanda</div>
+          <h1 className="font-display text-[26px] lg:text-3xl font-bold tracking-tight text-steel-900 leading-tight truncate">{shop?.business_name ?? '…'}</h1>
         </div>
         <button
           onClick={openCreateModal}
           disabled={shopLoading || hasPendingFees}
           title={hasPendingFees ? 'Quite a multa pendente para publicar nova demanda' : undefined}
-          className="btn-primary shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="shrink-0 inline-flex items-center justify-center gap-2 h-12 sm:h-11 px-5 rounded-xl bg-brand-500 text-white font-bold shadow-brand active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {shopLoading ? '…' : hasPendingFees ? (
-            <>🔒 Multa pendente</>
-          ) : (
-            <>
-              <span className="hidden sm:inline">+ Nova demanda</span>
-              <span className="sm:hidden">+ Nova</span>
-            </>
-          )}
+          {shopLoading ? '…' : hasPendingFees ? <>🔒 Multa pendente</> : <><span className="text-lg leading-none">⚡</span> Chamar mecânico</>}
         </button>
       </div>
 
       {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
 
-
-      {/* KPIs */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <KPI label="Jobs ativos" value={active.length} />
-        <KPI label="Concluídos"  value={shop?.total_jobs ?? 0} />
-        <KPI label="Avaliação"   value={`★ ${(shop?.rating ?? 0).toFixed(1)}`} />
-      </div>
+      {/* Números rápidos: uma faixa só, cabe em qualquer celular */}
+      <dl className="grid grid-cols-3 divide-x divide-steel-100 rounded-2xl bg-white ring-1 ring-steel-200/70 mb-5">
+        <KPI label="Ativas" value={active.length} />
+        <KPI label="Concluídas" value={shop?.total_jobs ?? 0} />
+        <KPI label="Avaliação" value={shop?.rating ? `★ ${shop.rating.toFixed(1)}` : '—'} />
+      </dl>
 
       {/* Resumo do período: gasto, tempos de aceite/chegada, mecânicos mais contratados */}
       {currentWorkshop?.id && <MarketplaceSummary workshopId={currentWorkshop.id} />}
@@ -496,47 +496,47 @@ export default function WorkshopDashboard() {
         const buckets = groupActive(active);
 
         const renderCard = (j: Job) => (
-          <div key={j.id} className="card">
-            <div className="flex justify-between items-start gap-3">
+          <div key={j.id} className="rounded-2xl bg-white ring-1 ring-steel-200/70 p-4 min-w-0">
+            <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <div className="font-bold truncate">{j.title}</div>
-                <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j)}</div>
-                <ArrivalInfo j={j} />
-                <div className="text-xs text-steel-400 mt-1">
-                  {j.max_hours ?? '—'}h × R$ {j.price_per_hour != null ? formatBRL(j.price_per_hour, { decimals: 0 }) : '—'}/h
-                </div>
-                {j.scheduled_at && (
-                  <div className="text-xs text-steel-400 mt-0.5">
-                    📅 {formatScheduled(j.scheduled_at)}
-                  </div>
-                )}
+                <div className="font-semibold text-steel-900 leading-snug line-clamp-2 break-words">{j.title}</div>
+                <div className="text-[13px] text-steel-500 mt-0.5">{statusLabel(j)}</div>
               </div>
               <div className="text-right shrink-0">
-                <div className="text-xs text-steel-400">valor</div>
-                <div className="text-lg font-bold font-display">R$ {formatBRL(j.price, { decimals: 0 })}</div>
-                {j.mechanic_id && j.en_route_at ? (
-                  <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
-                    Ver no mapa
-                  </Link>
-                ) : j.mechanic_id ? (
-                  <div className="mt-1 text-xs text-signal-600 font-semibold">Aceito ✓</div>
-                ) : (
-                  <div className="mt-1 text-xs text-pending-600 font-semibold">Aguardando…</div>
-                )}
+                <div className="font-display text-lg font-bold tabular-nums leading-tight">R$ {formatBRL(j.price, { decimals: 0 })}</div>
+                <div className="text-[11px] text-steel-400 tabular-nums">
+                  {j.max_hours ?? '—'}h × R$ {j.price_per_hour != null ? formatBRL(j.price_per_hour, { decimals: 0 }) : '—'}
+                </div>
               </div>
             </div>
-            {/* Ações — editar só enquanto status=open; cancelar sempre */}
-            <div className="mt-3 pt-2 border-t border-steel-100 flex justify-end items-center gap-3">
+            <ArrivalInfo j={j} />
+            {j.scheduled_at && (
+              <div className="text-xs text-steel-500 mt-1.5">📅 {formatScheduled(j.scheduled_at)}</div>
+            )}
+
+            {/* Ações: a principal ocupa o espaço; editar só enquanto ninguém aceitou; cancelar sempre */}
+            <div className="mt-3 pt-3 border-t border-steel-100 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                {j.mechanic_id && j.en_route_at ? (
+                  <Link to={`/oficina/job/${j.id}/tracking`}
+                    className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto h-10 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">
+                    🗺️ Ver no mapa
+                  </Link>
+                ) : j.mechanic_id ? (
+                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-signal-50 text-signal-700 text-xs font-bold">✓ Aceito</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-pending-50 text-pending-700 text-xs font-bold">
+                    <span className="h-1.5 w-1.5 rounded-full bg-pending-500 animate-pulse-soft" /> Aguardando aceite
+                  </span>
+                )}
+              </div>
               {j.status === 'open' && !j.mechanic_id && (
-                <button
-                  type="button"
-                  onClick={() => openEditModal(j)}
-                  className="text-xs text-brand-600 hover:text-brand-700 font-semibold underline-offset-2 hover:underline"
-                >
+                <button type="button" onClick={() => openEditModal(j)}
+                  className="shrink-0 h-10 px-2 text-xs font-semibold text-brand-600 active:text-brand-700">
                   ✏️ Editar
                 </button>
               )}
-              <CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} />
+              <span className="shrink-0"><CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} /></span>
             </div>
           </div>
         );
@@ -562,8 +562,8 @@ export default function WorkshopDashboard() {
               if (jobs.length === 0) return null;
               return (
                 <section key={g.key} className="mb-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <h2 className="text-lg font-bold">{g.title}</h2>
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <h2 className="text-[15px] lg:text-lg font-bold">{g.title}</h2>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{jobs.length}</span>
                   </div>
                   <div className="grid md:grid-cols-2 gap-3">{jobs.map(renderCard)}</div>
@@ -985,9 +985,9 @@ function HistoryRow({ j }: { j: Job }) {
 
 function KPI({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="card">
-      <div className="text-xs text-steel-500 uppercase tracking-wider">{label}</div>
-      <div className="text-3xl font-bold font-display mt-1">{value}</div>
+    <div className="min-w-0 px-3 py-3 text-center flex flex-col-reverse">
+      <dt className="text-[11px] font-medium text-steel-500 truncate">{label}</dt>
+      <dd className="font-display text-xl lg:text-2xl font-bold tabular-nums text-steel-900 truncate">{value}</dd>
     </div>
   );
 }
