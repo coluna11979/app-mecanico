@@ -10,6 +10,7 @@ import { COMMISSION_COLS, RULE, commissionFor, pcts, type CommissionMech } from 
 import { OsCommission, useDraftCommission, type AutoCommission } from '@/components/cash/OsCommission';
 import { fixedFor, isExcluded, loadItemRules, type ItemRule } from '@/lib/commissionRules';
 import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, WorkshopMechanic } from '@/types/database';
+import type { EditOs } from '@/lib/importEdit';
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
 type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string; who: string };
@@ -27,13 +28,17 @@ interface Props {
   isPdf?: boolean;
   onClose: () => void;
   onDone: () => void;
+  /** Nota já conferida: edita a OS que já existe (mesmo número) em vez de criar outra */
+  editOs?: EditOs | null;
+  /** Quinzena com comissão já fechada (só aviso) */
+  closedCommission?: string | null;
 }
 
 /**
  * Conferência de um orçamento lido pela IA: foto de um lado, dados do outro.
  * Nada entra no sistema sem a oficina confirmar.
  */
-export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: Props) {
+export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, editOs = null, closedCommission = null }: Props) {
   const x = imp.extracted as PaperQuoteExtracted;
   const unsure = new Set(x?.campos_incertos ?? []);
   const isUnsure = (path: string) => [...unsure].some(u => u === path || u.startsWith(path + '.') || u.startsWith(path + '['));
@@ -76,7 +81,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   const [osWho, setOsWho] = useState('');
   const [receivedBy, setReceivedBy] = useState('');
   /** Pago na época (lança o recebimento com a data da nota) ou ficou em aberto */
-  const [paid, setPaid] = useState(true);
+  const [paid, setPaid] = useState(() => !editOs || editOs.payments.length > 0 || !!editOs.pay_later_due);
   /** Peças da nota vão para o cadastro (preço da nota; custo pela margem da loja) */
   const [toCatalog, setToCatalog] = useState(true);
   const [pays, setPays] = useState<PayRow[]>(() => {
@@ -87,7 +92,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   });
 
   /** O serviço foi feito, ou ficou só no orçamento? */
-  const [done, setDone] = useState(true);
+  const [done, setDone] = useState(() => !editOs || editOs.status === 'completed');
   /** Serviços recomendados para o futuro (alimentam a reativação de clientes) */
   const [recs, setRecs] = useState<string[]>(() => x?.recomendacoes ?? []);
 
@@ -155,7 +160,11 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
   /** Recebido de verdade × o que ficou para pagar depois (F) */
   const paidRows = payRows.filter(p => p.method !== 'depois');
   const laterAmt = Math.round(payRows.filter(p => p.method === 'depois').reduce((a, p) => a + payVal(p), 0) * 100) / 100;
-  const [laterDue, setLaterDue] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); });
+  const [laterDue, setLaterDue] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 7);
+    const def = d.toISOString().slice(0, 10);
+    return editOs?.pay_later_due && editOs.pay_later_due >= new Date().toISOString().slice(0, 10) ? editOs.pay_later_due : def;
+  });
   const [laterNote, setLaterNote] = useState('');
   /** Fiado (F) de nota antiga que o cliente já quitou: entra como pago, na forma e data em que pagou */
   const [laterPaid, setLaterPaid] = useState(false);
@@ -323,6 +332,35 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
         }
       }
 
+      // 4. Itens (o total é recalculado pelo banco)
+      // Peças → cadastro: reaproveita a de mesmo nome ou cria (custo = preço ÷ (1 + margem))
+      let catalog = new Map<string, { id: string; cost: number }>();
+      if (toCatalog) {
+        try {
+          catalog = (await ensureCatalogParts(wid, items.filter(r => r.tipo === 'part' && r.descricao.trim())
+            .map(r => ({ name: catalogName(r.descricao), price: parseMoney(r.valor || '0') })))).map;
+        } catch (err) {
+          console.warn('[ImportReview] peças não foram para o cadastro:', err);
+        }
+      }
+      const rowsFor = (soId: string) => items.map((r, idx) => ({
+          service_order_id: soId, workshop_id: wid, kind: r.tipo,
+          description: r.descricao.trim(),
+          quantity: parseMoney(r.quantidade),
+          unit_price: parseMoney(r.valor || '0'),
+          position: idx,
+          ...(r.tipo === 'part' && catalog.get(partKey(catalogName(r.descricao)))
+            ? { part_id: catalog.get(partKey(catalogName(r.descricao)))!.id,
+                unit_cost: catalog.get(partKey(catalogName(r.descricao)))!.cost > 0 ? catalog.get(partKey(catalogName(r.descricao)))!.cost : null }
+            : {}),
+          // Serviço leva quem fez; peça segue o serviço logo acima dela (comissão)
+          ...(done && r.tipo === 'labor' && whoOf(r)
+            ? whoOf(r) === PLATFORM
+              ? { executor: 'platform', workshop_mechanic_id: null }
+              : { executor: 'workshop', workshop_mechanic_id: whoOf(r) }
+            : {}),
+        }));
+
       // 3. OS com a data do bloquinho: concluída (feito) ou orçamento não aprovado
       const when = f.data ? new Date(`${f.data}T12:00:00`).toISOString() : imp.created_at;
       const doc = x?.numero_documento?.trim();
@@ -337,6 +375,96 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       if (done) laborRows.forEach(r => { const w = whoOf(r); if (w && w !== PLATFORM) bySum.set(w, (bySum.get(w) ?? 0) + rowTotal(r)); });
       const topMech = [...bySum.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
         ?? (done && osWho && osWho !== PLATFORM ? osWho : null);
+      // ── Edição de nota já conferida: atualiza a mesma OS ─────────────────
+      if (editOs) {
+        const eid = editOs.id;
+        // OS: mesmos campos da conferência; o status não muda (evita mexer no estoque)
+        const { error: e1 } = await supabase.from('service_orders').update({
+          customer_id: customerId,
+          vehicle_id: vehicleId,
+          title: f.titulo.trim(),
+          description,
+          created_at: when,
+          completed_at: editOs.status === 'completed' ? when : null,
+          km_reading: f.km ? parseInt(f.km.replace(/\D/g, ''), 10) || null : null,
+          discount: disc,
+          ...(items.length ? {} : { price: aiTotal ?? 0 }),
+          workshop_mechanic_id: allPlatform ? null : topMech,
+          executor: allPlatform ? 'platform' : topMech ? 'workshop' : null,
+        }).eq('id', eid);
+        if (e1) throw e1;
+
+        // Itens: troca pelos conferidos (o banco recalcula o total)
+        const { error: e2 } = await supabase.from('service_order_items').delete().eq('service_order_id', eid);
+        if (e2) throw e2;
+        if (items.length) {
+          const { error } = await supabase.from('service_order_items').insert(rowsFor(eid));
+          if (error) throw error;
+        }
+
+        // Comissão alterada na edição (a que já foi ajustada à mão continua, se não mexer)
+        if (done && comm.editing) {
+          const { error } = await comm.save(wid, sid, eid);
+          if (error) throw error;
+        }
+
+        // Recebimento: só mexe se as formas ou valores mudaram
+        const wanted = !charge ? [] : [
+          ...paidRows.filter(p => payVal(p) > 0).map(p => ({ method: p.method as string, amount: payVal(p), installments: p.method === 'credito' ? p.installments : 1 })),
+          ...(laterAmt > 0 && laterPaid ? [{ method: laterPaidMethod as string, amount: laterAmt, installments: 1 }] : []),
+        ];
+        const key = (l: { method: string; amount: number; installments: number | null }[]) =>
+          l.map(p => `${p.method}:${Math.round(Number(p.amount) * 100)}:${p.method === 'credito' ? Number(p.installments ?? 1) : 1}`).sort().join('|');
+        const had = editOs.payments.flatMap(p => p.entries);
+        if (key(wanted) !== key(had)) {
+          if (!editOs.payments.length) {
+            if (wanted.length) {
+              const { error } = await supabase.rpc('import_receive_os', {
+                p_workshop: wid, p_session: sid, p_os: eid, p_paid_at: when, p_operator: receivedBy || null, p_parts: wanted,
+              });
+              if (error) throw error;
+            }
+          } else {
+            // Corrige pelo caixa (vale para caixa fechado: mesmo caixa, mesma data)
+            const [first, ...rest] = editOs.payments;
+            for (const p of rest) {
+              const { error } = await supabase.rpc('cash_fix_payment', { p_workshop: wid, p_session: sid, p_payment: p.id, p_parts: [] });
+              if (error) throw error;
+            }
+            const { error } = await supabase.rpc('cash_fix_payment', { p_workshop: wid, p_session: sid, p_payment: first.id, p_parts: wanted });
+            if (error) throw error;
+          }
+        }
+        // F (pagar depois)
+        if (charge && laterAmt > 0 && !laterPaid) {
+          const { error } = await supabase.rpc('cash_pay_later', {
+            p_workshop: wid, p_session: sid, p_os: eid, p_due: laterDue, p_note: laterNote || 'F na nota',
+          });
+          if (error) throw error;
+        } else if (editOs.pay_later_due) {
+          await supabase.rpc('cash_pay_later', { p_workshop: wid, p_session: sid, p_os: eid, p_due: null });
+        }
+
+        // Recomendações: troca pelas conferidas
+        await supabase.from('service_recommendations').delete().eq('service_order_id', eid);
+        const recList = recs.map(r => r.trim()).filter(Boolean);
+        if (recList.length) {
+          await supabase.from('service_recommendations').insert(recList.map(description => ({
+            workshop_id: wid, customer_id: customerId, vehicle_id: vehicleId, service_order_id: eid,
+            description, source: 'paper_import', recommended_at: when,
+          })));
+        }
+
+        await supabase.from('paper_imports').update({
+          customer_id: customerId, confirmed_at: new Date().toISOString(),
+          extracted: { ...x, data: f.data || null, total: finalTotal, servico_resumo: f.titulo.trim() },
+        }).eq('id', imp.id);
+
+        toast.success(`Nota atualizada ✓ — OS nº ${String(editOs.number ?? '').padStart(4, '0')}`);
+        onDone();
+        return;
+      }
+
       const { data: os, error: osErr } = await supabase.from('service_orders').insert({
         workshop_id: wid,
         customer_id: customerId,
@@ -357,35 +485,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
       if (osErr) throw osErr;
       osId = os.id;
 
-      // 4. Itens (o total é recalculado pelo banco)
-      // Peças → cadastro: reaproveita a de mesmo nome ou cria (custo = preço ÷ (1 + margem))
-      let catalog = new Map<string, { id: string; cost: number }>();
-      if (toCatalog) {
-        try {
-          catalog = (await ensureCatalogParts(wid, items.filter(r => r.tipo === 'part' && r.descricao.trim())
-            .map(r => ({ name: catalogName(r.descricao), price: parseMoney(r.valor || '0') })))).map;
-        } catch (err) {
-          console.warn('[ImportReview] peças não foram para o cadastro:', err);
-        }
-      }
       if (items.length) {
-        const { error } = await supabase.from('service_order_items').insert(items.map((r, idx) => ({
-          service_order_id: os.id, workshop_id: wid, kind: r.tipo,
-          description: r.descricao.trim(),
-          quantity: parseMoney(r.quantidade),
-          unit_price: parseMoney(r.valor || '0'),
-          position: idx,
-          ...(r.tipo === 'part' && catalog.get(partKey(catalogName(r.descricao)))
-            ? { part_id: catalog.get(partKey(catalogName(r.descricao)))!.id,
-                unit_cost: catalog.get(partKey(catalogName(r.descricao)))!.cost > 0 ? catalog.get(partKey(catalogName(r.descricao)))!.cost : null }
-            : {}),
-          // Serviço leva quem fez; peça segue o serviço logo acima dela (comissão)
-          ...(done && r.tipo === 'labor' && whoOf(r)
-            ? whoOf(r) === PLATFORM
-              ? { executor: 'platform', workshop_mechanic_id: null }
-              : { executor: 'workshop', workshop_mechanic_id: whoOf(r) }
-            : {}),
-        })));
+        const { error } = await supabase.from('service_order_items').insert(rowsFor(os.id));
         if (error) throw error;
       }
 
@@ -459,7 +560,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
         className="bg-white w-full max-w-6xl sm:rounded-2xl shadow-2xl flex flex-col max-h-screen sm:max-h-[94vh]">
         <div className="px-5 py-3 border-b border-steel-100 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold">Conferir nota</h2>
+            <h2 className="text-lg font-bold">{editOs ? `Editar nota · OS nº ${String(editOs.number ?? '').padStart(4, '0')}` : 'Conferir nota'}</h2>
             <p className="text-xs text-steel-500">Confira com a foto e corrija o que precisar. Campos em <span className="bg-pending-50 border border-pending-500 px-1 rounded">amarelo</span> a IA leu com dúvida.</p>
           </div>
           <button onClick={onClose} className="text-steel-400 hover:text-steel-700 text-xl">✕</button>
@@ -496,8 +597,16 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
               {!f.data && <div className="text-xs text-pending-800">Sem data: a nota entra com a data de hoje. Se estiver no papel, preencha.</div>}
             </section>
 
+            {editOs && (
+              <div className="text-xs bg-brand-50 border border-brand-100 text-brand-800 rounded-lg px-3 py-2">
+                Editando a OS nº {String(editOs.number ?? '').padStart(4, '0')}. O que você salvar aqui passa a valer: itens, valores, cliente, carro, data, quem fez e pagamento.
+                {editOs.payments.some(p => p.register?.status === 'closed') && <> O recebimento está num caixa já fechado: se mudar forma ou valor, ele é corrigido nesse mesmo caixa.</>}
+                {closedCommission && <strong className="block mt-1 text-pending-800">⚠️ A comissão da {closedCommission} já foi fechada. Mudanças aqui não alteram o que já foi pago.</strong>}
+              </div>
+            )}
+
             {/* Foi feito? */}
-            <section className="space-y-2">
+            {!editOs && <section className="space-y-2">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Esse serviço foi feito?</div>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setDone(true)}
@@ -511,7 +620,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
                   <div className="text-xs text-steel-500">Cliente não aprovou — vira oportunidade de contato</div>
                 </button>
               </div>
-            </section>
+            </section>}
 
             {/* Cliente */}
             <section className="space-y-2">
@@ -797,7 +906,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone }: 
         <div className="px-5 py-3 border-t border-steel-100 flex gap-3 justify-end">
           <button onClick={onClose} className="btn-ghost" disabled={saving}>Depois</button>
           <button onClick={confirm} className="btn-primary" disabled={saving || !canSave}>
-            {saving ? 'Importando…' : '✓ Confirmar e importar'}
+            {editOs ? (saving ? 'Salvando…' : '✓ Salvar alterações') : (saving ? 'Importando…' : '✓ Confirmar e importar')}
           </button>
         </div>
       </div>
