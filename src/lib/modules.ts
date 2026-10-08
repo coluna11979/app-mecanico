@@ -64,26 +64,52 @@ export function moduleAllows(disabled: readonly string[], path: string) {
 
 /* ── Store: módulos desligados da oficina atual ──────────────────────────── */
 
+/** Celular/tablet = a mesma largura em que o menu vira barra inferior (abaixo do `lg` do Tailwind) */
+const MOBILE_QUERY = '(max-width: 1023px)';
+const isMobileNow = () => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches;
+
 type ModulesState = {
   workshopId: string | null;
+  /** Desligados em qualquer aparelho */
+  off: ModuleKey[];
+  /** Desligados só no celular/tablet */
+  mobileOff: ModuleKey[];
+  isMobile: boolean;
+  /** O que vale neste aparelho (é o que as telas consultam) */
   disabled: ModuleKey[];
   loaded: boolean;
   load: (workshopId: string | null) => Promise<void>;
 };
 
+const effective = (off: ModuleKey[], mobileOff: ModuleKey[], isMobile: boolean) =>
+  isMobile ? [...new Set([...off, ...mobileOff])] : off;
+
 export const useWorkshopModules = create<ModulesState>((set, get) => ({
   workshopId: null,
+  off: [],
+  mobileOff: [],
+  isMobile: isMobileNow(),
   disabled: [],
   loaded: false,
   async load(workshopId) {
-    if (!workshopId) { set({ workshopId: null, disabled: [], loaded: true }); return; }
-    if (get().workshopId !== workshopId) set({ workshopId, disabled: [], loaded: false });
+    if (!workshopId) { set({ workshopId: null, off: [], mobileOff: [], disabled: [], loaded: true }); return; }
+    if (get().workshopId !== workshopId) set({ workshopId, off: [], mobileOff: [], disabled: [], loaded: false });
     const { data } = await supabase.from('workshop_modules')
-      .select('disabled_modules').eq('workshop_id', workshopId).maybeSingle();
+      .select('disabled_modules, mobile_disabled_modules').eq('workshop_id', workshopId).maybeSingle();
     if (get().workshopId !== workshopId) return; // trocou de loja no meio
-    set({ disabled: (data?.disabled_modules ?? []) as ModuleKey[], loaded: true });
+    const off = (data?.disabled_modules ?? []) as ModuleKey[];
+    const mobileOff = (data?.mobile_disabled_modules ?? []) as ModuleKey[];
+    set({ off, mobileOff, disabled: effective(off, mobileOff, get().isMobile), loaded: true });
   },
 }));
+
+// Girar o tablet / redimensionar a janela troca o que vale na hora
+if (typeof window !== 'undefined') {
+  window.matchMedia(MOBILE_QUERY).addEventListener('change', e => {
+    const { off, mobileOff } = useWorkshopModules.getState();
+    useWorkshopModules.setState({ isMobile: e.matches, disabled: effective(off, mobileOff, e.matches) });
+  });
+}
 
 /** Atalho para as telas: a rota está liberada para a oficina atual? */
 export function useModuleAllows() {

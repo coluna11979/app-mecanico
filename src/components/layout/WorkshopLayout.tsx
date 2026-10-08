@@ -392,7 +392,10 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   /* Módulo desligado pra esta oficina → volta pra tela inicial */
   useEffect(() => {
     if (mods.loaded && mods.workshopId === shopId && !moduleAllows(mods.disabled, location.pathname)) {
-      toast.warning('Esse módulo não está liberado para esta oficina.');
+      const onlyDesktop = mods.isMobile && moduleAllows(mods.off, location.pathname);
+      toast.warning(onlyDesktop
+        ? 'Esse módulo está liberado só no computador.'
+        : 'Esse módulo não está liberado para esta oficina.');
       nav(homePath(), { replace: true });
     }
   }, [mods.loaded, mods.disabled, shopId, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
