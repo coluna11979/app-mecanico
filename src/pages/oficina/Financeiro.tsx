@@ -5,6 +5,7 @@ import PaymentsList from '@/components/cash/PaymentsList';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { canDo, sessionAllows, useOperator } from '@/lib/operators';
+import { useFeature } from '@/lib/modules';
 import { brl } from '@/lib/cash';
 import { fetchAll } from '@/lib/fetchAll';
 import { daysUntil } from '@/lib/purchasing';
@@ -35,9 +36,13 @@ export default function Financeiro() {
   const period = usePeriod('financeiro-periodo');
   const { preset, range } = period;
   /** Visão geral do dinheiro ou a lista de OS a receber (o Início abre direto em ?aba=receber) */
-  const [tab, setTab] = useState<'geral' | 'receber'>(() => {
+  const [tabState, setTab] = useState<'geral' | 'receber'>(() => {
     try { return new URLSearchParams(window.location.search).get('aba') === 'receber' ? 'receber' : 'geral'; } catch { return 'geral'; }
   });
+  // Abas desligadas no superadmin (ferramentas do módulo) somem; cai na que estiver liberada
+  const feature = useFeature();
+  const okTabs = (['geral', 'receber'] as const).filter(t => feature(`financeiro.${t}`));
+  const tab = okTabs.includes(tabState) ? tabState : okTabs[0];
   const [entries, setEntries]   = useState<FinEntry[]>([]);
   const [payments, setPayments] = useState<FinPayment[]>([]);
   const [regs, setRegs]         = useState<FinRegister[]>([]);
@@ -188,15 +193,15 @@ export default function Financeiro() {
           )}
         </div>
 
-        {/* Abas */}
-        <div className="flex gap-1 bg-steel-100 rounded-xl p-1">
+        {/* Abas (só aparecem se as duas estiverem liberadas) */}
+        {okTabs.length > 1 && <div className="flex gap-1 bg-steel-100 rounded-xl p-1">
           {([['geral', 'Visão geral'], ['receber', `OS a receber${f.toReceive.rows.length ? ` (${f.toReceive.rows.length})` : ''}`]] as const).map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${tab === k ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
               {l}
             </button>
           ))}
-        </div>
+        </div>}
 
         {tab === 'receber' ? (
           loading

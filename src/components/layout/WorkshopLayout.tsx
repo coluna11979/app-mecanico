@@ -10,7 +10,7 @@ import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
 import { ROLES, sessionAllows, useOperator, type OperatorRole } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
-import { moduleAllows, useWorkshopModules } from '@/lib/modules';
+import { moduleAllows, moduleEntry, useWorkshopModules } from '@/lib/modules';
 
 type ArrivalAlert = { jobId: string; title: string };
 type FinishedAlert = { jobId: string; title: string; price: number };
@@ -384,6 +384,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const mods = useWorkshopModules();
   useEffect(() => { mods.load(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
   const allowed = (to: string) => moduleAllows(mods.disabled, to) && (!role || sessionAllows(op.session!, to));
+  // Tela de entrada desligada (ex.: Painel do check-up) → o item leva pra primeira ferramenta liberada do módulo
+  const fix = <T extends NavItem>(i: T): T => ({ ...i, to: moduleEntry(mods.disabled, i.to) ?? i.to });
   // Permissões alteradas pelo gestor valem sem precisar digitar o PIN de novo
   useEffect(() => {
     if (!op.session) return;
@@ -408,10 +410,15 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     return candidates.find(allowed) ?? '/oficina/avisos';
   }
 
-  /* Módulo desligado pra esta oficina → volta pra tela inicial */
+  /* Módulo/ferramenta desligado pra esta oficina → outra ferramenta do módulo ou a tela inicial */
   useEffect(() => {
     if (mods.loaded && mods.workshopId === shopId && !moduleAllows(mods.disabled, location.pathname)) {
-      toast.warning('Esse módulo não está liberado para esta oficina.');
+      const alt = moduleEntry(mods.disabled, location.pathname);
+      if (alt && allowed(alt)) { nav(alt, { replace: true }); return; }
+      const onlyDesktop = mods.isMobile && moduleAllows(mods.off, location.pathname);
+      toast.warning(onlyDesktop
+        ? 'Esse módulo está liberado só no computador.'
+        : 'Esse módulo não está liberado para esta oficina.');
       nav(homePath(), { replace: true });
     }
   }, [mods.loaded, mods.disabled, shopId, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -435,7 +442,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   if (shopId && op.wid !== shopId) return null;
   if (op.balcao && !op.session) return <OperatorLock />;
 
-  const bottomTabs = BOTTOM_TABS[role ?? 'gestor'].filter(t => allowed(t.to));
+  const bottomTabs = BOTTOM_TABS[role ?? 'gestor'].map(fix).filter(t => allowed(t.to));
   // No celular, o "Mais" abre este mesmo menu sem repetir o que já está na barra inferior
   const inBottom = (to: string) => bottomTabs.some(t => t.to === to);
   const path = location.pathname;
@@ -446,7 +453,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   /** Grupos do menu com só o que a função pode abrir (submenu sem filho liberado some) */
   const navSections = SECTIONS.flatMap(sec => {
     const entries = sec.items
-      .map(e => (isSub(e) ? { ...e, children: e.children.filter(c => allowed(c.to)) } : e))
+      .map(e => (isSub(e) ? { ...e, children: e.children.map(fix).filter(c => allowed(c.to)) } : fix(e)))
       .filter(e => (isSub(e) ? e.children.length > 0 : allowed(e.to)))
       // Mecânico: no Check-up só a fila dele
       .filter(e => !(isMechanicSession && !isSub(e) && CHECKUP_MANAGER_ONLY.includes(e.to)));
@@ -454,7 +461,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   });
   // Gaveta "Mais" (celular): grupos em atalhos, sem repetir o que já está na barra
   const sheetGroups = [
-    { key: 'top', title: 'Painéis', items: TOP_ITEMS.filter(i => allowed(i.to) && !inBottom(i.to)) },
+    { key: 'top', title: 'Painéis', items: TOP_ITEMS.map(fix).filter(i => allowed(i.to) && !inBottom(i.to)) },
     ...navSections.map(sec => ({ key: sec.key, title: sec.title, items: leaves(sec.entries).filter(i => !inBottom(i.to)) })),
   ].filter(g => g.items.length > 0);
   const moreActive = open || !bottomTabs.some(t => onRoute(path, t.to));
@@ -596,7 +603,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-3">
-          {TOP_ITEMS.filter(i => allowed(i.to)).map(i => (
+          {TOP_ITEMS.map(fix).filter(i => allowed(i.to)).map(i => (
             <SideItem key={i.to} {...i} badge={0} mobileHidden={inBottom(i.to)} onClick={() => setOpen(false)} />
           ))}
 
