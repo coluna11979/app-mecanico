@@ -3,11 +3,15 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { MODULES, MODULE_GROUPS, MODULE_KEYS, type ModuleKey } from '@/lib/modules';
+import { FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, type ModuleKey } from '@/lib/modules';
 
 type Shop = { id: string; business_name: string; city: string | null; owner: string | null };
-/** off = desligado em qualquer aparelho; mobileOff = liberado só no computador */
-type Config = { off: ModuleKey[]; mobileOff: ModuleKey[] };
+/** off = desligado em qualquer aparelho; mobileOff = liberado só no computador.
+ *  Guardam módulos ('caixa') e ferramentas ('caixa.fechar') na mesma lista. */
+type Config = { off: string[]; mobileOff: string[] };
+const isModule = (k: string) => !k.includes('.');
+/** Chaves das ferramentas de um módulo */
+const featKeys = (m: ModuleKey) => (FEATURES[m] ?? []).map(f => f.key);
 const EMPTY: Config = { off: [], mobileOff: [] };
 
 /** Superadmin: quais módulos cada oficina pode usar (e se também no celular). Desligado some do menu e a tela fica bloqueada. */
@@ -18,6 +22,13 @@ export default function AdminModulos() {
   const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  /** Módulos com a lista de ferramentas aberta */
+  const [expanded, setExpanded] = useState<Set<ModuleKey>>(new Set());
+  const toggleExpanded = (k: ModuleKey) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
 
   useEffect(() => {
     (async () => {
@@ -33,7 +44,7 @@ export default function AdminModulos() {
       });
       setShops(list);
       setConfigs(Object.fromEntries((m.data ?? []).map(r => [r.workshop_id, {
-        off: r.disabled_modules as ModuleKey[], mobileOff: (r.mobile_disabled_modules ?? []) as ModuleKey[],
+        off: r.disabled_modules as string[], mobileOff: (r.mobile_disabled_modules ?? []) as string[],
       }])));
       setSelected(s => s ?? list[0]?.id ?? null);
     })();
@@ -67,23 +78,25 @@ export default function AdminModulos() {
     return true;
   }
 
-  const flip = (list: ModuleKey[], k: ModuleKey) => (list.includes(k) ? list.filter(x => x !== k) : [...list, k]);
+  const flip = (list: string[], k: string) => (list.includes(k) ? list.filter(x => x !== k) : [...list, k]);
 
-  function toggle(k: ModuleKey) {
+  function toggle(k: string) {
     if (!selected) return;
     save(selected, { ...cfg, off: flip(cfg.off, k) });
   }
 
-  function toggleMobile(k: ModuleKey) {
+  function toggleMobile(k: string) {
     if (!selected) return;
     save(selected, { ...cfg, mobileOff: flip(cfg.mobileOff, k) });
   }
 
   function setGroup(keys: ModuleKey[], on: boolean) {
     if (!selected) return;
+    // Liberar = o módulo e todas as ferramentas dele, em qualquer aparelho
+    const all = new Set<string>([...keys, ...keys.flatMap(featKeys)]);
     save(selected, {
-      off: on ? off.filter(k => !keys.includes(k)) : [...new Set([...off, ...keys])],
-      mobileOff: on ? cfg.mobileOff.filter(k => !keys.includes(k)) : cfg.mobileOff,
+      off: on ? off.filter(k => !all.has(k)) : [...new Set([...off, ...keys])],
+      mobileOff: on ? cfg.mobileOff.filter(k => !all.has(k)) : cfg.mobileOff,
     });
   }
 
@@ -103,6 +116,7 @@ export default function AdminModulos() {
         <p className="text-sm text-steel-500 mt-1">
           Escolha o que cada oficina pode usar. Módulo desligado some do menu e a tela fica bloqueada para todos da oficina, inclusive o dono.
           Início, Perfil e Avisos ficam sempre liberados. Desmarque 📱 para liberar o módulo só no computador (fica bloqueado no celular e no tablet).
+          Em “Ferramentas” você escolhe o que fica liberado dentro de cada módulo.
         </p>
       </div>
 
@@ -112,7 +126,7 @@ export default function AdminModulos() {
           <input className="input w-full mb-3" placeholder="Buscar oficina…" value={search} onChange={e => setSearch(e.target.value)} />
           <div className="space-y-1 max-h-[60vh] overflow-y-auto">
             {filtered.map(s => {
-              const on = total - (configs[s.id]?.off.length ?? 0);
+              const on = total - (configs[s.id]?.off.filter(isModule).length ?? 0);
               const active = s.id === selected;
               return (
                 <button
@@ -140,8 +154,9 @@ export default function AdminModulos() {
               <div>
                 <h2 className="text-lg font-bold">{shop.business_name}</h2>
                 <p className="text-xs text-steel-500">
-                  {total - off.length} de {total} módulos liberados
-                  {cfg.mobileOff.length > 0 && ` · ${cfg.mobileOff.length} só no computador`}
+                  {total - off.filter(isModule).length} de {total} módulos liberados
+                  {cfg.mobileOff.filter(isModule).length > 0 && ` · ${cfg.mobileOff.filter(isModule).length} só no computador`}
+                  {off.some(k => !isModule(k)) && ` · ${off.filter(k => !isModule(k)).length} ferramentas desligadas`}
                   {saving && ' · salvando…'}
                 </p>
               </div>
@@ -171,30 +186,59 @@ export default function AdminModulos() {
                         const m = MODULES[k];
                         const on = !off.includes(k);
                         const mobileOn = on && !cfg.mobileOff.includes(k);
+                        const feats = FEATURES[k] ?? [];
+                        const featsOn = feats.filter(f => !off.includes(f.key)).length;
+                        const isOpen = on && expanded.has(k);
                         return (
                           <div
                             key={k}
-                            className={`flex items-start gap-3 p-3 rounded-xl border transition ${on ? 'border-emerald-200 bg-emerald-50/50' : 'border-steel-200 bg-steel-50 opacity-70'}`}
+                            className={`p-3 rounded-xl border transition ${on ? 'border-emerald-200 bg-emerald-50/50' : 'border-steel-200 bg-steel-50 opacity-70'}`}
                           >
-                            <label className="flex items-start gap-3 flex-1 min-w-0 cursor-pointer">
-                              <input type="checkbox" className="mt-1 accent-emerald-600" checked={on} onChange={() => toggle(k)} />
-                              <span className="text-lg leading-none mt-0.5">{m.icon}</span>
-                              <span className="min-w-0">
-                                <span className="block text-sm font-semibold">{m.label}</span>
-                                <span className="block text-xs text-steel-500">{m.desc}</span>
-                              </span>
-                            </label>
-                            {on && (
+                            <div className="flex items-start gap-3">
+                              <label className="flex items-start gap-3 flex-1 min-w-0 cursor-pointer">
+                                <input type="checkbox" className="mt-1 accent-emerald-600" checked={on} onChange={() => toggle(k)} />
+                                <span className="text-lg leading-none mt-0.5">{m.icon}</span>
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-semibold">{m.label}</span>
+                                  <span className="block text-xs text-steel-500">{m.desc}</span>
+                                </span>
+                              </label>
+                              {on && <MobileChip on={mobileOn} onClick={() => toggleMobile(k)} />}
+                            </div>
+
+                            {/* Ferramentas dentro do módulo */}
+                            {on && feats.length > 0 && (
                               <button
                                 type="button"
-                                onClick={() => toggleMobile(k)}
-                                title={mobileOn ? 'Liberado no celular/tablet — clique para liberar só no computador' : 'Só no computador — clique para liberar também no celular/tablet'}
-                                className={`shrink-0 text-[11px] font-semibold px-2 py-1 rounded-lg border transition ${mobileOn
-                                  ? 'border-emerald-300 bg-white text-emerald-700'
-                                  : 'border-amber-300 bg-amber-50 text-amber-700'}`}
+                                onClick={() => toggleExpanded(k)}
+                                aria-expanded={isOpen}
+                                className="mt-2 ml-7 text-xs font-semibold text-steel-600 hover:text-steel-900 inline-flex items-center gap-1"
                               >
-                                {mobileOn ? '📱 Celular ✓' : '🖥️ Só PC'}
+                                <span className={`text-[9px] transition-transform ${isOpen ? '' : '-rotate-90'}`}>▼</span>
+                                Ferramentas
+                                <span className={featsOn === feats.length ? 'text-emerald-600' : 'text-amber-600'}>({featsOn}/{feats.length})</span>
                               </button>
+                            )}
+                            {isOpen && (
+                              <div className="mt-2 ml-7 space-y-1">
+                                {feats.map(f => {
+                                  const fOn = !off.includes(f.key);
+                                  const fMobile = fOn && !cfg.mobileOff.includes(f.key);
+                                  return (
+                                    <div key={f.key} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${fOn ? 'bg-white' : 'bg-steel-100 opacity-70'}`}>
+                                      <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                                        <input type="checkbox" className="accent-emerald-600" checked={fOn} onChange={() => toggle(f.key)} />
+                                        <span className="min-w-0">
+                                          <span className="block text-xs font-semibold">{f.label}</span>
+                                          {f.desc && <span className="block text-[11px] text-steel-500">{f.desc}</span>}
+                                        </span>
+                                      </label>
+                                      {/* Módulo já só no PC: a ferramenta segue o módulo */}
+                                      {fOn && mobileOn && <MobileChip small on={fMobile} onClick={() => toggleMobile(f.key)} />}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
                         );
@@ -210,5 +254,21 @@ export default function AdminModulos() {
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+/** Chave 📱 Celular / 🖥️ Só PC */
+function MobileChip({ on, onClick, small }: { on: boolean; onClick: () => void; small?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={on ? 'Liberado no celular/tablet — clique para liberar só no computador' : 'Só no computador — clique para liberar também no celular/tablet'}
+      className={`shrink-0 font-semibold rounded-lg border transition ${small ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-1'} ${on
+        ? 'border-emerald-300 bg-white text-emerald-700'
+        : 'border-amber-300 bg-amber-50 text-amber-700'}`}
+    >
+      {on ? '📱 Celular ✓' : '🖥️ Só PC'}
+    </button>
   );
 }

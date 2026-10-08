@@ -23,7 +23,8 @@ export function useStockAccess() {
 /** Cabeçalho comum de Estoque e compras: título, ações e as 4 abas */
 export default function StockTabs({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   const access = useStockAccess();
-  const tabs = TABS.filter(t => (t.perm === 'compras' ? access.compras : access.pecas));
+  const disabled = useWorkshopModules(s => s.disabled);
+  const tabs = TABS.filter(t => (t.perm === 'compras' ? access.compras : access.pecas) && moduleAllows(disabled, t.to));
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
