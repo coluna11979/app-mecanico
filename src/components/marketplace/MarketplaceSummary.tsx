@@ -33,12 +33,14 @@ export default function MarketplaceSummary({ workshopId }: { workshopId: string 
 
   const m = useMemo(() => marketplaceOf(jobs, period.range, j => arrivalDeadline(j)), [jobs, period.range]);
 
-  if (loading || jobs.length === 0) return null;
+  // Enquanto carrega, reserva o espaço do resumo fechado (evita a tela pular)
+  if (loading) return <div className="card mb-5 h-[68px] animate-pulse" aria-hidden />;
+  if (jobs.length === 0) return null;
 
   return (
     <div className="card mb-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button onClick={() => setOpen(o => !o)} className="text-left">
+        <button onClick={() => setOpen(o => !o)} className="text-left min-w-0">
           <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">{open ? '▾' : '▸'} 📊 Resumo das suas demandas</div>
           <p className="text-xs text-steel-400">
             {open ? period.label : `${fmtBRL(m.spent)} gastos · ${m.doneCount} concluídas no período`}
@@ -49,7 +51,7 @@ export default function MarketplaceSummary({ workshopId }: { workshopId: string 
 
       {open && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mt-4">
             <MiniStat label="Gasto no período" value={fmtBRL(m.spent)} sub={`${m.doneCount} demanda${m.doneCount === 1 ? '' : 's'} concluída${m.doneCount === 1 ? '' : 's'}`} />
             <MiniStat label="Aceite em média" value={m.avgAcceptMin != null ? fmtDur(m.avgAcceptMin) : '—'} sub="da publicação ao aceite" />
             <MiniStat label="Chegada em média" value={m.avgArrivalMin != null ? fmtDur(m.avgArrivalMin) : '—'}
@@ -114,9 +116,9 @@ export default function MarketplaceSummary({ workshopId }: { workshopId: string 
 
 function MiniStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="bg-steel-50 rounded-xl px-3 py-3">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">{label}</div>
-      <div className="text-xl font-bold font-display mt-0.5">{value}</div>
+    <div className="bg-steel-50 rounded-xl px-3 py-3 min-w-0">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-steel-500 truncate">{label}</div>
+      <div className="text-lg sm:text-xl font-bold font-display mt-0.5 truncate">{value}</div>
       {sub && <div className="text-[11px] text-steel-500 mt-0.5">{sub}</div>}
     </div>
   );

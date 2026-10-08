@@ -742,7 +742,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 lg:p-8 pb-[calc(84px+env(safe-area-inset-bottom,0px))] lg:pb-8">
+        <main className="flex-1 min-w-0 overflow-x-clip p-4 lg:p-8 pb-[calc(84px+env(safe-area-inset-bottom,0px))] lg:pb-8">
           {children}
         </main>
       </div>
