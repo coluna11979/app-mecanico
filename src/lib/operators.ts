@@ -6,11 +6,13 @@ import { supabase } from '@/lib/supabase';
 export type OperatorRole = 'gestor' | 'caixa' | 'atendente' | 'mecanico' | 'vendedor';
 export type OperatorPerm =
   | 'dar_desconto' | 'cancelar_recebimento' | 'reabrir_caixa'
-  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe';
+  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe' | 'plataforma';
 
 export type WorkshopOperator = {
   id: string; workshop_id: string; mechanic_id: string | null; name: string;
   is_owner: boolean; roles: OperatorRole[]; permissions: OperatorPerm[];
+  /** Em quais funções cada permissão vale (ausente = todas) */
+  perm_roles?: Partial<Record<OperatorPerm, OperatorRole[]>> | null;
   active: boolean; has_pin: boolean; created_at: string; updated_at: string;
 };
 
@@ -58,6 +60,7 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   compras:              { label: 'Compras e fornecedores', desc: 'Notas de compra e cadastro de fornecedores' },
   pecas_estoque:        { label: 'Peças e estoque',       desc: 'Catálogo, estoque e custo das peças; tabela de serviços' },
   folha:                { label: 'Fechar comissões e folha', desc: 'Fechar comissões, salários, vales e faltas da equipe' },
+  plataforma:           { label: 'Plataforma completa',   desc: 'Demandas, buscar mecânicos, mensagens e acompanhar o serviço do mecânico da plataforma' },
   equipe:               { label: 'Equipe',                desc: 'Colaboradores (ficha, salário, documentos) e Desempenho e comissões' },
 };
 
@@ -67,7 +70,13 @@ export const PERM_GROUPS: { label: string; perms: OperatorPerm[] }[] = [
   { label: 'Financeiro',         perms: ['ver_financeiro', 'contas_pagar', 'folha'] },
   { label: 'Equipe',             perms: ['equipe'] },
   { label: 'Compras e estoque',  perms: ['compras', 'pecas_estoque'] },
+  { label: 'Plataforma',         perms: ['plataforma'] },
 ];
+
+/** Permissões que valem na função escolhida ao entrar no balcão */
+export function permsForRole(perms: OperatorPerm[], permRoles: WorkshopOperator['perm_roles'], role: OperatorRole) {
+  return perms.filter(p => { const only = permRoles?.[p]; return !only || only.length === 0 || only.includes(role); });
+}
 
 /** A rota está liberada para a função? */
 export function roleAllows(role: OperatorRole, path: string) {
@@ -83,6 +92,7 @@ const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
   pecas_estoque:  ['/oficina/pecas', '/oficina/servicos'],
   folha:          ['/oficina/folha', '/oficina/comissoes'],
   equipe:         ['/oficina/equipe', '/oficina/desempenho'],
+  plataforma:     ['/oficina/dashboard', '/oficina/buscar', '/oficina/mensagens', '/oficina/job'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */
@@ -178,9 +188,11 @@ export const useOperator = create<Store>((set, get) => ({
     if (error) return 'Não foi possível entrar. Verifique a conexão.';
     const r = data as { ok: boolean; error?: string } & OperatorSession;
     if (!r.ok) return r.error ?? 'Não foi possível entrar';
+    // Permissão que só vale em outra função (ex.: Plataforma só como Vendedor) não entra na sessão
+    const { data: pr } = await supabase.from('workshop_operators').select('perm_roles').eq('id', r.operator_id).maybeSingle();
     const session: OperatorSession = {
       session_id: r.session_id, operator_id: r.operator_id, name: r.name,
-      role: r.role, permissions: r.permissions ?? [],
+      role: r.role, permissions: permsForRole(r.permissions ?? [], (pr as Pick<WorkshopOperator, 'perm_roles'> | null)?.perm_roles, r.role),
     };
     const s = { balcao: true, session };
     save(wid, s); set(s);
@@ -191,14 +203,15 @@ export const useOperator = create<Store>((set, get) => ({
     const { wid, session } = get();
     if (!wid || !session) return;
     const { data, error } = await supabase.from('workshop_operators')
-      .select('roles, permissions, active').eq('id', session.operator_id).maybeSingle();
+      .select('roles, permissions, active, perm_roles').eq('id', session.operator_id).maybeSingle();
     if (error) return; // sem conexão: mantém como está
-    const o = data as Pick<WorkshopOperator, 'roles' | 'permissions' | 'active'> | null;
+    const o = data as Pick<WorkshopOperator, 'roles' | 'permissions' | 'active' | 'perm_roles'> | null;
     // Acesso desativado ou função retirada: volta para a tela de PIN
     if (!o || !o.active || !o.roles.includes(session.role)) { await get().switchUser(); return; }
-    const same = o.permissions.length === session.permissions.length && o.permissions.every(p => session.permissions.includes(p));
+    const perms = permsForRole(o.permissions, o.perm_roles, session.role);
+    const same = perms.length === session.permissions.length && perms.every(p => session.permissions.includes(p));
     if (same || get().session?.session_id !== session.session_id) return;
-    const s = { balcao: true, session: { ...session, permissions: o.permissions } };
+    const s = { balcao: true, session: { ...session, permissions: perms } };
     save(wid, s); set(s);
   },
 
