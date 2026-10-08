@@ -344,7 +344,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loadedUid.current = null;
         try { localStorage.removeItem(LS_CURRENT_WORKSHOP); } catch {}
         try { localStorage.removeItem(LS_LAST_TOUCH); } catch {}
-        await supabase.auth.signOut();
+        // Só este aparelho: o padrão (global) derruba a sessão do celular quando alguém sai no PC
+        await supabase.auth.signOut({ scope: 'local' });
       },
       refreshProfile: async () => {
         if (session?.user) await loadUserData(session.user.id);
