@@ -40,6 +40,27 @@ function periodRange(p: Period, from: string, to: string): [string | null, strin
   return [null, null];
 }
 const MAX_PDF_MB = 15;
+
+/**
+ * Busca da nota: valor ("350" acha R$ 350,00 a R$ 350,99; "350,50" acha só R$ 350,50),
+ * ou texto (cliente, placa, carro, serviço).
+ */
+function matchSearch(r: PaperImport, q: string) {
+  const t = q.trim();
+  if (!t) return true;
+  const x = r.extracted;
+  let money = t.replace(/^r\$\s*/i, '');
+  if (/^\d+\.\d{1,2}$/.test(money)) money = money.replace('.', ',');  // "350.50" digitado com ponto
+  if (/^\d{1,3}(\.\d{3})*(,\d{1,2})?$|^\d+(,\d{1,2})?$/.test(money)) {
+    if (x?.total == null) return false;
+    const n = Number(money.replace(/\./g, '').replace(',', '.'));
+    const total = Math.round(Number(x.total) * 100) / 100;
+    return money.includes(',') ? Math.abs(total - n) < 0.005 : Math.floor(total) === n;
+  }
+  const norm = (v: string) => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const hay = norm([x?.cliente?.nome, x?.veiculo?.marca, x?.veiculo?.modelo, x?.veiculo?.placa, x?.servico_resumo].filter(Boolean).join(' '));
+  return hay.includes(norm(t)) || hay.replace(/[^a-z0-9]/g, '').includes(norm(t).replace(/[^a-z0-9]/g, ''));
+}
 const isPdfPath = (path: string) => path.toLowerCase().endsWith('.pdf');
 
 export default function ImportarOrcamentos() {
@@ -57,6 +78,7 @@ export default function ImportarOrcamentos() {
   const [start, end]          = periodRange(period, from, to);
   /** Filtrar pela data escrita na nota (padrão) ou pela data em que foi enviada */
   const [by, setBy]           = useState<'nota' | 'envio'>('nota');
+  const [search, setSearch]   = useState('');
   // Data da nota é AAAA-MM-DD (dia local); o fim do período é exclusivo
   const localDay = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const galleryRef = useRef<HTMLInputElement>(null);
@@ -255,9 +277,10 @@ export default function ImportarOrcamentos() {
     setList(l => l.filter(r => r.id !== imp.id));
   }
 
+  const found = search.trim() ? list.filter(r => matchSearch(r, search)) : list;
   const counts = Object.fromEntries((Object.keys(TAB_STATUS) as Tab[]).map(t =>
-    [t, list.filter(r => TAB_STATUS[t].includes(r.status)).length])) as Record<Tab, number>;
-  const shown = list.filter(r => TAB_STATUS[tab].includes(r.status));
+    [t, found.filter(r => TAB_STATUS[t].includes(r.status)).length])) as Record<Tab, number>;
+  const shown = found.filter(r => TAB_STATUS[tab].includes(r.status));
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'review',  label: '📝 Para conferir' },
@@ -327,6 +350,15 @@ export default function ImportarOrcamentos() {
           )}
         </div>
 
+        {/* Busca: valor da nota, cliente ou placa */}
+        <div className="relative mt-3 max-w-md">
+          <input className="input !py-2 text-sm !pr-9" inputMode="search" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 Buscar pelo valor da nota (ex.: 350,00), cliente ou placa" />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-steel-400 hover:bg-steel-100" aria-label="Limpar busca">✕</button>
+          )}
+        </div>
+
         {/* Abas */}
         <div className="flex flex-wrap gap-2 mt-3 mb-4">
           {TABS.map(t => (
@@ -342,10 +374,12 @@ export default function ImportarOrcamentos() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">{[1, 2, 3].map(i => <div key={i} className="h-48 bg-white rounded-2xl animate-pulse" />)}</div>
         ) : shown.length === 0 ? (
           <div className="card text-center text-steel-500 py-12">
+            {search.trim() ? `Nenhuma nota ${tab === 'done' ? 'importada' : 'nesta aba'} para “${search.trim()}”.` : <>
             {tab === 'review' && 'Nada para conferir agora. Envie fotos acima para começar.'}
             {tab === 'reading' && 'Nenhuma foto sendo lida.'}
             {tab === 'failed' && 'Nenhuma foto com problema. 👏'}
             {tab === 'done' && (period === 'all' ? 'Nenhuma nota importada ainda.' : 'Nenhuma nota importada neste período.')}
+            </>}
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
