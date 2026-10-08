@@ -8,7 +8,7 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, sessionAllows, useOperator } from '@/lib/operators';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { halfOf, useMyCommission } from '@/components/os/MyCommission';
-import { useModuleAllows } from '@/lib/modules';
+import { useFeature, useModuleAllows } from '@/lib/modules';
 import LicensePlate from '@/components/os/LicensePlate';
 import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
@@ -41,6 +41,7 @@ export default function OsDetail() {
   const { balcao, session } = useOperator();
   // Hook no topo: abaixo dos returns de carregamento ele mudaria a ordem dos hooks e a tela ficaria em branco
   const modAllows = useModuleAllows();
+  const feature = useFeature();
   const showCost = canDo(session, balcao, 'ver_financeiro') || canDo(session, balcao, 'pecas_estoque');
   // Mecânico (PIN): só a OS dele, sem valores, sem contato do cliente e sem ações comerciais
   const access = useCheckupAccess();
@@ -343,9 +344,9 @@ export default function OsDetail() {
   ] : [
     ...(['open', 'awaiting_approval', 'approved'].includes(os.status)
       ? [{ label: '✓ Já foi concluída (escolher a data)', onClick: () => setConcluding(true) }] : []),
-    ...(!closed && !os.scheduled_at ? [{ label: '📅 Agendar serviço', onClick: () => setScheduling(true) }] : []),
+    ...(!closed && !os.scheduled_at && feature('os.agendar') ? [{ label: '📅 Agendar serviço', onClick: () => setScheduling(true) }] : []),
     ...(canOpen('/oficina/checkup') ? [{ label: '🔍 Check-up do veículo', onClick: () => nav(`/oficina/checkup?os=${os.id}`) }] : []),
-    { label: '🖨️ Imprimir / PDF', onClick: () => nav(`/oficina/os/${os.id}/imprimir`), mobileOnly: true },
+    ...(feature('os.imprimir') ? [{ label: '🖨️ Imprimir / PDF', onClick: () => nav(`/oficina/os/${os.id}/imprimir`), mobileOnly: true }] : []),
     ...(!closed ? [{ label: '✏️ Editar dados', onClick: () => setEditing(true) }] : []),
     ...(os.status === 'completed' && Number(os.paid_amount ?? 0) > 0 && canDo(session, balcao, 'cancelar_recebimento')
       ? [{ label: '💳 Corrigir pagamento', onClick: () => setFixPay(n => n + 1) }] : []),
@@ -441,13 +442,13 @@ export default function OsDetail() {
               </button>
             )}
             {os.scheduled_at && !closed && (
-              <button onClick={() => !mech && setScheduling(true)} className={`${SEC} ${mech ? 'pointer-events-none' : ''}`}>
+              <button onClick={() => !mech && feature('os.agendar') && setScheduling(true)} className={`${SEC} ${mech || !feature('os.agendar') ? 'pointer-events-none' : ''}`}>
                 📅 Agendado · {new Date(os.scheduled_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às {new Date(os.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
               </button>
             )}
             {/* Imprimir fica à vista no computador; no celular está em "Mais ações" */}
-            {!mech && <button onClick={() => setWaOpen(true)} className={`${SEC} !border-signal-500/40 text-signal-700`}>📲 WhatsApp</button>}
-            {!mech && <Link to={`/oficina/os/${os.id}/imprimir`} className={`${SEC} hidden lg:inline-flex`}>🖨️ Imprimir / PDF</Link>}
+            {!mech && feature('os.whatsapp') && <button onClick={() => setWaOpen(true)} className={`${SEC} !border-signal-500/40 text-signal-700`}>📲 WhatsApp</button>}
+            {!mech && feature('os.imprimir') && <Link to={`/oficina/os/${os.id}/imprimir`} className={`${SEC} hidden lg:inline-flex`}>🖨️ Imprimir / PDF</Link>}
 
             {moreActions.length > 0 && <MoreActions items={moreActions} />}
 

@@ -49,17 +49,104 @@ export const MODULE_GROUPS: { label: string; keys: ModuleKey[] }[] = [
 
 export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
 
+/* ── Ferramentas dentro de cada módulo ────────────────────────────────────────
+   Chave `modulo.ferramenta`, guardada nas mesmas listas dos módulos (desligado
+   em tudo / só no celular). Ferramenta com `routes` é bloqueada pelo endereço
+   (menu, abas e redirecionamento já respeitam); sem `routes`, a própria tela
+   consulta com useFeature('modulo.ferramenta').
+   Rota: prefixo; `*` = um trecho qualquer (id); `$` no fim = só o endereço exato. */
+
+export type Feature = { key: string; label: string; desc?: string; routes?: string[] };
+
+export const FEATURES: Partial<Record<ModuleKey, Feature[]>> = {
+  painel: [
+    { key: 'painel.vendas',    label: 'Painel de vendas', routes: ['/oficina/painel'] },
+    { key: 'painel.resultado', label: 'Resultado (gestor no celular)', routes: ['/oficina/resultado'] },
+  ],
+  os: [
+    { key: 'os.imprimir', label: 'Imprimir / PDF',          routes: ['/oficina/os/*/imprimir'] },
+    { key: 'os.whatsapp', label: 'Enviar pelo WhatsApp',    desc: 'Orçamento, resumo e comprovante' },
+    { key: 'os.agendar',  label: 'Agendar serviço' },
+  ],
+  checkup: [
+    { key: 'checkup.painel',    label: 'Painel',    routes: ['/oficina/checkup$'] },
+    { key: 'checkup.inspecoes', label: 'Inspeções', routes: ['/oficina/checkup/inspecoes'] },
+    { key: 'checkup.historico', label: 'Histórico', routes: ['/oficina/checkup/historico'] },
+    { key: 'checkup.modelos',   label: 'Modelos',   routes: ['/oficina/checkup/modelos'] },
+  ],
+  caixa: [
+    { key: 'caixa.vender',     label: 'Vender peças (PDV)' },
+    { key: 'caixa.receber',    label: 'Receber OS' },
+    { key: 'caixa.movimentos', label: 'Movimentações', desc: 'Vales, despesas e sangrias' },
+    { key: 'caixa.fechar',     label: 'Fechar caixa' },
+  ],
+  financeiro: [
+    { key: 'financeiro.geral',   label: 'Visão geral' },
+    { key: 'financeiro.receber', label: 'OS a receber' },
+  ],
+  pecas: [
+    { key: 'pecas.painel',   label: 'Painel do estoque', routes: ['/oficina/pecas/painel'] },
+    { key: 'pecas.catalogo', label: 'Catálogo de peças', routes: ['/oficina/pecas$'] },
+  ],
+  compras: [
+    { key: 'compras.notas',        label: 'Notas de compra', routes: ['/oficina/compras'] },
+    { key: 'compras.fornecedores', label: 'Fornecedores',    routes: ['/oficina/fornecedores'] },
+  ],
+  equipe: [
+    { key: 'equipe.colaboradores', label: 'Colaboradores', routes: ['/oficina/equipe'] },
+    { key: 'equipe.desempenho',    label: 'Desempenho',    routes: ['/oficina/desempenho'] },
+  ],
+  fechamentos: [
+    { key: 'fechamentos.comissoes', label: 'Fechar comissões', routes: ['/oficina/comissoes'] },
+    { key: 'fechamentos.folha',     label: 'Fechar folha',     routes: ['/oficina/folha'] },
+  ],
+  plataforma: [
+    { key: 'plataforma.demandas',  label: 'Demandas',         routes: ['/oficina/dashboard'] },
+    { key: 'plataforma.buscar',    label: 'Buscar mecânicos', routes: ['/oficina/buscar'] },
+    { key: 'plataforma.mensagens', label: 'Mensagens',        routes: ['/oficina/mensagens'] },
+    { key: 'plataforma.rastreio',  label: 'Rastreio do serviço', routes: ['/oficina/job'] },
+  ],
+};
+
+const ALL_FEATURES: (Feature & { module: ModuleKey })[] = MODULE_KEYS.flatMap(m =>
+  (FEATURES[m] ?? []).map(f => ({ ...f, module: m })));
+
 const onRoute = (path: string, r: string) => path === r || path.startsWith(`${r}/`);
+
+/** Casa a rota com a regra (prefixo, `*` = um trecho, `$` = exato) */
+function matchRoute(path: string, rule: string) {
+  const exact = rule.endsWith('$');
+  const parts = (exact ? rule.slice(0, -1) : rule).split('/');
+  const segs = path.replace(/\/$/, '').split('/');
+  if (exact ? segs.length !== parts.length : segs.length < parts.length) return false;
+  return parts.every((p, i) => p === '*' || p === segs[i]);
+}
 
 /** Módulo dono da rota (ou null = tela sempre liberada: Início, Perfil, Avisos…) */
 export function moduleOf(path: string): ModuleKey | null {
   return MODULE_KEYS.find(k => MODULES[k].routes.some(r => onRoute(path, r))) ?? null;
 }
 
-/** A rota está liberada com esses módulos desligados? */
+/** A rota está liberada com esses módulos/ferramentas desligados? */
 export function moduleAllows(disabled: readonly string[], path: string) {
   const m = moduleOf(path);
-  return !m || !disabled.includes(m);
+  if (m && disabled.includes(m)) return false;
+  return !ALL_FEATURES.some(f => disabled.includes(f.key) && f.routes?.some(r => matchRoute(path, r)));
+}
+
+/** Endereço alternativo quando a tela pedida foi desligada mas o módulo tem outra ferramenta liberada
+ *  (ex.: Painel do check-up desligado → abre direto o Histórico). null = nenhuma. */
+export function moduleEntry(disabled: readonly string[], path: string): string | null {
+  if (moduleAllows(disabled, path)) return path;
+  const m = moduleOf(path);
+  if (!m || disabled.includes(m)) return null;
+  for (const f of FEATURES[m] ?? []) {
+    for (const r of f.routes ?? []) {
+      const to = r.replace(/\$$/, '');
+      if (!to.includes('*') && moduleAllows(disabled, to)) return to;
+    }
+  }
+  return null;
 }
 
 /* ── Store: módulos desligados da oficina atual ──────────────────────────── */
@@ -71,17 +158,17 @@ const isMobileNow = () => typeof window !== 'undefined' && window.matchMedia(MOB
 type ModulesState = {
   workshopId: string | null;
   /** Desligados em qualquer aparelho */
-  off: ModuleKey[];
+  off: string[];
   /** Desligados só no celular/tablet */
-  mobileOff: ModuleKey[];
+  mobileOff: string[];
   isMobile: boolean;
   /** O que vale neste aparelho (é o que as telas consultam) */
-  disabled: ModuleKey[];
+  disabled: string[];
   loaded: boolean;
   load: (workshopId: string | null) => Promise<void>;
 };
 
-const effective = (off: ModuleKey[], mobileOff: ModuleKey[], isMobile: boolean) =>
+const effective = (off: string[], mobileOff: string[], isMobile: boolean) =>
   isMobile ? [...new Set([...off, ...mobileOff])] : off;
 
 export const useWorkshopModules = create<ModulesState>((set, get) => ({
@@ -97,8 +184,8 @@ export const useWorkshopModules = create<ModulesState>((set, get) => ({
     const { data } = await supabase.from('workshop_modules')
       .select('disabled_modules, mobile_disabled_modules').eq('workshop_id', workshopId).maybeSingle();
     if (get().workshopId !== workshopId) return; // trocou de loja no meio
-    const off = (data?.disabled_modules ?? []) as ModuleKey[];
-    const mobileOff = (data?.mobile_disabled_modules ?? []) as ModuleKey[];
+    const off = (data?.disabled_modules ?? []) as string[];
+    const mobileOff = (data?.mobile_disabled_modules ?? []) as string[];
     set({ off, mobileOff, disabled: effective(off, mobileOff, get().isMobile), loaded: true });
   },
 }));
@@ -115,4 +202,10 @@ if (typeof window !== 'undefined') {
 export function useModuleAllows() {
   const disabled = useWorkshopModules(s => s.disabled);
   return (path: string) => moduleAllows(disabled, path);
+}
+
+/** Ferramenta liberada para a oficina atual (neste aparelho)? Ex.: useFeature()('caixa.fechar') */
+export function useFeature() {
+  const disabled = useWorkshopModules(s => s.disabled);
+  return (key: string) => !disabled.includes(key) && !disabled.includes(key.split('.')[0]);
 }

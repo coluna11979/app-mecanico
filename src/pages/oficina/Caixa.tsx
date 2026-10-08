@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { canDo, sessionAllows, useOperator, type WorkshopOperator } from '@/lib/operators';
-import { useModuleAllows } from '@/lib/modules';
+import { useFeature, useModuleAllows } from '@/lib/modules';
 import {
   EXPENSE_CATEGORIES, KINDS, METHODS, RECEIVE_METHODS, brl, hhmm, moneyStr, parseMoney,
   type CashEntry, type CashRegister, type CashSummary, type EntryKind, type PayMethod,
@@ -82,7 +82,11 @@ export default function Caixa() {
   const [params, setParams]   = useSearchParams();
   const focusOs = params.get('os');
   // Abre direto na venda (PDV); vindo de uma OS ("Receber no caixa"), abre em Receber
-  const [tab, setTab]         = useState<Tab>(focusOs ? 'receber' : 'vender');
+  const [tabState, setTab]    = useState<Tab>(focusOs ? 'receber' : 'vender');
+  // Abas desligadas no superadmin (ferramentas do módulo) somem; cai na primeira liberada
+  const feature = useFeature();
+  const okTabs = (['vender', 'receber', 'movimentos', 'fechar'] as Tab[]).filter(t => feature(`caixa.${t}`));
+  const tab: Tab | undefined = okTabs.includes(tabState) ? tabState : okTabs[0];
   const [newOsTop, setNewOsTop] = useState(false);
   const navTop = useNavigate();
   useEffect(() => { if (focusOs) setTab('receber'); }, [focusOs]);
@@ -145,7 +149,7 @@ export default function Caixa() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 mb-4">
-              {([['vender', '🛒 Vender peças'], ['receber', '🧾 Receber OS'], ['movimentos', '↕️ Movimentações'], ['fechar', '🔒 Fechar caixa']] as [Tab, string][]).map(([k, l]) => (
+              {([['vender', '🛒 Vender peças'], ['receber', '🧾 Receber OS'], ['movimentos', '↕️ Movimentações'], ['fechar', '🔒 Fechar caixa']] as [Tab, string][]).filter(([k]) => okTabs.includes(k)).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)}
                   className={`text-sm font-semibold px-4 py-2 rounded-full border transition ${
                     tab === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>

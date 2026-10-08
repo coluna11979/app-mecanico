@@ -10,6 +10,7 @@ import {
 } from '@/lib/checkupPanel';
 import type { Situation } from '@/lib/checkupStatus';
 import type { WorkshopMechanic } from '@/types/database';
+import { useModuleAllows } from '@/lib/modules';
 
 /* Painel do gestor: Painel · Inspeções · Histórico · Modelos.
    Um botão principal por card/linha; tudo calculado em lib/checkupPanel. */
@@ -48,6 +49,8 @@ export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, w
   onSchedule: () => void;
   onNew: () => void;
 }) {
+  // Abas desligadas no superadmin (módulos por oficina) não aparecem
+  const routeOk = useModuleAllows();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>('todos');
   const [period, setPeriod] = useState<7 | 30>(7);
@@ -96,7 +99,7 @@ export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, w
     <div className="space-y-5">
       {/* Abas do módulo */}
       <div className="flex gap-1 border-b border-steel-200 overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
-        {(Object.keys(TAB_LABEL) as Tab[]).map(t => (
+        {(Object.keys(TAB_LABEL) as Tab[]).filter(t => routeOk(t === 'painel' ? '/oficina/checkup' : `/oficina/checkup/${t}`)).map(t => (
           <button key={t} onClick={() => onTab(t)}
             className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition ${
               tab === t ? 'border-brand-500 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-800'}`}>
