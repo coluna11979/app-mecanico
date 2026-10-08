@@ -16,7 +16,7 @@ export const MODULES: Record<ModuleKey, {
   /** Telas do módulo (prefixo de rota) */
   routes: string[];
 }> = {
-  painel:       { label: 'Painel de vendas',   icon: '📊', desc: 'Faturamento e vendas do dia/mês',               routes: ['/oficina/painel'] },
+  painel:       { label: 'Painel de vendas',   icon: '📊', desc: 'Faturamento e vendas do dia/mês',               routes: ['/oficina/painel', '/oficina/resultado'] },
   os:           { label: 'Ordens de serviço',  icon: '📋', desc: 'Abrir, acompanhar e imprimir OS',               routes: ['/oficina/os'] },
   agenda:       { label: 'Agenda',             icon: '📅', desc: 'Agendamentos da oficina',                       routes: ['/oficina/agenda'] },
   checkup:      { label: 'Check-up',           icon: '🩺', desc: 'Painel, inspeções, histórico e orçamento pelo link', routes: ['/oficina/checkup'] },
