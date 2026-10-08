@@ -356,6 +356,17 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     return () => { supabase.removeChannel(ch); };
   }, [shopId, user]);
 
+  /* ── Gaveta "Mais": fecha ao trocar de tela ou no Esc; trava a rolagem do fundo enquanto aberta ── */
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener('keydown', onKey); };
+  }, [open]);
+
   /* ── Zera badge ao entrar em /oficina/mensagens ── */
   useEffect(() => {
     if (location.pathname.startsWith('/oficina/mensagens')) {
@@ -429,6 +440,24 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const inBottom = (to: string) => bottomTabs.some(t => t.to === to);
   const path = location.pathname;
   const showMsgs = allowed('/oficina/mensagens');
+  // Mensagens da plataforma: o contador vai na aba Plataforma quando ela está na barra; senão, no "Mais"
+  const msgsTab = inBottom('/oficina/dashboard') ? '/oficina/dashboard' : null;
+
+  /** Grupos do menu com só o que a função pode abrir (submenu sem filho liberado some) */
+  const navSections = SECTIONS.flatMap(sec => {
+    const entries = sec.items
+      .map(e => (isSub(e) ? { ...e, children: e.children.filter(c => allowed(c.to)) } : e))
+      .filter(e => (isSub(e) ? e.children.length > 0 : allowed(e.to)))
+      // Mecânico: no Check-up só a fila dele
+      .filter(e => !(isMechanicSession && !isSub(e) && CHECKUP_MANAGER_ONLY.includes(e.to)));
+    return entries.length ? [{ ...sec, entries }] : [];
+  });
+  // Gaveta "Mais" (celular): grupos em atalhos, sem repetir o que já está na barra
+  const sheetGroups = [
+    { key: 'top', title: 'Painéis', items: TOP_ITEMS.filter(i => allowed(i.to) && !inBottom(i.to)) },
+    ...navSections.map(sec => ({ key: sec.key, title: sec.title, items: leaves(sec.entries).filter(i => !inBottom(i.to)) })),
+  ].filter(g => g.items.length > 0);
+  const moreActive = open || !bottomTabs.some(t => onRoute(path, t.to));
 
   return (
     <div className="min-h-screen flex bg-steel-50">
@@ -529,18 +558,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {/* Overlay mobile */}
-      {open && (
-        <div className="fixed inset-0 bg-steel-900/60 z-30 lg:hidden" onClick={() => setOpen(false)} />
-      )}
+      {/* ── Sidebar (computador; no celular o menu é a gaveta do "Mais") ── */}
+      <aside className="hidden lg:flex flex-col sticky top-0 h-screen w-64 shrink-0 bg-steel-900 text-white">
 
-      {/* ── Sidebar ── */}
-      <aside className={`
-        fixed top-0 left-0 h-full w-64 bg-steel-900 text-white z-40 flex flex-col
-        transition-transform duration-300
-        ${open ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:z-auto lg:shrink-0
-      `}>
 
         {/* Logo + sino de avisos */}
         <div className="px-5 py-5 border-b border-steel-800 flex items-center justify-between gap-2">
@@ -580,22 +600,13 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             <SideItem key={i.to} {...i} badge={0} mobileHidden={inBottom(i.to)} onClick={() => setOpen(false)} />
           ))}
 
-          {SECTIONS.map(sec => {
-            // Só o que a função pode abrir; submenu sem nenhum filho liberado some
-            const entries = sec.items
-              .map(e => (isSub(e) ? { ...e, children: e.children.filter(c => allowed(c.to)) } : e))
-              .filter(e => (isSub(e) ? e.children.length > 0 : allowed(e.to)))
-              // Mecânico: no Check-up só a fila dele
-              .filter(e => !(isMechanicSession && !isSub(e) && CHECKUP_MANAGER_ONLY.includes(e.to)));
-            if (!entries.length) return null;
+          {navSections.map(({ entries, ...sec }) => {
             const items = leaves(entries);
             const hasActive = items.some(i => onRoute(path, i.to));
             const isOpen = hasActive || !collapsed.has(sec.key);
             const groupBadge = items.some(i => i.to === '/oficina/mensagens') ? unread : 0;
-            // No "Mais" do celular, grupo cujos itens já estão todos na barra inferior não aparece
-            const mobileHidden = items.every(i => inBottom(i.to));
             return (
-              <div key={sec.key} className={mobileHidden ? 'hidden lg:block' : ''}>
+              <div key={sec.key}>
                 <button
                   type="button"
                   onClick={() => toggleGroup(sec.key)}
@@ -692,7 +703,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Topbar mobile (o menu completo abre pelo "Mais" da barra inferior) */}
-        <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-steel-200 flex items-center gap-2 px-3 h-14 shrink-0">
+        <header className="lg:hidden sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-steel-200/80 flex items-center gap-2 px-3 h-14 shrink-0">
           {/* Switcher mobile (ocupa o espaço central) */}
           {currentWorkshop && canSwitchStore ? (
             <div className="flex-1 min-w-0">
@@ -724,53 +735,124 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 lg:p-8 pb-24 lg:pb-8">
+        <main className="flex-1 p-4 lg:p-8 pb-[calc(84px+env(safe-area-inset-bottom,0px))] lg:pb-8">
           {children}
         </main>
       </div>
 
-      {/* ── Bottom tab bar (mobile only) ── */}
-      <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-steel-200 z-20 lg:hidden safe-area-inset-bottom">
-        <div className="grid h-16" style={{ gridTemplateColumns: `repeat(${bottomTabs.length + 1}, minmax(0, 1fr))` }}>
-          {bottomTabs.map(tab => (
-            <NavLink
-              key={tab.to}
-              to={tab.to}
-              onClick={() => setOpen(false)}
-              className={({ isActive }) =>
-                `flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors relative ${
-                  isActive && !open ? 'text-brand-500' : 'text-steel-400'
-                }`
-              }
-            >
-              <span className="text-xl leading-none">{tab.icon}</span>
-              <span>{tab.label}</span>
-            </NavLink>
-          ))}
+      {/* ── Barra inferior (celular) ── */}
+      <nav className="fixed bottom-0 inset-x-0 z-30 lg:hidden bg-white/95 backdrop-blur-md border-t border-steel-200/80 safe-area-inset-bottom">
+        <div className="grid h-[60px] px-1" style={{ gridTemplateColumns: `repeat(${bottomTabs.length + 1}, minmax(0, 1fr))` }}>
+          {bottomTabs.map(tab => {
+            const badge = tab.to === msgsTab && showMsgs ? unread : 0;
+            return (
+              <NavLink key={tab.to} to={tab.to} onClick={() => setOpen(false)}
+                className={({ isActive }) => `group flex flex-col items-center justify-center gap-1 text-[10px] font-semibold tracking-tight transition-colors ${
+                  isActive && !open ? 'text-brand-600' : 'text-steel-400 active:text-steel-600'}`}>
+                {({ isActive }) => (
+                  <>
+                    <span className={`relative grid place-items-center h-7 w-12 rounded-full text-lg leading-none transition-all duration-200 ${
+                      isActive && !open ? 'bg-brand-50' : 'grayscale-[35%] opacity-80 group-active:scale-90'}`}>
+                      {tab.icon}
+                      {badge > 0 && <Badge n={badge} />}
+                    </span>
+                    <span className="truncate max-w-full px-0.5">{tab.label}</span>
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
 
-          {/* Mais: abre o menu completo (sem repetir as abas acima) */}
-          <button
-            type="button"
-            onClick={() => setOpen(o => !o)}
-            aria-label="Mais opções"
-            aria-expanded={open}
-            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition-colors ${
-              open || !bottomTabs.some(t => onRoute(path, t.to)) ? 'text-brand-500' : 'text-steel-400'
-            }`}
-          >
-            <span className="relative text-xl leading-none">
-              ☰
-              {showMsgs && unread > 0 && (
-                <span className="absolute -top-1 -right-2 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
-                  {unread > 9 ? '9+' : unread}
-                </span>
-              )}
+          {/* Mais: abre a gaveta com o resto do menu */}
+          <button type="button" onClick={() => setOpen(o => !o)} aria-label="Mais opções" aria-expanded={open}
+            className={`group flex flex-col items-center justify-center gap-1 text-[10px] font-semibold tracking-tight transition-colors ${
+              moreActive ? 'text-brand-600' : 'text-steel-400'}`}>
+            <span className={`relative grid place-items-center h-7 w-12 rounded-full transition-all duration-200 ${
+              moreActive ? 'bg-brand-50' : 'group-active:scale-90'}`}>
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
+                {open ? <path d="M6 6l12 12M18 6L6 18" /> : <><circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" /></>}
+              </svg>
+              {!msgsTab && showMsgs && unread > 0 && <Badge n={unread} />}
             </span>
             <span>Mais</span>
           </button>
         </div>
       </nav>
+
+      {/* ── Gaveta "Mais" (celular): tudo que não está na barra, em atalhos ── */}
+      {open && (
+        <div className="lg:hidden fixed inset-0 z-[25]" role="dialog" aria-modal="true" aria-label="Menu">
+          <div className="absolute inset-0 bg-steel-900/50 backdrop-blur-[2px] animate-fade-in" onClick={() => setOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[85vh] flex flex-col rounded-t-[22px] bg-steel-50 shadow-2xl animate-sheet-up pb-[calc(60px+env(safe-area-inset-bottom,0px))]">
+            <div className="pt-2.5 pb-1 grid place-items-center shrink-0"><span className="h-1 w-10 rounded-full bg-steel-300" /></div>
+
+            {/* Quem está usando */}
+            <div className="px-4 pt-1 pb-3 flex items-center gap-3 shrink-0">
+              <div className="h-10 w-10 rounded-full bg-steel-900 text-white grid place-items-center font-bold text-sm shrink-0">
+                {op.balcao && op.session ? op.session.name.charAt(0).toUpperCase() : initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold text-steel-900 truncate">{op.balcao && op.session ? op.session.name : firstName}</div>
+                <div className="text-xs text-steel-500 truncate">
+                  {op.balcao && op.session ? `${ROLES[op.session.role].icon} ${ROLES[op.session.role].label}` : currentWorkshop?.business_name ?? 'Oficina'}
+                </div>
+              </div>
+              {op.balcao && op.session ? (
+                <button onClick={() => { op.switchUser(); setOpen(false); }}
+                  className="h-9 px-3 rounded-lg bg-white ring-1 ring-steel-200 text-xs font-semibold text-steel-700 active:bg-steel-100">🔒 Trocar</button>
+              ) : (
+                <button onClick={() => { signOut(); nav('/login'); }}
+                  className="h-9 px-3 rounded-lg bg-white ring-1 ring-steel-200 text-xs font-semibold text-steel-700 active:bg-steel-100">Sair</button>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4 space-y-4">
+              {sheetGroups.map(g => (
+                <section key={g.key}>
+                  <h3 className="px-1 mb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-steel-400">{g.title}</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {g.items.map(i => (
+                      <NavLink key={i.to} to={i.to} end={i.to === '/oficina/pecas' || i.to === '/oficina/checkup'} onClick={() => setOpen(false)}
+                        className={({ isActive }) => `relative flex flex-col items-center justify-center gap-1.5 text-center min-h-[78px] px-1.5 py-2.5 rounded-2xl transition active:scale-[0.97] ${
+                          isActive ? 'bg-brand-500 text-white shadow-brand' : 'bg-white text-steel-700 ring-1 ring-steel-200/70'}`}>
+                        <span className="text-[22px] leading-none">{i.icon}</span>
+                        <span className="text-[11px] font-semibold leading-tight line-clamp-2">{i.label}</span>
+                        {i.to === '/oficina/mensagens' && unread > 0 && <span className="absolute top-1.5 right-1.5"><Badge n={unread} inline /></span>}
+                      </NavLink>
+                    ))}
+                  </div>
+                </section>
+              ))}
+
+              {!op.balcao && (
+                <button onClick={enterBalcao}
+                  className="w-full flex items-center gap-3 rounded-2xl bg-white ring-1 ring-steel-200/70 px-4 py-3 text-left active:bg-steel-100">
+                  <span className="text-xl">🔒</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-steel-900">Ativar modo balcão</span>
+                    <span className="block text-xs text-steel-500">Cada colaborador entra com o próprio PIN</span>
+                  </span>
+                </button>
+              )}
+              {op.balcao && op.session?.role === 'gestor' && (
+                <button onClick={() => { op.exitBalcao(); setOpen(false); }} className="w-full text-xs text-steel-500 py-2">
+                  Desligar o modo balcão neste aparelho
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Bolinha vermelha de contagem */
+function Badge({ n, inline = false }: { n: number; inline?: boolean }) {
+  return (
+    <span className={`${inline ? '' : 'absolute -top-1 right-1'} h-4 min-w-4 px-1 rounded-full bg-alert-500 text-white text-[9px] font-bold grid place-items-center ring-2 ring-white`}>
+      {n > 9 ? '9+' : n}
+    </span>
   );
 }
 
