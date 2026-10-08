@@ -194,7 +194,12 @@ export default function ImportarOrcamentos() {
         try { msg = (await (error as any).context.json())?.error ?? ''; } catch { /* corpo não-JSON */ }
       }
       msg = msg || error?.message || 'erro';
+      const status = (error as any)?.context?.status;
+      if (status === 401) msg = 'sessão expirada — saia e entre de novo no sistema';
       console.warn('[importar] leitura falhou:', msg);
+      // Sem isso a nota fica "Lendo…" para sempre quando a função recusa antes de começar
+      await supabase.from('paper_imports').update({ status: 'failed', error: msg })
+        .eq('id', id).in('status', ['pending', 'processing']);
       return msg as string;
     }
     return null;
