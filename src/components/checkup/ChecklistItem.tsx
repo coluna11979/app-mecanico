@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
-import { STATUS_META, TEMPLATE_BY_KEY, checkupPhotoUrl, type CheckupItem, type CheckupItemStatus } from '@/lib/checkup';
+import { STATUS_META, checkupPhotoUrl, reasonsFor, type CheckupItem, type CheckupItemStatus } from '@/lib/checkup';
 
 /* Linha do checklist — usada na tela da oficina e no link do mecânico (celular). */
 
@@ -13,8 +13,6 @@ export const STATUS_ON: Record<CheckupItemStatus, string> = {
 
 export type ItemPatch = Partial<Pick<CheckupItem, 'status' | 'measurement' | 'note' | 'photo_path' | 'quote_part' | 'quote_service'>>;
 
-/** Nomes do cadastro de peças e da tabela de serviços, para o mecânico apontar (sem preço) */
-export type CatalogNames = { parts: string[]; services: string[] };
 
 /* ─── Incluir item fora do checklist ───────────────────────── */
 export function AddItem({ system, onAdd }: { system: string; onAdd: (label: string) => Promise<boolean> }) {
@@ -54,25 +52,30 @@ export function AddItem({ system, onAdd }: { system: string; onAdd: (label: stri
 }
 
 /* ─── Item do checklist ────────────────────────────────────── */
-export function ItemRow({ item, uploadPhoto, onPatch, onRemove, catalog }: {
+export function ItemRow({ item, uploadPhoto, onPatch, onRemove }: {
   item: CheckupItem;
-  catalog?: CatalogNames;
   /** Envia a foto e devolve o path salvo (ou uma URL blob: na demonstração) */
   uploadPhoto: (file: File, itemKey: string) => Promise<string>;
   onPatch: (p: ItemPatch) => void;
   /** Só itens incluídos à mão podem ser removidos */
   onRemove?: () => void;
 }) {
-  const tpl = TEMPLATE_BY_KEY[item.item_key];
   const flagged = item.status === 'warn' || item.status === 'urgent';
   const [expanded, setExpanded] = useState(false);
-  const [measurement, setMeasurement] = useState(item.measurement ?? '');
   const [note, setNote] = useState(item.note ?? '');
-  const [part, setPart] = useState(item.quote_part ?? '');
-  const [service, setService] = useState(item.quote_service ?? '');
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const showDetails = expanded || flagged;
+
+  /** Toque rápido: liga/desliga a palavra na observação e já salva */
+  function toggleTag(tag: string) {
+    const parts = note.split(',').map(x => x.trim()).filter(Boolean);
+    const has = parts.some(x => x.toLowerCase() === tag.toLowerCase());
+    const next = (has ? parts.filter(x => x.toLowerCase() !== tag.toLowerCase()) : [...parts, tag]).join(', ');
+    setNote(next);
+    onPatch({ note: next || null });
+  }
+  const tagOn = (tag: string) => note.split(',').some(x => x.trim().toLowerCase() === tag.toLowerCase());
 
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -114,39 +117,23 @@ export function ItemRow({ item, uploadPhoto, onPatch, onRemove, catalog }: {
 
       {showDetails && (
         <div className="space-y-2 bg-steel-50 rounded-xl p-3">
-          {/* Item com problema: o mecânico aponta o que trocar — vai direto para o orçamento do comercial */}
+          {/* Item com problema: o mecânico só diz o que viu (toques rápidos) e tira a foto.
+              Peça, serviço e preço ficam com o comercial, no orçamento. */}
           {flagged && (
-            <div className="rounded-lg bg-white border border-steel-200 p-2.5 space-y-2">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">O que precisa fazer (peça e serviço)</div>
-              {catalog && (
-                <>
-                  <datalist id={`ck-p-${item.id}`}>{catalog.parts.map(n => <option key={n} value={n} />)}</datalist>
-                  <datalist id={`ck-s-${item.id}`}>{catalog.services.map(n => <option key={n} value={n} />)}</datalist>
-                </>
-              )}
-              <div className="flex items-center gap-2">
-                <span className="w-24 shrink-0 text-xs font-semibold text-steel-600">🔩 Peça a trocar</span>
-                <input value={part} onChange={e => setPart(e.target.value)} list={catalog ? `ck-p-${item.id}` : undefined}
-                  onBlur={() => part.trim() !== (item.quote_part ?? '') && onPatch({ quote_part: part.trim() || null })}
-                  placeholder="Ex.: Pastilha dianteira (vazio se não precisa)" className="input !py-2 flex-1 min-w-0" />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-24 shrink-0 text-xs font-semibold text-steel-600">🔧 Serviço</span>
-                <input value={service} onChange={e => setService(e.target.value)} list={catalog ? `ck-s-${item.id}` : undefined}
-                  onBlur={() => service.trim() !== (item.quote_service ?? '') && onPatch({ quote_service: service.trim() || null })}
-                  placeholder="Ex.: Troca de pastilhas" className="input !py-2 flex-1 min-w-0" />
-              </div>
+            <div className="flex flex-wrap gap-1.5">
+              {reasonsFor(item.item_key).map(t => (
+                <button key={t} type="button" onClick={() => toggleTag(t)}
+                  className={`text-xs font-semibold px-3 py-2 rounded-full border transition active:scale-95 ${
+                    tagOn(t) ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                  {t}
+                </button>
+              ))}
             </div>
           )}
           <div className="flex gap-2">
-            {tpl?.measure && (
-              <input value={measurement} onChange={e => setMeasurement(e.target.value)}
-                onBlur={() => measurement !== (item.measurement ?? '') && onPatch({ measurement: measurement.trim() || null })}
-                placeholder={tpl.measure} className="input !py-2 w-32" />
-            )}
             <input value={note} onChange={e => setNote(e.target.value)}
               onBlur={() => note !== (item.note ?? '') && onPatch({ note: note.trim() || null })}
-              placeholder="Observação (ex.: trocar em 30 dias)" className="input !py-2 flex-1 min-w-0" />
+              placeholder={flagged ? 'Quer escrever algo? (opcional)' : 'Observação (opcional)'} className="input !py-2 flex-1 min-w-0" />
           </div>
           <div className="flex items-center gap-2">
             {item.photo_path && (
@@ -156,8 +143,8 @@ export function ItemRow({ item, uploadPhoto, onPatch, onRemove, catalog }: {
             )}
             <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onPhoto} className="hidden" />
             <button onClick={() => fileRef.current?.click()} disabled={uploading}
-              className="btn-ghost text-xs !py-2 border border-steel-200 bg-white">
-              {uploading ? 'Enviando…' : item.photo_path ? '📷 Trocar foto' : '📷 Adicionar foto'}
+              className={flagged && !item.photo_path ? 'btn-primary text-sm !py-2.5' : 'btn-ghost text-xs !py-2 border border-steel-200 bg-white'}>
+              {uploading ? 'Enviando…' : item.photo_path ? '📷 Trocar foto' : flagged ? '📷 Tirar foto' : '📷 Adicionar foto'}
             </button>
             {item.photo_path && (
               <button onClick={() => onPatch({ photo_path: null })} className="text-xs text-steel-500 px-2 hover:text-alert-600">Remover</button>

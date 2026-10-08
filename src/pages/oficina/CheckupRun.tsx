@@ -11,11 +11,12 @@ import {
   CHECKUP_MODELS, CHECKUP_TEMPLATE, changeCheckupModel, modelItemKeys, modelLabel, modelOf,
   type CheckupItem, type CheckupModelKey, type VehicleCheckup,
 } from '@/lib/checkup';
-import { AddItem, ItemRow, type CatalogNames } from '@/components/checkup/ChecklistItem';
+import { AddItem, ItemRow } from '@/components/checkup/ChecklistItem';
+import QuoteSearch, { type CatalogEntry } from '@/components/checkup/QuoteSearch';
+import { loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { OVERALL_META, countsOf, itemsWithoutPrice, nextPendingSystem, overallState, overallText, sendMode, systemsOf } from '@/lib/checkupStatus';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
-import { loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { DEMO_ID, DEMO_MECHANICS, demoDraft, saveDemoResult } from '@/lib/checkupDemo';
 import type { WorkshopMechanic } from '@/types/database';
 
@@ -49,18 +50,6 @@ export default function WorkshopCheckupRun() {
   const access = useCheckupAccess();
   const dispatchOnly = !demo && !access.canInspect;
   const isMechanic = !demo && access.isMechanic;
-  // Nomes do cadastro de peças e da tabela de serviços, para apontar o que trocar
-  const [catalog, setCatalog] = useState<CatalogNames | undefined>(undefined);
-  useEffect(() => {
-    if (demo || !currentWorkshop?.id) return;
-    Promise.all([
-      supabase.from('workshop_parts').select('name').eq('workshop_id', currentWorkshop.id).eq('active', true).order('name'),
-      supabase.from('workshop_services').select('name').eq('workshop_id', currentWorkshop.id).eq('active', true).order('name'),
-    ]).then(([p, s]) => setCatalog({
-      parts: ((p.data ?? []) as { name: string }[]).map(x => x.name),
-      services: ((s.data ?? []) as { name: string }[]).map(x => x.name),
-    }));
-  }, [currentWorkshop?.id, demo]);
 
   const linkSent = !demo && checkup?.status === 'draft' && !!checkup.mechanic_link_sent_at;
   useEffect(() => {
@@ -393,7 +382,7 @@ export default function WorkshopCheckupRun() {
                         </div>
                       )}
                       {list.map(item => (
-                        <ItemRow key={item.id} item={item} catalog={catalog} onPatch={p => patchItem(item, p)}
+                        <ItemRow key={item.id} item={item} onPatch={p => patchItem(item, p)}
                           uploadPhoto={(file, key) => demo ? Promise.resolve(URL.createObjectURL(file))
                             : uploadCheckupPhoto(file, checkup.workshop_id, checkup.id, key)}
                           onRemove={item.item_key.startsWith('extra_') ? () => removeItem(item) : undefined} />
@@ -721,20 +710,21 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
   const mode = sendMode(items);
   const noPrice = itemsWithoutPrice(items);
 
-  // Sugestões: Tabela de serviços e cadastro de peças (preço de venda)
-  const [services, setServices] = useState<{ name: string; price: number }[]>([]);
-  const [parts, setParts] = useState<{ id: string; name: string; price: number }[]>([]);
+  // Busca do orçamento: Tabela de serviços + Cadastro de peças (preço de venda)
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   useEffect(() => {
     if (demo) return;
     (async () => {
       const [s, p, m] = await Promise.all([
         supabase.from('workshop_services').select('name, price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name'),
-        supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name'),
+        supabase.from('workshop_parts').select('name, cost, margin_percent, sale_price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name'),
         loadDefaultMargin(checkup.workshop_id),
       ]);
-      setServices(((s.data ?? []) as { name: string; price: number }[]).map(x => ({ name: x.name, price: Number(x.price) })));
-      setParts(((p.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'cost' | 'margin_percent' | 'sale_price'>[])
-        .map(x => ({ id: x.id, name: x.name, price: salePriceOf(x, m) })));
+      setCatalog([
+        ...((s.data ?? []) as { name: string; price: number }[]).map(x => ({ kind: 'service' as const, name: x.name, price: Number(x.price) })),
+        ...((p.data ?? []) as (Pick<WorkshopPart, 'cost' | 'margin_percent' | 'sale_price'> & { name: string })[])
+          .map(x => ({ kind: 'part' as const, name: x.name, price: salePriceOf(x, m) })),
+      ]);
     })();
   }, [checkup.workshop_id, demo]);
 
@@ -773,7 +763,7 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
           <div className="px-5 pt-5 pb-3">
             <div className="font-bold text-steel-800">💰 Orçamento dos itens</div>
             <p className="text-xs text-steel-500">
-              {answered ? 'Resposta do cliente em cada item.' : 'Serviço e peça de cada item. O cliente vê os valores no link e aprova o que quiser fazer.'}
+              {answered ? 'Resposta do cliente em cada item.' : 'Serviço + peças de cada item, num valor só. O cliente vê os valores no link e aprova o que quiser fazer.'}
             </p>
             {pricesLocked && !answered && (
               <div className="mt-2 rounded-lg bg-steel-50 border border-steel-200 px-3 py-2 text-xs text-steel-600">
@@ -781,11 +771,9 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
               </div>
             )}
           </div>
-          <datalist id="ck-services">{services.map(x => <option key={x.name} value={x.name}>{x.price > 0 ? fmtBRL(x.price) : 'preço na hora'}</option>)}</datalist>
-          <datalist id="ck-parts">{parts.map(x => <option key={x.id} value={x.name}>{fmtBRL(x.price)}</option>)}</datalist>
           <div className="divide-y divide-steel-100">
             {flagged.map(i => (
-              <QuoteRow key={i.id} item={i} readOnly={pricesLocked} answered={answered} services={services} parts={parts} onPatch={p => onPatchItem(i, p)} />
+              <QuoteRow key={i.id} item={i} readOnly={pricesLocked} answered={answered} catalog={catalog} onPatch={p => onPatchItem(i, p)} />
             ))}
           </div>
           <div className="px-5 py-3 bg-steel-50 border-t border-steel-100 flex justify-between items-center">
@@ -837,40 +825,34 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
   );
 }
 
-function QuoteRow({ item, readOnly, answered, services, parts, onPatch }: {
+function QuoteRow({ item, readOnly, answered, catalog, onPatch }: {
   item: CheckupItem; readOnly: boolean; answered: boolean;
-  services: { name: string; price: number }[]; parts: { id: string; name: string; price: number }[];
+  catalog: CatalogEntry[];
   onPatch: (p: Patch) => void;
 }) {
+  // Um campo só: "Serviço + peças" (descrição + valor). Vira na OS um item "Serviço + peças" (4% de comissão).
   const [svc, setSvc]     = useState(item.quote_service ?? '');
-  const [labor, setLabor] = useState(item.quote_labor != null ? moneyInput(Number(item.quote_labor)) : '');
-  const [part, setPart]   = useState(item.quote_part ?? '');
-  const [pval, setPval]   = useState(item.quote_parts != null ? moneyInput(Number(item.quote_parts)) : '');
+  const [value, setValue] = useState(itemQuote(item) > 0 ? moneyInput(itemQuote(item)) : '');
   const money = (v: string) => { const n = parseMoney(v); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null; };
   const d = item.customer_decision ? DECISION_META[item.customer_decision] : null;
 
-  // O mecânico apontou a peça/serviço no check-up: puxa o preço do cadastro (se ainda não tem)
-  useEffect(() => {
-    if (readOnly) return;
-    const patch: Patch = {};
-    const p = item.quote_part && item.quote_parts == null
-      ? parts.find(x => x.name.toLowerCase() === item.quote_part!.trim().toLowerCase()) : undefined;
-    if (p) { patch.quote_parts = p.price; patch.quote_part_id = p.id; setPval(moneyInput(p.price)); }
-    const sv = item.quote_service && item.quote_labor == null
-      ? services.find(x => x.name.toLowerCase() === item.quote_service!.trim().toLowerCase()) : undefined;
-    if (sv && sv.price > 0) { patch.quote_labor = sv.price; setLabor(moneyInput(sv.price)); }
-    if (Object.keys(patch).length) onPatch(patch);
-  }, [parts, services]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function pickService(v: string) {
-    setSvc(v);
-    const s = services.find(x => x.name.toLowerCase() === v.trim().toLowerCase());
-    if (s && s.price > 0 && !labor) { setLabor(moneyInput(s.price)); onPatch({ quote_service: s.name, quote_labor: s.price }); }
+  /** Grava o valor único (limpa a peça separada de check-ups antigos) */
+  function saveValue(n: number | null) {
+    if (n === (item.quote_labor ?? null) && item.quote_parts == null) return;
+    onPatch({ quote_labor: n, quote_parts: null, quote_part: null, quote_part_id: null });
   }
-  function pickPart(v: string) {
-    setPart(v);
-    const p = parts.find(x => x.name.toLowerCase() === v.trim().toLowerCase());
-    if (p) { setPval(moneyInput(p.price)); onPatch({ quote_part: p.name, quote_part_id: p.id, quote_parts: p.price }); }
+
+  /** Escolheu do cadastro: junta na descrição ("Troca de pastilhas + Pastilha dianteira") e soma o preço */
+  function pick(e: CatalogEntry) {
+    // O pedaço depois do último "+" é o que estava sendo digitado: troca pelo escolhido (se já é um nome completo, mantém e junta)
+    const parts = svc.split('+').map(x => x.trim()).filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last && !catalog.some(c => c.name === last)) parts.pop();
+    const desc = [...parts, e.name].join(' + ');
+    const total = Math.round(((money(value) ?? 0) + e.price) * 100) / 100;
+    setSvc(desc);
+    setValue(total > 0 ? moneyInput(total) : '');
+    onPatch({ quote_service: desc, quote_labor: total > 0 ? total : null, quote_parts: null, quote_part: null, quote_part_id: null });
   }
 
   return (
@@ -885,42 +867,23 @@ function QuoteRow({ item, readOnly, answered, services, parts, onPatch }: {
           ? answered
             ? <span className={`text-xs font-bold shrink-0 ${d?.tone ?? 'text-steel-400'}`}>{d ? `${d.icon} ${d.short}` : 'sem resposta'}</span>
             : <span className="text-sm font-bold shrink-0">{itemQuote(item) > 0 ? fmtBRL(itemQuote(item)) : 'sem preço'}</span>
-          : <span className="text-sm font-bold shrink-0">{itemQuote(item) > 0 ? fmtBRL(itemQuote(item)) : ''}</span>}
+          : null}
       </div>
       {readOnly ? (
-        (item.quote_service || item.quote_part) && (
-          <div className="text-xs text-steel-500 pl-6 space-y-0.5">
-            {Number(item.quote_labor ?? 0) > 0 && <div>🔧 Mão de obra{item.quote_service ? ` — ${item.quote_service}` : ''}: {fmtBRL(Number(item.quote_labor))}</div>}
-            {Number(item.quote_parts ?? 0) > 0 && <div>🔩 Peça{item.quote_part ? ` — ${item.quote_part}` : ''}: {fmtBRL(Number(item.quote_parts))}</div>}
+        itemQuote(item) > 0 && (
+          <div className="text-xs text-steel-500 pl-6">
+            🔧 {item.quote_service || 'Serviço + peças'}: {fmtBRL(itemQuote(item))}
           </div>
         )
       ) : (
-        <div className="pl-6 space-y-2">
-          {/* Mão de obra */}
-          <div className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-xs font-semibold text-steel-600">🔧 Mão de obra</span>
-            <input className="input !py-1.5 text-sm flex-1 min-w-0" list="ck-services" placeholder="Qual serviço? (ex.: Troca das pastilhas)"
-              value={svc} onChange={e => pickService(e.target.value)}
-              onBlur={() => svc.trim() !== (item.quote_service ?? '') && onPatch({ quote_service: svc.trim() || null })} />
-            <div className="relative w-32 shrink-0">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
-              <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={labor}
-                onChange={e => setLabor(e.target.value)}
-                onBlur={() => { const n = money(labor); setLabor(n != null ? moneyInput(n) : ''); if (n !== (item.quote_labor ?? null)) onPatch({ quote_labor: n }); }} />
-            </div>
-          </div>
-          {/* Peça */}
-          <div className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-xs font-semibold text-steel-600">🔩 Peça</span>
-            <input className="input !py-1.5 text-sm flex-1 min-w-0" list="ck-parts" placeholder="Qual peça? (vazio se não precisar)"
-              value={part} onChange={e => pickPart(e.target.value)}
-              onBlur={() => { if (part.trim() !== (item.quote_part ?? '')) onPatch({ quote_part: part.trim() || null, quote_part_id: parts.find(x => x.name === part.trim())?.id ?? null }); }} />
-            <div className="relative w-32 shrink-0">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
-              <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={pval}
-                onChange={e => setPval(e.target.value)}
-                onBlur={() => { const n = money(pval); setPval(n != null ? moneyInput(n) : ''); if (n !== (item.quote_parts ?? null)) onPatch({ quote_parts: n }); }} />
-            </div>
+        <div className="pl-6 flex items-center gap-2">
+          <QuoteSearch itemLabel={item.label} catalog={catalog} value={svc} onChange={setSvc} onPick={pick}
+            onBlur={() => svc.trim() !== (item.quote_service ?? '') && onPatch({ quote_service: svc.trim() || null })} />
+          <div className="relative w-36 shrink-0">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+            <input className="input !py-1.5 !pl-8 text-sm text-right font-semibold" inputMode="decimal" placeholder="0,00" value={value}
+              onChange={e => setValue(e.target.value)}
+              onBlur={() => { const n = money(value); setValue(n != null ? moneyInput(n) : ''); saveValue(n); }} />
           </div>
         </div>
       )}
