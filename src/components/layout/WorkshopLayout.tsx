@@ -79,6 +79,12 @@ const SECTIONS: NavGroup[] = [
   ] },
 ];
 
+/** Ícone de cada bloco na gaveta "Mais" (celular) */
+const SECTION_ICON: Record<string, string> = {
+  top: '📊', atendimento: '📋', checkup: '🩺', financeiro: '💵', estoque: '📦',
+  equipe: '👷', plataforma: '⚡', config: '⚙️',
+};
+
 /** Telas do Check-up que são do gestor (o mecânico vê só a fila dele em /oficina/checkup) */
 const CHECKUP_MANAGER_ONLY = ['/oficina/checkup/inspecoes', '/oficina/checkup/historico', '/oficina/checkup/modelos'];
 
@@ -127,6 +133,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const nav      = useNavigate();
   const location = useLocation();
   const [open, setOpen]         = useState(false);
+  const [sheetGroup, setSheetGroup] = useState<string | null>(null);   // bloco aberto na gaveta "Mais"
   const [unread, setUnread]     = useState(0);
   const unreadNotif = useUnreadNotifications();
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
@@ -358,6 +365,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
   /* ── Gaveta "Mais": fecha ao trocar de tela ou no Esc; trava a rolagem do fundo enquanto aberta ── */
   useEffect(() => { setOpen(false); }, [location.pathname]);
+  useEffect(() => { if (!open) setSheetGroup(null); }, [open]);
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -814,24 +822,66 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             </div>
 
             <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4 space-y-4">
-              {sheetGroups.map(g => (
-                <section key={g.key}>
-                  <h3 className="px-1 mb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-steel-400">{g.title}</h3>
-                  <div className="grid grid-cols-3 gap-2">
-                    {g.items.map(i => (
-                      <NavLink key={i.to} to={i.to} end={i.to === '/oficina/pecas' || i.to === '/oficina/checkup'} onClick={() => setOpen(false)}
-                        className={({ isActive }) => `relative flex flex-col items-center justify-center gap-1.5 text-center min-h-[78px] px-1.5 py-2.5 rounded-2xl transition active:scale-[0.97] ${
-                          isActive ? 'bg-brand-500 text-white shadow-brand' : 'bg-white text-steel-700 ring-1 ring-steel-200/70'}`}>
-                        <span className="text-[22px] leading-none">{i.icon}</span>
-                        <span className="text-[11px] font-semibold leading-tight line-clamp-2">{i.label}</span>
-                        {i.to === '/oficina/mensagens' && unread > 0 && <span className="absolute top-1.5 right-1.5"><Badge n={unread} inline /></span>}
-                      </NavLink>
-                    ))}
+              {(() => {
+                const g = sheetGroups.find(x => x.key === sheetGroup);
+                if (g) return (
+                  <section key={g.key} className="animate-fade-in">
+                    <button type="button" onClick={() => setSheetGroup(null)}
+                      className="flex items-center gap-1 h-9 -ml-1 pr-3 text-sm font-semibold text-steel-500 active:text-steel-800">
+                      <Chev className="rotate-90" /> Voltar
+                    </button>
+                    <div className="flex items-center gap-2.5 px-1 mt-1 mb-3">
+                      <span className="text-2xl leading-none">{SECTION_ICON[g.key] ?? '•'}</span>
+                      <h3 className="text-lg font-bold text-steel-900">{g.title}</h3>
+                    </div>
+                    <ul className="rounded-2xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
+                      {g.items.map(i => (
+                        <li key={i.to}>
+                          <NavLink to={i.to} end={i.to === '/oficina/pecas' || i.to === '/oficina/checkup'} onClick={() => setOpen(false)}
+                            className={({ isActive }) => `flex items-center gap-3 px-4 min-h-[56px] py-2.5 transition ${isActive ? 'bg-brand-50' : 'active:bg-steel-50'}`}>
+                            {({ isActive }) => (
+                              <>
+                                <span className={`grid place-items-center h-9 w-9 rounded-xl text-lg shrink-0 ${isActive ? 'bg-brand-500' : 'bg-steel-100'}`}>{i.icon}</span>
+                                <span className={`flex-1 min-w-0 truncate text-[15px] font-semibold ${isActive ? 'text-brand-700' : 'text-steel-800'}`}>{i.label}</span>
+                                {i.to === '/oficina/mensagens' && unread > 0 && <Badge n={unread} inline />}
+                                <Chev className="-rotate-90 text-steel-300" />
+                              </>
+                            )}
+                          </NavLink>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+                return (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {sheetGroups.map(x => {
+                      const here = x.items.some(i => onRoute(path, i.to));
+                      const badge = x.items.some(i => i.to === '/oficina/mensagens') ? unread : 0;
+                      return (
+                        <button key={x.key} type="button"
+                          // Bloco com uma tela só já abre a tela
+                          onClick={() => (x.items.length === 1 ? nav(x.items[0].to) : setSheetGroup(x.key))}
+                          className={`relative flex flex-col items-start text-left gap-2 min-h-[104px] p-3.5 rounded-2xl transition active:scale-[0.98] ${
+                            here ? 'bg-white ring-2 ring-brand-500' : 'bg-white ring-1 ring-steel-200/70'}`}>
+                          <span className={`grid place-items-center h-10 w-10 rounded-xl text-[22px] leading-none ${here ? 'bg-brand-50' : 'bg-steel-100'}`}>
+                            {SECTION_ICON[x.key] ?? '•'}
+                          </span>
+                          <span className="min-w-0 w-full">
+                            <span className="block text-[15px] font-bold text-steel-900 truncate">{x.title}</span>
+                            <span className="block text-[11px] text-steel-500 leading-snug line-clamp-2">
+                              {x.items.map(i => i.label).join(' · ')}
+                            </span>
+                          </span>
+                          {badge > 0 && <span className="absolute top-2.5 right-2.5"><Badge n={badge} inline /></span>}
+                        </button>
+                      );
+                    })}
                   </div>
-                </section>
-              ))}
+                );
+              })()}
 
-              {!op.balcao && (
+              {!sheetGroup && !op.balcao && (
                 <button onClick={enterBalcao}
                   className="w-full flex items-center gap-3 rounded-2xl bg-white ring-1 ring-steel-200/70 px-4 py-3 text-left active:bg-steel-100">
                   <span className="text-xl">🔒</span>
@@ -1000,5 +1050,14 @@ function SideSub({ icon, label, children, path, inBottom, onClick }: NavSub & {
         </div>
       )}
     </div>
+  );
+}
+
+/** Setinha (aponta pra baixo; gire com rotate-90 / -rotate-90) */
+function Chev({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`h-4 w-4 shrink-0 ${className}`} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
   );
 }
