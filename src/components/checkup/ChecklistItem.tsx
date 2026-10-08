@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
-import { STATUS_META, TEMPLATE_BY_KEY, checkupPhotoUrl, reasonsFor, type CheckupItem, type CheckupItemStatus } from '@/lib/checkup';
+import { STATUS_META, checkupPhotoUrl, reasonsFor, type CheckupItem, type CheckupItemStatus } from '@/lib/checkup';
 
 /* Linha do checklist — usada na tela da oficina e no link do mecânico (celular). */
 
@@ -60,10 +60,8 @@ export function ItemRow({ item, uploadPhoto, onPatch, onRemove }: {
   /** Só itens incluídos à mão podem ser removidos */
   onRemove?: () => void;
 }) {
-  const tpl = TEMPLATE_BY_KEY[item.item_key];
   const flagged = item.status === 'warn' || item.status === 'urgent';
   const [expanded, setExpanded] = useState(false);
-  const [measurement, setMeasurement] = useState(item.measurement ?? '');
   const [note, setNote] = useState(item.note ?? '');
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -133,11 +131,6 @@ export function ItemRow({ item, uploadPhoto, onPatch, onRemove }: {
             </div>
           )}
           <div className="flex gap-2">
-            {tpl?.measure && (
-              <input value={measurement} onChange={e => setMeasurement(e.target.value)}
-                onBlur={() => measurement !== (item.measurement ?? '') && onPatch({ measurement: measurement.trim() || null })}
-                placeholder={tpl.measure} className="input !py-2 w-32" />
-            )}
             <input value={note} onChange={e => setNote(e.target.value)}
               onBlur={() => note !== (item.note ?? '') && onPatch({ note: note.trim() || null })}
               placeholder={flagged ? 'Quer escrever algo? (opcional)' : 'Observação (opcional)'} className="input !py-2 flex-1 min-w-0" />
