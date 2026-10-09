@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
+import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { useModuleAllows } from '@/lib/modules';
 
 /* ── Inbox do WhatsApp da oficina (módulo opcional `inbox`) ──────────────────── */
 
@@ -127,4 +130,50 @@ export function useMediaUrl(path: string | null) {
     return () => { alive = false; };
   }, [path]);
   return url;
+}
+
+/* ── Enviar pelo número da oficina (usado em OS, check-up, agenda, ficha…) ──────
+   Com o módulo ligado e o número conectado, as mensagens do sistema saem pelo Inbox
+   (ficam gravadas na conversa); senão as telas continuam abrindo o wa.me. */
+
+type InboxStatusState = {
+  workshopId: string | null;
+  connected: boolean;
+  load: (workshopId: string) => Promise<void>;
+};
+
+export const useInboxStatus = create<InboxStatusState>((set, get) => ({
+  workshopId: null,
+  connected: false,
+  async load(workshopId) {
+    if (get().workshopId !== workshopId) set({ workshopId, connected: false });
+    const { data } = await supabase.from('whatsapp_instances').select('status').eq('workshop_id', workshopId).maybeSingle();
+    if (get().workshopId === workshopId) set({ connected: data?.status === 'connected' });
+  },
+}));
+
+export type InboxSendInput = { phone: string; text: string; customerId?: string | null; name?: string | null };
+
+/** `ready` = dá para mandar pelo número da oficina agora */
+export function useInboxSender() {
+  const { currentWorkshop } = useAuth();
+  const wid = currentWorkshop?.id ?? null;
+  const enabled = useModuleAllows()('/oficina/inbox');
+  const { workshopId, connected, load } = useInboxStatus();
+
+  useEffect(() => {
+    if (wid && enabled) load(wid);
+  }, [wid, enabled, load]);
+
+  const ready = !!wid && enabled && workshopId === wid && connected;
+
+  async function send({ phone, text, customerId, name }: InboxSendInput) {
+    if (!wid) throw new Error('Oficina não selecionada');
+    const r = await inboxCall<{ chat_id: string }>('whatsapp-send', {
+      workshop_id: wid, phone, text, customer_id: customerId ?? null, name: name ?? null,
+    });
+    return r.chat_id;
+  }
+
+  return { ready, send };
 }

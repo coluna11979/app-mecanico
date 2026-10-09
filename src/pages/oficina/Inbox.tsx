@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,7 +8,7 @@ import { fmtPhone } from '@/components/os/osHelpers';
 import { onlyDigits } from '@/lib/customers';
 import {
   CHAT_COLUMNS, URGENT_MIN, chatTitle, fmtListTime, fmtWait, inboxCall, isAwaiting, isUrgent, minutesSince,
-  type InstanceStatus, type WaChat, type WaInstance,
+  useInboxStatus, type InstanceStatus, type WaChat, type WaInstance,
 } from '@/lib/inbox';
 import ChatAvatar from '@/components/inbox/ChatAvatar';
 import ChatView from '@/components/inbox/ChatView';
@@ -37,7 +38,8 @@ export default function WorkshopInbox() {
   const [search, setSearch] = useState('');
   const [showClient, setShowClient] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
-  const [newOpen, setNewOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState<false | { id: string | null; name: string; phone: string }>(false);
+  const [params, setParams] = useSearchParams();
   const [now, setNow] = useState(Date.now());
 
   // Relógio dos "aguardando há…"
@@ -50,6 +52,8 @@ export default function WorkshopInbox() {
       .select('workshop_id, status, phone_number, profile_name, last_connected_at').eq('workshop_id', wid).maybeSingle();
     setInstance((data as WaInstance) ?? null);
     setInstanceLoaded(true);
+    // Mantém o "dá para mandar pelo Inbox" das outras telas em dia
+    useInboxStatus.setState({ workshopId: wid, connected: data?.status === 'connected' });
   }, [wid]);
 
   useEffect(() => {
@@ -88,6 +92,22 @@ export default function WorkshopInbox() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [wid, loadChats, loadInstance]);
+
+  /* ── Vindo de outra tela: ?conversa=<id> ou ?tel=<telefone>&cliente=<id>&nome=… ── */
+  useEffect(() => {
+    if (loading) return;
+    const conversa = params.get('conversa');
+    const tel = onlyDigits(params.get('tel'));
+    if (!conversa && !tel) return;
+    const cliente = params.get('cliente');
+    if (conversa) setSelectedId(conversa);
+    else {
+      const found = chats.find(c => (cliente && c.customer_id === cliente) || (tel.length >= 8 && c.phone.endsWith(tel.slice(-8))));
+      if (found) setSelectedId(found.id);
+      else setNewOpen({ id: cliente, name: params.get('nome') ?? '', phone: tel });
+    }
+    setParams({}, { replace: true });
+  }, [loading, params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const status: InstanceStatus = instance?.status ?? 'none';
   const connected = status === 'connected';
@@ -170,7 +190,7 @@ export default function WorkshopInbox() {
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {connected && (
-                    <button type="button" onClick={() => setNewOpen(true)} className="btn-primary !py-1.5 !px-3 text-xs">+ Nova</button>
+                    <button type="button" onClick={() => setNewOpen({ id: null, name: '', phone: '' })} className="btn-primary !py-1.5 !px-3 text-xs">+ Nova</button>
                   )}
                   {instance && status !== 'none' && (
                     <button type="button" onClick={connected ? disconnect : () => setConnectOpen(true)}
@@ -290,7 +310,7 @@ export default function WorkshopInbox() {
           onConnected={() => { setConnectOpen(false); loadInstance(); }} />
       )}
       {newOpen && (
-        <NewChat workshopId={wid} onClose={() => setNewOpen(false)}
+        <NewChat workshopId={wid} initial={newOpen.phone ? newOpen : null} onClose={() => setNewOpen(false)}
           onStarted={id => { setNewOpen(false); loadChats().then(() => setSelectedId(id)); }} />
       )}
     </WorkshopLayout>
@@ -368,12 +388,13 @@ function ChatRow({ c, now, active, onClick }: { c: WaChat; now: number; active: 
 }
 
 /** Começar conversa: escolhe um cliente (ou digita o número) e manda a primeira mensagem */
-function NewChat({ workshopId, onClose, onStarted }: {
-  workshopId: string; onClose: () => void; onStarted: (chatId: string) => void;
+function NewChat({ workshopId, initial, onClose, onStarted }: {
+  workshopId: string; initial: { id: string | null; name: string; phone: string } | null;
+  onClose: () => void; onStarted: (chatId: string) => void;
 }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<{ id: string; full_name: string; phone: string | null }[]>([]);
-  const [picked, setPicked] = useState<{ id: string | null; name: string; phone: string } | null>(null);
+  const [picked, setPicked] = useState<{ id: string | null; name: string; phone: string } | null>(initial);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
 

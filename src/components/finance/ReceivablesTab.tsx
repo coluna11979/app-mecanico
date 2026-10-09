@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { brl } from '@/lib/cash';
 import { osNumber } from '@/components/os/osHelpers';
 import type { receivables } from '@/lib/finance';
+import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 
 /**
  * Financeiro → "OS a receber": todas as OS concluídas com saldo em aberto, inclusive as combinadas
@@ -111,8 +112,8 @@ export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Re
                   </div>
                   <div className="flex gap-1.5 shrink-0">
                     {phone.length >= 10 && (
-                      <a href={`https://wa.me/55${phone.replace(/^55/, '')}?text=${encodeURIComponent(waText(r))}`} target="_blank" rel="noopener noreferrer"
-                        className="btn-secondary text-xs !px-2.5 !py-1.5" title="Lembrar o cliente pelo WhatsApp">💬 Cobrar</a>
+                      <WhatsAppButton phone={phone} text={waText(r)} customerName={o.customer?.full_name} title="Lembrar o pagamento"
+                        className="btn-secondary text-xs !px-2.5 !py-1.5">💬 Cobrar</WhatsAppButton>
                     )}
                     <Link to={`/oficina/caixa?os=${o.id}`} className="btn-primary text-xs !px-2.5 !py-1.5">💰 Receber</Link>
                   </div>

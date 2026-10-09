@@ -259,7 +259,7 @@ export default function Comercial() {
       </div>
 
       {wa && (
-        <SendWhatsAppModal phone={wa.phone} messages={[{ key: 'cobrar', label: 'Retorno do orçamento', text: waMessage(wa) }]} onClose={() => setWa(null)} />
+        <SendWhatsAppModal phone={wa.phone} customerId={wa.customerId} customerName={wa.customerName} messages={[{ key: 'cobrar', label: 'Retorno do orçamento', text: waMessage(wa) }]} onClose={() => setWa(null)} />
       )}
     </WorkshopLayout>
   );
