@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { fmtPhone } from '@/components/os/osHelpers';
 import {
-  chatTitle, fmtDay, fmtWait, inboxCall, isAwaiting, minutesSince, useMediaUrl, URGENT_MIN,
+  chatTitle, fmtDay, fmtWait, inboxCall, isAwaiting, minutesSince, useComposeInject, useMediaUrl, URGENT_MIN,
   type WaChat, type WaMessage,
 } from '@/lib/inbox';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,7 +27,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
   const [loading, setLoading] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
   const [agendaOpen, setAgendaOpen] = useState(false);
-  const [inject, setInject] = useState<{ text: string; n: number } | null>(null);
+  const pushCompose = useComposeInject(s => s.push);
   const stickToBottom = useRef(true);
 
   // Carrega as últimas mensagens e escuta as novas
@@ -109,7 +109,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
         </button>
         {agendaOpen && (
           <MiniAgenda workshopId={workshopId} onClose={() => setAgendaOpen(false)}
-            onPropose={text => { setInject(x => ({ text, n: (x?.n ?? 0) + 1 })); setAgendaOpen(false); }} />
+            onPropose={text => { pushCompose(text); setAgendaOpen(false); }} />
         )}
         {chat.status === 'open' ? (
           <button type="button" onClick={() => onResolve(true)} className="btn-secondary !py-1.5 !px-3 text-xs shrink-0">✓ Concluir</button>
@@ -159,7 +159,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
       </div>
 
       {connected ? (
-        <Composer chat={chat} workshopId={workshopId} inject={inject} onSent={() => { stickToBottom.current = true; }} />
+        <Composer chat={chat} workshopId={workshopId} onSent={() => { stickToBottom.current = true; }} />
       ) : (
         <div className="p-3 border-t border-steel-100 bg-alert-500/5 flex items-center gap-3 shrink-0">
           <p className="text-sm text-alert-600 font-semibold flex-1">WhatsApp desconectado — não dá para enviar nem receber mensagens.</p>
@@ -245,11 +245,7 @@ function Media({ m }: { m: WaMessage }) {
 
 const MAX_MB = 16;
 
-function Composer({ chat, workshopId, onSent, inject }: {
-  chat: WaChat; workshopId: string; onSent: () => void;
-  /** Texto vindo de fora (ex.: horário proposto na agenda); `n` muda a cada envio */
-  inject: { text: string; n: number } | null;
-}) {
+function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: string; onSent: () => void }) {
   const chatId = chat.id;
   const { currentWorkshop } = useAuth();
   const [text, setText] = useState('');
@@ -267,7 +263,14 @@ function Composer({ chat, workshopId, onSent, inject }: {
   // Rascunho some ao trocar de conversa
   useEffect(() => { setText(''); setFile(null); setRecording(false); }, [chatId]);
 
-  useEffect(() => { if (inject) insert(inject.text, false); }, [inject?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Texto vindo de fora (horário da agenda, recomendação do painel do cliente…)
+  const injected = useComposeInject();
+  const lastInjected = useRef(injected.n);
+  useEffect(() => {
+    if (injected.n === lastInjected.current) return;
+    lastInjected.current = injected.n;
+    insert(injected.text, false);
+  }, [injected.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Caixa cresce até 5 linhas
   useLayoutEffect(() => {

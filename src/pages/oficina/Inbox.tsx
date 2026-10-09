@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { fmtPhone } from '@/components/os/osHelpers';
 import { onlyDigits } from '@/lib/customers';
 import {
-  CHAT_COLUMNS, URGENT_MIN, chatTitle, fmtListTime, fmtWait, inboxCall, isAwaiting, isUrgent, minutesSince,
+  CHAT_COLUMNS, URGENT_MIN, chatTitle, fmtListTime, fmtWait, followUpDue, followUpLabel, inboxCall, isAwaiting, isUrgent, minutesSince,
   useInboxStatus, type InstanceStatus, type WaChat, type WaInstance,
 } from '@/lib/inbox';
 import ChatAvatar from '@/components/inbox/ChatAvatar';
@@ -16,10 +16,11 @@ import ClientPanel from '@/components/inbox/ClientPanel';
 import ConnectWhatsApp from '@/components/inbox/ConnectWhatsApp';
 import { useInboxMute } from '@/hooks/useInboxAlerts';
 
-type Filter = 'abertas' | 'aguardando' | 'nao_lidas' | 'concluidas' | 'todas';
+type Filter = 'abertas' | 'aguardando' | 'retornar' | 'nao_lidas' | 'concluidas' | 'todas';
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'abertas', label: 'Abertas' },
   { key: 'aguardando', label: 'Aguardando' },
+  { key: 'retornar', label: '🔔 Retornar' },
   { key: 'nao_lidas', label: 'Não lidas' },
   { key: 'concluidas', label: 'Concluídas' },
   { key: 'todas', label: 'Todas' },
@@ -124,6 +125,7 @@ export default function WorkshopInbox() {
       longest: awaiting.reduce((m, c) => Math.max(m, minutesSince(c.awaiting_since, now)), 0),
       resolvedToday: chats.filter(c => c.status === 'resolved' && c.resolved_at && new Date(c.resolved_at) >= today).length,
       unread: chats.filter(c => c.unread_count > 0).length,
+      followUps: chats.filter(c => followUpDue(c, now)).length,
     };
   }, [chats, now]);
 
@@ -134,6 +136,7 @@ export default function WorkshopInbox() {
       .filter(c => {
         if (filter === 'abertas') return c.status === 'open';
         if (filter === 'aguardando') return isAwaiting(c);
+        if (filter === 'retornar') return followUpDue(c, now);
         if (filter === 'nao_lidas') return c.unread_count > 0;
         if (filter === 'concluidas') return c.status === 'resolved';
         return true;
@@ -143,8 +146,10 @@ export default function WorkshopInbox() {
       // Aguardando: quem espera há mais tempo primeiro
       .sort((a, b) => filter === 'aguardando'
         ? (a.awaiting_since ?? '').localeCompare(b.awaiting_since ?? '')
-        : (b.last_message_at ?? '').localeCompare(a.last_message_at ?? ''));
-  }, [chats, filter, search]);
+        : filter === 'retornar'
+          ? (a.follow_up_at ?? '').localeCompare(b.follow_up_at ?? '')
+          : (b.last_message_at ?? '').localeCompare(a.last_message_at ?? ''));
+  }, [chats, filter, search, now]);
 
   const selected = chats.find(c => c.id === selectedId) ?? null;
 
@@ -226,6 +231,7 @@ export default function WorkshopInbox() {
                       ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200 hover:bg-steel-50'}`}>
                     {f.label}
                     {f.key === 'nao_lidas' && metrics.unread > 0 && <span className="ml-1 text-emerald-500">{metrics.unread}</span>}
+                    {f.key === 'retornar' && metrics.followUps > 0 && <span className="ml-1 text-pending-600">{metrics.followUps}</span>}
                   </button>
                 ))}
               </div>
@@ -383,6 +389,12 @@ function ChatRow({ c, now, active, onClick }: { c: WaChat; now: number; active: 
           {waiting > 0 && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${urgent ? 'bg-alert-500 text-white' : 'bg-pending-500/15 text-pending-700'}`}>
               {urgent ? 'URGENTE · ' : ''}Aguardando {fmtWait(waiting)}
+            </span>
+          )}
+          {c.follow_up_at && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${followUpDue(c, now) ? 'bg-pending-500 text-white' : 'bg-sky-50 text-sky-700'}`}
+              title={c.follow_up_note ?? undefined}>
+              🔔 Retornar {followUpLabel(c.follow_up_at, now)}
             </span>
           )}
           {c.status === 'resolved' && <span className="text-[10px] font-semibold text-emerald-600">✓ Concluída</span>}
