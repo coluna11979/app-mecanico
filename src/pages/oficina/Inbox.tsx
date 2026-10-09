@@ -193,7 +193,7 @@ export default function WorkshopInbox() {
 
               <input className="input !py-2 text-sm" placeholder="🔍 Buscar por nome ou telefone…" value={search} onChange={e => setSearch(e.target.value)} />
 
-              <div className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-0.5 no-scrollbar">
+              <div className="flex flex-wrap gap-1">
                 {FILTERS.map(f => (
                   <button key={f.key} type="button" onClick={() => setFilter(f.key)}
                     className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full border transition ${filter === f.key
@@ -244,7 +244,7 @@ export default function WorkshopInbox() {
             </div>
             {visible.length > 0 && (
               <p className="text-[11px] text-steel-400 text-center py-1.5 border-t border-steel-100">
-                {visible.length} conversa{visible.length === 1 ? '' : 's'}{filter !== 'todas' || search ? ' · filtro ativo' : ''}
+                {visible.length} conversa{visible.length === 1 ? '' : 's'}{search ? ' · busca ativa' : filter !== 'abertas' ? ` · ${FILTERS.find(f => f.key === filter)?.label.toLowerCase()}` : ''}
               </p>
             )}
           </aside>
