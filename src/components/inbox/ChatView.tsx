@@ -9,6 +9,8 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import ChatAvatar from './ChatAvatar';
 import VoiceRecorder from './VoiceRecorder';
+import EmojiPicker from './EmojiPicker';
+import MiniAgenda from './MiniAgenda';
 import MaterialsLibrary, { type Material } from './MaterialsLibrary';
 import { QuickRepliesModal, QuickReplySuggest, fillReply, matchReplies, useQuickReplies, type QuickReply } from './QuickReplies';
 
@@ -242,6 +244,7 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
   const [recording, setRecording] = useState(false);
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [popover, setPopover] = useState<null | 'emoji' | 'agenda'>(null);
   const [suggestIdx, setSuggestIdx] = useState(0);
   const replies = useQuickReplies(workshopId);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -333,6 +336,21 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
     if (ok) { toast.success(ok > 1 ? `${ok} materiais enviados ✓` : 'Material enviado ✓'); onSent(); }
   }
 
+  /** Coloca o texto onde está o cursor (emoji) ou no fim (proposta de horário) */
+  function insert(piece: string, atCursor = true) {
+    const el = area.current;
+    if (!atCursor || !el) {
+      setText(t => (t.trim() ? `${t.trimEnd()}\n${piece}` : piece));
+    } else {
+      const start = el.selectionStart ?? text.length;
+      const end = el.selectionEnd ?? text.length;
+      setText(text.slice(0, start) + piece + text.slice(end));
+      requestAnimationFrame(() => { el.focus(); el.setSelectionRange(start + piece.length, start + piece.length); });
+      return;
+    }
+    requestAnimationFrame(() => area.current?.focus());
+  }
+
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (suggestions.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSuggestIdx(i => (i + 1) % suggestions.length); return; }
@@ -353,7 +371,12 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
   const toolBtn = 'h-10 w-9 shrink-0 rounded-xl text-lg text-steel-500 hover:bg-steel-100 grid place-items-center';
 
   return (
-    <form onSubmit={send} className="border-t border-steel-100 bg-white p-2.5 shrink-0">
+    <form onSubmit={send} className="relative border-t border-steel-100 bg-white p-2.5 shrink-0">
+      {popover === 'emoji' && <EmojiPicker onPick={e => insert(e)} onClose={() => setPopover(null)} />}
+      {popover === 'agenda' && (
+        <MiniAgenda workshopId={workshopId} onClose={() => setPopover(null)}
+          onPropose={t => { insert(t, false); setPopover(null); }} />
+      )}
       {file && (
         <div className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-steel-50 border border-steel-200 text-sm">
           <span>{file.type.startsWith('image/') ? '📷' : file.type.startsWith('audio/') ? '🎤' : file.type.startsWith('video/') ? '🎥' : '📄'}</span>
@@ -369,6 +392,11 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
           <button type="button" onClick={() => setRepliesOpen(true)} className={toolBtn} title="Respostas rápidas (ou digite /)">⚡</button>
           <button type="button" onClick={() => setMaterialsOpen(true)} className={toolBtn} title="Biblioteca de materiais">📁</button>
           <button type="button" onClick={() => fileInput.current?.click()} className={toolBtn} title="Anexar foto ou arquivo">📎</button>
+          <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setPopover(p => (p === 'agenda' ? null : 'agenda'))}
+            className={`${toolBtn} ${popover === 'agenda' ? 'bg-steel-100' : ''}`} title="Horários livres da agenda">📅</button>
+          {/* No celular o teclado já tem emojis */}
+          <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setPopover(p => (p === 'emoji' ? null : 'emoji'))}
+            className={`${toolBtn} !hidden sm:!grid ${popover === 'emoji' ? 'bg-steel-100' : ''}`} title="Emojis">😊</button>
           <div className="relative flex-1 ml-1">
             {slashQuery != null && <QuickReplySuggest list={replies.list} query={slashQuery} active={suggestIdx} onPick={applyReply} />}
             <textarea
