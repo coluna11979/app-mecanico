@@ -68,7 +68,7 @@ export default function OsBoard({ list, mechanicView, onOpen, onMove, onShowAllD
   }
 
   return (
-    <div className="grid grid-flow-col auto-cols-[minmax(232px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+    <div className="grid grid-flow-col auto-cols-[minmax(196px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
       {COLUMNS.map(c => {
         const all = list.filter(o => o.status === c.key)
           .sort((a, b) => c.key === 'completed'
@@ -83,7 +83,7 @@ export default function OsBoard({ list, mechanicView, onOpen, onMove, onShowAllD
             onDragOver={e => { if (target) { e.preventDefault(); setOver(c.key); } }}
             onDragLeave={() => setOver(o => (o === c.key ? null : o))}
             onDrop={e => drop(e, c.key)}
-            className={`flex flex-col rounded-2xl min-h-[460px] overflow-hidden transition ${
+            className={`flex flex-col rounded-2xl h-[calc(100vh-340px)] min-h-[360px] overflow-hidden transition ${
               over === c.key && allowed ? 'bg-signal-50 ring-2 ring-signal-400'
                 : over === c.key ? 'bg-alert-500/5 ring-2 ring-alert-300'
                 : allowed ? 'bg-steel-100/70 ring-2 ring-signal-300' : 'bg-steel-100/70'}`}>
@@ -95,9 +95,9 @@ export default function OsBoard({ list, mechanicView, onOpen, onMove, onShowAllD
               </div>
               {!mechanicView && <p className="text-base font-bold text-steel-900 tabular-nums mt-1">{fmtBRL(total)}</p>}
             </header>
-            <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto max-h-[66vh] [scrollbar-width:thin]">
+            <div className="flex-1 min-h-0 px-2 pb-2 space-y-2 overflow-y-auto [scrollbar-width:thin]">
               {all.length === 0 ? (
-                <div className="h-full min-h-[120px] rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-4 text-center">
+                <div className="h-20 rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-3 text-center">
                   <span className="text-xs text-steel-400">{allowed ? 'Solte aqui' : c.empty}</span>
                 </div>
               ) : (

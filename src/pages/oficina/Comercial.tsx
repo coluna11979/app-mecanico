@@ -470,7 +470,7 @@ function Board({ leads, leadsValue, fn, canOpen, openLink, onWa, onDiscardLead }
   onWa: (o: Opp) => void; onDiscardLead: (l: Lead) => void;
 }) {
   return (
-    <div className="grid grid-flow-col auto-cols-[minmax(232px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+    <div className="grid grid-flow-col auto-cols-[minmax(196px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
       {leads && (
         <Column title="Interessados" icon="💬" bar="bg-emerald-500" n={leads.length} value={leadsValue} approx
           hint="sem orçamento ainda" empty="Marque no WhatsApp: “💰 Marcar como interessado”">
@@ -495,7 +495,7 @@ function Column({ title, icon, bar, n, value, hint, empty, approx, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col rounded-2xl bg-steel-100/70 min-h-[440px] overflow-hidden">
+    <section className="flex flex-col rounded-2xl bg-steel-100/70 h-[calc(100vh-360px)] min-h-[340px] overflow-hidden">
       <div className={`h-1 ${bar}`} />
       <header className="px-3.5 pt-3 pb-2.5">
         <div className="flex items-center gap-2">
@@ -507,9 +507,9 @@ function Column({ title, icon, bar, n, value, hint, empty, approx, children }: {
           <span className="text-[10px] text-steel-400 truncate">{hint}</span>
         </div>
       </header>
-      <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto max-h-[64vh] [scrollbar-width:thin]">
+      <div className="flex-1 min-h-0 px-2 pb-2 space-y-2 overflow-y-auto [scrollbar-width:thin]">
         {n === 0 ? (
-          <div className="h-full min-h-[120px] rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-4 text-center">
+          <div className="h-20 rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-3 text-center">
             <span className="text-xs text-steel-400">{empty}</span>
           </div>
         ) : children}
