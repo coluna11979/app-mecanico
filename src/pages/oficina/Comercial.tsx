@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
@@ -10,6 +10,8 @@ import { fmtBRL } from '@/components/os/osHelpers';
 import { publicReportUrl } from '@/lib/checkup';
 import { fetchAll } from '@/lib/fetchAll';
 import PeriodPicker, { PRESETS, usePeriod, type Preset } from '@/components/PeriodPicker';
+import { useModuleAllows } from '@/lib/modules';
+import { toast } from '@/components/ui/Toast';
 import {
   buildOpps, daysSince, followUps, funnelOf, type CkRow, type FollowUp, type Opp, type OsQuote, type Stage,
 } from '@/lib/commercialFunnel';
@@ -30,6 +32,16 @@ const STAGE_BADGE: Record<Stage, string> = {
 
 const MONTHS_BACK = 12;
 
+/** Interessado: conversa do WhatsApp marcada como oportunidade, antes de existir orçamento */
+type Lead = {
+  id: string; phone: string; name: string | null; customer_id: string | null;
+  lead_at: string; lead_note: string | null; lead_value: number | null; lead_by: string | null;
+  customer: { full_name: string } | null;
+};
+type View = 'lista' | 'colunas';
+const LS_VIEW = 'comercial_view';
+const loadView = (): View => { try { return localStorage.getItem(LS_VIEW) === 'colunas' ? 'colunas' : 'lista'; } catch { return 'lista'; } };
+
 /**
  * Comercial: funil simples dos orçamentos (check-up e OS enviada para aprovação),
  * quem precisa de retorno hoje e a lista da etapa escolhida.
@@ -45,7 +57,11 @@ export default function Comercial() {
   const [checkups, setCheckups] = useState<CkRow[] | null>(null);
   const [osQuotes, setOsQuotes] = useState<OsQuote[]>([]);
   const [ckSaleOs, setCkSaleOs] = useState<Set<string>>(new Set());
-  const [stage, setStage] = useState<Stage>('aguardando');
+  const [stage, setStage] = useState<Stage | 'interessado'>('aguardando');
+  const [view, setViewState] = useState<View>(loadView);
+  const setView = (v: View) => { setViewState(v); try { localStorage.setItem(LS_VIEW, v); } catch { /* sem localStorage */ } };
+  const inboxOn = useModuleAllows()('/oficina/inbox');
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [origin, setOrigin] = useState<'all' | 'checkup' | 'os'>('all');
   const [mechanic, setMechanic] = useState('all');
   const [moreFilters, setMoreFilters] = useState(false);
@@ -81,6 +97,34 @@ export default function Comercial() {
     })();
   }, [wid]);
 
+  /** Interessados que ainda não viraram orçamento (OS ou check-up do cliente depois de marcar) */
+  const loadLeads = useCallback(async () => {
+    if (!wid || !inboxOn) { setLeads([]); return; }
+    const { data } = await supabase.from('whatsapp_chats')
+      .select('id, phone, name, customer_id, lead_at, lead_note, lead_value, lead_by, customer:customers(full_name)')
+      .eq('workshop_id', wid).not('lead_at', 'is', null).order('lead_at', { ascending: false });
+    const rows = (data ?? []) as unknown as Lead[];
+    const ids = [...new Set(rows.map(r => r.customer_id).filter(Boolean))] as string[];
+    if (!ids.length) { setLeads(rows); return; }
+    const oldest = rows.reduce((m, r) => (r.lead_at < m ? r.lead_at : m), rows[0].lead_at);
+    const [os, ck] = await Promise.all([
+      supabase.from('service_orders').select('customer_id, created_at').in('customer_id', ids).gte('created_at', oldest),
+      supabase.from('vehicle_checkups').select('customer_id, created_at').in('customer_id', ids).gte('created_at', oldest),
+    ]);
+    const later = [...(os.data ?? []), ...(ck.data ?? [])] as { customer_id: string; created_at: string }[];
+    setLeads(rows.filter(r => !r.customer_id || !later.some(x => x.customer_id === r.customer_id && x.created_at >= r.lead_at)));
+  }, [wid, inboxOn]);
+  useEffect(() => { loadLeads(); }, [loadLeads]);
+
+  async function discardLead(l: Lead) {
+    if (!confirm(`Tirar ${l.customer?.full_name ?? l.name ?? 'este contato'} dos interessados?`)) return;
+    const { error } = await supabase.from('whatsapp_chats')
+      .update({ lead_at: null, lead_note: null, lead_value: null, lead_by: null }).eq('id', l.id);
+    if (error) { toast.error('Não salvou: ' + error.message); return; }
+    loadLeads();
+  }
+  const leadsValue = leads.reduce((a, l) => a + Number(l.lead_value ?? 0), 0);
+
   const opps = useMemo(() => buildOpps(checkups ?? [], osQuotes, ckSaleOs), [checkups, osQuotes, ckSaleOs]);
   const fu = useMemo(() => followUps(opps), [opps]);
   const fn = useMemo(() => funnelOf(opps, range), [opps, range]);
@@ -96,6 +140,7 @@ export default function Comercial() {
   }, [opps]);
 
   const list = useMemo(() => {
+    if (stage === 'interessado') return [];
     const base = stage === 'montando' ? fn.montando : stage === 'aguardando' ? fn.aguardando
       : stage === 'aprovado' ? fn.aprovado : stage === 'recusado' ? fn.recusado : fn.lembrar;
     return base
@@ -126,7 +171,7 @@ export default function Comercial() {
 
   return (
     <WorkshopLayout>
-      <div className="max-w-6xl mx-auto space-y-5">
+      <div className={`${view === 'colunas' ? 'max-w-6xl md:max-w-[1680px]' : 'max-w-6xl'} mx-auto space-y-5`}>
         {/* Topo */}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -138,6 +183,14 @@ export default function Comercial() {
               {PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
             <div className="hidden sm:block"><PeriodPicker period={period} /></div>
+            <div className="hidden md:flex rounded-xl border border-steel-200 bg-white p-0.5 shrink-0">
+              {(['lista', 'colunas'] as View[]).map(v => (
+                <button key={v} type="button" onClick={() => setView(v)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${view === v ? 'bg-steel-900 text-white' : 'text-steel-600 hover:bg-steel-50'}`}>
+                  {v === 'lista' ? '☰ Lista' : '▥ Colunas'}
+                </button>
+              ))}
+            </div>
             {canOpen('/oficina/checkup') && <Link to="/oficina/checkup" className="btn-primary text-sm !py-2 shrink-0">+ Novo check-up</Link>}
           </div>
         </div>
@@ -164,6 +217,15 @@ export default function Comercial() {
                 sub={fn.aprovado.length ? `${fmtBRL(fn.approvedValue)} · ticket ${fmtBRL(fn.ticket)}` : 'nenhum no período'} />
             </div>
 
+            {view === 'colunas' ? (
+              <div className="hidden md:block">
+                <Board
+                  leads={inboxOn ? leads : null} leadsValue={leadsValue} fn={fn}
+                  canOpen={canOpen} openLink={openLink} onWa={setWa} onDiscardLead={discardLead}
+                />
+              </div>
+            ) : null}
+            <div className={view === 'colunas' ? 'md:hidden space-y-5' : 'space-y-5'}>
             {/* Funil */}
             <div>
               <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-4 snap-x">
@@ -191,10 +253,18 @@ export default function Comercial() {
                 <span className="text-steel-500">
                   {fn.leaks[0] ? <>Maior gargalo: <strong className="text-steel-700">{fn.leaks[0].n} {fn.leaks[0].label}</strong></> : 'Sem gargalos no momento.'}
                 </span>
+                <div className="flex flex-wrap gap-2">
+                {inboxOn && (
+                  <button onClick={() => setStage('interessado')}
+                    className={`rounded-full px-3 py-1 border transition ${stage === 'interessado' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                    💬 Interessados · {leads.length}{leadsValue > 0 && <span className="opacity-70"> · ~{fmtBRL(leadsValue)}</span>}
+                  </button>
+                )}
                 <button onClick={() => setStage('lembrar')}
                   className={`rounded-full px-3 py-1 border transition ${stage === 'lembrar' ? 'bg-brand-600 text-white border-brand-600' : 'bg-brand-50 text-brand-700 border-brand-200'}`}>
                   🔔 Lembrar depois · {fn.lembrar.length} <span className="opacity-70">(retorno futuro, não é perda)</span>
                 </button>
+                </div>
               </div>
             </div>
 
@@ -220,8 +290,8 @@ export default function Comercial() {
             {/* Lista da etapa */}
             <div className="card !p-0 overflow-hidden">
               <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-steel-100">
-                <div className="font-bold text-sm">{STAGE_LABEL[stage]} <span className="text-steel-400 font-medium">({list.length})</span>
-                  <span className="text-xs font-normal text-steel-400 ml-2">{stage === 'montando' || stage === 'aguardando' ? 'situação de agora' : 'no período'}</span>
+                <div className="font-bold text-sm">{stage === 'interessado' ? '💬 Interessados' : STAGE_LABEL[stage]} <span className="text-steel-400 font-medium">({stage === 'interessado' ? leads.length : list.length})</span>
+                  <span className="text-xs font-normal text-steel-400 ml-2">{stage === 'interessado' ? 'pediram preço no WhatsApp, ainda sem orçamento' : stage === 'montando' || stage === 'aguardando' ? 'situação de agora' : 'no período'}</span>
                 </div>
                 <button onClick={() => setMoreFilters(v => !v)} className="text-xs font-semibold text-steel-600 hover:text-steel-900">
                   {moreFilters ? 'Menos filtros' : 'Mais filtros'}{(origin !== 'all' || mechanic !== 'all') && ' •'}
@@ -242,7 +312,17 @@ export default function Comercial() {
                   )}
                 </div>
               )}
-              {list.length === 0 ? (
+              {stage === 'interessado' ? (
+                leads.length === 0 ? (
+                  <p className="px-5 py-8 text-sm text-steel-500 text-center">
+                    Nenhum interessado. No WhatsApp, abra a conversa e toque em “💰 Marcar como interessado”.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-steel-100">
+                    {leads.map(l => <LeadRow key={l.id} l={l} canOpen={canOpen} onDiscard={() => discardLead(l)} />)}
+                  </ul>
+                )
+              ) : list.length === 0 ? (
                 <p className="px-5 py-8 text-sm text-steel-500 text-center">
                   {opps.length === 0
                     ? 'Ainda não há orçamentos. Faça um check-up ou envie um orçamento pela OS para começar.'
@@ -253,6 +333,7 @@ export default function Comercial() {
                   {list.map(o => <OppRow key={o.key} o={o} canOpen={canOpen} openLink={openLink(o)} onWa={() => setWa(o)} />)}
                 </ul>
               )}
+            </div>
             </div>
           </>
         )}
@@ -339,5 +420,182 @@ function OppRow({ o, canOpen, openLink, onWa }: { o: Opp; canOpen: (p: string) =
         )}
       </div>
     </li>
+  );
+}
+
+/* ── Interessados (conversas do WhatsApp marcadas como oportunidade) ─────────── */
+
+const leadName = (l: Lead) => l.customer?.full_name ?? l.name ?? fmtPhoneShort(l.phone);
+function fmtPhoneShort(p: string) {
+  let d = p.replace(/\D/g, '');
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+  return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : p;
+}
+const newOsFor = (l: Lead) => (l.customer_id ? `/oficina/os?nova=1&cliente=${l.customer_id}` : '/oficina/os?nova=1');
+
+function LeadRow({ l, canOpen, onDiscard }: { l: Lead; canOpen: (p: string) => boolean; onDiscard: () => void }) {
+  const d = daysSince(l.lead_at);
+  return (
+    <li className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="text-sm font-semibold truncate">{leadName(l)} <span className="font-normal text-steel-500">· {l.lead_note ?? 'sem descrição'}</span></div>
+        <div className="text-[11px] text-steel-400">
+          💬 pelo WhatsApp · {d === 0 ? 'hoje' : `há ${d}d`}{l.lead_by ? ` · marcado por ${l.lead_by}` : ''}{!l.customer_id ? ' · sem cadastro' : ''}
+        </div>
+      </div>
+      <div className="text-sm font-bold shrink-0">{l.lead_value ? `~${fmtBRL(Number(l.lead_value))}` : <span className="text-xs text-steel-400">sem valor</span>}</div>
+      <div className="flex flex-wrap gap-2 shrink-0">
+        {canOpen('/oficina/inbox') && <Link to={`/oficina/inbox?conversa=${l.id}`} className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#25D366] text-white">Conversa</Link>}
+        {canOpen('/oficina/os') && <Link to={newOsFor(l)} className="btn-primary text-xs !py-1.5">Montar orçamento</Link>}
+        <button onClick={onDiscard} className="btn-ghost text-xs !py-1.5">Descartar</button>
+      </div>
+    </li>
+  );
+}
+
+/* ── Quadro em colunas (como o pipeline do Cockpit) ─────────────────────────── */
+
+type Fn = ReturnType<typeof funnelOf>;
+const COLUMNS: { key: Stage; title: string; bar: string; hint: string; empty: string }[] = [
+  { key: 'montando',   title: 'Montando orçamento', bar: 'bg-steel-400',   hint: 'agora',      empty: 'Nenhum orçamento sendo montado' },
+  { key: 'aguardando', title: 'Aguardando cliente', bar: 'bg-pending-500', hint: 'agora',      empty: 'Ninguém aguardando resposta' },
+  { key: 'aprovado',   title: 'Aprovado',           bar: 'bg-signal-500',  hint: 'no período', empty: 'Nenhum aprovado no período' },
+  { key: 'recusado',   title: 'Perdido',            bar: 'bg-alert-500',   hint: 'no período', empty: 'Nenhum perdido no período' },
+  { key: 'lembrar',    title: 'Lembrar depois',     bar: 'bg-brand-500',   hint: 'no período', empty: 'Nada para lembrar' },
+];
+
+function Board({ leads, leadsValue, fn, canOpen, openLink, onWa, onDiscardLead }: {
+  leads: Lead[] | null; leadsValue: number; fn: Fn;
+  canOpen: (p: string) => boolean; openLink: (o: Opp) => string;
+  onWa: (o: Opp) => void; onDiscardLead: (l: Lead) => void;
+}) {
+  return (
+    <div className="grid grid-flow-col auto-cols-[minmax(232px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+      {leads && (
+        <Column title="Interessados" icon="💬" bar="bg-emerald-500" n={leads.length} value={leadsValue} approx
+          hint="sem orçamento ainda" empty="Marque no WhatsApp: “💰 Marcar como interessado”">
+          {leads.map(l => <LeadCard key={l.id} l={l} canOpen={canOpen} onDiscard={() => onDiscardLead(l)} />)}
+        </Column>
+      )}
+      {COLUMNS.map(c => (
+        <Column key={c.key} title={c.title} bar={c.bar} n={fn[c.key].length} value={fn.values[c.key]} hint={c.hint} empty={c.empty}>
+          {[...fn[c.key]]
+            .sort((a, b) => (c.key === 'montando' || c.key === 'aguardando')
+              ? (daysSince(b.since) ?? 0) - (daysSince(a.since) ?? 0)
+              : (b.since ?? '').localeCompare(a.since ?? ''))
+            .map(o => <OppCard key={o.key} o={o} canOpen={canOpen} openLink={openLink(o)} onWa={() => onWa(o)} />)}
+        </Column>
+      ))}
+    </div>
+  );
+}
+
+function Column({ title, icon, bar, n, value, hint, empty, approx, children }: {
+  title: string; icon?: string; bar: string; n: number; value: number; hint: string; empty: string; approx?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col rounded-2xl bg-steel-100/70 min-h-[440px] overflow-hidden">
+      <div className={`h-1 ${bar}`} />
+      <header className="px-3.5 pt-3 pb-2.5">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-bold text-steel-800 truncate">{icon && <span className="mr-1">{icon}</span>}{title}</h3>
+          <span className="ml-auto h-5 min-w-5 px-1.5 rounded-full bg-white text-[11px] font-bold text-steel-600 grid place-items-center shadow-sm">{n}</span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2 mt-1">
+          <span className="text-base font-bold text-steel-900 tabular-nums">{approx && value > 0 ? '~' : ''}{fmtBRL(value)}</span>
+          <span className="text-[10px] text-steel-400 truncate">{hint}</span>
+        </div>
+      </header>
+      <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto max-h-[64vh] [scrollbar-width:thin]">
+        {n === 0 ? (
+          <div className="h-full min-h-[120px] rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-4 text-center">
+            <span className="text-xs text-steel-400">{empty}</span>
+          </div>
+        ) : children}
+      </div>
+    </section>
+  );
+}
+
+/** Selo de tempo: "hoje" / "12d" — vermelho a partir de 5 dias parado */
+function Age({ days, open }: { days: number | null; open: boolean }) {
+  if (days == null) return null;
+  const late = open && days >= 5;
+  return (
+    <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${late ? 'bg-alert-500/10 text-alert-600' : 'bg-steel-100 text-steel-500'}`}
+      title={open ? 'Parado nesta etapa' : undefined}>
+      {days === 0 ? 'hoje' : `${days}d`}
+    </span>
+  );
+}
+
+const cardCls = 'group block rounded-xl bg-white border border-steel-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-steel-300 hover:shadow-md transition';
+const actionCls = 'text-[11px] font-semibold px-2 py-1 rounded-md transition';
+
+function OppCard({ o, canOpen, openLink, onWa }: { o: Opp; canOpen: (p: string) => boolean; openLink: string; onWa: () => void }) {
+  const open = o.stage === 'montando' || o.stage === 'aguardando';
+  const days = open ? daysSince(o.since) : null;
+  const osLabel = o.origin === 'checkup' ? 'Check-up' : `OS ${o.saleOsNumber != null ? String(o.saleOsNumber).padStart(4, '0') : ''}`;
+  const body = (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{o.customerName ?? 'Cliente avulso'}</p>
+        <Age days={days} open={open} />
+      </div>
+      <p className="text-xs text-steel-500 truncate mt-0.5">{o.car}</p>
+      <div className="flex items-center justify-between gap-2 mt-2.5">
+        <span className="text-[15px] font-bold text-steel-900 tabular-nums">
+          {o.value > 0 ? fmtBRL(o.value) : <span className="text-xs font-semibold text-pending-700">sem valor</span>}
+        </span>
+        <span className="text-[10px] font-medium text-steel-400 truncate">
+          {osLabel}{o.plate ? ` · ${o.plate}` : ''}
+        </span>
+      </div>
+      {!open && o.since && (
+        <p className="text-[10px] text-steel-400 mt-1">{new Date(o.since).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</p>
+      )}
+      {o.stage === 'aguardando' && o.viewed && <p className="text-[10px] font-semibold text-sky-600 mt-1">👀 Cliente já viu o orçamento</p>}
+    </div>
+  );
+  return (
+    <div className={cardCls}>
+      {canOpen(openLink) ? <Link to={openLink}>{body}</Link> : body}
+      {o.stage === 'aguardando' && o.phone && (
+        <div className="flex justify-end border-t border-steel-100 px-2 py-1.5">
+          <button onClick={onWa} className={`${actionCls} text-emerald-700 hover:bg-emerald-50`}>💬 Cobrar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LeadCard({ l, canOpen, onDiscard }: { l: Lead; canOpen: (p: string) => boolean; onDiscard: () => void }) {
+  const days = daysSince(l.lead_at);
+  const body = (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{leadName(l)}</p>
+        <Age days={days} open={days != null && days >= 3 ? true : false} />
+      </div>
+      <p className="text-xs text-steel-600 line-clamp-2 mt-0.5">{l.lead_note ?? 'sem descrição'}</p>
+      <div className="flex items-center justify-between gap-2 mt-2.5">
+        <span className="text-[15px] font-bold text-steel-900 tabular-nums">
+          {l.lead_value ? `~${fmtBRL(Number(l.lead_value))}` : <span className="text-xs font-semibold text-steel-400">sem valor</span>}
+        </span>
+        <span className="text-[10px] font-medium text-emerald-600">WhatsApp</span>
+      </div>
+    </div>
+  );
+  return (
+    <div className={cardCls}>
+      {canOpen('/oficina/inbox') ? <Link to={`/oficina/inbox?conversa=${l.id}`} title="Abrir a conversa">{body}</Link> : body}
+      <div className="flex items-center gap-1 border-t border-steel-100 px-2 py-1.5">
+        {canOpen('/oficina/os') && (
+          <Link to={newOsFor(l)} className={`${actionCls} text-brand-700 hover:bg-brand-50`}>＋ Orçamento</Link>
+        )}
+        <button onClick={onDiscard} className={`${actionCls} ml-auto text-steel-400 hover:text-alert-600 hover:bg-alert-500/5`}>Descartar</button>
+      </div>
+    </div>
   );
 }

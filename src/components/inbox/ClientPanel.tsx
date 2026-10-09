@@ -12,6 +12,7 @@ import type { Customer, Vehicle } from '@/types/database';
 import ChatAvatar from './ChatAvatar';
 import ChatNotes from './ChatNotes';
 import FollowUp from './FollowUp';
+import LeadBox from './LeadBox';
 
 type PanelOs = InsOs & {
   number: number | null; title: string; started_at: string | null;
@@ -164,11 +165,16 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
         ) : tab === 'retorno' ? (
           <FollowUp chat={chat} />
         ) : !chat.customer_id ? (
-          <NotLinked chat={chat} workshopId={workshopId} onPick={id => link(id)} onCreate={() => setCreating(true)} />
+          <>
+            <LeadBox chat={chat} />
+            <NotLinked chat={chat} workshopId={workshopId} onPick={id => link(id)} onCreate={() => setCreating(true)} />
+          </>
         ) : loading || !customer ? (
           <p className="text-sm text-steel-500">Carregando…</p>
         ) : (
           <>
+            <LeadBox chat={chat} />
+
             {/* Situação: última visita e próxima revisão/visita */}
             {ins && ins.visits > 0 && (
               <div className="rounded-2xl border border-steel-200 p-3 space-y-1.5">

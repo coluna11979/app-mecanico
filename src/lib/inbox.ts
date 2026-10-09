@@ -37,6 +37,11 @@ export type WaChat = {
   follow_up_at: string | null;
   follow_up_note: string | null;
   follow_up_by: string | null;
+  /** Interessado (Comercial): o que o cliente quer, antes de existir orçamento */
+  lead_at: string | null;
+  lead_note: string | null;
+  lead_value: number | null;
+  lead_by: string | null;
   customer?: { id: string; full_name: string } | null;
 };
 
@@ -56,7 +61,7 @@ export type WaMessage = {
   sent_at: string;
 };
 
-export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, customer:customers(id, full_name)';
+export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, lead_at, lead_note, lead_value, lead_by, customer:customers(id, full_name)';
 
 /** Esperando resposta há mais que isso = urgente */
 export const URGENT_MIN = 30;
