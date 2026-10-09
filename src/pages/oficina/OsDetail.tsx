@@ -4,7 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
-import { useInboxSender } from '@/lib/inbox';
+import { useInboxAccess, useInboxSender } from '@/lib/inbox';
 import { toast } from '@/components/ui/Toast';
 import { canDo, sessionAllows, useOperator } from '@/lib/operators';
 import { useCheckupAccess } from '@/lib/checkupAccess';
@@ -58,6 +58,7 @@ export default function OsDetail() {
   /** Orçamento pelo número da oficina (Inbox): confere o texto antes; ao enviar vira "Aguardando aprovação" */
   const [approvalOpen, setApprovalOpen] = useState(false);
   const inbox = useInboxSender();
+  const canOpenInbox = useInboxAccess();
   const [paperUrl, setPaperUrl] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [pausing, setPausing]     = useState(false);
@@ -702,7 +703,7 @@ export default function OsDetail() {
                   <div className="font-bold text-steel-900">{os.customer.full_name}</div>
                   <div className="mt-2 space-y-1 text-sm">
                     {tel && <a href={`tel:${tel}`} className="block text-steel-600 hover:text-brand-600">📞 {fmtPhone(os.customer.phone)}</a>}
-                    {wa && (modAllows('/oficina/inbox') ? (
+                    {wa && (canOpenInbox ? (
                       <Link to={`/oficina/inbox?tel=${wa}&cliente=${os.customer_id ?? ''}&nome=${encodeURIComponent(os.customer.full_name)}`}
                         className="block text-signal-700 hover:underline">💬 Conversar no WhatsApp</Link>
                     ) : (

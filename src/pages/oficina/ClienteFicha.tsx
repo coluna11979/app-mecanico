@@ -11,7 +11,7 @@ import CustomerForm from '@/components/customers/CustomerForm';
 import VehicleForm from '@/components/customers/VehicleForm';
 import { APPROVAL_CHANNELS, fmtBRL, fmtPhone, osNumber, osStatusColor, osStatusLabel } from '@/components/os/osHelpers';
 import { onlyDigits, timeAgo } from '@/lib/customers';
-import { useModuleAllows } from '@/lib/modules';
+import { useInboxAccess } from '@/lib/inbox';
 import {
   SEGMENTS, approvalProfile, birthdaySoon, customerInsight, fmtMonthYear, habits, shopContext, spendByCategory, vehicleUsage,
   type InsOs, type InsRec, type ShopContext,
@@ -37,7 +37,7 @@ export default function ClienteFicha() {
   const [vehForm, setVehForm] = useState<{ vehicle: Vehicle | null } | null>(null);
   const [carFilter, setCarFilter] = useState<string | 'all'>('all');
   // Inbox ligado: o botão do WhatsApp abre a conversa no sistema (número da oficina)
-  const inboxOn = useModuleAllows()('/oficina/inbox');
+  const inboxOn = useInboxAccess();
 
   const load = useCallback(async () => {
     if (!id) return;

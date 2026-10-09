@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fmtPhone, waNumber } from '@/components/os/osHelpers';
 import { toast } from '@/components/ui/Toast';
-import { useInboxSender } from '@/lib/inbox';
+import { useInboxAccess, useInboxSender } from '@/lib/inbox';
 
 export type WaMessage = { key: string; label: string; text: string };
 
@@ -20,6 +20,7 @@ export default function SendWhatsAppModal({ phone, messages, onClose, onSent, cu
 }) {
   const nav = useNavigate();
   const inbox = useInboxSender();
+  const canOpenInbox = useInboxAccess();
   const [sending, setSending] = useState(false);
   const [kind, setKind] = useState(messages[0]?.key ?? '');
   const [tel, setTel] = useState(phone ? fmtPhone(phone) : '');
@@ -103,7 +104,7 @@ export default function SendWhatsAppModal({ phone, messages, onClose, onSent, cu
             <button className="text-xs text-steel-500 hover:text-steel-800 underline mr-auto" onClick={send} disabled={sending}>
               Abrir no meu WhatsApp
             </button>
-            <button className="btn-ghost" onClick={sendAndOpen} disabled={sending}>Enviar e abrir conversa</button>
+            {canOpenInbox && <button className="btn-ghost" onClick={sendAndOpen} disabled={sending}>Enviar e abrir conversa</button>}
             <button className="btn-primary !bg-signal-500 hover:!bg-signal-600" onClick={sendInbox} disabled={sending}>
               {sending ? 'Enviando…' : 'Enviar'}
             </button>

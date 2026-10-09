@@ -6,7 +6,8 @@ import { supabase } from '@/lib/supabase';
 export type OperatorRole = 'gestor' | 'caixa' | 'atendente' | 'mecanico' | 'vendedor';
 export type OperatorPerm =
   | 'dar_desconto' | 'cancelar_recebimento' | 'reabrir_caixa'
-  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe' | 'plataforma';
+  | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe' | 'plataforma'
+  | 'whatsapp';
 
 export type WorkshopOperator = {
   id: string; workshop_id: string; mechanic_id: string | null; name: string;
@@ -29,11 +30,11 @@ export const ROLES: Record<OperatorRole, {
   caixa: {
     label: 'Caixa', icon: '💰', desc: 'Abre e fecha o caixa, recebe as OS, lança vales, despesas e sangrias.',
     routes: ['/oficina/caixa', '/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/importar', '/oficina/clientes',
-             '/oficina/dashboard', '/oficina/buscar', '/oficina/job', '/oficina/mensagens', '/oficina/inbox', '/oficina/avisos'], home: '/oficina/caixa',
+             '/oficina/dashboard', '/oficina/buscar', '/oficina/job', '/oficina/mensagens', '/oficina/avisos'], home: '/oficina/caixa',
   },
   atendente: {
     label: 'Atendente', icon: '🧑‍💼', desc: 'Abre e acompanha OS, cadastra clientes e responde mensagens.',
-    routes: ['/oficina/dashboard', '/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/clientes', '/oficina/mensagens', '/oficina/inbox',
+    routes: ['/oficina/dashboard', '/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/clientes', '/oficina/mensagens',
              '/oficina/buscar', '/oficina/job', '/oficina/importar', '/oficina/avisos'],
     home: '/oficina/os',
   },
@@ -44,7 +45,7 @@ export const ROLES: Record<OperatorRole, {
   vendedor: {
     label: 'Vendedor', icon: '🤝', desc: 'Módulo Comercial: orçamentos do check-up, clientes, retorno pelo WhatsApp e agenda.',
     routes: ['/oficina/comercial', '/oficina/checkup', '/oficina/clientes', '/oficina/os', '/oficina/agenda',
-             '/oficina/mensagens', '/oficina/inbox', '/oficina/avisos'],
+             '/oficina/mensagens', '/oficina/avisos'],
     home: '/oficina/comercial',
   },
 };
@@ -62,10 +63,17 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   folha:                { label: 'Fechar comissões e folha', desc: 'Fechar comissões, salários, vales e faltas da equipe' },
   plataforma:           { label: 'Plataforma completa',   desc: 'Demandas, buscar mecânicos, mensagens e acompanhar o serviço do mecânico da plataforma' },
   equipe:               { label: 'Equipe',                desc: 'Colaboradores (ficha, salário, documentos) e Desempenho e comissões' },
+  whatsapp:             { label: 'WhatsApp da oficina',   desc: 'Ver e responder todas as conversas do número da oficina (Inbox)' },
+};
+
+/** Permissões que só aparecem quando a oficina tem o módulo (rota do módulo) */
+export const PERM_MODULE_ROUTE: Partial<Record<OperatorPerm, string>> = {
+  whatsapp: '/oficina/inbox',
 };
 
 /** Permissões agrupadas por módulo, para a tela de Acessos */
 export const PERM_GROUPS: { label: string; perms: OperatorPerm[] }[] = [
+  { label: 'Atendimento',        perms: ['whatsapp'] },
   { label: 'Caixa',              perms: ['dar_desconto', 'cancelar_recebimento', 'reabrir_caixa'] },
   { label: 'Financeiro',         perms: ['ver_financeiro', 'contas_pagar', 'folha'] },
   { label: 'Equipe',             perms: ['equipe'] },
@@ -93,6 +101,7 @@ const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
   folha:          ['/oficina/folha', '/oficina/comissoes'],
   equipe:         ['/oficina/equipe', '/oficina/desempenho'],
   plataforma:     ['/oficina/dashboard', '/oficina/buscar', '/oficina/mensagens', '/oficina/job'],
+  whatsapp:       ['/oficina/inbox'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */

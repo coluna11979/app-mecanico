@@ -5,7 +5,8 @@ import TeamTabs from '@/components/team/TeamTabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { PERM_GROUPS, PERMS, ROLES, ROLE_ORDER, type OperatorPerm, type OperatorRole, type WorkshopOperator } from '@/lib/operators';
+import { PERM_GROUPS, PERM_MODULE_ROUTE, PERMS, ROLES, ROLE_ORDER, type OperatorPerm, type OperatorRole, type WorkshopOperator } from '@/lib/operators';
+import { useModuleAllows } from '@/lib/modules';
 import type { WorkshopMechanic } from '@/types/database';
 
 /** Uma linha da lista: o dono ou um colaborador da Equipe, com o acesso (se já tiver). */
@@ -156,6 +157,11 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
   const op = row.op;
   const [roles, setRoles]   = useState<OperatorRole[]>(op?.roles ?? (row.isOwner ? ['gestor'] : []));
   const [perms, setPerms]   = useState<OperatorPerm[]>(op?.permissions ?? []);
+  // Permissão de módulo que a oficina não tem (ex.: WhatsApp) não aparece
+  const modAllows = useModuleAllows();
+  const permGroups = PERM_GROUPS
+    .map(g => ({ ...g, perms: g.perms.filter(p => !PERM_MODULE_ROUTE[p] || modAllows(PERM_MODULE_ROUTE[p]!)) }))
+    .filter(g => g.perms.length > 0);
   /** Em quais funções cada permissão vale (só quando a pessoa tem mais de uma função) */
   const [permRoles, setPermRoles] = useState<Partial<Record<OperatorPerm, OperatorRole[]>>>(op?.perm_roles ?? {});
   const [active, setActive] = useState(op?.active ?? true);
@@ -246,7 +252,7 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
           <div className="text-xs text-steel-500 rounded-xl bg-steel-50 px-3 py-2.5">A função Gestor já pode fazer tudo.</div>
         ) : (
           <div className="space-y-3">
-            {PERM_GROUPS.map(g => (
+            {permGroups.map(g => (
               <div key={g.label}>
                 <div className="text-[11px] font-semibold text-steel-400 mb-1.5">{g.label}</div>
                 <div className="grid sm:grid-cols-2 gap-2">
