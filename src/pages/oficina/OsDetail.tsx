@@ -702,7 +702,12 @@ export default function OsDetail() {
                   <div className="font-bold text-steel-900">{os.customer.full_name}</div>
                   <div className="mt-2 space-y-1 text-sm">
                     {tel && <a href={`tel:${tel}`} className="block text-steel-600 hover:text-brand-600">📞 {fmtPhone(os.customer.phone)}</a>}
-                    {wa && <a href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" className="block text-signal-700 hover:underline">💬 WhatsApp</a>}
+                    {wa && (modAllows('/oficina/inbox') ? (
+                      <Link to={`/oficina/inbox?tel=${wa}&cliente=${os.customer_id ?? ''}&nome=${encodeURIComponent(os.customer.full_name)}`}
+                        className="block text-signal-700 hover:underline">💬 Conversar no WhatsApp</Link>
+                    ) : (
+                      <a href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" className="block text-signal-700 hover:underline">💬 WhatsApp</a>
+                    ))}
                     {!mech && os.customer.email && <div className="text-steel-600 truncate">✉️ {os.customer.email}</div>}
                     {!mech && os.customer.cpf && <div className="text-steel-500">🪪 {os.customer.cpf}</div>}
                   </div>

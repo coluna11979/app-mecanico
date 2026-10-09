@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { fmtPhone } from '@/components/os/osHelpers';
@@ -179,7 +179,7 @@ function Bubble({ m, tight }: { m: WaMessage; tight: boolean }) {
             {!m.media_path && m.message_type !== 'text' && !m.content && (
               <p className="text-sm italic text-steel-500">{MEDIA_LABEL[m.message_type] ?? 'Mensagem'} (não foi possível baixar)</p>
             )}
-            {m.content && <p className="text-sm text-steel-900 whitespace-pre-wrap break-words">{m.content}</p>}
+            {m.content && <p className="text-sm text-steel-900 whitespace-pre-wrap break-words">{waFormat(m.content)}</p>}
           </>
         )}
         <div className="flex items-center justify-end gap-1 mt-0.5">
@@ -189,6 +189,18 @@ function Bubble({ m, tight }: { m: WaMessage; tight: boolean }) {
       </div>
     </div>
   );
+}
+
+/** Formatação do WhatsApp: *negrito*, _itálico_, ~riscado~ e links clicáveis */
+function waFormat(text: string): ReactNode[] {
+  const re = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|https?:\/\/[^\s]+)/g;
+  return text.split(re).map((part, i) => {
+    if (/^https?:\/\//.test(part)) return <a key={i} href={part} target="_blank" rel="noreferrer" className="text-sky-700 underline break-all">{part}</a>;
+    if (part.length > 2 && part.startsWith('*') && part.endsWith('*')) return <strong key={i}>{part.slice(1, -1)}</strong>;
+    if (part.length > 2 && part.startsWith('_') && part.endsWith('_')) return <em key={i}>{part.slice(1, -1)}</em>;
+    if (part.length > 2 && part.startsWith('~') && part.endsWith('~')) return <s key={i}>{part.slice(1, -1)}</s>;
+    return part;
+  });
 }
 
 const MEDIA_LABEL: Record<string, string> = {
