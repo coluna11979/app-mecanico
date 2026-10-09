@@ -9,6 +9,7 @@ import { isSale, onlyDigits, timeAgo } from '@/lib/customers';
 import { chatTitle, type WaChat } from '@/lib/inbox';
 import type { Customer, Vehicle } from '@/types/database';
 import ChatAvatar from './ChatAvatar';
+import ChatNotes from './ChatNotes';
 
 type PanelOs = {
   id: string; number: number | null; title: string; status: string; quote_status: string | null;
@@ -96,6 +97,8 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        <ChatNotes chatId={chat.id} workshopId={workshopId} />
+
         {!chat.customer_id ? (
           <NotLinked chat={chat} workshopId={workshopId} onPick={id => link(id)} onCreate={() => setCreating(true)} />
         ) : loading || !customer ? (

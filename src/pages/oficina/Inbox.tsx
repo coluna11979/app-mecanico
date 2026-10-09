@@ -14,6 +14,7 @@ import ChatAvatar from '@/components/inbox/ChatAvatar';
 import ChatView from '@/components/inbox/ChatView';
 import ClientPanel from '@/components/inbox/ClientPanel';
 import ConnectWhatsApp from '@/components/inbox/ConnectWhatsApp';
+import { useInboxMute } from '@/hooks/useInboxAlerts';
 
 type Filter = 'abertas' | 'aguardando' | 'nao_lidas' | 'concluidas' | 'todas';
 const FILTERS: { key: Filter; label: string }[] = [
@@ -41,6 +42,7 @@ export default function WorkshopInbox() {
   const [newOpen, setNewOpen] = useState<false | { id: string | null; name: string; phone: string }>(false);
   const [params, setParams] = useSearchParams();
   const [now, setNow] = useState(Date.now());
+  const mute = useInboxMute();
 
   // Relógio dos "aguardando há…"
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
@@ -189,6 +191,10 @@ export default function WorkshopInbox() {
                   <StatusChip status={status} phone={instance?.phone_number ?? null} loaded={instanceLoaded} />
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  <button type="button" onClick={mute.toggle} className="btn-ghost !py-1.5 !px-2 text-xs"
+                    title={mute.muted ? 'Som de mensagem nova desligado — clique para ligar' : 'Som de mensagem nova ligado — clique para silenciar'}>
+                    {mute.muted ? '🔕' : '🔔'}
+                  </button>
                   {connected && (
                     <button type="button" onClick={() => setNewOpen({ id: null, name: '', phone: '' })} className="btn-primary !py-1.5 !px-3 text-xs">+ Nova</button>
                   )}
