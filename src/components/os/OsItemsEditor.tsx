@@ -53,6 +53,11 @@ function withTypes(rs: Row[]): Row[] {
     return { ...r, stype: hasPart ? 'servico' : 'mao_de_obra' };
   });
 }
+/** Tipo efetivo do serviço: com peça logo abaixo (ou marcado "inclui peças") vale 4% sobre serviço + peças; senão é só mão de obra (10%) */
+function effType(r: Row, rs: Row[], g: Map<string, Row | null>): 'servico' | 'mao_de_obra' {
+  if (r.stype === 'servico') return 'servico';
+  return rs.some(x => x.kind === 'part' && g.get(x.key)?.key === r.key) ? 'servico' : 'mao_de_obra';
+}
 const initRows = (items: ServiceOrderItem[]): Row[] => withTypes(items.map(toRow));
 
 /** Valor do "Quem fez" para item feito por mecânico da plataforma (sem comissão da equipe) */
@@ -66,7 +71,6 @@ type TeamMember = { id: string; name: string; active: boolean; no_commission?: b
 type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
-const rowLabel = (r: Pick<Row, 'kind' | 'stype'>) => (r.kind === 'part' ? 'Peça' : r.stype === 'mao_de_obra' ? 'Mão de obra' : 'Serviço + peças');
 
 let keySeq = 0;
 const newKey = () => `new-${++keySeq}`;
@@ -179,7 +183,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       .map(x => ({ description: x.description, quantity: parseMoney(x.quantity), unit_price: parseMoney(x.unit_price || '0') }));
     const c = serviceCommission({
       service: { description: r.description, quantity: parseMoney(r.quantity), unit_price: parseMoney(r.unit_price || '0') },
-      parts, type: r.stype === 'mao_de_obra' ? 'mao_de_obra' : 'servico', who, brought: ownParts, rules: itemRules, pct: RULE,
+      parts, type: effType(r, rows, groups), who, brought: ownParts, rules: itemRules, pct: RULE,
     });
     return { who, value: c.value, base: c.base || 'item sem comissão pela regra da loja', typed: false };
   };
@@ -251,7 +255,17 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   function addRow(kind: OsItemKind | 'mao_de_obra') {
     setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
-      stype: kind === 'mao_de_obra' ? 'mao_de_obra' : kind === 'labor' ? 'servico' : '', comm: '' }]);
+      stype: kind === 'part' ? '' : 'mao_de_obra', comm: '' }]);
+  }
+  /** Peça já dentro de um serviço: entra logo abaixo dele (e das peças que ele já tem) */
+  function addPartTo(serviceKey: string) {
+    setRows(rs => {
+      const i = rs.findIndex(r => r.key === serviceKey);
+      let j = i + 1;
+      while (j < rs.length && rs[j].kind === 'part') j++;
+      const row: Row = { key: newKey(), kind: 'part', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: '', comm: '' };
+      return [...rs.slice(0, j), row, ...rs.slice(j)];
+    });
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
@@ -337,7 +351,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           const svc = grp.get(r.key);
           return svc && laborKeys.has(svc.key) ? idOf.get(svc.key)! : null;
         })(),
-        service_type: r.kind === 'labor' ? r.stype || 'servico' : null,
+        service_type: r.kind === 'labor' ? effType(r, rows, grp) : null,
         position: idx,
       }));
       const savedIds = new Set(rows.filter(r => r.id).map(r => r.id!));
@@ -381,27 +395,21 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         </div>
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
-            {!saleMode && (<>
-            <button type="button" onClick={() => addRow('labor')}
-              title="Valor fechado: serviço com as peças incluídas (ex.: troca de óleo completa). Comissão 4% sobre o total."
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
-              + Serviço + peças
-            </button>
-            <button type="button" onClick={() => addRow('mao_de_obra')}
-              title="Só o serviço, sem peça (ex.: alinhamento). Comissão 10%."
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 transition">
-              + Mão de obra
-            </button>
-            </>)}
+            {!saleMode && (
+              <button type="button" onClick={() => addRow('labor')}
+                className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
+                + Serviço
+              </button>
+            )}
             <button type="button" onClick={() => addRow('part')}
-              title="Opcional: detalhar uma peça ou vender peça avulsa"
+              title="Peça vendida avulsa, sem serviço"
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
-              + Peça
+              {saleMode ? '+ Peça' : '+ Peça avulsa'}
             </button>
             {showCost && (
               <button type="button" onClick={() => setQuick({ key: null, name: '', qty: 1 })}
                 className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
-                🔩 Cadastrar peça
+                🔩 Cadastrar peça no estoque
               </button>
             )}
           </div>
@@ -480,18 +488,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Tipo (cada lançamento = 1 item, como num cupom) */}
             <div className="col-span-6 md:col-span-2">
               <div className="text-[10px] font-bold text-steel-400 uppercase tracking-wider mb-0.5">Item {idx + 1}</div>
-              {readOnly ? (
-                <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{rowLabel(r)}</span>
-              ) : (
-                <select className="input !py-2 !px-2 text-sm" value={r.kind === 'part' ? 'part' : r.stype === 'mao_de_obra' ? 'mao_de_obra' : 'servico'}
-                  onChange={e => update(r.key, e.target.value === 'part'
-                    ? { kind: 'part', stype: '' }
-                    : { kind: 'labor', stype: e.target.value as 'servico' | 'mao_de_obra' })}>
-                  <option value="servico">Serviço + peças</option>
-                  <option value="mao_de_obra">Mão de obra</option>
-                  <option value="part">Peça</option>
-                </select>
-              )}
+              <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{r.kind === 'part' ? 'Peça' : 'Serviço'}</span>
             </div>
             {/* Ações (mobile: ao lado do tipo) */}
             {!readOnly && (
@@ -502,13 +499,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Descrição */}
             <div className="col-span-12 md:col-span-4">
               {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
-                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : r.stype === 'mao_de_obra' ? 'Ex.: Alinhamento' : 'Ex.: Troca de óleo completa (óleo + filtro)'}
+                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : 'Ex.: Troca de óleo, Alinhamento…'}
                   list={`os-items-sugg-${osId}`} value={r.description}
                   onChange={e => update(r.key, { description: e.target.value })} />
-              )}
-              {!readOnly && r.kind === 'labor' && r.stype !== 'mao_de_obra'
-                && !rows.some(x => x.kind === 'part' && groups.get(x.key)?.key === r.key) && (
-                <div className="text-[11px] text-steel-500 mt-1">💡 Valor fechado, peças incluídas · comissão 4% do total. Detalhar as peças é opcional.</div>
               )}
               {!readOnly && r.kind === 'part' && !r.part_id && !r.description.trim() && showCost && (
                 <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
@@ -620,16 +613,34 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 })()}
               </div>
             )}
+            {/* Serviço: adicionar as peças dele, ou dizer que o valor já inclui tudo */}
+            {!readOnly && r.kind === 'labor' && (() => {
+              const hasParts = rows.some(x => x.kind === 'part' && groups.get(x.key)?.key === r.key);
+              return (
+                <div className="col-span-12 -mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                  <button type="button" onClick={() => addPartTo(r.key)} className="font-semibold text-brand-700 hover:underline">
+                    + Peça deste serviço
+                  </button>
+                  {!hasParts && (
+                    <label className="flex items-center gap-1.5 text-steel-500 cursor-pointer" title="Marque se o valor já inclui as peças (ex.: troca de óleo completa). Muda a comissão: 4% sobre o total em vez de 10% sobre a mão de obra.">
+                      <input type="checkbox" checked={r.stype === 'servico'}
+                        onChange={e => update(r.key, { stype: e.target.checked ? 'servico' : 'mao_de_obra' })} />
+                      O valor já inclui as peças
+                    </label>
+                  )}
+                </div>
+              );
+            })()}
             {/* Peça: pertence ao serviço logo acima (a comissão segue quem fez esse serviço) */}
             {r.kind === 'part' && rows.some(x => x.kind === 'labor') && (() => {
               const svc = groups.get(r.key);
               return svc ? (
                 <div className="col-span-12 -mt-1 text-xs text-steel-500">
-                  ↳ peça {svc.stype === 'mao_de_obra' ? 'da mão de obra' : 'do serviço'} <strong className="text-steel-700">{svc.description.trim() || 'sem nome'}</strong> · {whoLabel(svc)}
+                  ↳ peça do serviço <strong className="text-steel-700">{svc.description.trim() || 'sem nome'}</strong> · {whoLabel(svc)}
                 </div>
               ) : (
                 <div className="col-span-12 -mt-1 text-xs text-pending-800">
-                  ⚠️ Peça fora de um serviço — use as setas ↑↓ para colocá-la logo abaixo do serviço em que foi usada.
+                  ⚠️ Peça fora de um serviço — use as setas ↑↓ para colocá-la logo abaixo do serviço em que foi usada (ou use “+ Peça deste serviço”).
                 </div>
               );
             })()}
@@ -645,7 +656,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         <div className="px-5 pb-6 pt-2 text-center">
           <div className="text-3xl mb-1">🧾</div>
           <p className="text-sm text-steel-500">
-            {readOnly ? 'Nenhum item nesta OS.' : 'Use “+ Serviço + peças” para lançar o serviço com as peças num valor só (ex.: troca de óleo completa). Peça separada é opcional.'}
+            {readOnly ? 'Nenhum item nesta OS.' : 'Comece por “+ Serviço” (ex.: troca de óleo). Depois, em “+ Peça deste serviço”, inclua as peças usadas — ou marque que o valor já inclui tudo.'}
           </p>
         </div>
       )}
