@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModuleAllows } from '@/lib/modules';
+import { sessionAllows, useOperator } from '@/lib/operators';
 
 /* ── Inbox do WhatsApp da oficina (módulo opcional `inbox`) ──────────────────── */
 
@@ -176,4 +177,12 @@ export function useInboxSender() {
   }
 
   return { ready, send };
+}
+
+/** Quem está usando pode abrir o Inbox? (módulo ligado + no modo balcão, Gestor ou permissão "WhatsApp da oficina") */
+export function useInboxAccess() {
+  const allows = useModuleAllows();
+  const op = useOperator();
+  const session = op.balcao ? op.session : null;
+  return allows('/oficina/inbox') && (!session || sessionAllows(session, '/oficina/inbox'));
 }
