@@ -58,6 +58,12 @@ export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, w
   const [mechFilter, setMechFilter] = useState('');
   const [wa, setWa] = useState<Row | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
+  // Painel em lista ou em colunas (só no computador); fica guardado no aparelho
+  const [view, setViewState] = useState<'lista' | 'colunas'>(() => {
+    try { return localStorage.getItem('checkup_view') === 'colunas' ? 'colunas' : 'lista'; } catch { return 'lista'; }
+  });
+  const setView = (v: 'lista' | 'colunas') => { setViewState(v); try { localStorage.setItem('checkup_view', v); } catch { /* sem localStorage */ } };
+  const wide = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
 
   const rows = useMemo(() => (list ?? []).map(rowOf), [list]);
   const k = useMemo(() => kpisOf(rows, scheduled, period), [rows, scheduled, period]);
@@ -141,9 +147,24 @@ export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, w
             </section>
           )}
 
-          <CheckupList rows={rows} scheduled={scheduled} filter={filter} onFilter={setFilter}
-            approvedIds={k.approvedIds} period={period} limit={PANEL_LIMIT} starting={starting}
-            onAct={act} onMore={() => onTab('inspecoes')} onSchedule={onSchedule} onNew={onNew} />
+          <div className="hidden md:flex justify-end -mb-1">
+            <div className="flex rounded-xl border border-steel-200 bg-white p-0.5">
+              {(['lista', 'colunas'] as const).map(v => (
+                <button key={v} type="button" onClick={() => setView(v)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${view === v ? 'bg-steel-900 text-white' : 'text-steel-600 hover:bg-steel-50'}`}>
+                  {v === 'lista' ? '☰ Lista' : '▥ Colunas'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {view === 'colunas' && wide ? (
+            <CheckupBoard rows={rows} scheduled={scheduled} starting={starting} onAct={act} onMore={() => onTab('inspecoes')} />
+          ) : (
+            <CheckupList rows={rows} scheduled={scheduled} filter={filter} onFilter={setFilter}
+              approvedIds={k.approvedIds} period={period} limit={PANEL_LIMIT} starting={starting}
+              onAct={act} onMore={() => onTab('inspecoes')} onSchedule={onSchedule} onNew={onNew} />
+          )}
         </>
       ) : tab === 'inspecoes' ? (
         <>
@@ -450,5 +471,172 @@ function ModelsSoon() {
       </div>
       <p className="text-[11px] text-steel-400">Modelos criados pela própria oficina (com itens seus): em breve.</p>
     </section>
+  );
+}
+
+/* ─── Quadro em colunas (como o Comercial): do agendamento à resposta do cliente ── */
+
+type ColKey = 'agendados' | 'rampa' | 'enviar' | 'aguardando' | 'finalizados';
+const BOARD_COLS: { key: ColKey; title: string; bar: string; empty: string; situations?: Situation[] }[] = [
+  { key: 'agendados',   title: '📅 Agendados',         bar: 'bg-steel-400',   empty: 'Nenhum check-up agendado' },
+  { key: 'rampa',       title: '🔧 Na rampa',          bar: 'bg-brand-500',   empty: 'Nenhum carro em inspeção', situations: ['nao_iniciado', 'inspecionando'] },
+  { key: 'enviar',      title: '📝 Falta enviar',      bar: 'bg-pending-500', empty: 'Nada esperando envio',     situations: ['falta_enviar'] },
+  { key: 'aguardando',  title: '⏳ Aguardando cliente', bar: 'bg-sky-500',     empty: 'Ninguém aguardando',       situations: ['enviado', 'cliente_viu'] },
+  { key: 'finalizados', title: '✅ Finalizados',       bar: 'bg-signal-500',  empty: 'Nenhum finalizado',        situations: ['aprovado', 'respondido'] },
+];
+/** Finalizados são muitos: mostra os mais recentes e o resto fica em Inspeções/Histórico */
+const DONE_SHOWN = 15;
+
+/** Valor orçado (itens 🟡/🔴) e aprovado pelo cliente */
+function quoteOf(r: Row) {
+  const flagged = r.c.items.filter(i => i.status === 'warn' || i.status === 'urgent');
+  const quoted = flagged.reduce((a, i) => a + itemQuote(i), 0);
+  const approved = flagged.filter(i => i.customer_decision === 'approve').reduce((a, i) => a + itemQuote(i), 0);
+  return { quoted, approved };
+}
+const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function CheckupBoard({ rows, scheduled, starting, onAct, onMore }: {
+  rows: Row[]; scheduled: ScheduledOs[]; starting: string | null;
+  onAct: (a: Action, r?: Row, os?: ScheduledOs) => void; onMore: () => void;
+}) {
+  return (
+    <div className="grid grid-flow-col auto-cols-[minmax(196px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+      {BOARD_COLS.map(col => {
+        if (col.key === 'agendados') {
+          const list = [...scheduled].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+          return (
+            <BoardColumn key={col.key} title={col.title} bar={col.bar} n={list.length} empty={col.empty}>
+              {list.map(o => <BoardScheduled key={o.id} o={o} busy={starting === o.id} onStart={() => onAct('iniciar', undefined, o)} />)}
+            </BoardColumn>
+          );
+        }
+        const all = rows.filter(r => col.situations!.includes(r.situation))
+          .sort((a, b) => col.key === 'finalizados' ? b.since.localeCompare(a.since) : a.since.localeCompare(b.since));
+        const shown = col.key === 'finalizados' ? all.slice(0, DONE_SHOWN) : all;
+        const value = col.key === 'aguardando' ? all.reduce((s, r) => s + quoteOf(r).quoted, 0)
+          : col.key === 'finalizados' ? shown.reduce((s, r) => s + quoteOf(r).approved, 0) : null;
+        return (
+          <BoardColumn key={col.key} title={col.title} bar={col.bar} n={all.length} empty={col.empty}
+            value={value} valueHint={col.key === 'aguardando' ? 'orçado' : col.key === 'finalizados' ? 'aprovado' : undefined}>
+            {shown.map(r => <BoardCard key={r.c.id} r={r} onAct={a => onAct(a, r)} />)}
+            {all.length > shown.length && (
+              <button type="button" onClick={onMore} className="w-full py-2 text-xs font-semibold text-steel-500 hover:text-steel-800">
+                + {all.length - shown.length} — ver em Inspeções
+              </button>
+            )}
+          </BoardColumn>
+        );
+      })}
+    </div>
+  );
+}
+
+function BoardColumn({ title, bar, n, empty, value, valueHint, children }: {
+  title: string; bar: string; n: number; empty: string; value?: number | null; valueHint?: string; children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col rounded-2xl bg-steel-100/70 h-[calc(100vh-450px)] min-h-[340px] overflow-hidden">
+      <div className={`h-1 ${bar}`} />
+      <header className="px-3.5 pt-3 pb-2.5">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-bold text-steel-800 truncate">{title}</h3>
+          <span className="ml-auto h-5 min-w-5 px-1.5 rounded-full bg-white text-[11px] font-bold text-steel-600 grid place-items-center shadow-sm">{n}</span>
+        </div>
+        {value != null && (
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-base font-bold text-steel-900 tabular-nums">{brl(value)}</span>
+            <span className="text-[10px] text-steel-400">{valueHint}</span>
+          </div>
+        )}
+      </header>
+      <div className="flex-1 min-h-0 px-2 pb-2 space-y-2 overflow-y-auto [scrollbar-width:thin]">
+        {n === 0 ? (
+          <div className="h-20 rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-3 text-center">
+            <span className="text-xs text-steel-400">{empty}</span>
+          </div>
+        ) : children}
+      </div>
+    </section>
+  );
+}
+
+const boardCard = 'rounded-xl bg-white border border-steel-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-steel-300 hover:shadow-md transition';
+
+function BoardCard({ r, onAct }: { r: Row; onAct: (a: Action) => void }) {
+  const { c, counts } = r;
+  const draft = c.status === 'draft';
+  const q = quoteOf(r);
+  const strong = r.action !== 'ver' && r.action !== 'abrir_os' && r.action !== 'abrir_novo';
+  return (
+    <div className={boardCard}>
+      <button type="button" onClick={() => onAct(r.action === 'whatsapp' ? 'ver' : r.action)} className="block w-full text-left p-3">
+        <div className="flex items-start gap-2">
+          <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{carOf(c)}</p>
+          {c.plate && <span className="shrink-0 text-[10px] font-bold tracking-wide px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">{c.plate}</span>}
+        </div>
+        <p className="text-xs text-steel-500 truncate mt-0.5">
+          {[c.customer_name, c.mechanic?.name ? `🔧 ${c.mechanic.name.split(' ')[0]}` : '🔧 sem responsável'].filter(Boolean).join(' · ')}
+        </p>
+        {draft ? (
+          <div className="flex items-center gap-2 mt-2">
+            <div className="h-1.5 flex-1 rounded-full bg-steel-100 overflow-hidden">
+              <div className="h-full bg-brand-500" style={{ width: `${counts.progress}%` }} />
+            </div>
+            <span className="text-[10px] font-semibold text-steel-500 shrink-0">{counts.answered}/{counts.total}</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <span className="text-[11px] text-steel-600 flex gap-2">
+              <span title="OK">🟢 {counts.ok}</span><span title="Atenção">🟡 {counts.warn}</span><span title="Urgente">🔴 {counts.urgent}</span>
+            </span>
+            {(r.situation === 'aprovado' ? q.approved : q.quoted) > 0 && (
+              <span className="text-sm font-bold text-steel-900 tabular-nums">{brl(r.situation === 'aprovado' ? q.approved : q.quoted)}</span>
+            )}
+          </div>
+        )}
+        <p className={`text-[10px] mt-1.5 ${r.situation === 'falta_enviar' && r.noPrice ? 'text-pending-700 font-semibold' : 'text-steel-400'}`}>
+          {sinceLabel(r)}{r.situation === 'falta_enviar' && r.noPrice > 0 ? ` · ${r.noPrice} sem preço` : ''}
+        </p>
+      </button>
+      {strong && (
+        <div className="border-t border-steel-100 px-2 py-1.5 flex justify-end">
+          <button type="button" onClick={() => onAct(r.action)}
+            className={`text-[11px] font-bold px-2.5 py-1 rounded-md transition ${r.action === 'whatsapp'
+              ? 'text-emerald-700 hover:bg-emerald-50' : 'text-brand-700 hover:bg-brand-50'}`}>
+            {r.action === 'whatsapp' ? '💬 ' : ''}{ACTION_LABEL[r.action]} →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BoardScheduled({ o, busy, onStart }: { o: ScheduledOs; busy: boolean; onStart: () => void }) {
+  const when = new Date(o.scheduled_at);
+  const today = new Date().toDateString() === when.toDateString();
+  const late = when.getTime() < Date.now();
+  return (
+    <div className={boardCard}>
+      <div className="p-3">
+        <div className="flex items-start gap-2">
+          <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{carOf(o.vehicle)}</p>
+          {o.vehicle?.plate && <span className="shrink-0 text-[10px] font-bold tracking-wide px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">{o.vehicle.plate}</span>}
+        </div>
+        <p className="text-xs text-steel-500 truncate mt-0.5">
+          {[o.customer?.full_name, o.mechanic?.name ? `🔧 ${o.mechanic.name.split(' ')[0]}` : '🔧 sem responsável'].filter(Boolean).join(' · ')}
+        </p>
+        <p className={`text-xs font-semibold mt-2 ${late ? 'text-alert-600' : today ? 'text-brand-600' : 'text-steel-600'}`}>
+          📅 {today ? 'Hoje' : when.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+          {' às '}{when.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{late && ' · atrasado'}
+        </p>
+      </div>
+      <div className="border-t border-steel-100 px-2 py-1.5 flex justify-end">
+        <button type="button" onClick={onStart} disabled={busy}
+          className="text-[11px] font-bold px-2.5 py-1 rounded-md text-brand-700 hover:bg-brand-50 disabled:opacity-50">
+          {busy ? 'Abrindo…' : 'Iniciar →'}
+        </button>
+      </div>
+    </div>
   );
 }
