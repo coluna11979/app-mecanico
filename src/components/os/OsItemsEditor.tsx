@@ -61,8 +61,8 @@ function effType(r: Row, rs: Row[], g: Map<string, Row | null>): 'servico' | 'ma
 const initRows = (items: ServiceOrderItem[]): Row[] => withTypes(items.map(toRow));
 
 /** Valor do "Quem fez" para item feito por mecânico da plataforma (sem comissão da equipe) */
-const PLATFORM_ITEM = 'platform';
-const whoPatch = (v: string) => (v === PLATFORM_ITEM
+export const PLATFORM_ITEM = 'platform';
+export const whoPatch = (v: string) => (v === PLATFORM_ITEM
   ? { workshop_mechanic_id: null, executor: 'platform' }
   : { workshop_mechanic_id: v || null, executor: v ? 'workshop' : null });
 
