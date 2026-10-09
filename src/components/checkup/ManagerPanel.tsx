@@ -501,7 +501,7 @@ function CheckupBoard({ rows, scheduled, starting, onAct, onMore }: {
   onAct: (a: Action, r?: Row, os?: ScheduledOs) => void; onMore: () => void;
 }) {
   return (
-    <div className="grid grid-flow-col auto-cols-[minmax(232px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+    <div className="grid grid-flow-col auto-cols-[minmax(196px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
       {BOARD_COLS.map(col => {
         if (col.key === 'agendados') {
           const list = [...scheduled].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
@@ -536,7 +536,7 @@ function BoardColumn({ title, bar, n, empty, value, valueHint, children }: {
   title: string; bar: string; n: number; empty: string; value?: number | null; valueHint?: string; children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col rounded-2xl bg-steel-100/70 min-h-[440px] overflow-hidden">
+    <section className="flex flex-col rounded-2xl bg-steel-100/70 h-[calc(100vh-450px)] min-h-[340px] overflow-hidden">
       <div className={`h-1 ${bar}`} />
       <header className="px-3.5 pt-3 pb-2.5">
         <div className="flex items-center gap-2">
@@ -550,9 +550,9 @@ function BoardColumn({ title, bar, n, empty, value, valueHint, children }: {
           </div>
         )}
       </header>
-      <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto max-h-[64vh] [scrollbar-width:thin]">
+      <div className="flex-1 min-h-0 px-2 pb-2 space-y-2 overflow-y-auto [scrollbar-width:thin]">
         {n === 0 ? (
-          <div className="h-full min-h-[120px] rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-4 text-center">
+          <div className="h-20 rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-3 text-center">
             <span className="text-xs text-steel-400">{empty}</span>
           </div>
         ) : children}
