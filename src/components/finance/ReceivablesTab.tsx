@@ -4,11 +4,15 @@ import { brl } from '@/lib/cash';
 import { osNumber } from '@/components/os/osHelpers';
 import type { receivables } from '@/lib/finance';
 import WhatsAppButton from '@/components/inbox/WhatsAppButton';
+import ReceiveOsModal, { RECEIVE_OS_SELECT, type ReceiveOs } from '@/components/cash/ReceiveOsModal';
+import { supabase } from '@/lib/supabase';
+import { toast } from '@/components/ui/Toast';
+import type { WorkshopMechanic } from '@/types/database';
 
 /**
  * Financeiro → "OS a receber": todas as OS concluídas com saldo em aberto, inclusive as combinadas
  * para "Pagar depois". Filtra por situação, busca por cliente/placa/nº e leva direto ao Caixa
- * para receber (ou ao WhatsApp para lembrar o cliente).
+ * Receber abre o recebimento aqui mesmo (data e formas de pagamento), igual ao do Caixa.
  */
 
 type Rec = ReturnType<typeof receivables>;
@@ -28,9 +32,29 @@ function dueText(r: Row) {
   return r.dueIn === 0 ? 'vence hoje' : `vence ${br(r.os.pay_later_due!)}`;
 }
 
-export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Rec; firstOpen: string | null; shopName?: string }) {
+/** Receber aqui mesmo: quem é e o que pode no caixa */
+type ReceiveCtx = { wid: string; sid: string | null; canDiscount: boolean; onReceived: () => void };
+
+export default function ReceivablesTab({ data, firstOpen, shopName, receive }: {
+  data: Rec; firstOpen: string | null; shopName?: string; receive?: ReceiveCtx;
+}) {
   const [filter, setFilter] = useState<Filter>('todas');
   const [q, setQ] = useState('');
+  const [picked, setPicked] = useState<{ os: ReceiveOs; team: WorkshopMechanic[]; cashOpen: boolean } | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+
+  async function openReceive(id: string) {
+    if (!receive) return;
+    setOpening(id);
+    const [o, m, r] = await Promise.all([
+      supabase.from('service_orders').select(RECEIVE_OS_SELECT).eq('id', id).maybeSingle(),
+      supabase.from('workshop_mechanics').select('*').eq('workshop_id', receive.wid).neq('status', 'terminated').order('name'),
+      supabase.from('cash_registers').select('id').eq('workshop_id', receive.wid).eq('status', 'open').limit(1),
+    ]);
+    setOpening(null);
+    if (!o.data) return toast.error('Não consegui abrir essa OS');
+    setPicked({ os: o.data as unknown as ReceiveOs, team: (m.data as WorkshopMechanic[]) ?? [], cashOpen: (r.data ?? []).length > 0 });
+  }
 
   const rows = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -121,7 +145,13 @@ export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Re
                       <WhatsAppButton phone={phone} text={waText(r)} customerName={o.customer?.full_name} title="Lembrar o pagamento"
                         className="btn-secondary text-xs !px-2.5 !py-1.5">💬 Cobrar</WhatsAppButton>
                     )}
-                    <Link to={`/oficina/caixa?os=${o.id}`} className="btn-primary text-xs !px-2.5 !py-1.5">💰 Receber</Link>
+                    {receive ? (
+                      <button onClick={() => openReceive(o.id)} disabled={opening === o.id} className="btn-primary text-xs !px-2.5 !py-1.5">
+                        {opening === o.id ? 'Abrindo…' : '💰 Receber'}
+                      </button>
+                    ) : (
+                      <Link to={`/oficina/caixa?os=${o.id}`} className="btn-primary text-xs !px-2.5 !py-1.5">💰 Receber</Link>
+                    )}
                   </div>
                 </li>
               );
@@ -134,6 +164,13 @@ export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Re
           </p>
         )}
       </div>
+
+      {picked && receive && (
+        <ReceiveOsModal os={picked.os} wid={receive.wid} sid={receive.sid} canDiscount={receive.canDiscount} team={picked.team}
+          cashClosed={!picked.cashOpen}
+          onClose={() => setPicked(null)}
+          onDone={() => { setPicked(null); receive.onReceived(); }} />
+      )}
     </div>
   );
 }

@@ -57,6 +57,8 @@ export default function Financeiro() {
   const [payables, setPayables] = useState<FinPayable[]>([]);
   const [costItems, setCostItems] = useState<CostItem[]>([]);
   const [loading, setLoading]   = useState(true);
+  /** Recebeu uma OS aqui: recarrega os números sem piscar a tela */
+  const [reloadKey, setReloadKey] = useState(0);
 
   const prev = useMemo(() => previousRange(range), [range]);
   // Movimentos: do início do período anterior (comparação) até o fim do atual
@@ -67,7 +69,7 @@ export default function Financeiro() {
     if (!wid || !allowed) return;
     let alive = true;
     (async () => {
-      setLoading(true);
+      if (!reloadKey) setLoading(true);
       const [e, p, r, o, first, ci, pay] = await Promise.all([
         fetchAll((a, b) => supabase.from('cash_entries')
           .select('id, kind, method, amount, installments, category, mechanic_id, created_at')
@@ -107,7 +109,7 @@ export default function Financeiro() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [wid, allowed, fromIso, toIso]);
+  }, [wid, allowed, fromIso, toIso, reloadKey]);
 
   const f = useMemo(() => {
     /** Faturado, custo das peças vendidas, saídas e resultado de um intervalo */
@@ -212,7 +214,11 @@ export default function Financeiro() {
         {tab === 'receber' ? (
           loading
             ? <div className="h-40 bg-white rounded-2xl animate-pulse" />
-            : <ReceivablesTab data={f.toReceive} firstOpen={firstOpen} shopName={currentWorkshop?.business_name} />
+            : <ReceivablesTab data={f.toReceive} firstOpen={firstOpen} shopName={currentWorkshop?.business_name}
+                receive={wid && canOpen('/oficina/caixa') ? {
+                  wid, sid: balcao ? session?.session_id ?? null : null, canDiscount: canDo(session, balcao, 'dar_desconto'),
+                  onReceived: () => setReloadKey(k => k + 1),
+                } : undefined} />
         ) : loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-28 bg-white rounded-2xl animate-pulse" />)}
