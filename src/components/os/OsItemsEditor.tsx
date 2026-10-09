@@ -121,10 +121,12 @@ interface Props {
   customerBroughtParts?: boolean;
   /** Venda de peças no balcão: só peças, sem serviço/mão de obra nem "cliente trouxe a peça" */
   saleMode?: boolean;
+  /** OS ainda sendo montada (aberta/aprovação/aprovada): ninguém executou nada, então não pergunta "Quem fez" */
+  planning?: boolean;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -559,7 +561,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               </div>
             )}
             {/* Quem fez (comissão) — só em serviço; peça conta para o responsável da OS */}
-            {showWho && r.kind === 'labor' && (
+            {showWho && !planning && r.kind === 'labor' && (
               <div className="col-span-12 -mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                 <span className="text-steel-500 shrink-0">🔧 Quem fez:</span>
                 {canAssign && (!readOnly || r.id) ? (

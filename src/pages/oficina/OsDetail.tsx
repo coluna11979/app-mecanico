@@ -640,6 +640,7 @@ export default function OsDetail() {
               canAssign={canDo(session, balcao, 'caixa')}
               customerBroughtParts={!!os.customer_brought_parts}
               saleMode={isSale}
+              planning={['open', 'awaiting_approval', 'approved'].includes(os.status)}
               osLabel={`OS nº ${os.number != null ? String(os.number).padStart(4, '0') : os.id.slice(0, 8)}`}
               onSaved={load}
             />}
