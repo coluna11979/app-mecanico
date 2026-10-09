@@ -15,6 +15,7 @@ import OsItemsEditor from '@/components/os/OsItemsEditor';
 import OsEditModal from '@/components/os/OsEditModal';
 import ScheduleOsModal from '@/components/os/ScheduleOsModal';
 import ResponsibleTimers from '@/components/os/ResponsibleTimers';
+import ServiceAssign from '@/components/os/ServiceAssign';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
 import PaymentsList from '@/components/cash/PaymentsList';
@@ -347,6 +348,13 @@ export default function OsDetail() {
   /** Venda de peças no balcão (Caixa → Venda de peças): tela enxuta, sem fluxo de serviço */
   const isSale = os.source === 'balcao';
   const canOpen = (path: string) => modAllows(path) && (!balcao || !session || sessionAllows(session, path));
+  // Painel do mecânico: só os serviços dele (os sem responsável ficam com o da OS) e as peças desses serviços
+  const myItems = (() => {
+    if (!mech || !access.mechanicId) return items;
+    const mineSvc = new Set(items.filter(i => i.kind === 'labor' && i.executor !== 'platform'
+      && (i.workshop_mechanic_id ?? os.workshop_mechanic_id) === access.mechanicId).map(i => i.id));
+    return items.filter(i => (i.kind === 'labor' ? mineSvc.has(i.id) : !!i.used_in_item_id && mineSvc.has(i.used_in_item_id)));
+  })();
   const perService = items.some(i => i.kind === 'labor' && (i.executor === 'platform' || i.workshop_mechanic_id));
   const noResponsible = responsibleOf(os) === '' && !perService;
   const moreActions: MoreItem[] = mech ? [
@@ -606,11 +614,16 @@ export default function OsDetail() {
                     pauses={os.pauses} estimatedHours={os.estimated_hours} mechanicName={os.mechanic?.name} />
                 )}
   
+                {/* Depois de aprovada: a gestão distribui os serviços */}
+                {!mech && canDo(session, balcao, 'caixa') && ['approved', 'in_progress'].includes(os.status) && (
+                  <ServiceAssign items={items} team={team} osMechanicId={os.workshop_mechanic_id} onChanged={load} />
+                )}
+
                 {/* Relógio por responsável (cada um inicia/pausa/termina a sua parte) */}
                 {['approved', 'in_progress', 'completed'].includes(os.status) && (
                   <ResponsibleTimers key={`${os.id}-${items.map(i => `${i.id}${i.executor}${i.workshop_mechanic_id}`).join()}`}
                     osId={os.id} status={os.status} items={items} team={team}
-                    osMechanicId={os.workshop_mechanic_id} osExecutor={os.executor} readOnly={os.status === 'completed'}
+                    osMechanicId={os.workshop_mechanic_id} osExecutor={os.executor} readOnly={os.status === 'completed'} onlyMechanicId={mech ? access.mechanicId : null}
                     onStartOs={() => changeStatus('in_progress', { skipConfirm: true })}
                     onAllDone={() => changeStatus('completed')} />
                 )}
@@ -637,7 +650,7 @@ export default function OsDetail() {
               );
             })()}
 
-            {mech ? <MechanicItems items={items} /> : <OsItemsEditor
+            {mech ? <MechanicItems items={myItems} /> : <OsItemsEditor
               osId={os.id}
               workshopId={os.workshop_id}
               items={items}
@@ -649,6 +662,7 @@ export default function OsDetail() {
               canAssign={canDo(session, balcao, 'caixa')}
               customerBroughtParts={!!os.customer_brought_parts}
               saleMode={isSale}
+              planning={os.status !== 'completed'}
               osLabel={`OS nº ${os.number != null ? String(os.number).padStart(4, '0') : os.id.slice(0, 8)}`}
               onSaved={load}
             />}

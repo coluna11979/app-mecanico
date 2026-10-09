@@ -20,12 +20,14 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: 
  * a sua parte da OS. Os responsáveis vêm dos serviços da OS ("Quem fez").
  * O primeiro a iniciar coloca a OS "Em andamento"; quando todos terminam, sugere concluir a OS.
  */
-export default function ResponsibleTimers({ osId, status, items, team, osMechanicId, osExecutor, readOnly, onStartOs, onAllDone }: {
+export default function ResponsibleTimers({ osId, status, items, team, osMechanicId, osExecutor, readOnly, onlyMechanicId, onStartOs, onAllDone }: {
   osId: string; status: string;
   items: Pick<ServiceOrderItem, 'kind' | 'description' | 'executor' | 'workshop_mechanic_id'>[];
   team: { id: string; name: string }[];
   osMechanicId: string | null; osExecutor: 'workshop' | 'platform' | null | undefined;
   readOnly?: boolean;
+  /** Painel do mecânico: mostra só o relógio dele (sem os dos colegas nem o "Concluir OS") */
+  onlyMechanicId?: string | null;
   onStartOs: () => Promise<void> | void;
   onAllDone: () => void;
 }) {
@@ -65,8 +67,11 @@ export default function ResponsibleTimers({ osId, status, items, team, osMechani
       g.services.push(i.description);
       map.set(k, g);
     }
-    return { groups: [...map.values()], unassigned };
-  }, [items, osMechanicId, osExecutor, name]);
+    const all = [...map.values()];
+    return onlyMechanicId
+      ? { groups: all.filter(g => g.mechanicId === onlyMechanicId), unassigned: 0 }
+      : { groups: all, unassigned };
+  }, [items, osMechanicId, osExecutor, name, onlyMechanicId]);
 
   const stateOf = (g: Group) => {
     const mine = (logs ?? []).filter(l => keyOf(l) === g.key);
@@ -109,7 +114,7 @@ export default function ResponsibleTimers({ osId, status, items, team, osMechani
   }
 
   if (logs === null || (!groups.length && !unassigned)) return null;
-  const allDone = groups.length > 0 && !unassigned && groups.every(g => stateOf(g).finished);
+  const allDone = !onlyMechanicId && groups.length > 0 && !unassigned && groups.every(g => stateOf(g).finished);
 
   return (
     <div className="mt-4 rounded-xl border border-steel-200 divide-y divide-steel-100">
@@ -163,7 +168,7 @@ export default function ResponsibleTimers({ osId, status, items, team, osMechani
       })}
       {unassigned > 0 && (
         <div className="px-4 py-2.5 text-xs text-pending-800 bg-pending-50">
-          {unassigned === 1 ? '1 serviço está' : `${unassigned} serviços estão`} sem responsável — escolha em “Quem fez” para ter o relógio dele.
+          {unassigned === 1 ? '1 serviço está' : `${unassigned} serviços estão`} sem responsável — escolha em “Quem vai fazer” para ter o relógio dele.
         </div>
       )}
       {allDone && status !== 'completed' && !readOnly && (

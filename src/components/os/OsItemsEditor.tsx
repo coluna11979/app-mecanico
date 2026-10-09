@@ -42,6 +42,18 @@ function groupOf(rs: Row[]): Map<string, Row | null> {
   return g;
 }
 
+/** Item da OS = um serviço com as peças dele (ou uma peça avulsa, quando não há serviço) */
+type Block = { svc: Row | null; parts: Row[] };
+function buildBlocks(rs: Row[], g: Map<string, Row | null>): Block[] {
+  const out: Block[] = [];
+  for (const r of rs) {
+    if (r.kind === 'labor') out.push({ svc: r, parts: rs.filter(x => x.kind === 'part' && g.get(x.key)?.key === r.key) });
+    else if (!g.get(r.key)) out.push({ svc: null, parts: [r] });
+  }
+  return out;
+}
+const blockKey = (b: Block) => (b.svc ?? b.parts[0]).key;
+
 /** Serviço sem tipo (OS antiga): com peça logo abaixo vira "Serviço", sem peça vira "Mão de obra" */
 function withTypes(rs: Row[]): Row[] {
   return rs.map((r, i) => {
@@ -53,11 +65,16 @@ function withTypes(rs: Row[]): Row[] {
     return { ...r, stype: hasPart ? 'servico' : 'mao_de_obra' };
   });
 }
+/** Tipo efetivo do serviço: com peça logo abaixo (ou marcado "inclui peças") vale 4% sobre serviço + peças; senão é só mão de obra (10%) */
+function effType(r: Row, rs: Row[], g: Map<string, Row | null>): 'servico' | 'mao_de_obra' {
+  if (r.stype === 'servico') return 'servico';
+  return rs.some(x => x.kind === 'part' && g.get(x.key)?.key === r.key) ? 'servico' : 'mao_de_obra';
+}
 const initRows = (items: ServiceOrderItem[]): Row[] => withTypes(items.map(toRow));
 
 /** Valor do "Quem fez" para item feito por mecânico da plataforma (sem comissão da equipe) */
-const PLATFORM_ITEM = 'platform';
-const whoPatch = (v: string) => (v === PLATFORM_ITEM
+export const PLATFORM_ITEM = 'platform';
+export const whoPatch = (v: string) => (v === PLATFORM_ITEM
   ? { workshop_mechanic_id: null, executor: 'platform' }
   : { workshop_mechanic_id: v || null, executor: v ? 'workshop' : null });
 
@@ -66,7 +83,6 @@ type TeamMember = { id: string; name: string; active: boolean; no_commission?: b
 type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
-const rowLabel = (r: Pick<Row, 'kind' | 'stype'>) => (r.kind === 'part' ? 'Peça' : r.stype === 'mao_de_obra' ? 'Mão de obra' : 'Serviço + peças');
 
 let keySeq = 0;
 const newKey = () => `new-${++keySeq}`;
@@ -117,10 +133,12 @@ interface Props {
   customerBroughtParts?: boolean;
   /** Venda de peças no balcão: só peças, sem serviço/mão de obra nem "cliente trouxe a peça" */
   saleMode?: boolean;
+  /** OS ainda sendo montada (aberta/aprovação/aprovada): ninguém executou nada, então não pergunta "Quem fez" */
+  planning?: boolean;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -157,6 +175,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const whoLabel = (r: Row) => r.mechanic_id === PLATFORM_ITEM ? '🌐 plataforma'
     : (r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'responsável da OS';
   const groups = useMemo(() => groupOf(rows), [rows]);
+  const blocks = useMemo(() => buildBlocks(rows, groups), [rows, groups]);
 
   /** OS fechada: troca quem fez direto no item (a caixa acerta a comissão na hora de receber) */
   async function assign(r: Row, mechanicId: string) {
@@ -179,7 +198,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       .map(x => ({ description: x.description, quantity: parseMoney(x.quantity), unit_price: parseMoney(x.unit_price || '0') }));
     const c = serviceCommission({
       service: { description: r.description, quantity: parseMoney(r.quantity), unit_price: parseMoney(r.unit_price || '0') },
-      parts, type: r.stype === 'mao_de_obra' ? 'mao_de_obra' : 'servico', who, brought: ownParts, rules: itemRules, pct: RULE,
+      parts, type: effType(r, rows, groups), who, brought: ownParts, rules: itemRules, pct: RULE,
     });
     return { who, value: c.value, base: c.base || 'item sem comissão pela regra da loja', typed: false };
   };
@@ -251,7 +270,17 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   function addRow(kind: OsItemKind | 'mao_de_obra') {
     setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
-      stype: kind === 'mao_de_obra' ? 'mao_de_obra' : kind === 'labor' ? 'servico' : '', comm: '' }]);
+      stype: kind === 'part' ? '' : 'mao_de_obra', comm: '' }]);
+  }
+  /** Peça já dentro de um serviço: entra logo abaixo dele (e das peças que ele já tem) */
+  function addPartTo(serviceKey: string) {
+    setRows(rs => {
+      const i = rs.findIndex(r => r.key === serviceKey);
+      let j = i + 1;
+      while (j < rs.length && rs[j].kind === 'part') j++;
+      const row: Row = { key: newKey(), kind: 'part', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: '', comm: '' };
+      return [...rs.slice(0, j), row, ...rs.slice(j)];
+    });
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
@@ -278,29 +307,37 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       return next;
     }));
   }
-  function remove(key: string) { setRows(rs => rs.filter(r => r.key !== key)); }
-  function move(key: string, dir: -1 | 1) {
+  function remove(key: string) {
+    // Tirar um serviço leva as peças dele junto (senão elas passariam para outro serviço)
     setRows(rs => {
-      const i = rs.findIndex(r => r.key === key);
+      const g = groupOf(rs);
+      return rs.filter(r => r.key !== key && !(r.kind === 'part' && g.get(r.key)?.key === key));
+    });
+  }
+  /** Sobe/desce o item inteiro (serviço com as peças dele) */
+  function moveBlock(key: string, dir: -1 | 1) {
+    setRows(rs => {
+      const bl = buildBlocks(rs, groupOf(rs));
+      const i = bl.findIndex(b => blockKey(b) === key);
       const j = i + dir;
-      if (i < 0 || j < 0 || j >= rs.length) return rs;
-      const copy = [...rs];
-      [copy[i], copy[j]] = [copy[j], copy[i]];
-      return copy;
+      if (i < 0 || j < 0 || j >= bl.length) return rs;
+      [bl[i], bl[j]] = [bl[j], bl[i]];
+      return bl.flatMap(b => (b.svc ? [b.svc, ...b.parts] : b.parts));
     });
   }
 
   async function save() {
     // Validação
-    for (const [i, r] of rows.entries()) {
-      if (!r.description.trim()) return toast.error(`Item ${i + 1}: informe a descrição`);
+    for (const r of rows) {
+      const nameOf = r.description.trim() ? `“${r.description.trim()}”` : r.kind === 'part' ? 'Uma peça sem nome' : 'Um serviço sem nome';
+      if (!r.description.trim()) return toast.error(`${nameOf}: informe a descrição`);
       const q = parseMoney(r.quantity);
-      if (!Number.isFinite(q) || q <= 0) return toast.error(`Item ${i + 1}: quantidade inválida`);
+      if (!Number.isFinite(q) || q <= 0) return toast.error(`${nameOf}: quantidade inválida`);
       const p = parseMoney(r.unit_price || '0');
-      if (!Number.isFinite(p) || p < 0) return toast.error(`Item ${i + 1}: valor inválido`);
+      if (!Number.isFinite(p) || p < 0) return toast.error(`${nameOf}: valor inválido`);
       if (r.kind === 'part' && r.unit_cost.trim()) {
         const c = parseMoney(r.unit_cost);
-        if (!Number.isFinite(c) || c < 0) return toast.error(`Item ${i + 1}: custo inválido`);
+        if (!Number.isFinite(c) || c < 0) return toast.error(`${nameOf}: custo inválido`);
       }
     }
     if (!Number.isFinite(disc) || disc < 0) return toast.error('Desconto inválido');
@@ -337,7 +374,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           const svc = grp.get(r.key);
           return svc && laborKeys.has(svc.key) ? idOf.get(svc.key)! : null;
         })(),
-        service_type: r.kind === 'labor' ? r.stype || 'servico' : null,
+        service_type: r.kind === 'labor' ? effType(r, rows, grp) : null,
         position: idx,
       }));
       const savedIds = new Set(rows.filter(r => r.id).map(r => r.id!));
@@ -372,6 +409,143 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const hasLegacyValues = rows.length === 0 && items.length === 0
     && (legacy.parts != null || legacy.labor != null || legacy.price > 0);
 
+  const renderRow = (r: Row, num: number, nested: boolean, bi: number, bc: number) => (
+          <div key={r.key} className={`${nested ? 'pl-9 pr-5 py-2 bg-steel-50/70' : 'px-5 py-3'} grid grid-cols-12 gap-2 items-center`}>
+            {/* Tipo (cada lançamento = 1 item, como num cupom) */}
+            <div className="col-span-6 md:col-span-2">
+              {!nested && <div className="text-[10px] font-bold text-steel-400 uppercase tracking-wider mb-0.5">Item {num}</div>}
+              <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{r.kind === 'part' ? (nested ? '↳ Peça' : 'Peça avulsa') : 'Serviço'}</span>
+            </div>
+            {/* Ações (mobile: ao lado do tipo) */}
+            {!readOnly && (
+              <div className="col-span-6 md:hidden flex justify-end gap-1">
+                <RowActions idx={bi} count={bc} nested={nested} onUp={() => moveBlock(r.key, -1)} onDown={() => moveBlock(r.key, 1)} onRemove={() => remove(r.key)} />
+              </div>
+            )}
+            {/* Descrição */}
+            <div className="col-span-12 md:col-span-4">
+              {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
+                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : 'Ex.: Troca de óleo, Alinhamento…'}
+                  list={`os-items-sugg-${osId}`} value={r.description}
+                  onChange={e => update(r.key, { description: e.target.value })} />
+              )}
+              {!readOnly && r.kind === 'part' && !r.part_id && !r.description.trim() && showCost && (
+                <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
+                  <span>Digite para buscar no cadastro</span>
+                  <button type="button" className="font-semibold text-brand-700 hover:underline"
+                    onClick={() => setQuick({ key: r.key, name: '', qty: parseMoney(r.quantity) || 1 })}>
+                    ➕ Cadastrar peça nova
+                  </button>
+                </div>
+              )}
+              {!readOnly && r.kind === 'part' && r.description.trim().length >= 2 && !r.part_id && (
+                showCost ? (
+                  <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
+                    <span>Peça não cadastrada</span>
+                    <button type="button" className="font-semibold text-brand-700 hover:underline"
+                      onClick={() => setQuick({ key: r.key, name: r.description.trim(), qty: parseMoney(r.quantity) || 1 })}>
+                      ➕ Cadastrar esta peça
+                    </button>
+                    <span className="text-steel-400">ou use só nesta OS (avulsa)</span>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-steel-400 mt-1">Peça avulsa (não está no cadastro)</div>
+                )
+              )}
+            </div>
+            {/* Qtd */}
+            <div className="col-span-3 md:col-span-1">
+              <span className="md:hidden text-[10px] text-steel-400 uppercase">Qtd</span>
+              {readOnly ? <div className="text-sm text-right">{r.quantity}</div> : (
+                <input className="input !py-2 text-sm text-right" inputMode="decimal" value={r.quantity}
+                  onChange={e => update(r.key, { quantity: e.target.value })} />
+              )}
+            </div>
+            {/* Valor unit */}
+            <div className="col-span-5 md:col-span-2">
+              <span className="md:hidden text-[10px] text-steel-400 uppercase">Valor unit.</span>
+              {readOnly ? <div className="text-sm text-right">R$ {r.unit_price}</div> : (
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+                  <input className="input !py-2 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={r.unit_price}
+                    onChange={e => update(r.key, { unit_price: e.target.value })}
+                    onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) update(r.key, { unit_price: moneyInput(v) }); }} />
+                </div>
+              )}
+            </div>
+            {/* Total */}
+            <div className="col-span-4 md:col-span-2 text-right">
+              <span className="md:hidden text-[10px] text-steel-400 uppercase block">Total</span>
+              <span className="text-sm font-bold text-steel-900">{fmtBRL(rowTotal(r))}</span>
+            </div>
+            {/* Ações (desktop) */}
+            {!readOnly && (
+              <div className="hidden md:flex col-span-1 justify-end gap-1">
+                <RowActions idx={bi} count={bc} nested={nested} onUp={() => moveBlock(r.key, -1)} onDown={() => moveBlock(r.key, 1)} onRemove={() => remove(r.key)} />
+              </div>
+            )}
+            {/* Quem fez (comissão) — só em serviço; peça conta para o responsável da OS */}
+            {showWho && !planning && r.kind === 'labor' && (
+              <div className="col-span-12 -mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                <span className="text-steel-500 shrink-0">🔧 Quem fez:</span>
+                {canAssign && (!readOnly || r.id) ? (
+                  <select className="input !py-1 !px-2 !w-auto text-xs" value={r.mechanic_id}
+                    onChange={e => readOnly ? assign(r, e.target.value) : update(r.key, { mechanic_id: e.target.value })}>
+                    <option value="">{osMechanicId && teamName.get(osMechanicId) ? `${teamName.get(osMechanicId)} (responsável da OS)` : 'Responsável da OS'}</option>
+                    {team.filter(m => (m.active || m.id === r.mechanic_id) && m.id !== osMechanicId).map(m => (
+                      <option key={m.id} value={m.id}>{m.name}{m.active ? '' : ' (inativo)'}</option>
+                    ))}
+                    <option value={PLATFORM_ITEM}>🌐 Mecânico da plataforma</option>
+                  </select>
+                ) : (
+                  <span className="font-semibold text-steel-700">
+                    {r.mechanic_id === PLATFORM_ITEM ? '🌐 Mecânico da plataforma'
+                      : (r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'Responsável da OS'}
+                  </span>
+                )}
+                {/* Comissão de quem fez este serviço: pela regra, ou o valor digitado aqui */}
+                {(() => {
+                  const c = commOf(r);
+                  const canEdit = !!canAssign && (!readOnly || !!r.id) && !c.none;
+                  if (c.none) return <span className="text-steel-400">· {c.none}</span>;
+                  if (commEdit === r.key) {
+                    return (
+                      <span className="flex items-center gap-1">
+                        <span className="text-steel-500">💰 R$</span>
+                        <input autoFocus className="input !py-1 !px-2 !w-20 text-xs" inputMode="decimal"
+                          defaultValue={r.comm || moneyInput(c.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setCommEdit(null); }}
+                          onBlur={e => {
+                            const v = e.target.value;
+                            setCommEdit(null);
+                            if (readOnly) saveComm(r, v); else update(r.key, { comm: v });
+                          }} />
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="flex items-center gap-1.5">
+                      <span className={`font-semibold ${c.typed ? 'text-brand-700' : 'text-signal-700'}`}>💰 {fmtBRL(c.value)}</span>
+                      <span className="text-steel-400 hidden sm:inline">({c.base})</span>
+                      {canEdit && (
+                        <button type="button" onClick={() => setCommEdit(r.key)} className="text-brand-600 hover:underline">✏️ alterar</button>
+                      )}
+                      {canEdit && c.typed && (
+                        <button type="button" onClick={() => (readOnly ? saveComm(r, '') : update(r.key, { comm: '' }))}
+                          className="text-steel-500 hover:underline">↩ regra</button>
+                      )}
+                    </span>
+                  );
+                })()}
+              </div>
+            )}
+            {/* Custo e margem da peça (só para quem vê o financeiro) */}
+            {showCost && r.kind === 'part' && (
+              <CostLine row={r} readOnly={readOnly} onCost={v => update(r.key, { unit_cost: v })} onPrice={v => update(r.key, { unit_price: v })} />
+            )}
+          </div>
+  );
+
   return (
     <div className="card !p-0 overflow-hidden">
       <div className="px-5 pt-5 pb-3 flex items-center justify-between gap-3 flex-wrap">
@@ -381,27 +555,24 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         </div>
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
-            {!saleMode && (<>
-            <button type="button" onClick={() => addRow('labor')}
-              title="Valor fechado: serviço com as peças incluídas (ex.: troca de óleo completa). Comissão 4% sobre o total."
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
-              + Serviço + peças
-            </button>
-            <button type="button" onClick={() => addRow('mao_de_obra')}
-              title="Só o serviço, sem peça (ex.: alinhamento). Comissão 10%."
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 transition">
-              + Mão de obra
-            </button>
-            </>)}
-            <button type="button" onClick={() => addRow('part')}
-              title="Opcional: detalhar uma peça ou vender peça avulsa"
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
-              + Peça
-            </button>
+            {!saleMode && (
+              <button type="button" onClick={() => addRow('labor')}
+                className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
+                + Serviço
+              </button>
+            )}
+            {/* Com serviço na OS, peça entra por "+ Peça deste serviço"; avulsa só quando não há serviço */}
+            {(saleMode || !rows.some(r => r.kind === 'labor')) && (
+              <button type="button" onClick={() => addRow('part')}
+                title="Peça vendida sem serviço"
+                className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
+                {saleMode ? '+ Peça' : '+ Peça avulsa'}
+              </button>
+            )}
             {showCost && (
               <button type="button" onClick={() => setQuick({ key: null, name: '', qty: 1 })}
                 className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
-                🔩 Cadastrar peça
+                🔩 Cadastrar peça no estoque
               </button>
             )}
           </div>
@@ -475,177 +646,43 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       </datalist>
 
       <div className="divide-y divide-steel-100">
-        {rows.map((r, idx) => (
-          <div key={r.key} className="px-5 py-3 grid grid-cols-12 gap-2 items-center">
-            {/* Tipo (cada lançamento = 1 item, como num cupom) */}
-            <div className="col-span-6 md:col-span-2">
-              <div className="text-[10px] font-bold text-steel-400 uppercase tracking-wider mb-0.5">Item {idx + 1}</div>
-              {readOnly ? (
-                <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{rowLabel(r)}</span>
-              ) : (
-                <select className="input !py-2 !px-2 text-sm" value={r.kind === 'part' ? 'part' : r.stype === 'mao_de_obra' ? 'mao_de_obra' : 'servico'}
-                  onChange={e => update(r.key, e.target.value === 'part'
-                    ? { kind: 'part', stype: '' }
-                    : { kind: 'labor', stype: e.target.value as 'servico' | 'mao_de_obra' })}>
-                  <option value="servico">Serviço + peças</option>
-                  <option value="mao_de_obra">Mão de obra</option>
-                  <option value="part">Peça</option>
-                </select>
-              )}
-            </div>
-            {/* Ações (mobile: ao lado do tipo) */}
-            {!readOnly && (
-              <div className="col-span-6 md:hidden flex justify-end gap-1">
-                <RowActions idx={idx} count={rows.length} onUp={() => move(r.key, -1)} onDown={() => move(r.key, 1)} onRemove={() => remove(r.key)} />
-              </div>
-            )}
-            {/* Descrição */}
-            <div className="col-span-12 md:col-span-4">
-              {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
-                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : r.stype === 'mao_de_obra' ? 'Ex.: Alinhamento' : 'Ex.: Troca de óleo completa (óleo + filtro)'}
-                  list={`os-items-sugg-${osId}`} value={r.description}
-                  onChange={e => update(r.key, { description: e.target.value })} />
-              )}
-              {!readOnly && r.kind === 'labor' && r.stype !== 'mao_de_obra'
-                && !rows.some(x => x.kind === 'part' && groups.get(x.key)?.key === r.key) && (
-                <div className="text-[11px] text-steel-500 mt-1">💡 Valor fechado, peças incluídas · comissão 4% do total. Detalhar as peças é opcional.</div>
-              )}
-              {!readOnly && r.kind === 'part' && !r.part_id && !r.description.trim() && showCost && (
-                <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
-                  <span>Digite para buscar no cadastro</span>
-                  <button type="button" className="font-semibold text-brand-700 hover:underline"
-                    onClick={() => setQuick({ key: r.key, name: '', qty: parseMoney(r.quantity) || 1 })}>
-                    ➕ Cadastrar peça nova
-                  </button>
-                </div>
-              )}
-              {!readOnly && r.kind === 'part' && r.description.trim().length >= 2 && !r.part_id && (
-                showCost ? (
-                  <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
-                    <span>Peça não cadastrada</span>
-                    <button type="button" className="font-semibold text-brand-700 hover:underline"
-                      onClick={() => setQuick({ key: r.key, name: r.description.trim(), qty: parseMoney(r.quantity) || 1 })}>
-                      ➕ Cadastrar esta peça
+        {blocks.map((b, bi) => {
+          const head = b.svc ?? b.parts[0];
+          const nestedParts = b.svc ? b.parts : [];
+          const hasParts = nestedParts.length > 0;
+          return (
+            <div key={head.key}>
+              {renderRow(head, bi + 1, false, bi, blocks.length)}
+              {nestedParts.map(p => renderRow(p, 0, true, bi, blocks.length))}
+              {b.svc && (!readOnly || hasParts) && (
+                <div className="pl-9 pr-5 pb-3 pt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                  {!readOnly && (
+                    <button type="button" onClick={() => addPartTo(b.svc!.key)} className="font-semibold text-brand-700 hover:underline">
+                      + Peça deste serviço
                     </button>
-                    <span className="text-steel-400">ou use só nesta OS (avulsa)</span>
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-steel-400 mt-1">Peça avulsa (não está no cadastro)</div>
-                )
-              )}
-            </div>
-            {/* Qtd */}
-            <div className="col-span-3 md:col-span-1">
-              <span className="md:hidden text-[10px] text-steel-400 uppercase">Qtd</span>
-              {readOnly ? <div className="text-sm text-right">{r.quantity}</div> : (
-                <input className="input !py-2 text-sm text-right" inputMode="decimal" value={r.quantity}
-                  onChange={e => update(r.key, { quantity: e.target.value })} />
-              )}
-            </div>
-            {/* Valor unit */}
-            <div className="col-span-5 md:col-span-2">
-              <span className="md:hidden text-[10px] text-steel-400 uppercase">Valor unit.</span>
-              {readOnly ? <div className="text-sm text-right">R$ {r.unit_price}</div> : (
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
-                  <input className="input !py-2 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={r.unit_price}
-                    onChange={e => update(r.key, { unit_price: e.target.value })}
-                    onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) update(r.key, { unit_price: moneyInput(v) }); }} />
+                  )}
+                  {!readOnly && !hasParts && (
+                    <label className="flex items-center gap-1.5 text-steel-500 cursor-pointer" title="Marque se o valor já inclui as peças (ex.: troca de óleo completa). Muda a comissão: 4% sobre o total em vez de 10% sobre a mão de obra.">
+                      <input type="checkbox" checked={b.svc.stype === 'servico'}
+                        onChange={e => update(b.svc!.key, { stype: e.target.checked ? 'servico' : 'mao_de_obra' })} />
+                      O valor já inclui as peças
+                    </label>
+                  )}
+                  {hasParts && (
+                    <span className="ml-auto text-steel-600">Total do item <strong className="text-steel-900">{fmtBRL(rowTotal(b.svc) + nestedParts.reduce((a, x) => a + rowTotal(x), 0))}</strong></span>
+                  )}
                 </div>
               )}
             </div>
-            {/* Total */}
-            <div className="col-span-4 md:col-span-2 text-right">
-              <span className="md:hidden text-[10px] text-steel-400 uppercase block">Total</span>
-              <span className="text-sm font-bold text-steel-900">{fmtBRL(rowTotal(r))}</span>
-            </div>
-            {/* Ações (desktop) */}
-            {!readOnly && (
-              <div className="hidden md:flex col-span-1 justify-end gap-1">
-                <RowActions idx={idx} count={rows.length} onUp={() => move(r.key, -1)} onDown={() => move(r.key, 1)} onRemove={() => remove(r.key)} />
-              </div>
-            )}
-            {/* Quem fez (comissão) — só em serviço; peça conta para o responsável da OS */}
-            {showWho && r.kind === 'labor' && (
-              <div className="col-span-12 -mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                <span className="text-steel-500 shrink-0">🔧 Quem fez:</span>
-                {canAssign && (!readOnly || r.id) ? (
-                  <select className="input !py-1 !px-2 !w-auto text-xs" value={r.mechanic_id}
-                    onChange={e => readOnly ? assign(r, e.target.value) : update(r.key, { mechanic_id: e.target.value })}>
-                    <option value="">{osMechanicId && teamName.get(osMechanicId) ? `${teamName.get(osMechanicId)} (responsável da OS)` : 'Responsável da OS'}</option>
-                    {team.filter(m => (m.active || m.id === r.mechanic_id) && m.id !== osMechanicId).map(m => (
-                      <option key={m.id} value={m.id}>{m.name}{m.active ? '' : ' (inativo)'}</option>
-                    ))}
-                    <option value={PLATFORM_ITEM}>🌐 Mecânico da plataforma</option>
-                  </select>
-                ) : (
-                  <span className="font-semibold text-steel-700">
-                    {r.mechanic_id === PLATFORM_ITEM ? '🌐 Mecânico da plataforma'
-                      : (r.mechanic_id && teamName.get(r.mechanic_id)) || (osMechanicId && teamName.get(osMechanicId)) || 'Responsável da OS'}
-                  </span>
-                )}
-                {/* Comissão de quem fez este serviço: pela regra, ou o valor digitado aqui */}
-                {(() => {
-                  const c = commOf(r);
-                  const canEdit = !!canAssign && (!readOnly || !!r.id) && !c.none;
-                  if (c.none) return <span className="text-steel-400">· {c.none}</span>;
-                  if (commEdit === r.key) {
-                    return (
-                      <span className="flex items-center gap-1">
-                        <span className="text-steel-500">💰 R$</span>
-                        <input autoFocus className="input !py-1 !px-2 !w-20 text-xs" inputMode="decimal"
-                          defaultValue={r.comm || moneyInput(c.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setCommEdit(null); }}
-                          onBlur={e => {
-                            const v = e.target.value;
-                            setCommEdit(null);
-                            if (readOnly) saveComm(r, v); else update(r.key, { comm: v });
-                          }} />
-                      </span>
-                    );
-                  }
-                  return (
-                    <span className="flex items-center gap-1.5">
-                      <span className={`font-semibold ${c.typed ? 'text-brand-700' : 'text-signal-700'}`}>💰 {fmtBRL(c.value)}</span>
-                      <span className="text-steel-400 hidden sm:inline">({c.base})</span>
-                      {canEdit && (
-                        <button type="button" onClick={() => setCommEdit(r.key)} className="text-brand-600 hover:underline">✏️ alterar</button>
-                      )}
-                      {canEdit && c.typed && (
-                        <button type="button" onClick={() => (readOnly ? saveComm(r, '') : update(r.key, { comm: '' }))}
-                          className="text-steel-500 hover:underline">↩ regra</button>
-                      )}
-                    </span>
-                  );
-                })()}
-              </div>
-            )}
-            {/* Peça: pertence ao serviço logo acima (a comissão segue quem fez esse serviço) */}
-            {r.kind === 'part' && rows.some(x => x.kind === 'labor') && (() => {
-              const svc = groups.get(r.key);
-              return svc ? (
-                <div className="col-span-12 -mt-1 text-xs text-steel-500">
-                  ↳ peça {svc.stype === 'mao_de_obra' ? 'da mão de obra' : 'do serviço'} <strong className="text-steel-700">{svc.description.trim() || 'sem nome'}</strong> · {whoLabel(svc)}
-                </div>
-              ) : (
-                <div className="col-span-12 -mt-1 text-xs text-pending-800">
-                  ⚠️ Peça fora de um serviço — use as setas ↑↓ para colocá-la logo abaixo do serviço em que foi usada.
-                </div>
-              );
-            })()}
-            {/* Custo e margem da peça (só para quem vê o financeiro) */}
-            {showCost && r.kind === 'part' && (
-              <CostLine row={r} readOnly={readOnly} onCost={v => update(r.key, { unit_cost: v })} onPrice={v => update(r.key, { unit_price: v })} />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {rows.length === 0 && !hasLegacyValues && (
         <div className="px-5 pb-6 pt-2 text-center">
           <div className="text-3xl mb-1">🧾</div>
           <p className="text-sm text-steel-500">
-            {readOnly ? 'Nenhum item nesta OS.' : 'Use “+ Serviço + peças” para lançar o serviço com as peças num valor só (ex.: troca de óleo completa). Peça separada é opcional.'}
+            {readOnly ? 'Nenhum item nesta OS.' : 'Comece por “+ Serviço” (ex.: troca de óleo). Depois, em “+ Peça deste serviço”, inclua as peças usadas — ou marque que o valor já inclui tudo.'}
           </p>
         </div>
       )}
@@ -654,7 +691,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       {(rows.length > 0 || items.length > 0) && (
         <div className="bg-steel-50 border-t border-steel-100 px-5 py-4">
           <div className="ml-auto max-w-xs space-y-1.5 text-sm">
-            <div className="flex justify-between text-steel-600"><span>Itens</span><span>{rows.length}</span></div>
+            <div className="flex justify-between text-steel-600"><span>Itens</span><span>{blocks.length}</span></div>
             <div className="flex justify-between text-steel-600"><span>Peças</span><span>{fmtBRL(parts)}</span></div>
             <div className="flex justify-between text-steel-600"><span>Serviços</span><span>{fmtBRL(labor)}</span></div>
             <div className="flex justify-between items-center text-steel-600">
@@ -710,14 +747,14 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   );
 }
 
-function RowActions({ idx, count, onUp, onDown, onRemove }: {
-  idx: number; count: number; onUp: () => void; onDown: () => void; onRemove: () => void;
+function RowActions({ idx, count, nested, onUp, onDown, onRemove }: {
+  idx: number; count: number; nested?: boolean; onUp: () => void; onDown: () => void; onRemove: () => void;
 }) {
   const btn = 'h-8 w-8 rounded-lg grid place-items-center text-xs transition disabled:opacity-30';
   return (
     <>
-      <button type="button" onClick={onUp} disabled={idx === 0} className={`${btn} bg-steel-100 hover:bg-steel-200 text-steel-600`} title="Subir">↑</button>
-      <button type="button" onClick={onDown} disabled={idx === count - 1} className={`${btn} bg-steel-100 hover:bg-steel-200 text-steel-600`} title="Descer">↓</button>
+      {!nested && <button type="button" onClick={onUp} disabled={idx === 0} className={`${btn} bg-steel-100 hover:bg-steel-200 text-steel-600`} title="Subir">↑</button>}
+      {!nested && <button type="button" onClick={onDown} disabled={idx === count - 1} className={`${btn} bg-steel-100 hover:bg-steel-200 text-steel-600`} title="Descer">↓</button>}
       <button type="button" onClick={onRemove} className={`${btn} bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600`} title="Remover">✕</button>
     </>
   );
