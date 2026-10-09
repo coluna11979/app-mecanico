@@ -11,6 +11,7 @@ import { formatBRL } from '@/lib/payment';
 import { ROLES, sessionAllows, useOperator, type OperatorRole } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
 import { moduleAllows, moduleEntry, useWorkshopModules } from '@/lib/modules';
+import { useInboxAlerts } from '@/hooks/useInboxAlerts';
 
 type ArrivalAlert = { jobId: string; title: string };
 type FinishedAlert = { jobId: string; title: string; price: number };
@@ -394,6 +395,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const mods = useWorkshopModules();
   useEffect(() => { mods.load(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
   const allowed = (to: string) => moduleAllows(mods.disabled, to) && (!role || sessionAllows(op.session!, to));
+  // WhatsApp: conversas não lidas no menu + som de mensagem nova (só para quem pode abrir o Inbox)
+  const inboxUnread = useInboxAlerts(shopId, allowed('/oficina/inbox'));
+  const badgeOf = (to: string) => (to === '/oficina/mensagens' ? unread : to === '/oficina/inbox' ? inboxUnread : 0);
   // Tela de entrada desligada (ex.: Painel do check-up) → o item leva pra primeira ferramenta liberada do módulo
   const fix = <T extends NavItem>(i: T): T => ({ ...i, to: moduleEntry(mods.disabled, i.to) ?? i.to });
   // Permissões alteradas pelo gestor valem sem precisar digitar o PIN de novo
@@ -621,7 +625,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             const items = leaves(entries);
             const hasActive = items.some(i => onRoute(path, i.to));
             const isOpen = hasActive || !collapsed.has(sec.key);
-            const groupBadge = items.some(i => i.to === '/oficina/mensagens') ? unread : 0;
+            const groupBadge = items.reduce((n, i) => n + badgeOf(i.to), 0);
             return (
               <div key={sec.key}>
                 <button
@@ -647,7 +651,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                       <SideItem
                         key={e.to}
                         {...e}
-                        badge={e.to === '/oficina/mensagens' ? unread : 0}
+                        badge={badgeOf(e.to)}
                         mobileHidden={inBottom(e.to)}
                         onClick={() => setOpen(false)}
                       />

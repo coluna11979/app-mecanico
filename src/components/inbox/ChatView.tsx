@@ -6,7 +6,11 @@ import {
   chatTitle, fmtDay, fmtWait, inboxCall, isAwaiting, minutesSince, useMediaUrl, URGENT_MIN,
   type WaChat, type WaMessage,
 } from '@/lib/inbox';
+import { useAuth } from '@/contexts/AuthContext';
 import ChatAvatar from './ChatAvatar';
+import VoiceRecorder from './VoiceRecorder';
+import MaterialsLibrary, { type Material } from './MaterialsLibrary';
+import { QuickRepliesModal, QuickReplySuggest, fillReply, matchReplies, useQuickReplies, type QuickReply } from './QuickReplies';
 
 const PAGE = 60;
 
@@ -143,7 +147,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
       </div>
 
       {connected ? (
-        <Composer chatId={chat.id} workshopId={workshopId} onSent={() => { stickToBottom.current = true; }} />
+        <Composer chat={chat} workshopId={workshopId} onSent={() => { stickToBottom.current = true; }} />
       ) : (
         <div className="p-3 border-t border-steel-100 bg-alert-500/5 flex items-center gap-3 shrink-0">
           <p className="text-sm text-alert-600 font-semibold flex-1">WhatsApp desconectado — não dá para enviar nem receber mensagens.</p>
@@ -229,15 +233,22 @@ function Media({ m }: { m: WaMessage }) {
 
 const MAX_MB = 16;
 
-function Composer({ chatId, workshopId, onSent }: { chatId: string; workshopId: string; onSent: () => void }) {
+function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: string; onSent: () => void }) {
+  const chatId = chat.id;
+  const { currentWorkshop } = useAuth();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [repliesOpen, setRepliesOpen] = useState(false);
+  const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [suggestIdx, setSuggestIdx] = useState(0);
+  const replies = useQuickReplies(workshopId);
   const fileInput = useRef<HTMLInputElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
 
   // Rascunho some ao trocar de conversa
-  useEffect(() => { setText(''); setFile(null); }, [chatId]);
+  useEffect(() => { setText(''); setFile(null); setRecording(false); }, [chatId]);
 
   // Caixa cresce até 5 linhas
   useLayoutEffect(() => {
@@ -247,21 +258,38 @@ function Composer({ chatId, workshopId, onSent }: { chatId: string; workshopId: 
     el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
   }, [text]);
 
+  // "/atalho" no começo da mensagem → sugestões de resposta rápida
+  const slash = /^\/(\S*)$/.exec(text);
+  const slashQuery = slash ? slash[1] : null;
+  const suggestions = slashQuery != null ? matchReplies(replies.list, slashQuery) : [];
+  useEffect(() => { setSuggestIdx(0); }, [slashQuery]);
+
+  function applyReply(r: QuickReply) {
+    const first = chatTitle(chat).trim().split(/\s+/)[0];
+    const nome = /\p{L}/u.test(first) ? first : '';
+    const filled = fillReply(r.body, { nome, oficina: currentWorkshop?.business_name ?? 'a oficina' });
+    // Contato sem nome: "Olá, !" vira "Olá!"
+    setText(filled.replace(/,\s*([!,.])/g, '$1').replace(/^\s*,\s*/, ''));
+    setRepliesOpen(false);
+    requestAnimationFrame(() => area.current?.focus());
+  }
+
+  async function uploadOut(f: File, prefix = 'out') {
+    const safe = f.name.normalize('NFD').replace(/[^\w.-]+/g, '_').slice(-80);
+    const path = `${workshopId}/${chatId}/${prefix}-${Date.now()}-${safe}`;
+    const { error } = await supabase.storage.from('whatsapp-media')
+      .upload(path, f, { contentType: f.type || 'application/octet-stream' });
+    if (error) throw new Error('Não subiu o arquivo: ' + error.message);
+    return { media_path: path, media_mime: f.type || 'application/octet-stream', file_name: f.name };
+  }
+
   async function send(e?: FormEvent) {
     e?.preventDefault();
     const body = text.trim();
     if ((!body && !file) || sending) return;
     setSending(true);
     try {
-      let media: { media_path: string; media_mime: string; file_name: string } | null = null;
-      if (file) {
-        const safe = file.name.normalize('NFD').replace(/[^\w.-]+/g, '_').slice(-80);
-        const path = `${workshopId}/${chatId}/out-${Date.now()}-${safe}`;
-        const { error } = await supabase.storage.from('whatsapp-media')
-          .upload(path, file, { contentType: file.type || 'application/octet-stream' });
-        if (error) throw new Error('Não subiu o anexo: ' + error.message);
-        media = { media_path: path, media_mime: file.type || 'application/octet-stream', file_name: file.name };
-      }
+      const media = file ? await uploadOut(file) : null;
       await inboxCall('whatsapp-send', { workshop_id: workshopId, chat_id: chatId, text: body, ...media });
       setText('');
       setFile(null);
@@ -274,7 +302,44 @@ function Composer({ chatId, workshopId, onSent }: { chatId: string; workshopId: 
     }
   }
 
+  async function sendVoice(f: File) {
+    setRecording(false);
+    setSending(true);
+    try {
+      const media = await uploadOut(f, 'voz');
+      await inboxCall('whatsapp-send', { workshop_id: workshopId, chat_id: chatId, ...media, as_voice: true });
+      onSent();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Não foi possível enviar o áudio');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /** Materiais da biblioteca: um envio por arquivo (já estão no storage, não sobem de novo) */
+  async function sendMaterials(items: Material[]) {
+    let ok = 0;
+    for (const m of items) {
+      try {
+        await inboxCall('whatsapp-send', {
+          workshop_id: workshopId, chat_id: chatId,
+          media_path: m.media_path, media_mime: m.media_mime, file_name: m.file_name ?? m.title,
+        });
+        ok++;
+      } catch (err) {
+        toast.error(`${m.title}: ${err instanceof Error ? err.message : 'não enviou'}`);
+      }
+    }
+    if (ok) { toast.success(ok > 1 ? `${ok} materiais enviados ✓` : 'Material enviado ✓'); onSent(); }
+  }
+
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (suggestions.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSuggestIdx(i => (i + 1) % suggestions.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSuggestIdx(i => (i - 1 + suggestions.length) % suggestions.length); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applyReply(suggestions[Math.min(suggestIdx, suggestions.length - 1)]); return; }
+      if (e.key === 'Escape') { setText(''); return; }
+    }
     // Enter envia, Shift+Enter quebra linha (no celular o Enter quebra linha)
     if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); send(); }
   }
@@ -285,6 +350,8 @@ function Composer({ chatId, workshopId, onSent }: { chatId: string; workshopId: 
     setFile(f);
   }
 
+  const toolBtn = 'h-10 w-9 shrink-0 rounded-xl text-lg text-steel-500 hover:bg-steel-100 grid place-items-center';
+
   return (
     <form onSubmit={send} className="border-t border-steel-100 bg-white p-2.5 shrink-0">
       {file && (
@@ -294,23 +361,44 @@ function Composer({ chatId, workshopId, onSent }: { chatId: string; workshopId: 
           <button type="button" onClick={() => setFile(null)} className="text-steel-400 hover:text-steel-700">✕</button>
         </div>
       )}
-      <div className="flex items-end gap-2">
-        <input ref={fileInput} type="file" className="hidden" onChange={e => { pick(e.target.files?.[0]); e.target.value = ''; }} />
-        <button type="button" onClick={() => fileInput.current?.click()} className="h-10 w-10 shrink-0 rounded-xl text-xl text-steel-500 hover:bg-steel-100 grid place-items-center" title="Anexar foto ou arquivo">📎</button>
-        <textarea
-          ref={area}
-          rows={1}
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={onKey}
-          onPaste={e => { const f = e.clipboardData.files?.[0]; if (f) { e.preventDefault(); pick(f); } }}
-          placeholder={file ? 'Legenda (opcional)…' : 'Digite uma mensagem…'}
-          className="input flex-1 !py-2.5 text-sm resize-none leading-5"
-        />
-        <button type="submit" disabled={sending || (!text.trim() && !file)} className="btn-primary h-10 !px-4 shrink-0 disabled:opacity-40" title="Enviar">
-          {sending ? '…' : '➤'}
-        </button>
-      </div>
+      {recording ? (
+        <VoiceRecorder onDone={sendVoice} onCancel={() => setRecording(false)} />
+      ) : (
+        <div className="flex items-end gap-1">
+          <input ref={fileInput} type="file" className="hidden" onChange={e => { pick(e.target.files?.[0]); e.target.value = ''; }} />
+          <button type="button" onClick={() => setRepliesOpen(true)} className={toolBtn} title="Respostas rápidas (ou digite /)">⚡</button>
+          <button type="button" onClick={() => setMaterialsOpen(true)} className={toolBtn} title="Biblioteca de materiais">📁</button>
+          <button type="button" onClick={() => fileInput.current?.click()} className={toolBtn} title="Anexar foto ou arquivo">📎</button>
+          <div className="relative flex-1 ml-1">
+            {slashQuery != null && <QuickReplySuggest list={replies.list} query={slashQuery} active={suggestIdx} onPick={applyReply} />}
+            <textarea
+              ref={area}
+              rows={1}
+              value={text}
+              onChange={e => setText(e.target.value)}
+              onKeyDown={onKey}
+              onPaste={e => { const f = e.clipboardData.files?.[0]; if (f) { e.preventDefault(); pick(f); } }}
+              placeholder={file ? 'Legenda (opcional)…' : 'Digite uma mensagem ou / para respostas rápidas…'}
+              className="input w-full !py-2.5 text-sm resize-none leading-5"
+            />
+          </div>
+          {!text.trim() && !file ? (
+            <button type="button" onClick={() => setRecording(true)} disabled={sending}
+              className="btn-primary h-10 !px-3.5 shrink-0 ml-1 disabled:opacity-40" title="Gravar áudio">{sending ? '…' : '🎤'}</button>
+          ) : (
+            <button type="submit" disabled={sending} className="btn-primary h-10 !px-4 shrink-0 ml-1 disabled:opacity-40" title="Enviar">
+              {sending ? '…' : '➤'}
+            </button>
+          )}
+        </div>
+      )}
+      {repliesOpen && (
+        <QuickRepliesModal workshopId={workshopId} list={replies.list} reload={replies.reload}
+          onPick={applyReply} onClose={() => setRepliesOpen(false)} />
+      )}
+      {materialsOpen && (
+        <MaterialsLibrary workshopId={workshopId} onSend={sendMaterials} onClose={() => setMaterialsOpen(false)} />
+      )}
     </form>
   );
 }

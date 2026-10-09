@@ -1,5 +1,6 @@
 // Envia mensagem pelo número da oficina e grava no Inbox.
-// Corpo: { workshop_id, chat_id? | phone? (+ name?, customer_id?), text?, media_path?, media_mime?, file_name? }
+// Corpo: { workshop_id, chat_id? | phone? (+ name?, customer_id?), text?, media_path?, media_mime?, file_name?, as_voice? }
+// as_voice: áudio gravado no sistema vai como mensagem de voz (ptt), não como arquivo.
 // Anexo: o navegador sobe no bucket whatsapp-media (pasta da oficina) e manda só o caminho.
 import {
   CORS, HttpError, adminClient, json, rawMessageId, requireInboxMember, toWhatsAppNumber, uaz, uazConfig,
@@ -58,12 +59,12 @@ Deno.serve(async (req) => {
     if (mediaPath) {
       const { data: signed, error } = await admin.storage.from('whatsapp-media').createSignedUrl(mediaPath, 60 * 60);
       if (error || !signed) throw new HttpError(400, 'Anexo não encontrado');
-      const type = kindOf(mime);
+      const type = body.as_voice ? 'ptt' : kindOf(mime);
       r = await uaz(cfg, '/send/media', {
         token: secret.token,
         body: {
           number: chat.phone, type, file: signed.signedUrl,
-          ...(text ? { text } : {}),
+          ...(text && type !== 'ptt' ? { text } : {}),
           ...(type === 'document' ? { docName: body.file_name || 'arquivo' } : {}),
         },
       });
@@ -80,7 +81,7 @@ Deno.serve(async (req) => {
       from_me: true,
       sent_by: user.id,
       sent_by_name: prof?.full_name ?? null,
-      content: text || null,
+      content: body.as_voice ? null : text || null,
       message_type: mediaPath ? kindOf(mime) : 'text',
       media_path: mediaPath,
       media_mime: mediaPath ? mime : null,
