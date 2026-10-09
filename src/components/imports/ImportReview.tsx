@@ -270,6 +270,9 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
     if (whoMissing) { toast.error('Informe quem fez o serviço'); return; }
     if (!comm.valid) { toast.error('Escolha quem recebe cada comissão'); return; }
     if (futureDate) { toast.error('A data da nota está no futuro — corrija antes de importar'); return; }
+    // Ano diferente do atual costuma ser leitura errada (ex.: 2006 no lugar de 2026)
+    if (f.data && f.data.slice(0, 4) !== todayYmd.slice(0, 4)
+      && !window.confirm(`A nota está com data de ${new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')} (ano ${f.data.slice(0, 4)}). A leitura pode ter errado o ano. A data está certa?`)) return;
     const charge = done && paid && finalTotal > 0;
     if (charge) {
       if (payRows.some(p => !p.method)) { toast.error('Escolha a forma de pagamento'); return; }
@@ -587,6 +590,11 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
               {futureDate && (
                 <div className="text-xs bg-alert-50 border border-alert-200 text-alert-700 rounded-lg px-3 py-2">
                   ⚠️ A data da nota ({new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}) é depois de hoje — a leitura pode ter errado. Confira no papel e corrija.
+                </div>
+              )}
+              {f.data && f.data.slice(0, 4) !== todayYmd.slice(0, 4) && (
+                <div className="text-xs bg-alert-50 border border-alert-200 text-alert-700 rounded-lg px-3 py-2">
+                  ⚠️ Ano {f.data.slice(0, 4)}: confira se a leitura não trocou o ano (ex.: 2006 no lugar de {todayYmd.slice(0, 4)}).
                 </div>
               )}
               {oldDate && (
