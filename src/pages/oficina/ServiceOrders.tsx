@@ -8,6 +8,7 @@ import type {
   OsStatus, WorkshopMechanic, ServiceOrderPause,
 } from '@/types/database';
 import OsCardNew from '@/components/os/OsCard';
+import OsBoard from '@/components/os/OsBoard';
 import StatusChips from '@/components/os/StatusChips';
 import EmptyState from '@/components/os/EmptyState';
 import OsSkeleton from '@/components/os/OsSkeleton';
@@ -72,7 +73,12 @@ export default function ServiceOrders() {
   const [periodTo, setPeriodTo]           = useState('');
   const [search, setSearch]               = useState('');
   const [onlyScheduled, setOnlyScheduled] = useState(false);
-  const [showFilters, setShowFilters]     = useState(false);   // celular: período e responsável ficam atrás de "Filtros"
+  const [showFilters, setShowFilters]     = useState(false);
+  // Lista ou quadro em colunas (só no computador); fica guardado no aparelho
+  const [view, setViewState] = useState<'lista' | 'colunas'>(() => {
+    try { return localStorage.getItem('os_view') === 'colunas' ? 'colunas' : 'lista'; } catch { return 'lista'; }
+  });
+  const setView = (v: 'lista' | 'colunas') => { setViewState(v); try { localStorage.setItem('os_view', v); } catch { /* sem localStorage */ } };   // celular: período e responsável ficam atrás de "Filtros"
   const op = useOperator();
   // Mecânico (PIN): só as OS dele (responsável ou que fez algum serviço), sem valores e sem ações comerciais
   const access = useCheckupAccess();
@@ -254,6 +260,14 @@ export default function ServiceOrders() {
           <p className="text-sm text-steel-500">{mech ? `${list.filter(mine).length} OS suas` : `${list.length} OS cadastradas`}</p>
         </div>
         <div className="flex gap-2 shrink-0">
+          <div className="hidden md:flex rounded-xl border border-steel-200 bg-white p-0.5">
+            {(['lista', 'colunas'] as const).map(v => (
+              <button key={v} type="button" onClick={() => setView(v)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${view === v ? 'bg-steel-900 text-white' : 'text-steel-600 hover:bg-steel-50'}`}>
+                {v === 'lista' ? '☰ Lista' : '▥ Colunas'}
+              </button>
+            ))}
+          </div>
           {canOpen('/oficina/agenda') && (
             <button onClick={() => nav('/oficina/agenda')} className="btn-secondary !py-2 !px-4 text-sm">📅 Agenda</button>
           )}
@@ -290,7 +304,9 @@ export default function ServiceOrders() {
             </button>
           </div>
 
-          <StatusChips value={filterStatus} counts={counts} total={base.length} onChange={setFilterStatus} />
+          <div className={view === 'colunas' ? 'md:hidden' : ''}>
+            <StatusChips value={filterStatus} counts={counts} total={base.length} onChange={setFilterStatus} />
+          </div>
 
           <div className="flex items-center gap-3">
           <button type="button" onClick={() => setOnlyScheduled(v => !v)} aria-pressed={onlyScheduled}
@@ -337,6 +353,14 @@ export default function ServiceOrders() {
 
         {loading || (mech && (!access.ready || (!!access.mechanicId && myOsIds === null))) ? (
           <OsSkeleton count={3} />
+        ) : view === 'colunas' && typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches ? (
+          <OsBoard
+            list={onlyScheduled ? base.filter(isScheduled) : base}
+            mechanicView={mech}
+            onOpen={openOs}
+            onMove={(os, to) => updateStatus(os, to)}
+            onShowAllDone={() => { setView('lista'); setFilterStatus('completed'); }}
+          />
         ) : filtered.length === 0 ? (
           mech ? (
             <EmptyState icon="🔧" title={hasFilters ? 'Nenhuma OS sua com esses filtros' : 'Nenhuma OS sua ainda'}
