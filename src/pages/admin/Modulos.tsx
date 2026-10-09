@@ -3,16 +3,22 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, type ModuleKey } from '@/lib/modules';
+import { FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, isOptIn, type ModuleKey } from '@/lib/modules';
+import { inboxCall } from '@/lib/inbox';
+import { fmtPhone } from '@/components/os/osHelpers';
 
 type Shop = { id: string; business_name: string; city: string | null; owner: string | null };
-/** off = desligado em qualquer aparelho; mobileOff = liberado só no computador.
- *  Guardam módulos ('caixa') e ferramentas ('caixa.fechar') na mesma lista. */
-type Config = { off: string[]; mobileOff: string[] };
+/** off = desligado em qualquer aparelho; mobileOff = liberado só no computador;
+ *  on = módulos opcionais ligados (nascem desligados, ex.: Inbox do WhatsApp).
+ *  off/mobileOff guardam módulos ('caixa') e ferramentas ('caixa.fechar') na mesma lista. */
+type Config = { off: string[]; mobileOff: string[]; on: string[] };
 const isModule = (k: string) => !k.includes('.');
 /** Chaves das ferramentas de um módulo */
 const featKeys = (m: ModuleKey) => (FEATURES[m] ?? []).map(f => f.key);
-const EMPTY: Config = { off: [], mobileOff: [] };
+const EMPTY: Config = { off: [], mobileOff: [], on: [] };
+/** Módulo liberado? Opcional só vale se foi ligado */
+const moduleOn = (c: Config, k: ModuleKey) => !c.off.includes(k) && (!isOptIn(k) || c.on.includes(k));
+const countOn = (c: Config) => MODULE_KEYS.filter(k => moduleOn(c, k)).length;
 
 /** Superadmin: quais módulos cada oficina pode usar (e se também no celular). Desligado some do menu e a tela fica bloqueada. */
 export default function AdminModulos() {
@@ -34,7 +40,7 @@ export default function AdminModulos() {
     (async () => {
       const [w, m] = await Promise.all([
         supabase.from('workshops').select('id, business_name, city, profile:profiles!inner(full_name)').order('business_name'),
-        supabase.from('workshop_modules').select('workshop_id, disabled_modules, mobile_disabled_modules'),
+        supabase.from('workshop_modules').select('workshop_id, disabled_modules, mobile_disabled_modules, enabled_modules'),
       ]);
       if (w.error) { toast.error('Erro ao carregar oficinas: ' + w.error.message); return; }
       if (m.error) { toast.error('Erro ao carregar módulos: ' + m.error.message); return; }
@@ -45,6 +51,7 @@ export default function AdminModulos() {
       setShops(list);
       setConfigs(Object.fromEntries((m.data ?? []).map(r => [r.workshop_id, {
         off: r.disabled_modules as string[], mobileOff: (r.mobile_disabled_modules ?? []) as string[],
+        on: (r.enabled_modules ?? []) as string[],
       }])));
       setSelected(s => s ?? list[0]?.id ?? null);
     })();
@@ -62,11 +69,11 @@ export default function AdminModulos() {
   async function save(workshopId: string, next: Config) {
     const prev = configs[workshopId] ?? EMPTY;
     // Desligado de vez não precisa constar como "só no computador"
-    const clean = { off: next.off, mobileOff: next.mobileOff.filter(k => !next.off.includes(k)) };
+    const clean = { off: next.off, mobileOff: next.mobileOff.filter(k => !next.off.includes(k)), on: next.on };
     setConfigs(c => ({ ...c, [workshopId]: clean }));
     setSaving(true);
     const { error } = await supabase.from('workshop_modules').upsert({
-      workshop_id: workshopId, disabled_modules: clean.off, mobile_disabled_modules: clean.mobileOff,
+      workshop_id: workshopId, disabled_modules: clean.off, mobile_disabled_modules: clean.mobileOff, enabled_modules: clean.on,
       updated_at: new Date().toISOString(), updated_by: user?.id ?? null,
     });
     setSaving(false);
@@ -82,6 +89,12 @@ export default function AdminModulos() {
 
   function toggle(k: string) {
     if (!selected) return;
+    // Opcional: liga/desliga pela lista de ligados (e tira de "desligado" se estava lá)
+    if (isOptIn(k)) {
+      const on = moduleOn(cfg, k as ModuleKey);
+      save(selected, { ...cfg, on: on ? cfg.on.filter(x => x !== k) : [...cfg.on, k], off: cfg.off.filter(x => x !== k) });
+      return;
+    }
     save(selected, { ...cfg, off: flip(cfg.off, k) });
   }
 
@@ -94,9 +107,12 @@ export default function AdminModulos() {
     if (!selected) return;
     // Liberar = o módulo e todas as ferramentas dele, em qualquer aparelho
     const all = new Set<string>([...keys, ...keys.flatMap(featKeys)]);
+    // Opcional não entra no "liberar em massa" (só liga clicando nele); desligar em massa desliga também
+    const optIn = keys.filter(isOptIn);
     save(selected, {
-      off: on ? off.filter(k => !all.has(k)) : [...new Set([...off, ...keys])],
+      off: on ? off.filter(k => !all.has(k)) : [...new Set([...off, ...keys.filter(k => !isOptIn(k))])],
       mobileOff: on ? cfg.mobileOff.filter(k => !all.has(k)) : cfg.mobileOff,
+      on: on ? cfg.on : cfg.on.filter(k => !optIn.includes(k as ModuleKey)),
     });
   }
 
@@ -104,7 +120,7 @@ export default function AdminModulos() {
     if (!selected || !sourceId) return;
     const src = shops.find(s => s.id === sourceId);
     const from = configs[sourceId] ?? EMPTY;
-    if (await save(selected, { off: [...from.off], mobileOff: [...from.mobileOff] })) toast.success(`Copiado de ${src?.business_name}`);
+    if (await save(selected, { off: [...from.off], mobileOff: [...from.mobileOff], on: [...from.on] })) toast.success(`Copiado de ${src?.business_name}`);
   }
 
   const total = MODULE_KEYS.length;
@@ -117,6 +133,7 @@ export default function AdminModulos() {
           Escolha o que cada oficina pode usar. Módulo desligado some do menu e a tela fica bloqueada para todos da oficina, inclusive o dono.
           Início, Perfil e Avisos ficam sempre liberados. Desmarque 📱 para liberar o módulo só no computador (fica bloqueado no celular e no tablet).
           Em “Ferramentas” você escolhe o que fica liberado dentro de cada módulo.
+          Módulos “opcionais” nascem desligados e só ligam clicando neles (o “Liberar tudo” não liga).
         </p>
       </div>
 
@@ -126,7 +143,7 @@ export default function AdminModulos() {
           <input className="input w-full mb-3" placeholder="Buscar oficina…" value={search} onChange={e => setSearch(e.target.value)} />
           <div className="space-y-1 max-h-[60vh] overflow-y-auto">
             {filtered.map(s => {
-              const on = total - (configs[s.id]?.off.filter(isModule).length ?? 0);
+              const on = countOn(configs[s.id] ?? EMPTY);
               const active = s.id === selected;
               return (
                 <button
@@ -154,7 +171,7 @@ export default function AdminModulos() {
               <div>
                 <h2 className="text-lg font-bold">{shop.business_name}</h2>
                 <p className="text-xs text-steel-500">
-                  {total - off.filter(isModule).length} de {total} módulos liberados
+                  {countOn(cfg)} de {total} módulos liberados
                   {cfg.mobileOff.filter(isModule).length > 0 && ` · ${cfg.mobileOff.filter(isModule).length} só no computador`}
                   {off.some(k => !isModule(k)) && ` · ${off.filter(k => !isModule(k)).length} ferramentas desligadas`}
                   {saving && ' · salvando…'}
@@ -172,7 +189,7 @@ export default function AdminModulos() {
 
             <div className="space-y-5">
               {MODULE_GROUPS.map(g => {
-                const allOn = g.keys.every(k => !off.includes(k));
+                const allOn = g.keys.filter(k => !isOptIn(k)).every(k => moduleOn(cfg, k));
                 return (
                   <div key={g.label}>
                     <div className="flex items-center justify-between mb-2">
@@ -184,7 +201,7 @@ export default function AdminModulos() {
                     <div className="grid sm:grid-cols-2 gap-2">
                       {g.keys.map(k => {
                         const m = MODULES[k];
-                        const on = !off.includes(k);
+                        const on = moduleOn(cfg, k);
                         const mobileOn = on && !cfg.mobileOff.includes(k);
                         const feats = FEATURES[k] ?? [];
                         const featsOn = feats.filter(f => !off.includes(f.key)).length;
@@ -199,12 +216,17 @@ export default function AdminModulos() {
                                 <input type="checkbox" className="mt-1 accent-emerald-600" checked={on} onChange={() => toggle(k)} />
                                 <span className="text-lg leading-none mt-0.5">{m.icon}</span>
                                 <span className="min-w-0">
-                                  <span className="block text-sm font-semibold">{m.label}</span>
+                                  <span className="block text-sm font-semibold">
+                                    {m.label}
+                                    {isOptIn(k) && <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-brand-600">opcional</span>}
+                                  </span>
                                   <span className="block text-xs text-steel-500">{m.desc}</span>
                                 </span>
                               </label>
                               {on && <MobileChip on={mobileOn} onClick={() => toggleMobile(k)} />}
                             </div>
+
+                            {on && k === 'inbox' && <InboxInstance workshopId={shop.id} />}
 
                             {/* Ferramentas dentro do módulo */}
                             {on && feats.length > 0 && (
@@ -270,5 +292,61 @@ function MobileChip({ on, onClick, small }: { on: boolean; onClick: () => void; 
     >
       {on ? '📱 Celular ✓' : '🖥️ Só PC'}
     </button>
+  );
+}
+
+/** WhatsApp da oficina: status do número e ligar uma instância que já existe na UAZAPI (pelo token) */
+function InboxInstance({ workshopId }: { workshopId: string }) {
+  const [inst, setInst] = useState<{ status: string; phone_number: string | null; instance_name: string } | null>(null);
+  const [token, setToken] = useState('');
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    const { data } = await supabase.from('whatsapp_instances')
+      .select('status, phone_number, instance_name').eq('workshop_id', workshopId).maybeSingle();
+    setInst(data ?? null);
+  }
+  useEffect(() => { load(); setOpen(false); setToken(''); }, [workshopId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function link() {
+    if (!token.trim()) return;
+    setBusy(true);
+    try {
+      const r = await inboxCall<{ status: string }>('whatsapp-instance', { action: 'link', workshop_id: workshopId, token: token.trim() });
+      toast.success(r.status === 'connected' ? 'Instância ligada e conectada ✓' : 'Instância ligada — falta conectar o número pelo QR code no Inbox');
+      setToken('');
+      setOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível ligar');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const connected = inst?.status === 'connected';
+  return (
+    <div className="mt-2 ml-7 rounded-lg bg-white px-2.5 py-2 text-xs space-y-1.5">
+      <p className="text-steel-600">
+        <span className={`inline-block h-2 w-2 rounded-full mr-1.5 ${connected ? 'bg-emerald-500' : inst ? 'bg-alert-500' : 'bg-steel-300'}`} />
+        {!inst ? 'Nenhum número ligado ainda' : connected
+          ? `Conectado${inst.phone_number ? ` · ${fmtPhone(inst.phone_number)}` : ''} (${inst.instance_name})`
+          : `Desconectado (${inst.instance_name})`}
+      </p>
+      {open ? (
+        <div className="flex gap-1.5">
+          <input type="password" className="input !py-1.5 text-xs flex-1" placeholder="Token da instância" value={token}
+            onChange={e => setToken(e.target.value)} autoFocus />
+          <button type="button" className="btn-primary !py-1.5 !px-2.5 text-xs" disabled={busy || !token.trim()} onClick={link}>
+            {busy ? '…' : 'Ligar'}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => setOpen(true)}>
+          {inst ? 'Trocar por outra instância (token)' : 'Usar instância que já existe (token)'}
+        </button>
+      )}
+    </div>
   );
 }

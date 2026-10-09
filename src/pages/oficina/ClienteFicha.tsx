@@ -11,6 +11,7 @@ import CustomerForm from '@/components/customers/CustomerForm';
 import VehicleForm from '@/components/customers/VehicleForm';
 import { APPROVAL_CHANNELS, fmtBRL, fmtPhone, osNumber, osStatusColor, osStatusLabel } from '@/components/os/osHelpers';
 import { onlyDigits, timeAgo } from '@/lib/customers';
+import { useModuleAllows } from '@/lib/modules';
 import {
   SEGMENTS, approvalProfile, birthdaySoon, customerInsight, fmtMonthYear, habits, shopContext, spendByCategory, vehicleUsage,
   type InsOs, type InsRec, type ShopContext,
@@ -35,6 +36,8 @@ export default function ClienteFicha() {
   const [editing, setEditing] = useState(false);
   const [vehForm, setVehForm] = useState<{ vehicle: Vehicle | null } | null>(null);
   const [carFilter, setCarFilter] = useState<string | 'all'>('all');
+  // Inbox ligado: o botão do WhatsApp abre a conversa no sistema (número da oficina)
+  const inboxOn = useModuleAllows()('/oficina/inbox');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -165,7 +168,12 @@ export default function ClienteFicha() {
             </div>
             <div className="flex flex-wrap gap-2 lg:justify-end shrink-0">
               <Link to={newOsUrl()} className="btn-primary text-sm !py-2">＋ Nova OS</Link>
-              {wa && <a href={wa} target="_blank" rel="noopener noreferrer" className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700">💬 WhatsApp</a>}
+              {wa && (inboxOn ? (
+                <Link to={`/oficina/inbox?tel=${phone}&cliente=${customer.id}&nome=${encodeURIComponent(customer.full_name)}`}
+                  className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700">💬 Conversar no WhatsApp</Link>
+              ) : (
+                <a href={wa} target="_blank" rel="noopener noreferrer" className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700">💬 WhatsApp</a>
+              ))}
               {phone.length >= 10 && <a href={`tel:${phone}`} className="btn-ghost text-sm !py-2 border border-steel-200">📞 Ligar</a>}
               <button onClick={() => setEditing(true)} className="btn-ghost text-sm !py-2 border border-steel-200">✏️ Editar</button>
               <button onClick={removeCustomer} className="btn-ghost text-sm !py-2 text-steel-400 hover:text-alert-600">Excluir</button>

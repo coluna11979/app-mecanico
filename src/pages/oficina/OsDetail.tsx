@@ -4,6 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
+import { useInboxSender } from '@/lib/inbox';
 import { toast } from '@/components/ui/Toast';
 import { canDo, sessionAllows, useOperator } from '@/lib/operators';
 import { useCheckupAccess } from '@/lib/checkupAccess';
@@ -54,6 +55,9 @@ export default function OsDetail() {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy]     = useState(false);
   const [waOpen, setWaOpen] = useState(false);
+  /** Orçamento pelo número da oficina (Inbox): confere o texto antes; ao enviar vira "Aguardando aprovação" */
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const inbox = useInboxSender();
   const [paperUrl, setPaperUrl] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [pausing, setPausing]     = useState(false);
@@ -235,6 +239,7 @@ export default function OsDetail() {
       if (!confirm('O orçamento ainda está sem valores. Enviar mesmo assim?')) return;
     }
     const wa = waNumber(os.customer?.phone);
+    if (wa && inbox.ready) { setApprovalOpen(true); return; }
     if (wa) window.open(`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText('approval'))}`, '_blank', 'noopener');
     else toast.info('Cliente sem telefone — marcado como enviado. Combine a aprovação por outro meio.');
     changeStatus('awaiting_approval', { skipConfirm: true });
@@ -406,10 +411,12 @@ export default function OsDetail() {
               <>
                 <button onClick={() => setApproving(true)} disabled={busy} className={`${BTN} !bg-signal-500`}>✅ Cliente aprovou</button>
                 <button onClick={() => changeStatus('cancelled', { declined: true })} disabled={busy} className={`${SEC} text-alert-600`}>✕ Não aprovou</button>
-                {wa && (
+                {wa && (inbox.ready ? (
+                  <button onClick={() => setApprovalOpen(true)} disabled={busy} className={SEC}>↻ Reenviar orçamento</button>
+                ) : (
                   <a href={`https://wa.me/${wa}?text=${encodeURIComponent(whatsappText('approval'))}`} target="_blank" rel="noopener noreferrer"
                     className={SEC}>↻ Reenviar orçamento</a>
-                )}
+                ))}
               </>
             )}
             {os.status === 'approved' && (
@@ -695,7 +702,12 @@ export default function OsDetail() {
                   <div className="font-bold text-steel-900">{os.customer.full_name}</div>
                   <div className="mt-2 space-y-1 text-sm">
                     {tel && <a href={`tel:${tel}`} className="block text-steel-600 hover:text-brand-600">📞 {fmtPhone(os.customer.phone)}</a>}
-                    {wa && <a href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" className="block text-signal-700 hover:underline">💬 WhatsApp</a>}
+                    {wa && (modAllows('/oficina/inbox') ? (
+                      <Link to={`/oficina/inbox?tel=${wa}&cliente=${os.customer_id ?? ''}&nome=${encodeURIComponent(os.customer.full_name)}`}
+                        className="block text-signal-700 hover:underline">💬 Conversar no WhatsApp</Link>
+                    ) : (
+                      <a href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" className="block text-signal-700 hover:underline">💬 WhatsApp</a>
+                    ))}
                     {!mech && os.customer.email && <div className="text-steel-600 truncate">✉️ {os.customer.email}</div>}
                     {!mech && os.customer.cpf && <div className="text-steel-500">🪪 {os.customer.cpf}</div>}
                   </div>
@@ -801,8 +813,16 @@ export default function OsDetail() {
         </div>
       </div>
 
+      {approvalOpen && (
+        <SendWhatsAppModal phone={os.customer?.phone} customerId={os.customer_id} customerName={os.customer?.full_name}
+          title="Enviar orçamento para aprovação"
+          messages={[{ key: 'approval', label: 'Orçamento', text: whatsappText('approval') }]}
+          onSent={() => { if (os.status === 'open') changeStatus('awaiting_approval', { skipConfirm: true }); }}
+          onClose={() => setApprovalOpen(false)} />
+      )}
+
       {waOpen && (
-        <SendWhatsAppModal phone={os.customer?.phone}
+        <SendWhatsAppModal phone={os.customer?.phone} customerId={os.customer_id} customerName={os.customer?.full_name}
           messages={isSale
             ? [{ key: 'recibo', label: 'Comprovante', text: saleReceiptText() }]
             : [

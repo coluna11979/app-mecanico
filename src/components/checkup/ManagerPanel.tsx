@@ -166,7 +166,7 @@ export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, w
       )}
 
       {wa && (
-        <SendWhatsAppModal phone={wa.c.customer_phone}
+        <SendWhatsAppModal phone={wa.c.customer_phone} customerId={wa.c.customer_id} customerName={wa.c.customer_name}
           messages={[{ key: 'retorno', label: 'Retorno do check-up', text: waText(wa) }]}
           onClose={() => setWa(null)} />
       )}

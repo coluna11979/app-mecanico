@@ -5,6 +5,7 @@ import { waNumber } from '@/components/os/osHelpers';
 import {
   DEFAULT_SCHEDULE, WEEKDAY_SHORT, addDays, dayKey, daySlots, localInput, type ScheduleConfig,
 } from '@/lib/agenda';
+import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 
 type ScheduleOs = {
   id: string; workshop_id: string; title: string; scheduled_at: string | null;
@@ -114,9 +115,9 @@ export default function ScheduleOsModal({ os, shopName, onClose, onSaved }: {
             <p className="text-sm text-steel-500 mt-1">Já aparece na Agenda como "a confirmar".</p>
             <div className="grid gap-2 mt-5">
               {phone && (
-                <a href={`https://wa.me/${phone}?text=${encodeURIComponent(waMsg(saved))}`} target="_blank" rel="noopener noreferrer"
-                  onClick={() => supabase.from('service_orders').update({ schedule_reminded_at: new Date().toISOString() }).eq('id', os.id)}
-                  className="btn-primary !bg-signal-600">💬 Confirmar com o cliente no WhatsApp</a>
+                <WhatsAppButton phone={phone} text={waMsg(saved)} customerName={os.customer?.full_name} title="Confirmar agendamento"
+                  onSent={() => { supabase.from('service_orders').update({ schedule_reminded_at: new Date().toISOString() }).eq('id', os.id).then(); }}
+                  className="btn-primary !bg-signal-600">💬 Confirmar com o cliente no WhatsApp</WhatsAppButton>
               )}
               <button onClick={onClose} className="btn-ghost">Fechar</button>
             </div>

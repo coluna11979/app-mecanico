@@ -16,6 +16,7 @@ import {
   type CallReason, type CustomerInsight, type InsOs, type InsRec,
 } from '@/lib/customerInsights';
 import { PRESETS, rangeOf, type Preset } from '@/components/PeriodPicker';
+import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 
 type Base = {
   id: string; full_name: string; phone: string | null; cpf: string | null; created_at: string;
@@ -446,11 +447,11 @@ function CustomerRow({ r, shopId, shopName, onOpen, onNewOs, onSchedule, onOptOu
           <div className="text-[11px] text-steel-500">{r.ins.lastVisit ? timeAgo(r.ins.lastVisit) : '—'}</div>
         </div>
         {wa ? (
-          <a href={`https://wa.me/${wa}?text=${encodeURIComponent(callMessage(shopId, shopName, { name: r.full_name, car: r.car, lastService: r.lastService }, r.reason))}`}
-            target="_blank" rel="noopener noreferrer" title="WhatsApp"
+          <WhatsAppButton phone={wa} text={callMessage(shopId, shopName, { name: r.full_name, car: r.car, lastService: r.lastService }, r.reason)}
+            customerId={r.id} customerName={r.full_name}
             className="h-10 w-10 md:h-9 md:w-9 grid place-items-center rounded-lg text-steel-500 hover:text-signal-600 hover:bg-steel-100 transition">
             <Icon name="chat" size={17} />
-          </a>
+          </WhatsAppButton>
         ) : <span className="h-10 w-10 md:h-9 md:w-9" />}
         <RowMenu items={[
           { label: 'Criar OS / orçamento', onClick: onNewOs },

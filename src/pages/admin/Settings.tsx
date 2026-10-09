@@ -31,6 +31,8 @@ const FIELDS: FieldDef[] = [
   { key: 'ai_text_model',          label: 'Modelo das mensagens do CRM', description: 'Escreve as mensagens de reativação (plano VIP). Ex.: claude-opus-5 — melhor texto; claude-sonnet-5 — mais barato.', section: 'Inteligência Artificial' },
   { key: 'ai_text_effort',         label: 'Esforço nas mensagens do CRM', description: 'low, medium ou high. Mensagens curtas ficam boas com low (mais rápido e barato).', section: 'Inteligência Artificial' },
   { key: 'ai_refusal_fallback',    label: 'Fallback em recusa',       description: '"default" = se o modelo recusar a imagem, outro modelo tenta automaticamente. Deixe vazio para desligar (necessário em modelos sem suporte).', section: 'Inteligência Artificial' },
+  { key: 'uazapi_url',             label: 'Endereço do servidor',      description: 'URL da sua conta UAZAPI (ex.: https://suaconta.uazapi.com). Usada pelo módulo Inbox do WhatsApp das oficinas.', section: 'WhatsApp (UAZAPI)' },
+  { key: 'uazapi_admin_token',     label: 'Admin token',               description: 'Cria uma instância por oficina quando ela conecta o número pelo QR code.', type: 'password', section: 'WhatsApp (UAZAPI)' },
 ];
 
 type Section = { label: string; icon: string; color: string; bg: string };
@@ -42,6 +44,7 @@ const SECTIONS: Record<string, Section> = {
   Mapas:                  { label: 'Mapas',                icon: '🗺️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
   'Email (Resend)':       { label: 'Email (Resend)',       icon: '📧',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
   'Inteligência Artificial': { label: 'Inteligência Artificial', icon: '🤖', color: 'text-brand-700', bg: 'bg-brand-50' },
+  'WhatsApp (UAZAPI)':    { label: 'WhatsApp (UAZAPI)',    icon: '💬',  color: 'text-signal-700', bg: 'bg-signal-50'  },
 };
 
 export default function AdminSettings() {

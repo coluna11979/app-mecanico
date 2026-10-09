@@ -359,6 +359,17 @@ export function whatsappLink(
   /** Estado geral já montado (ex.: "Bom, com pontos de atenção — 28 OK, 3 atenção, 1 urgente") */
   summary?: string,
 ) {
+  const { phone, text } = checkupWhatsapp(c, workshopName, quoteTotal, summary);
+  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+}
+
+/** Telefone (55…) e texto da mensagem do relatório/orçamento do check-up */
+export function checkupWhatsapp(
+  c: Pick<VehicleCheckup, 'customer_name' | 'customer_phone' | 'plate' | 'make' | 'model' | 'score' | 'public_token' | 'template_key'>,
+  workshopName?: string,
+  quoteTotal = 0,
+  summary?: string,
+) {
   const first = c.customer_name?.trim().split(' ')[0];
   const car   = [c.make, c.model].filter(Boolean).join(' ') || 'seu veículo';
   const plate = c.plate ? ` (${c.plate})` : '';
@@ -373,7 +384,7 @@ export function whatsappLink(
       : `Veja o relatório completo com fotos: ${publicReportUrl(c.public_token)}`);
   const digits = (c.customer_phone ?? '').replace(/\D/g, '');
   const phone  = digits ? (digits.length <= 11 ? `55${digits}` : digits) : '';
-  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  return { phone, text };
 }
 
 /* ─── Link do mecânico ───────────────────────────────────────── */

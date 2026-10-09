@@ -11,6 +11,7 @@ import {
   DEFAULT_SCHEDULE, WEEKDAY_SHORT, addDays, dayKey, daySlots, localInput, startOfWeek, type ScheduleConfig,
 } from '@/lib/agenda';
 import { useCheckupAccess } from '@/lib/checkupAccess';
+import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 
 type Appt = {
   id: string; number: number | null; title: string; category: string | null; status: string;
@@ -281,9 +282,9 @@ function ApptCard({ a, mechs, workshopName, onPatch, mech }: {
           {mechs.map(m => <option key={m.id} value={m.id}>🔧 {m.name}</option>)}
         </select>}
         {!done && phone && a.schedule_status !== 'confirmed' && (
-          <a href={`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer"
-            onClick={() => onPatch(a, { schedule_reminded_at: new Date().toISOString() })}
-            className="px-2.5 py-1 rounded-lg bg-[#25D366] text-white font-semibold">💬 Confirmar pelo WhatsApp</a>
+          <WhatsAppButton phone={phone} text={msg} customerName={a.customer?.full_name} title="Confirmar agendamento"
+            onSent={() => onPatch(a, { schedule_reminded_at: new Date().toISOString() })}
+            className="px-2.5 py-1 rounded-lg bg-[#25D366] text-white font-semibold">💬 Confirmar pelo WhatsApp</WhatsAppButton>
         )}
         {!done && a.schedule_status !== 'confirmed' && (
           <button onClick={() => onPatch(a, { schedule_status: 'confirmed', schedule_status_at: new Date().toISOString() }, 'Confirmado ✓')}

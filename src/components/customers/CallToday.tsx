@@ -5,6 +5,7 @@ import { toast } from '@/components/ui/Toast';
 import { fmtBRL, waNumber } from '@/components/os/osHelpers';
 import { Icon, type IconName } from '@/components/home/ui';
 import type { CallReason } from '@/lib/customerInsights';
+import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 
 export type CallItem = {
   id: string; name: string; phone: string | null; car: string | null; lastService: string | null;
@@ -152,8 +153,8 @@ export default function CallToday({ items, workshopId, shopName, onContacted, on
                   {r.kind === 'quote' && <Link to={`/oficina/os/${r.osId}`} className={`${BTN_SEC} flex-1 sm:flex-none`}>Ver orçamento</Link>}
                   {r.kind === 'service' && <button onClick={() => onSchedule(c.id)} className={`${BTN_SEC} flex-1 sm:flex-none`}>Agendar</button>}
                   {wa && (
-                    <a href={`https://wa.me/${wa}?text=${encodeURIComponent(callMessage(workshopId, shopName, c, r))}`} target="_blank" rel="noopener noreferrer"
-                      className={`${BTN_PRI} flex-[2] sm:flex-none`}><Icon name="chat" size={15} />WhatsApp</a>
+                    <WhatsAppButton phone={wa} text={callMessage(workshopId, shopName, c, r)} customerId={c.id} customerName={c.name}
+                      className={`${BTN_PRI} flex-[2] sm:flex-none`}><Icon name="chat" size={15} />WhatsApp</WhatsAppButton>
                   )}
                   <button onClick={() => contacted(c)} disabled={busy === c.id} className={`${BTN_OUTLINE} flex-1 sm:flex-none disabled:opacity-50`} title="Registrar que você já falou com o cliente">
                     <Icon name="check" size={13} />Já chamei

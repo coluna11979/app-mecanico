@@ -7,10 +7,11 @@ import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import {
   DECISION_META, MECHANIC_STAGE_META, SYSTEM_ICON, STATUS_META,
-  computeScore, itemQuote, mechanicLinkUrl, mechanicStage, mechanicWhatsappLink, publicReportUrl, uploadCheckupPhoto, whatsappLink,
+  computeScore, itemQuote, mechanicLinkUrl, mechanicStage, mechanicWhatsappLink, publicReportUrl, uploadCheckupPhoto, checkupWhatsapp,
   CHECKUP_MODELS, CHECKUP_TEMPLATE, changeCheckupModel, modelItemKeys, modelLabel, modelOf,
   type CheckupItem, type CheckupModelKey, type VehicleCheckup,
 } from '@/lib/checkup';
+import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 import { AddItem, ItemRow } from '@/components/checkup/ChecklistItem';
 import QuoteSearch, { type CatalogEntry } from '@/components/checkup/QuoteSearch';
 import { loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
@@ -799,10 +800,16 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
           {mode === 'blocked' ? (
             <button disabled className="btn-primary !bg-steel-300 !text-white text-center flex-1 cursor-not-allowed">Enviar orçamento pelo WhatsApp</button>
           ) : (
-            <a href={whatsappLink(checkup, workshopName, mode === 'quote' ? total : 0, overallText(items))} target="_blank" rel="noreferrer" onClick={onSent}
+            <WhatsAppButton
+              phone={checkup.customer_phone}
+              text={checkupWhatsapp(checkup, workshopName, mode === 'quote' ? total : 0, overallText(items)).text}
+              customerId={checkup.customer_id}
+              customerName={checkup.customer_name}
+              title={mode === 'quote' ? 'Enviar orçamento do check-up' : 'Enviar relatório do check-up'}
+              onSent={onSent}
               className={`text-center flex-1 ${mode === 'quote' || !noPrice.length ? 'btn-primary !bg-[#25D366]' : 'btn-ghost border border-steel-300 bg-white font-semibold'}`}>
               {mode === 'quote' ? 'Enviar orçamento pelo WhatsApp' : noPrice.length ? 'Enviar somente relatório' : 'Enviar relatório pelo WhatsApp'}
-            </a>
+            </WhatsAppButton>
           )}
           <button onClick={() => { copy(); onSent(); }} disabled={mode === 'blocked'} className="btn-ghost border border-steel-200 disabled:opacity-40">Copiar link</button>
           <a href={url} target="_blank" rel="noreferrer" className="btn-ghost border border-steel-200 text-center">Ver como o cliente</a>

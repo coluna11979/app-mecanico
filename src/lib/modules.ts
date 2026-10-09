@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 /* ── Módulos da oficina (liberados por oficina no superadmin) ─────────────── */
 
 export type ModuleKey =
-  | 'painel' | 'os' | 'agenda' | 'checkup' | 'clientes' | 'comercial'
+  | 'painel' | 'os' | 'agenda' | 'checkup' | 'clientes' | 'comercial' | 'inbox'
   | 'caixa' | 'financeiro' | 'contas_pagar'
   | 'pecas' | 'compras'
   | 'equipe' | 'fechamentos'
@@ -22,6 +22,7 @@ export const MODULES: Record<ModuleKey, {
   checkup:      { label: 'Check-up',           icon: '🩺', desc: 'Painel, inspeções, histórico e orçamento pelo link', routes: ['/oficina/checkup'] },
   clientes:     { label: 'Clientes',           icon: '👥', desc: 'Cadastro e ficha dos clientes',                 routes: ['/oficina/clientes'] },
   comercial:    { label: 'Comercial',          icon: '🤝', desc: 'Mesa comercial: retorno de orçamentos',         routes: ['/oficina/comercial'] },
+  inbox:        { label: 'WhatsApp (Inbox)',   icon: '💬', desc: 'Número da oficina conectado: conversas com os clientes', routes: ['/oficina/inbox'] },
   caixa:        { label: 'Caixa',              icon: '💰', desc: 'Abrir/fechar caixa, receber OS, PDV balcão',    routes: ['/oficina/caixa'] },
   financeiro:   { label: 'Visão financeira',   icon: '💵', desc: 'Resultado do mês, a receber',                   routes: ['/oficina/financeiro'] },
   contas_pagar: { label: 'Contas a pagar',     icon: '📤', desc: 'Lançar e dar baixa em contas',                  routes: ['/oficina/contas-a-pagar'] },
@@ -38,7 +39,7 @@ export const MODULES: Record<ModuleKey, {
 
 /** Agrupado como no menu da oficina, para a tela do superadmin */
 export const MODULE_GROUPS: { label: string; keys: ModuleKey[] }[] = [
-  { label: 'Atendimento',       keys: ['painel', 'os', 'agenda', 'clientes', 'comercial'] },
+  { label: 'Atendimento',       keys: ['painel', 'os', 'agenda', 'clientes', 'comercial', 'inbox'] },
   { label: 'Check-up',          keys: ['checkup'] },
   { label: 'Financeiro',        keys: ['caixa', 'financeiro', 'contas_pagar'] },
   { label: 'Estoque e compras', keys: ['pecas', 'compras'] },
@@ -48,6 +49,11 @@ export const MODULE_GROUPS: { label: string; keys: ModuleKey[] }[] = [
 ];
 
 export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
+
+/** Módulos opcionais: nascem desligados e o superadmin liga só para as oficinas escolhidas
+ *  (ficam em workshop_modules.enabled_modules; o resto continua "ligado até desligar"). */
+export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox'];
+export const isOptIn = (k: string) => (OPT_IN_MODULES as readonly string[]).includes(k);
 
 /* ── Ferramentas dentro de cada módulo ────────────────────────────────────────
    Chave `modulo.ferramenta`, guardada nas mesmas listas dos módulos (desligado
@@ -161,12 +167,18 @@ type ModulesState = {
   off: string[];
   /** Desligados só no celular/tablet */
   mobileOff: string[];
+  /** Módulos opcionais ligados para a oficina */
+  enabled: string[];
   isMobile: boolean;
   /** O que vale neste aparelho (é o que as telas consultam) */
   disabled: string[];
   loaded: boolean;
   load: (workshopId: string | null) => Promise<void>;
 };
+
+/** Opcional não ligado conta como desligado */
+const withOptIn = (off: string[], enabled: string[]) =>
+  [...off, ...OPT_IN_MODULES.filter(k => !enabled.includes(k) && !off.includes(k))];
 
 const effective = (off: string[], mobileOff: string[], isMobile: boolean) =>
   isMobile ? [...new Set([...off, ...mobileOff])] : off;
@@ -175,18 +187,20 @@ export const useWorkshopModules = create<ModulesState>((set, get) => ({
   workshopId: null,
   off: [],
   mobileOff: [],
+  enabled: [],
   isMobile: isMobileNow(),
   disabled: [],
   loaded: false,
   async load(workshopId) {
-    if (!workshopId) { set({ workshopId: null, off: [], mobileOff: [], disabled: [], loaded: true }); return; }
-    if (get().workshopId !== workshopId) set({ workshopId, off: [], mobileOff: [], disabled: [], loaded: false });
+    if (!workshopId) { set({ workshopId: null, off: [], mobileOff: [], enabled: [], disabled: [], loaded: true }); return; }
+    if (get().workshopId !== workshopId) set({ workshopId, off: [], mobileOff: [], enabled: [], disabled: [], loaded: false });
     const { data } = await supabase.from('workshop_modules')
-      .select('disabled_modules, mobile_disabled_modules').eq('workshop_id', workshopId).maybeSingle();
+      .select('disabled_modules, mobile_disabled_modules, enabled_modules').eq('workshop_id', workshopId).maybeSingle();
     if (get().workshopId !== workshopId) return; // trocou de loja no meio
-    const off = (data?.disabled_modules ?? []) as string[];
+    const enabled = (data?.enabled_modules ?? []) as string[];
+    const off = withOptIn((data?.disabled_modules ?? []) as string[], enabled);
     const mobileOff = (data?.mobile_disabled_modules ?? []) as string[];
-    set({ off, mobileOff, disabled: effective(off, mobileOff, get().isMobile), loaded: true });
+    set({ off, mobileOff, enabled, disabled: effective(off, mobileOff, get().isMobile), loaded: true });
   },
 }));
 
