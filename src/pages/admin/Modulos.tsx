@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, isOptIn, type ModuleKey } from '@/lib/modules';
+import { inboxCall } from '@/lib/inbox';
+import { fmtPhone } from '@/components/os/osHelpers';
 
 type Shop = { id: string; business_name: string; city: string | null; owner: string | null };
 /** off = desligado em qualquer aparelho; mobileOff = liberado só no computador;
@@ -224,6 +226,8 @@ export default function AdminModulos() {
                               {on && <MobileChip on={mobileOn} onClick={() => toggleMobile(k)} />}
                             </div>
 
+                            {on && k === 'inbox' && <InboxInstance workshopId={shop.id} />}
+
                             {/* Ferramentas dentro do módulo */}
                             {on && feats.length > 0 && (
                               <button
@@ -288,5 +292,61 @@ function MobileChip({ on, onClick, small }: { on: boolean; onClick: () => void; 
     >
       {on ? '📱 Celular ✓' : '🖥️ Só PC'}
     </button>
+  );
+}
+
+/** WhatsApp da oficina: status do número e ligar uma instância que já existe na UAZAPI (pelo token) */
+function InboxInstance({ workshopId }: { workshopId: string }) {
+  const [inst, setInst] = useState<{ status: string; phone_number: string | null; instance_name: string } | null>(null);
+  const [token, setToken] = useState('');
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    const { data } = await supabase.from('whatsapp_instances')
+      .select('status, phone_number, instance_name').eq('workshop_id', workshopId).maybeSingle();
+    setInst(data ?? null);
+  }
+  useEffect(() => { load(); setOpen(false); setToken(''); }, [workshopId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function link() {
+    if (!token.trim()) return;
+    setBusy(true);
+    try {
+      const r = await inboxCall<{ status: string }>('whatsapp-instance', { action: 'link', workshop_id: workshopId, token: token.trim() });
+      toast.success(r.status === 'connected' ? 'Instância ligada e conectada ✓' : 'Instância ligada — falta conectar o número pelo QR code no Inbox');
+      setToken('');
+      setOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível ligar');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const connected = inst?.status === 'connected';
+  return (
+    <div className="mt-2 ml-7 rounded-lg bg-white px-2.5 py-2 text-xs space-y-1.5">
+      <p className="text-steel-600">
+        <span className={`inline-block h-2 w-2 rounded-full mr-1.5 ${connected ? 'bg-emerald-500' : inst ? 'bg-alert-500' : 'bg-steel-300'}`} />
+        {!inst ? 'Nenhum número ligado ainda' : connected
+          ? `Conectado${inst.phone_number ? ` · ${fmtPhone(inst.phone_number)}` : ''} (${inst.instance_name})`
+          : `Desconectado (${inst.instance_name})`}
+      </p>
+      {open ? (
+        <div className="flex gap-1.5">
+          <input type="password" className="input !py-1.5 text-xs flex-1" placeholder="Token da instância" value={token}
+            onChange={e => setToken(e.target.value)} autoFocus />
+          <button type="button" className="btn-primary !py-1.5 !px-2.5 text-xs" disabled={busy || !token.trim()} onClick={link}>
+            {busy ? '…' : 'Ligar'}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => setOpen(true)}>
+          {inst ? 'Trocar por outra instância (token)' : 'Usar instância que já existe (token)'}
+        </button>
+      )}
+    </div>
   );
 }

@@ -30,8 +30,8 @@ export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-/** Usuário logado, membro da oficina e com o módulo Inbox liberado */
-export async function requireInboxMember(req: Request, admin: SupabaseClient, workshopId: unknown) {
+/** Usuário logado */
+export async function requireUser(req: Request) {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) throw new HttpError(401, 'Não autenticado');
   const userClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
@@ -39,6 +39,12 @@ export async function requireInboxMember(req: Request, admin: SupabaseClient, wo
   });
   const { data: { user } } = await userClient.auth.getUser();
   if (!user) throw new HttpError(401, 'Não autenticado');
+  return user;
+}
+
+/** Usuário logado, membro da oficina e com o módulo Inbox liberado */
+export async function requireInboxMember(req: Request, admin: SupabaseClient, workshopId: unknown) {
+  const user = await requireUser(req);
   if (typeof workshopId !== 'string' || !workshopId) throw new HttpError(400, 'workshop_id obrigatório');
 
   const [{ data: member }, { data: enabled }] = await Promise.all([

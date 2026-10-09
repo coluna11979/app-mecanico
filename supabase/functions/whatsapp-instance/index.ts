@@ -1,7 +1,7 @@
 // Número de WhatsApp da oficina (uma instância da UAZAPI por oficina).
 // action: 'status' (confere na UAZAPI) | 'connect' (cria se preciso e devolve o QR code) | 'disconnect'
 import {
-  CORS, HttpError, adminClient, json, mapInstanceStatus, requireInboxMember, uaz, uazConfig, type UazConfig,
+  CORS, HttpError, adminClient, json, mapInstanceStatus, requireInboxMember, requireUser, uaz, uazConfig, type UazConfig,
 } from '../_shared/uazapi.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -9,7 +9,30 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const admin = adminClient();
   try {
-    const { action, workshop_id: workshopId } = await req.json();
+    const { action, workshop_id: workshopId, token: linkToken } = await req.json();
+
+    // Superadmin liga uma instância que já existe na UAZAPI (número já conectado) à oficina
+    if (action === 'link') {
+      const user = await requireUser(req);
+      const { data: isAdmin } = await admin.rpc('is_admin', { uid: user.id });
+      if (!isAdmin) throw new HttpError(403, 'Só o superadmin pode ligar uma instância existente');
+      if (typeof workshopId !== 'string' || !workshopId) throw new HttpError(400, 'workshop_id obrigatório');
+      const token = String(linkToken ?? '').trim();
+      if (!token) throw new HttpError(400, 'Informe o token da instância');
+      const cfg = await uazConfig(admin);
+      const r = await uaz(cfg, '/instance/status', { token });
+      if (!r.ok) throw new HttpError(400, `A UAZAPI não reconheceu esse token (${r.status}). Confira o token e o endereço do servidor.`);
+      const name = r.data?.instance?.name || `oficina_${workshopId.slice(0, 8)}`;
+
+      const { data: prev } = await admin.from('whatsapp_instances').select('*').eq('workshop_id', workshopId).maybeSingle();
+      await admin.from('whatsapp_instances').upsert({ workshop_id: workshopId, instance_name: name, updated_at: new Date().toISOString() });
+      const { data: saved, error } = await admin.from('whatsapp_instance_secrets')
+        .upsert({ workshop_id: workshopId, token }).select('webhook_secret').single();
+      if (error) throw error;
+      await configureWebhook(cfg, token, workshopId, saved.webhook_secret);
+      return json(await saveStatus(admin, workshopId, prev, mapInstanceStatus(r.data)));
+    }
+
     await requireInboxMember(req, admin, workshopId);
     const cfg = await uazConfig(admin);
 
