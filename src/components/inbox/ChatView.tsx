@@ -26,6 +26,8 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
+  const [agendaOpen, setAgendaOpen] = useState(false);
+  const [inject, setInject] = useState<{ text: string; n: number } | null>(null);
   const stickToBottom = useRef(true);
 
   // Carrega as últimas mensagens e escuta as novas
@@ -86,7 +88,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
   return (
     <div className="flex-1 min-w-0 flex flex-col">
       {/* Cabeçalho */}
-      <div className="flex items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-steel-100 bg-white shrink-0">
+      <div className="relative flex items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-steel-100 bg-white shrink-0">
         <button type="button" onClick={onBack} className="lg:hidden h-8 w-8 rounded-lg bg-steel-100 grid place-items-center text-steel-600 shrink-0" aria-label="Voltar">←</button>
         <ChatAvatar chat={chat} size={40} />
         <button type="button" onClick={onToggleClient} className="flex-1 min-w-0 text-left">
@@ -100,6 +102,14 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
           <span className={`hidden sm:inline-flex text-[11px] font-bold px-2 py-1 rounded-lg shrink-0 ${waitMin >= URGENT_MIN ? 'bg-alert-500/10 text-alert-600' : 'bg-pending-500/10 text-pending-700'}`}>
             ⏱ Aguardando {fmtWait(waitMin)}
           </span>
+        )}
+        <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setAgendaOpen(v => !v)}
+          className={`btn-ghost !py-1.5 !px-2.5 text-xs shrink-0 ${agendaOpen ? '!bg-sky-50 !text-sky-700' : ''}`} title="Agenda: horários livres e compromissos">
+          📅<span className="hidden sm:inline ml-1">Agenda</span>
+        </button>
+        {agendaOpen && (
+          <MiniAgenda workshopId={workshopId} onClose={() => setAgendaOpen(false)}
+            onPropose={text => { setInject(x => ({ text, n: (x?.n ?? 0) + 1 })); setAgendaOpen(false); }} />
         )}
         {chat.status === 'open' ? (
           <button type="button" onClick={() => onResolve(true)} className="btn-secondary !py-1.5 !px-3 text-xs shrink-0">✓ Concluir</button>
@@ -149,7 +159,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
       </div>
 
       {connected ? (
-        <Composer chat={chat} workshopId={workshopId} onSent={() => { stickToBottom.current = true; }} />
+        <Composer chat={chat} workshopId={workshopId} inject={inject} onSent={() => { stickToBottom.current = true; }} />
       ) : (
         <div className="p-3 border-t border-steel-100 bg-alert-500/5 flex items-center gap-3 shrink-0">
           <p className="text-sm text-alert-600 font-semibold flex-1">WhatsApp desconectado — não dá para enviar nem receber mensagens.</p>
@@ -235,7 +245,11 @@ function Media({ m }: { m: WaMessage }) {
 
 const MAX_MB = 16;
 
-function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: string; onSent: () => void }) {
+function Composer({ chat, workshopId, onSent, inject }: {
+  chat: WaChat; workshopId: string; onSent: () => void;
+  /** Texto vindo de fora (ex.: horário proposto na agenda); `n` muda a cada envio */
+  inject: { text: string; n: number } | null;
+}) {
   const chatId = chat.id;
   const { currentWorkshop } = useAuth();
   const [text, setText] = useState('');
@@ -244,7 +258,7 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
   const [recording, setRecording] = useState(false);
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(false);
-  const [popover, setPopover] = useState<null | 'emoji' | 'agenda'>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [suggestIdx, setSuggestIdx] = useState(0);
   const replies = useQuickReplies(workshopId);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -252,6 +266,8 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
 
   // Rascunho some ao trocar de conversa
   useEffect(() => { setText(''); setFile(null); setRecording(false); }, [chatId]);
+
+  useEffect(() => { if (inject) insert(inject.text, false); }, [inject?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Caixa cresce até 5 linhas
   useLayoutEffect(() => {
@@ -372,11 +388,7 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
 
   return (
     <form onSubmit={send} className="relative border-t border-steel-100 bg-white p-2.5 shrink-0">
-      {popover === 'emoji' && <EmojiPicker onPick={e => insert(e)} onClose={() => setPopover(null)} />}
-      {popover === 'agenda' && (
-        <MiniAgenda workshopId={workshopId} onClose={() => setPopover(null)}
-          onPropose={t => { insert(t, false); setPopover(null); }} />
-      )}
+      {emojiOpen && <EmojiPicker onPick={e => insert(e)} onClose={() => setEmojiOpen(false)} />}
       {file && (
         <div className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-steel-50 border border-steel-200 text-sm">
           <span>{file.type.startsWith('image/') ? '📷' : file.type.startsWith('audio/') ? '🎤' : file.type.startsWith('video/') ? '🎥' : '📄'}</span>
@@ -392,11 +404,9 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
           <button type="button" onClick={() => setRepliesOpen(true)} className={toolBtn} title="Respostas rápidas (ou digite /)">⚡</button>
           <button type="button" onClick={() => setMaterialsOpen(true)} className={toolBtn} title="Biblioteca de materiais">📁</button>
           <button type="button" onClick={() => fileInput.current?.click()} className={toolBtn} title="Anexar foto ou arquivo">📎</button>
-          <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setPopover(p => (p === 'agenda' ? null : 'agenda'))}
-            className={`${toolBtn} ${popover === 'agenda' ? 'bg-steel-100' : ''}`} title="Horários livres da agenda">📅</button>
           {/* No celular o teclado já tem emojis */}
-          <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setPopover(p => (p === 'emoji' ? null : 'emoji'))}
-            className={`${toolBtn} !hidden sm:!grid ${popover === 'emoji' ? 'bg-steel-100' : ''}`} title="Emojis">😊</button>
+          <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setEmojiOpen(v => !v)}
+            className={`${toolBtn} !hidden sm:!grid ${emojiOpen ? 'bg-steel-100' : ''}`} title="Emojis">😊</button>
           <div className="relative flex-1 ml-1">
             {slashQuery != null && <QuickReplySuggest list={replies.list} query={slashQuery} active={suggestIdx} onPick={applyReply} />}
             <textarea
