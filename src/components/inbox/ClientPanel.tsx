@@ -17,6 +17,8 @@ type PanelOs = {
 };
 
 const OPEN = ['open', 'awaiting_approval', 'approved', 'in_progress'];
+/** OS em andamento mostradas antes do "ver mais" */
+const OPEN_SHOWN = 3;
 
 /** Painel da direita: quem é o contato na oficina (cliente, carros, OS) */
 export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
@@ -28,6 +30,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [reload, setReload] = useState(0);
+  const [allOpen, setAllOpen] = useState(false);
 
   useEffect(() => {
     if (!chat.customer_id) { setCustomer(null); setVehicles([]); setOs([]); return; }
@@ -125,13 +128,28 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
               ))}
             </Section>
 
-            <Section title="📋 OS em andamento">
-              {open.length === 0 ? <Empty>Nenhuma OS aberta</Empty> : open.map(o => <OsRow key={o.id} o={o} onDecide={ok => decide(o, ok)} />)}
+            <Section title="📋 OS em andamento" count={open.length}>
+              {open.length === 0 ? <Empty>Nenhuma OS aberta</Empty> : (
+                <>
+                  {/* Aguardando aprovação primeiro (é onde se aprova pela conversa) */}
+                  {[...open].sort((a, b) => Number(b.status === 'awaiting_approval') - Number(a.status === 'awaiting_approval'))
+                    .slice(0, allOpen ? undefined : OPEN_SHOWN)
+                    .map(o => <OsRow key={o.id} o={o} onDecide={ok => decide(o, ok)} />)}
+                  {open.length > OPEN_SHOWN && (
+                    <button type="button" onClick={() => setAllOpen(v => !v)} className="text-xs font-semibold text-brand-600 hover:underline">
+                      {allOpen ? 'Mostrar menos' : `Ver mais ${open.length - OPEN_SHOWN}`}
+                    </button>
+                  )}
+                </>
+              )}
             </Section>
 
             {os.length > open.length && (
-              <Section title="🗂️ Últimas OS">
-                {os.filter(o => !open.includes(o)).slice(0, 5).map(o => <OsRow key={o.id} o={o} />)}
+              <Section title="🗂️ Últimas OS" count={os.length - open.length} collapsible storageKey="inbox_panel_last_os">
+                {os.filter(o => !open.includes(o)).slice(0, 5).map(o => <OsLine key={o.id} o={o} />)}
+                <Link to={`/oficina/clientes/${customer.id}`} className="block text-xs font-semibold text-brand-600 hover:underline mt-1.5">
+                  Ver todas na ficha →
+                </Link>
               </Section>
             )}
 
@@ -231,6 +249,18 @@ function OsRow({ o, onDecide }: { o: PanelOs; onDecide?: (approved: boolean) => 
   );
 }
 
+/** Linha compacta do histórico: nº · serviço · situação · valor */
+function OsLine({ o }: { o: PanelOs }) {
+  return (
+    <Link to={`/oficina/os/${o.id}`} className="flex items-center gap-2 py-1.5 border-b border-steel-100 last:border-0 hover:bg-steel-50 -mx-1 px-1 rounded">
+      <span className="text-[11px] font-bold text-steel-400 shrink-0">{osNumber(o)}</span>
+      <span className="text-sm text-steel-700 truncate flex-1">{o.title}</span>
+      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${osStatusColor(o)}`}>{osStatusLabel(o)}</span>
+      <span className="text-xs text-steel-500 tabular-nums shrink-0">{fmtBRL(o.price)}</span>
+    </Link>
+  );
+}
+
 function Stat({ label, value, tone }: { label: string; value: string; tone: 'emerald' | 'sky' }) {
   const cls = tone === 'emerald' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-sky-50 border-sky-200 text-sky-700';
   return (
@@ -241,11 +271,33 @@ function Stat({ label, value, tone }: { label: string; value: string; tone: 'eme
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, count, collapsible, storageKey, children }: {
+  title: string; count?: number; collapsible?: boolean; storageKey?: string; children: React.ReactNode;
+}) {
+  // Recolhível começa fechado; lembra a escolha neste aparelho
+  const [open, setOpen] = useState(() => {
+    if (!collapsible) return true;
+    try { return storageKey ? localStorage.getItem(storageKey) === '1' : false; } catch { return false; }
+  });
+  function toggle() {
+    setOpen(v => {
+      try { if (storageKey) localStorage.setItem(storageKey, v ? '0' : '1'); } catch { /* sem localStorage */ }
+      return !v;
+    });
+  }
+  const label = <>{title}{count != null && count > 0 && <span className="ml-1 text-steel-400">({count})</span>}</>;
   return (
     <div>
-      <p className="text-[11px] font-bold uppercase tracking-widest text-steel-500 mb-1.5">{title}</p>
-      {children}
+      {collapsible ? (
+        <button type="button" onClick={toggle} aria-expanded={open}
+          className="w-full flex items-center justify-between text-[11px] font-bold uppercase tracking-widest text-steel-500 hover:text-steel-800 mb-1.5">
+          <span>{label}</span>
+          <span className={`text-[10px] transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+        </button>
+      ) : (
+        <p className="text-[11px] font-bold uppercase tracking-widest text-steel-500 mb-1.5">{label}</p>
+      )}
+      {open && children}
     </div>
   );
 }
