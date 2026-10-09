@@ -171,7 +171,7 @@ export default function Comercial() {
 
   return (
     <WorkshopLayout>
-      <div className="max-w-6xl mx-auto space-y-5">
+      <div className={`${view === 'colunas' ? 'max-w-6xl md:max-w-[1680px]' : 'max-w-6xl'} mx-auto space-y-5`}>
         {/* Topo */}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -456,12 +456,12 @@ function LeadRow({ l, canOpen, onDiscard }: { l: Lead; canOpen: (p: string) => b
 /* ── Quadro em colunas (como o pipeline do Cockpit) ─────────────────────────── */
 
 type Fn = ReturnType<typeof funnelOf>;
-const COLUMNS: { key: Stage; title: string; dot: string; hint: string }[] = [
-  { key: 'montando',   title: 'Montando orçamento', dot: 'bg-steel-400',   hint: 'agora' },
-  { key: 'aguardando', title: 'Aguardando cliente', dot: 'bg-pending-500', hint: 'agora' },
-  { key: 'aprovado',   title: 'Aprovado',           dot: 'bg-signal-500',  hint: 'no período' },
-  { key: 'recusado',   title: 'Perdido',            dot: 'bg-alert-500',   hint: 'no período' },
-  { key: 'lembrar',    title: 'Lembrar depois',     dot: 'bg-brand-500',   hint: 'no período' },
+const COLUMNS: { key: Stage; title: string; bar: string; hint: string; empty: string }[] = [
+  { key: 'montando',   title: 'Montando orçamento', bar: 'bg-steel-400',   hint: 'agora',      empty: 'Nenhum orçamento sendo montado' },
+  { key: 'aguardando', title: 'Aguardando cliente', bar: 'bg-pending-500', hint: 'agora',      empty: 'Ninguém aguardando resposta' },
+  { key: 'aprovado',   title: 'Aprovado',           bar: 'bg-signal-500',  hint: 'no período', empty: 'Nenhum aprovado no período' },
+  { key: 'recusado',   title: 'Perdido',            bar: 'bg-alert-500',   hint: 'no período', empty: 'Nenhum perdido no período' },
+  { key: 'lembrar',    title: 'Lembrar depois',     bar: 'bg-brand-500',   hint: 'no período', empty: 'Nada para lembrar' },
 ];
 
 function Board({ leads, leadsValue, fn, canOpen, openLink, onWa, onDiscardLead }: {
@@ -470,31 +470,15 @@ function Board({ leads, leadsValue, fn, canOpen, openLink, onWa, onDiscardLead }
   onWa: (o: Opp) => void; onDiscardLead: (l: Lead) => void;
 }) {
   return (
-    <div className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 items-start">
+    <div className="grid grid-flow-col auto-cols-[minmax(232px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
       {leads && (
-        <Column title="💬 Interessados" dot="bg-emerald-500" n={leads.length} value={leadsValue} approx hint="pediram preço, sem orçamento">
-          {leads.map(l => {
-            const d = daysSince(l.lead_at);
-            return (
-              <div key={l.id} className="rounded-xl border border-steel-200 bg-white p-3 shadow-sm">
-                <p className="text-sm font-semibold truncate">{leadName(l)}</p>
-                <p className="text-xs text-steel-600 line-clamp-2">{l.lead_note ?? 'sem descrição'}</p>
-                <div className="flex items-center justify-between mt-1.5">
-                  <span className="text-sm font-bold">{l.lead_value ? `~${fmtBRL(Number(l.lead_value))}` : <span className="text-xs font-normal text-steel-400">sem valor</span>}</span>
-                  <span className={`text-[10px] ${(d ?? 0) >= 3 ? 'text-alert-600 font-semibold' : 'text-steel-400'}`}>{d === 0 ? 'hoje' : `há ${d}d`}</span>
-                </div>
-                <div className="flex gap-1.5 mt-2">
-                  {canOpen('/oficina/os') && <Link to={newOsFor(l)} className="flex-1 text-center text-[11px] font-bold py-1 rounded-lg bg-brand-500 text-white">Orçamento</Link>}
-                  {canOpen('/oficina/inbox') && <Link to={`/oficina/inbox?conversa=${l.id}`} className="text-[11px] font-bold px-2 py-1 rounded-lg bg-[#25D366] text-white" title="Abrir conversa">💬</Link>}
-                  <button onClick={() => onDiscardLead(l)} className="text-[11px] px-2 py-1 rounded-lg border border-steel-200 text-steel-500" title="Descartar">✕</button>
-                </div>
-              </div>
-            );
-          })}
+        <Column title="Interessados" icon="💬" bar="bg-emerald-500" n={leads.length} value={leadsValue} approx
+          hint="sem orçamento ainda" empty="Marque no WhatsApp: “💰 Marcar como interessado”">
+          {leads.map(l => <LeadCard key={l.id} l={l} canOpen={canOpen} onDiscard={() => onDiscardLead(l)} />)}
         </Column>
       )}
       {COLUMNS.map(c => (
-        <Column key={c.key} title={c.title} dot={c.dot} n={fn[c.key].length} value={fn.values[c.key]} hint={c.hint}>
+        <Column key={c.key} title={c.title} bar={c.bar} n={fn[c.key].length} value={fn.values[c.key]} hint={c.hint} empty={c.empty}>
           {[...fn[c.key]]
             .sort((a, b) => (c.key === 'montando' || c.key === 'aguardando')
               ? (daysSince(b.since) ?? 0) - (daysSince(a.since) ?? 0)
@@ -506,54 +490,112 @@ function Board({ leads, leadsValue, fn, canOpen, openLink, onWa, onDiscardLead }
   );
 }
 
-function Column({ title, dot, n, value, hint, approx, children }: {
-  title: string; dot: string; n: number; value: number; hint: string; approx?: boolean; children: React.ReactNode;
+function Column({ title, icon, bar, n, value, hint, empty, approx, children }: {
+  title: string; icon?: string; bar: string; n: number; value: number; hint: string; empty: string; approx?: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="w-[272px] shrink-0 rounded-2xl border border-steel-200 bg-steel-50/60">
-      <div className="px-3 pt-3 pb-2 border-b border-steel-200">
+    <section className="flex flex-col rounded-2xl bg-steel-100/70 min-h-[440px] overflow-hidden">
+      <div className={`h-1 ${bar}`} />
+      <header className="px-3.5 pt-3 pb-2.5">
         <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${dot}`} />
-          <span className="text-sm font-bold text-steel-800 truncate">{title}</span>
-          <span className="ml-auto text-[11px] font-bold px-1.5 rounded-full bg-white border border-steel-200 text-steel-600">{n}</span>
+          <h3 className="text-[13px] font-bold text-steel-800 truncate">{icon && <span className="mr-1">{icon}</span>}{title}</h3>
+          <span className="ml-auto h-5 min-w-5 px-1.5 rounded-full bg-white text-[11px] font-bold text-steel-600 grid place-items-center shadow-sm">{n}</span>
         </div>
-        <div className="flex items-baseline justify-between mt-1">
-          <span className="text-sm font-semibold text-steel-700">{approx && value > 0 ? '~' : ''}{fmtBRL(value)}</span>
-          <span className="text-[10px] text-steel-400">{hint}</span>
+        <div className="flex items-baseline justify-between gap-2 mt-1">
+          <span className="text-base font-bold text-steel-900 tabular-nums">{approx && value > 0 ? '~' : ''}{fmtBRL(value)}</span>
+          <span className="text-[10px] text-steel-400 truncate">{hint}</span>
         </div>
+      </header>
+      <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto max-h-[64vh] [scrollbar-width:thin]">
+        {n === 0 ? (
+          <div className="h-full min-h-[120px] rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-4 text-center">
+            <span className="text-xs text-steel-400">{empty}</span>
+          </div>
+        ) : children}
       </div>
-      <div className="p-2 space-y-2 max-h-[62vh] overflow-y-auto">
-        {n === 0 ? <p className="text-xs text-steel-400 text-center py-6">Nada aqui</p> : children}
+    </section>
+  );
+}
+
+/** Selo de tempo: "hoje" / "12d" — vermelho a partir de 5 dias parado */
+function Age({ days, open }: { days: number | null; open: boolean }) {
+  if (days == null) return null;
+  const late = open && days >= 5;
+  return (
+    <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${late ? 'bg-alert-500/10 text-alert-600' : 'bg-steel-100 text-steel-500'}`}
+      title={open ? 'Parado nesta etapa' : undefined}>
+      {days === 0 ? 'hoje' : `${days}d`}
+    </span>
+  );
+}
+
+const cardCls = 'group block rounded-xl bg-white border border-steel-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-steel-300 hover:shadow-md transition';
+const actionCls = 'text-[11px] font-semibold px-2 py-1 rounded-md transition';
+
+function OppCard({ o, canOpen, openLink, onWa }: { o: Opp; canOpen: (p: string) => boolean; openLink: string; onWa: () => void }) {
+  const open = o.stage === 'montando' || o.stage === 'aguardando';
+  const days = open ? daysSince(o.since) : null;
+  const osLabel = o.origin === 'checkup' ? 'Check-up' : `OS ${o.saleOsNumber != null ? String(o.saleOsNumber).padStart(4, '0') : ''}`;
+  const body = (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{o.customerName ?? 'Cliente avulso'}</p>
+        <Age days={days} open={open} />
       </div>
+      <p className="text-xs text-steel-500 truncate mt-0.5">{o.car}</p>
+      <div className="flex items-center justify-between gap-2 mt-2.5">
+        <span className="text-[15px] font-bold text-steel-900 tabular-nums">
+          {o.value > 0 ? fmtBRL(o.value) : <span className="text-xs font-semibold text-pending-700">sem valor</span>}
+        </span>
+        <span className="text-[10px] font-medium text-steel-400 truncate">
+          {osLabel}{o.plate ? ` · ${o.plate}` : ''}
+        </span>
+      </div>
+      {!open && o.since && (
+        <p className="text-[10px] text-steel-400 mt-1">{new Date(o.since).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</p>
+      )}
+      {o.stage === 'aguardando' && o.viewed && <p className="text-[10px] font-semibold text-sky-600 mt-1">👀 Cliente já viu o orçamento</p>}
+    </div>
+  );
+  return (
+    <div className={cardCls}>
+      {canOpen(openLink) ? <Link to={openLink}>{body}</Link> : body}
+      {o.stage === 'aguardando' && o.phone && (
+        <div className="flex justify-end border-t border-steel-100 px-2 py-1.5">
+          <button onClick={onWa} className={`${actionCls} text-emerald-700 hover:bg-emerald-50`}>💬 Cobrar</button>
+        </div>
+      )}
     </div>
   );
 }
 
-function OppCard({ o, canOpen, openLink, onWa }: { o: Opp; canOpen: (p: string) => boolean; openLink: string; onWa: () => void }) {
-  const d = daysSince(o.since);
-  const open = o.stage === 'montando' || o.stage === 'aguardando';
-  const card = (
-    <>
-      <div className="flex items-center gap-2">
-        {o.plate && <LicensePlate plate={o.plate} size="sm" />}
-        <p className="text-sm font-semibold truncate">{o.customerName ?? 'Cliente avulso'}</p>
+function LeadCard({ l, canOpen, onDiscard }: { l: Lead; canOpen: (p: string) => boolean; onDiscard: () => void }) {
+  const days = daysSince(l.lead_at);
+  const body = (
+    <div className="p-3">
+      <div className="flex items-start gap-2">
+        <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{leadName(l)}</p>
+        <Age days={days} open={days != null && days >= 3 ? true : false} />
       </div>
-      <p className="text-xs text-steel-500 truncate mt-0.5">{o.car} · {o.origin === 'checkup' ? 'check-up' : `OS${o.saleOsNumber != null ? ` ${String(o.saleOsNumber).padStart(4, '0')}` : ''}`}</p>
-      <div className="flex items-center justify-between mt-1.5">
-        <span className="text-sm font-bold">{o.value > 0 ? fmtBRL(o.value) : <span className="text-xs font-normal text-pending-700">sem valor</span>}</span>
-        <span className={`text-[10px] ${open && (d ?? 0) >= 5 ? 'text-alert-600 font-semibold' : 'text-steel-400'}`}>
-          {open ? (d === 0 ? 'hoje' : `parado ${d}d`) : o.since ? new Date(o.since).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ''}
+      <p className="text-xs text-steel-600 line-clamp-2 mt-0.5">{l.lead_note ?? 'sem descrição'}</p>
+      <div className="flex items-center justify-between gap-2 mt-2.5">
+        <span className="text-[15px] font-bold text-steel-900 tabular-nums">
+          {l.lead_value ? `~${fmtBRL(Number(l.lead_value))}` : <span className="text-xs font-semibold text-steel-400">sem valor</span>}
         </span>
+        <span className="text-[10px] font-medium text-emerald-600">WhatsApp</span>
       </div>
-      {o.stage === 'aguardando' && o.viewed && <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">👀 viu</span>}
-    </>
+    </div>
   );
   return (
-    <div className="rounded-xl border border-steel-200 bg-white p-3 shadow-sm">
-      {canOpen(openLink) ? <Link to={openLink} className="block hover:opacity-80">{card}</Link> : card}
-      {o.stage === 'aguardando' && o.phone && (
-        <button onClick={onWa} className="w-full mt-2 text-[11px] font-bold py-1 rounded-lg bg-[#25D366] text-white">Cobrar no WhatsApp</button>
-      )}
+    <div className={cardCls}>
+      {canOpen('/oficina/inbox') ? <Link to={`/oficina/inbox?conversa=${l.id}`} title="Abrir a conversa">{body}</Link> : body}
+      <div className="flex items-center gap-1 border-t border-steel-100 px-2 py-1.5">
+        {canOpen('/oficina/os') && (
+          <Link to={newOsFor(l)} className={`${actionCls} text-brand-700 hover:bg-brand-50`}>＋ Orçamento</Link>
+        )}
+        <button onClick={onDiscard} className={`${actionCls} ml-auto text-steel-400 hover:text-alert-600 hover:bg-alert-500/5`}>Descartar</button>
+      </div>
     </div>
   );
 }
