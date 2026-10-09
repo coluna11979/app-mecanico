@@ -1,57 +1,74 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import CustomerForm from '@/components/customers/CustomerForm';
 import { fmtBRL, fmtPhone, osNumber, osStatusColor, osStatusLabel, statusChange } from '@/components/os/osHelpers';
-import { isSale, onlyDigits, timeAgo } from '@/lib/customers';
-import { chatTitle, type WaChat } from '@/lib/inbox';
+import { onlyDigits, timeAgo } from '@/lib/customers';
+import { SEGMENTS, customerInsight, fmtMonthYear, serviceDueDays, type InsOs, type InsRec } from '@/lib/customerInsights';
+import { chatTitle, followUpDue, followUpLabel, useComposeInject, type WaChat } from '@/lib/inbox';
 import type { Customer, Vehicle } from '@/types/database';
 import ChatAvatar from './ChatAvatar';
 import ChatNotes from './ChatNotes';
+import FollowUp from './FollowUp';
 
-type PanelOs = {
-  id: string; number: number | null; title: string; status: string; quote_status: string | null;
-  price: number | null; created_at: string; completed_at: string | null; rework_of_id: string | null;
-  started_at: string | null;
+type PanelOs = InsOs & {
+  number: number | null; title: string; started_at: string | null;
 };
 
 const OPEN = ['open', 'awaiting_approval', 'approved', 'in_progress'];
 /** OS em andamento mostradas antes do "ver mais" */
 const OPEN_SHOWN = 3;
+type Tab = 'cliente' | 'notas' | 'retorno';
 
-/** Painel da direita: quem é o contato na oficina (cliente, carros, OS) */
+/** Painel da direita: quem é o contato na oficina (cliente, carros, OS), notas da equipe e retorno */
 export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
   chat: WaChat; workshopId: string; onLinked: (customerId: string | null) => void; onClose?: () => void;
 }) {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [os, setOs] = useState<PanelOs[]>([]);
+  const [recs, setRecs] = useState<InsRec[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [reload, setReload] = useState(0);
   const [allOpen, setAllOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>('cliente');
+  const pushCompose = useComposeInject(s => s.push);
+
+  // Trocou de conversa: volta para a aba do cliente (ou para o retorno, se ele vence hoje)
+  useEffect(() => { setTab(followUpDue(chat) ? 'retorno' : 'cliente'); }, [chat.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!chat.customer_id) { setCustomer(null); setVehicles([]); setOs([]); return; }
+    if (!chat.customer_id) { setCustomer(null); setVehicles([]); setOs([]); setRecs([]); return; }
     let alive = true;
     setLoading(true);
     Promise.all([
       supabase.from('customers').select('*').eq('id', chat.customer_id).maybeSingle(),
       supabase.from('vehicles').select('*').eq('customer_id', chat.customer_id).order('created_at'),
       supabase.from('service_orders')
-        .select('id, number, title, status, quote_status, price, created_at, completed_at, rework_of_id, started_at')
-        .eq('customer_id', chat.customer_id).order('created_at', { ascending: false }).limit(200),
-    ]).then(([c, v, o]) => {
+        .select('id, number, title, category, customer_id, vehicle_id, status, quote_status, price, created_at, completed_at, rework_of_id, started_at')
+        .eq('customer_id', chat.customer_id).order('created_at', { ascending: false }).limit(300),
+      supabase.from('service_recommendations').select('id, customer_id, vehicle_id, description, recommended_at')
+        .eq('customer_id', chat.customer_id).eq('status', 'pending').order('recommended_at', { ascending: false }),
+    ]).then(([c, v, o, r]) => {
       if (!alive) return;
       setCustomer((c.data as Customer) ?? null);
       setVehicles((v.data as Vehicle[]) ?? []);
       setOs((o.data as PanelOs[]) ?? []);
+      setRecs((r.data as InsRec[]) ?? []);
       setLoading(false);
     });
     return () => { alive = false; };
   }, [chat.customer_id, reload]);
+
+  // Perfil do cliente (mesma conta da ficha). VIP precisa da base inteira, então aqui fica de fora.
+  const ins = useMemo(() => {
+    if (!chat.customer_id || !os.length) return null;
+    const rows = os.map(o => ({ ...o, price: Number(o.price ?? 0) }));
+    return customerInsight(rows, recs, { shopTicket: 0, oilTicket: 0, vipThreshold: Infinity });
+  }, [os, recs, chat.customer_id]);
 
   /** Cliente respondeu na conversa: aprova (pelo WhatsApp) ou marca que não aprovou, sem sair do Inbox */
   async function decide(o: PanelOs, approved: boolean) {
@@ -71,13 +88,31 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
     onLinked(customerId);
   }
 
-  const sales = os.filter(o => isSale({ ...o, price: Number(o.price ?? 0), customer_id: chat.customer_id, vehicle_id: null }));
-  const spent = sales.reduce((s, o) => s + Number(o.price ?? 0), 0);
+  /** Recomendação pendente → mensagem pronta na caixa de texto */
+  function remind(r: InsRec) {
+    const first = (customer?.full_name ?? chatTitle(chat)).trim().split(/\s+/)[0];
+    const car = vehicles.find(v => v.id === r.vehicle_id);
+    const when = new Date(r.recommended_at).toLocaleDateString('pt-BR', { month: 'long' });
+    pushCompose(
+      `Olá${first ? `, ${first}` : ''}! Na visita de ${when}${car ? ` com o ${car.model}` : ''} a gente recomendou: *${r.description}*. ` +
+      'Quer aproveitar e agendar? Tenho horários essa semana.',
+    );
+  }
+
+  function copyPhone() {
+    let d = onlyDigits(chat.phone);
+    if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+    navigator.clipboard?.writeText(d).then(() => toast.success('Telefone copiado'), () => toast.error('Não copiou'));
+  }
+
   const open = os.filter(o => OPEN.includes(o.status));
-  const lastVisit = sales[0]?.completed_at ?? sales[0]?.created_at ?? null;
+  const seg = ins ? SEGMENTS[ins.segment] : null;
+  const dueDays = ins ? serviceDueDays(ins) : null;
+  const tel = onlyDigits(chat.phone);
 
   return (
     <div className="h-full flex flex-col bg-white">
+      {/* Cabeçalho: quem é, selo do cliente e telefone */}
       <div className="px-4 pt-4 pb-3 border-b border-steel-100">
         {onClose && (
           <div className="flex justify-end -mt-1 -mr-1 mb-1">
@@ -88,38 +123,91 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
           <ChatAvatar chat={chat} size={56} />
           <div className="min-w-0">
             <p className="font-bold text-steel-900 truncate">{chatTitle(chat)}</p>
-            <p className="text-sm text-steel-500">{fmtPhone(chat.phone)}</p>
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {!chat.customer_id ? (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-steel-100 text-steel-500">Sem cadastro</span>
+              ) : seg && (
+                <span title={seg.hint} className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${seg.cls}`}>{seg.icon} {seg.label}</span>
+              )}
+              {customer?.contact_opt_out && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-pending-100 text-pending-800" title="Pediu para não receber mensagens de marketing">🚫 sem marketing</span>}
+            </div>
             {chat.name && customer && chat.name !== customer.full_name && (
-              <p className="text-[11px] text-steel-400 truncate">No WhatsApp: {chat.name}</p>
+              <p className="text-[11px] text-steel-400 truncate mt-0.5">No WhatsApp: {chat.name}</p>
             )}
           </div>
         </div>
+        <div className="flex items-center gap-2 mt-3 text-sm">
+          <span className="text-steel-700 flex-1 truncate">📞 {fmtPhone(chat.phone)}</span>
+          <a href={`tel:+${tel.startsWith('55') ? tel : `55${tel}`}`} className="text-xs font-semibold text-brand-600 hover:underline">Ligar</a>
+          <button type="button" onClick={copyPhone} className="text-xs font-semibold text-steel-500 hover:text-steel-800">Copiar</button>
+        </div>
+      </div>
+
+      {/* Abas */}
+      <div className="flex border-b border-steel-100 px-2">
+        {([
+          ['cliente', '👤 Cliente'],
+          ['notas', '📝 Notas'],
+          ['retorno', chat.follow_up_at ? `🔔 ${followUpLabel(chat.follow_up_at)}` : '🔔 Retorno'],
+        ] as [Tab, string][]).map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setTab(k)}
+            className={`flex-1 py-2 text-xs font-semibold border-b-2 -mb-px truncate ${tab === k ? 'border-brand-500 text-steel-900'
+              : k === 'retorno' && followUpDue(chat) ? 'border-transparent text-pending-700' : 'border-transparent text-steel-500 hover:text-steel-800'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
-        <ChatNotes chatId={chat.id} workshopId={workshopId} />
-
-        {!chat.customer_id ? (
+        {tab === 'notas' ? (
+          <ChatNotes chatId={chat.id} workshopId={workshopId} />
+        ) : tab === 'retorno' ? (
+          <FollowUp chat={chat} />
+        ) : !chat.customer_id ? (
           <NotLinked chat={chat} workshopId={workshopId} onPick={id => link(id)} onCreate={() => setCreating(true)} />
         ) : loading || !customer ? (
           <p className="text-sm text-steel-500">Carregando…</p>
         ) : (
           <>
+            {/* Situação: última visita e próxima revisão/visita */}
+            {ins && ins.visits > 0 && (
+              <div className="rounded-2xl border border-steel-200 p-3 space-y-1.5">
+                <Line label="Última visita" value={timeAgo(ins.lastVisit)} />
+                {dueDays != null && (
+                  <Line label="Troca de óleo" tone={dueDays < 0 ? 'warn' : dueDays <= 30 ? 'soon' : undefined}
+                    value={dueDays < 0 ? `vencida há ${-dueDays} dias` : dueDays <= 30 ? `vence em ${dueDays} dias` : `em ~${Math.round(dueDays / 30)} meses`} />
+                )}
+                {ins.nextExpected && (
+                  <Line label="Próxima visita" tone={ins.overdueDays > 30 ? 'warn' : undefined}
+                    value={ins.overdueDays > 0 ? `atrasada ${ins.overdueDays} dias` : fmtMonthYear(ins.nextExpected)} />
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
-              <Stat label="Gasto total" value={fmtBRL(spent)} tone="emerald" />
-              <Stat label="Visitas" value={String(sales.length)} tone="sky" />
+              <Stat label="Gasto total" value={fmtBRL(ins?.spent ?? 0)} tone="emerald" />
+              <Stat label="Visitas" value={String(ins?.visits ?? 0)} tone="sky" />
             </div>
-            <p className="text-xs text-steel-500 -mt-3">Última visita: {timeAgo(lastVisit)}</p>
 
             <div className="flex gap-2">
               <Link to={`/oficina/clientes/${customer.id}`} className="btn-secondary flex-1 text-sm text-center">Ver ficha</Link>
               <Link to={`/oficina/os?nova=1&cliente=${customer.id}${vehicles.length === 1 ? `&veiculo=${vehicles[0].id}` : ''}`} className="btn-primary flex-1 text-sm text-center">+ Nova OS</Link>
             </div>
 
-            {customer.contact_opt_out && (
-              <p className="text-xs font-semibold text-pending-700 bg-pending-500/10 rounded-lg px-3 py-2">
-                Este cliente pediu para não receber mensagens de marketing.
-              </p>
+            {recs.length > 0 && (
+              <Section title="💡 Recomendado na última visita" count={recs.length}>
+                <div className="space-y-1.5">
+                  {recs.slice(0, 4).map(r => (
+                    <div key={r.id} className="rounded-xl border border-brand-200 bg-brand-50/40 px-2.5 py-2">
+                      <p className="text-sm font-semibold text-steel-800">{r.description}</p>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <span className="text-[11px] text-steel-500">{timeAgo(r.recommended_at)}</span>
+                        <button type="button" onClick={() => remind(r)} className="text-[11px] font-bold text-brand-600 hover:underline">Lembrar o cliente ›</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Section>
             )}
 
             <Section title="🚗 Veículos">
@@ -157,7 +245,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
             )}
 
             {customer.notes && (
-              <Section title="📝 Observações">
+              <Section title="📝 Observações do cadastro">
                 <p className="text-sm text-steel-700 whitespace-pre-wrap">{customer.notes}</p>
               </Section>
             )}
@@ -177,6 +265,15 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
           onSaved={id => { setCreating(false); link(id); }}
         />
       )}
+    </div>
+  );
+}
+
+function Line({ label, value, tone }: { label: string; value: string; tone?: 'warn' | 'soon' }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-sm">
+      <span className="text-steel-500">{label}</span>
+      <span className={`font-semibold ${tone === 'warn' ? 'text-alert-600' : tone === 'soon' ? 'text-pending-700' : 'text-steel-800'}`}>{value}</span>
     </div>
   );
 }

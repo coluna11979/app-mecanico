@@ -3,12 +3,14 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { fmtPhone } from '@/components/os/osHelpers';
 import {
-  chatTitle, fmtDay, fmtWait, inboxCall, isAwaiting, minutesSince, useMediaUrl, URGENT_MIN,
+  chatTitle, fmtDay, fmtWait, inboxCall, isAwaiting, minutesSince, useComposeInject, useMediaUrl, URGENT_MIN,
   type WaChat, type WaMessage,
 } from '@/lib/inbox';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatAvatar from './ChatAvatar';
 import VoiceRecorder from './VoiceRecorder';
+import EmojiPicker from './EmojiPicker';
+import MiniAgenda from './MiniAgenda';
 import MaterialsLibrary, { type Material } from './MaterialsLibrary';
 import { QuickRepliesModal, QuickReplySuggest, fillReply, matchReplies, useQuickReplies, type QuickReply } from './QuickReplies';
 
@@ -24,6 +26,8 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
+  const [agendaOpen, setAgendaOpen] = useState(false);
+  const pushCompose = useComposeInject(s => s.push);
   const stickToBottom = useRef(true);
 
   // Carrega as últimas mensagens e escuta as novas
@@ -84,7 +88,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
   return (
     <div className="flex-1 min-w-0 flex flex-col">
       {/* Cabeçalho */}
-      <div className="flex items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-steel-100 bg-white shrink-0">
+      <div className="relative flex items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-steel-100 bg-white shrink-0">
         <button type="button" onClick={onBack} className="lg:hidden h-8 w-8 rounded-lg bg-steel-100 grid place-items-center text-steel-600 shrink-0" aria-label="Voltar">←</button>
         <ChatAvatar chat={chat} size={40} />
         <button type="button" onClick={onToggleClient} className="flex-1 min-w-0 text-left">
@@ -98,6 +102,14 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
           <span className={`hidden sm:inline-flex text-[11px] font-bold px-2 py-1 rounded-lg shrink-0 ${waitMin >= URGENT_MIN ? 'bg-alert-500/10 text-alert-600' : 'bg-pending-500/10 text-pending-700'}`}>
             ⏱ Aguardando {fmtWait(waitMin)}
           </span>
+        )}
+        <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setAgendaOpen(v => !v)}
+          className={`btn-ghost !py-1.5 !px-2.5 text-xs shrink-0 ${agendaOpen ? '!bg-sky-50 !text-sky-700' : ''}`} title="Agenda: horários livres e compromissos">
+          📅<span className="hidden sm:inline ml-1">Agenda</span>
+        </button>
+        {agendaOpen && (
+          <MiniAgenda workshopId={workshopId} onClose={() => setAgendaOpen(false)}
+            onPropose={text => { pushCompose(text); setAgendaOpen(false); }} />
         )}
         {chat.status === 'open' ? (
           <button type="button" onClick={() => onResolve(true)} className="btn-secondary !py-1.5 !px-3 text-xs shrink-0">✓ Concluir</button>
@@ -242,6 +254,7 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
   const [recording, setRecording] = useState(false);
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [suggestIdx, setSuggestIdx] = useState(0);
   const replies = useQuickReplies(workshopId);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -249,6 +262,15 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
 
   // Rascunho some ao trocar de conversa
   useEffect(() => { setText(''); setFile(null); setRecording(false); }, [chatId]);
+
+  // Texto vindo de fora (horário da agenda, recomendação do painel do cliente…)
+  const injected = useComposeInject();
+  const lastInjected = useRef(injected.n);
+  useEffect(() => {
+    if (injected.n === lastInjected.current) return;
+    lastInjected.current = injected.n;
+    insert(injected.text, false);
+  }, [injected.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Caixa cresce até 5 linhas
   useLayoutEffect(() => {
@@ -333,6 +355,21 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
     if (ok) { toast.success(ok > 1 ? `${ok} materiais enviados ✓` : 'Material enviado ✓'); onSent(); }
   }
 
+  /** Coloca o texto onde está o cursor (emoji) ou no fim (proposta de horário) */
+  function insert(piece: string, atCursor = true) {
+    const el = area.current;
+    if (!atCursor || !el) {
+      setText(t => (t.trim() ? `${t.trimEnd()}\n${piece}` : piece));
+    } else {
+      const start = el.selectionStart ?? text.length;
+      const end = el.selectionEnd ?? text.length;
+      setText(text.slice(0, start) + piece + text.slice(end));
+      requestAnimationFrame(() => { el.focus(); el.setSelectionRange(start + piece.length, start + piece.length); });
+      return;
+    }
+    requestAnimationFrame(() => area.current?.focus());
+  }
+
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (suggestions.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSuggestIdx(i => (i + 1) % suggestions.length); return; }
@@ -353,7 +390,8 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
   const toolBtn = 'h-10 w-9 shrink-0 rounded-xl text-lg text-steel-500 hover:bg-steel-100 grid place-items-center';
 
   return (
-    <form onSubmit={send} className="border-t border-steel-100 bg-white p-2.5 shrink-0">
+    <form onSubmit={send} className="relative border-t border-steel-100 bg-white p-2.5 shrink-0">
+      {emojiOpen && <EmojiPicker onPick={e => insert(e)} onClose={() => setEmojiOpen(false)} />}
       {file && (
         <div className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-steel-50 border border-steel-200 text-sm">
           <span>{file.type.startsWith('image/') ? '📷' : file.type.startsWith('audio/') ? '🎤' : file.type.startsWith('video/') ? '🎥' : '📄'}</span>
@@ -369,6 +407,9 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
           <button type="button" onClick={() => setRepliesOpen(true)} className={toolBtn} title="Respostas rápidas (ou digite /)">⚡</button>
           <button type="button" onClick={() => setMaterialsOpen(true)} className={toolBtn} title="Biblioteca de materiais">📁</button>
           <button type="button" onClick={() => fileInput.current?.click()} className={toolBtn} title="Anexar foto ou arquivo">📎</button>
+          {/* No celular o teclado já tem emojis */}
+          <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setEmojiOpen(v => !v)}
+            className={`${toolBtn} !hidden sm:!grid ${emojiOpen ? 'bg-steel-100' : ''}`} title="Emojis">😊</button>
           <div className="relative flex-1 ml-1">
             {slashQuery != null && <QuickReplySuggest list={replies.list} query={slashQuery} active={suggestIdx} onPick={applyReply} />}
             <textarea

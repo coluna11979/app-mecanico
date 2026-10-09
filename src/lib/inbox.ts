@@ -33,6 +33,10 @@ export type WaChat = {
   last_message_from_me: boolean | null;
   resolved_at: string | null;
   created_at: string;
+  /** "Lembrar de retornar": dia em que a conversa volta para o topo */
+  follow_up_at: string | null;
+  follow_up_note: string | null;
+  follow_up_by: string | null;
   customer?: { id: string; full_name: string } | null;
 };
 
@@ -52,7 +56,7 @@ export type WaMessage = {
   sent_at: string;
 };
 
-export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, customer:customers(id, full_name)';
+export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, customer:customers(id, full_name)';
 
 /** Esperando resposta há mais que isso = urgente */
 export const URGENT_MIN = 30;
@@ -62,6 +66,29 @@ export const isAwaiting = (c: WaChat) => c.status === 'open' && !!c.awaiting_sin
 export const minutesSince = (iso: string | null, now = Date.now()) =>
   iso ? Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000)) : 0;
 export const isUrgent = (c: WaChat, now = Date.now()) => isAwaiting(c) && minutesSince(c.awaiting_since, now) >= URGENT_MIN;
+
+/** Retorno marcado vence hoje (ou já passou)? */
+export function followUpDue(c: Pick<WaChat, 'follow_up_at'>, now = Date.now()) {
+  if (!c.follow_up_at) return false;
+  const end = new Date(now); end.setHours(23, 59, 59, 999);
+  return new Date(c.follow_up_at).getTime() <= end.getTime();
+}
+
+/** "hoje", "amanhã", "atrasado 3 dias", "em 5 dias" */
+export function followUpLabel(iso: string, now = Date.now()) {
+  const day = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const diff = Math.round((day(new Date(iso).getTime()) - day(now)) / 86400000);
+  if (diff < 0) return `atrasado ${-diff} dia${diff === -1 ? '' : 's'}`;
+  if (diff === 0) return 'hoje';
+  if (diff === 1) return 'amanhã';
+  return `em ${diff} dias`;
+}
+
+/** Texto que outra parte da tela manda para a caixa de mensagem (agenda, recomendação…) */
+export const useComposeInject = create<{ text: string; n: number; push: (text: string) => void }>(set => ({
+  text: '', n: 0,
+  push: text => set(s => ({ text, n: s.n + 1 })),
+}));
 
 /** "agora", "12 min", "3h 20min", "2 dias" */
 export function fmtWait(min: number) {
