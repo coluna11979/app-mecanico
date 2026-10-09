@@ -63,12 +63,20 @@ const fromCustomer = (c?: Customer | null) => ({
 });
 
 /** Cadastro (com carro opcional) ou edição de cliente */
-export default function CustomerForm({ workshopId, customer, onClose, onSaved }: {
+export default function CustomerForm({ workshopId, customer, initial, onClose, onSaved }: {
   workshopId: string; customer?: Customer | null;
+  /** Cadastro novo já preenchido (ex.: contato que chamou no WhatsApp) */
+  initial?: { full_name?: string; phone?: string };
   onClose: () => void; onSaved: (customerId: string) => void;
 }) {
   const editing = !!customer;
-  const [f, setF] = useState(() => fromCustomer(customer));
+  const [f, setF] = useState(() => {
+    const base = fromCustomer(customer);
+    if (!initial || customer) return base;
+    let phone = onlyDigits(initial.phone);
+    if (phone.length > 11 && phone.startsWith('55')) phone = phone.slice(2);
+    return { ...base, full_name: initial.full_name ?? base.full_name, phone: phone ? maskPhone(phone) : base.phone };
+  });
   const [saving, setSaving] = useState(false);
   const [dups, setDups] = useState<Dup[]>([]);
   const [ignoreDups, setIgnoreDups] = useState(false);
