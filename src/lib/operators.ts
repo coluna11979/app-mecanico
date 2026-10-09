@@ -30,12 +30,12 @@ export const ROLES: Record<OperatorRole, {
   caixa: {
     label: 'Caixa', icon: '💰', desc: 'Abre e fecha o caixa, recebe as OS, lança vales, despesas e sangrias.',
     routes: ['/oficina/caixa', '/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/importar', '/oficina/clientes',
-             '/oficina/dashboard', '/oficina/buscar', '/oficina/job', '/oficina/mensagens', '/oficina/avisos'], home: '/oficina/caixa',
+             '/oficina/dashboard', '/oficina/buscar', '/oficina/job', '/oficina/mensagens', '/oficina/avaliacoes', '/oficina/avisos'], home: '/oficina/caixa',
   },
   atendente: {
     label: 'Atendente', icon: '🧑‍💼', desc: 'Abre e acompanha OS, cadastra clientes e responde mensagens.',
     routes: ['/oficina/dashboard', '/oficina/os', '/oficina/agenda', '/oficina/checkup', '/oficina/clientes', '/oficina/mensagens',
-             '/oficina/buscar', '/oficina/job', '/oficina/importar', '/oficina/avisos'],
+             '/oficina/buscar', '/oficina/job', '/oficina/importar', '/oficina/avaliacoes', '/oficina/avisos'],
     home: '/oficina/os',
   },
   mecanico: {

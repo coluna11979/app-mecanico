@@ -54,6 +54,7 @@ import WorkshopServicos from './pages/oficina/Servicos';
 import WorkshopAgenda from './pages/oficina/Agenda';
 import WorkshopComercial from './pages/oficina/Comercial';
 import WorkshopInbox from './pages/oficina/Inbox';
+import Avaliacoes from './pages/oficina/Avaliacoes';
 import WorkshopFornecedores from './pages/oficina/Fornecedores';
 import WorkshopCompras from './pages/oficina/Compras';
 import WorkshopCompraNova from './pages/oficina/CompraNova';
@@ -144,6 +145,7 @@ export default function App() {
       <Route path="/oficina/agenda" element={<ProtectedRoute allow={['workshop']}><WorkshopAgenda /></ProtectedRoute>} />
       <Route path="/oficina/comercial" element={<ProtectedRoute allow={['workshop']}><WorkshopComercial /></ProtectedRoute>} />
       <Route path="/oficina/inbox" element={<ProtectedRoute allow={['workshop']}><WorkshopInbox /></ProtectedRoute>} />
+      <Route path="/oficina/avaliacoes" element={<ProtectedRoute allow={['workshop']}><Avaliacoes /></ProtectedRoute>} />
       <Route path="/oficina/fornecedores" element={<ProtectedRoute allow={['workshop']}><WorkshopFornecedores /></ProtectedRoute>} />
       <Route path="/oficina/compras" element={<ProtectedRoute allow={['workshop']}><WorkshopCompras /></ProtectedRoute>} />
       <Route path="/oficina/compras/nova" element={<ProtectedRoute allow={['workshop']}><WorkshopCompraNova /></ProtectedRoute>} />

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 /* ── Módulos da oficina (liberados por oficina no superadmin) ─────────────── */
 
 export type ModuleKey =
-  | 'painel' | 'os' | 'agenda' | 'checkup' | 'clientes' | 'comercial' | 'inbox'
+  | 'painel' | 'os' | 'agenda' | 'checkup' | 'clientes' | 'comercial' | 'inbox' | 'avaliacoes'
   | 'caixa' | 'financeiro' | 'contas_pagar'
   | 'pecas' | 'compras'
   | 'equipe' | 'fechamentos'
@@ -23,6 +23,7 @@ export const MODULES: Record<ModuleKey, {
   clientes:     { label: 'Clientes',           icon: '👥', desc: 'Cadastro e ficha dos clientes',                 routes: ['/oficina/clientes'] },
   comercial:    { label: 'Comercial',          icon: '🤝', desc: 'Mesa comercial: retorno de orçamentos',         routes: ['/oficina/comercial'] },
   inbox:        { label: 'WhatsApp (Inbox)',   icon: '💬', desc: 'Número da oficina conectado: conversas com os clientes', routes: ['/oficina/inbox'] },
+  avaliacoes:   { label: 'Avaliações no Google', icon: '⭐', desc: 'Fila de pedidos de avaliação enviados pelo WhatsApp após a OS', routes: ['/oficina/avaliacoes'] },
   caixa:        { label: 'Caixa',              icon: '💰', desc: 'Abrir/fechar caixa, receber OS, PDV balcão',    routes: ['/oficina/caixa'] },
   financeiro:   { label: 'Visão financeira',   icon: '💵', desc: 'Resultado do mês, a receber',                   routes: ['/oficina/financeiro'] },
   contas_pagar: { label: 'Contas a pagar',     icon: '📤', desc: 'Lançar e dar baixa em contas',                  routes: ['/oficina/contas-a-pagar'] },
@@ -39,7 +40,7 @@ export const MODULES: Record<ModuleKey, {
 
 /** Agrupado como no menu da oficina, para a tela do superadmin */
 export const MODULE_GROUPS: { label: string; keys: ModuleKey[] }[] = [
-  { label: 'Atendimento',       keys: ['painel', 'os', 'agenda', 'clientes', 'comercial', 'inbox'] },
+  { label: 'Atendimento',       keys: ['painel', 'os', 'agenda', 'clientes', 'comercial', 'inbox', 'avaliacoes'] },
   { label: 'Check-up',          keys: ['checkup'] },
   { label: 'Financeiro',        keys: ['caixa', 'financeiro', 'contas_pagar'] },
   { label: 'Estoque e compras', keys: ['pecas', 'compras'] },
@@ -52,7 +53,7 @@ export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
 
 /** Módulos opcionais: nascem desligados e o superadmin liga só para as oficinas escolhidas
  *  (ficam em workshop_modules.enabled_modules; o resto continua "ligado até desligar"). */
-export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox'];
+export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox', 'avaliacoes'];
 export const isOptIn = (k: string) => (OPT_IN_MODULES as readonly string[]).includes(k);
 
 /* ── Ferramentas dentro de cada módulo ────────────────────────────────────────
