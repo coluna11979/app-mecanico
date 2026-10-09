@@ -336,7 +336,7 @@ export default function Customers() {
               </div>
             ) : (
               <div className="md:rounded-xl md:bg-white md:ring-1 md:ring-steel-200/70">
-                <div className="hidden md:grid grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_110px_120px_minmax(0,1.5fr)_72px] gap-3 pl-4 pr-2 py-2 border-b border-steel-100 text-[11px] font-medium text-steel-500">
+                <div className="hidden md:grid sticky top-0 z-10 bg-white/95 backdrop-blur rounded-t-xl grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_110px_120px_minmax(0,1.5fr)_72px] gap-3 pl-4 pr-2 py-2.5 border-b border-steel-100 text-[11px] font-semibold uppercase tracking-wide text-steel-400">
                   <span>Cliente</span><span>Veículo</span><span>Última visita</span><span className="text-right">Total gasto</span><span>Próxima ação</span><span />
                 </div>
                 <ul className="space-y-2 md:space-y-0 md:divide-y md:divide-steel-100">
@@ -398,6 +398,11 @@ function Chip({ label, count, active, onClick }: { label: string; count?: number
   );
 }
 
+const initials = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
+};
+
 /** Uma linha da lista: nome, telefone, veículo, última visita, total gasto e próxima ação */
 function CustomerRow({ r, shopId, shopName, onOpen, onNewOs, onSchedule, onOptOut, periodSpent }: {
   r: Row; shopId: string; shopName: string; onOpen: () => void; onNewOs: () => void; onSchedule: () => void; onOptOut: () => void;
@@ -416,29 +421,46 @@ function CustomerRow({ r, shopId, shopName, onOpen, onNewOs, onSchedule, onOptOu
       rounded-xl md:rounded-none bg-white md:bg-transparent ring-1 ring-steel-200/70 md:ring-0 hover:bg-steel-50
       grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_110px_120px_minmax(0,1.5fr)_72px] gap-x-3 gap-y-1 items-center">
       {/* Cliente */}
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="font-semibold text-steel-900 truncate">{r.full_name}</span>
-          {r.ins.vip && <span title="VIP: entre os 20% que mais gastam" className="text-brand-500 shrink-0"><Icon name="star" size={14} /></span>}
-          <span title={seg.hint} className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">{seg.label}</span>
-        </div>
-        <div className="text-xs text-steel-500 truncate">
-          {r.phone ? fmtPhone(r.phone) : 'sem telefone'}{r.contact_opt_out ? ' · não quer mensagens' : ''}
-          <span className="md:hidden">{r.car ? ` · ${r.car}` : ''}</span>
+      <div className="min-w-0 flex items-center gap-3">
+        <span className={`h-9 w-9 rounded-full grid place-items-center shrink-0 text-xs font-bold ${r.ins.vip ? 'bg-amber-100 text-amber-800 ring-2 ring-amber-300' : 'bg-steel-100 text-steel-600'}`}>
+          {initials(r.full_name)}
+        </span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-semibold text-steel-900 truncate">{r.full_name}</span>
+            {r.ins.vip && (
+              <span title="VIP: entre os 20% que mais gastam" className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">⭐ VIP</span>
+            )}
+            {r.ins.segment !== 'regular' && (
+              <span title={seg.hint} className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${seg.cls}`}>{seg.label}</span>
+            )}
+          </div>
+          <div className="text-xs text-steel-500 truncate">
+            {r.phone ? fmtPhone(r.phone) : 'sem telefone'}{r.contact_opt_out ? ' · não quer mensagens' : ''}
+            <span className="md:hidden">{r.car ? ` · ${r.car}` : ''}</span>
+          </div>
         </div>
       </div>
       {/* Veículo */}
-      <div className="hidden md:block text-sm text-steel-700 truncate">{r.car ?? <span className="text-steel-300">—</span>}</div>
+      <div className="hidden md:block text-sm text-steel-700 truncate">{r.car ?? ''}</div>
       {/* Última visita */}
-      <div className="hidden md:block text-sm text-steel-600">{r.ins.lastVisit ? timeAgo(r.ins.lastVisit) : <span className="text-steel-300">—</span>}</div>
+      <div className="hidden md:block text-sm text-steel-600">{r.ins.lastVisit ? timeAgo(r.ins.lastVisit) : <span className="text-xs text-steel-400">sem serviço</span>}</div>
       {/* Total gasto */}
       <div className="hidden md:block text-right text-sm font-semibold text-steel-900 tabular-nums">
         {fmtBRL(r.ins.spent)}
         {periodSpent != null && <div className="text-[11px] font-normal text-steel-500">no período: {fmtBRL(periodSpent)}</div>}
       </div>
       {/* Próxima ação */}
-      <div className={`hidden md:block text-sm truncate ${!action ? 'text-steel-300' : r.reason && !contacted ? 'text-steel-800' : 'text-steel-400'}`}
-        title={action ? undefined : 'Sem ação sugerida'}>{action ?? '—'}</div>
+      <div className="hidden md:block min-w-0">
+        {action && (
+          <span title={action} className={`inline-flex max-w-full items-center gap-1 truncate rounded-md px-2 py-1 text-xs font-semibold ${
+            contacted ? 'bg-steel-50 text-steel-400' : r.reason?.kind === 'quote' ? 'bg-brand-50 text-brand-700'
+              : r.reason ? 'bg-pending-500/10 text-pending-700' : 'bg-sky-50 text-sky-700'}`}>
+            <span className="shrink-0">{contacted ? '✓' : r.reason?.kind === 'quote' ? '📋' : r.reason?.kind === 'service' ? '📅' : r.reason ? '📞' : '🔧'}</span>
+            <span className="truncate">{action}</span>
+          </span>
+        )}
+      </div>
 
       {/* Ações (no celular: valor + ações na direita) */}
       <div className="flex items-center justify-end gap-0.5" onClick={stop}>
@@ -449,7 +471,7 @@ function CustomerRow({ r, shopId, shopName, onOpen, onNewOs, onSchedule, onOptOu
         {wa ? (
           <WhatsAppButton phone={wa} text={callMessage(shopId, shopName, { name: r.full_name, car: r.car, lastService: r.lastService }, r.reason)}
             customerId={r.id} customerName={r.full_name}
-            className="h-10 w-10 md:h-9 md:w-9 grid place-items-center rounded-lg text-steel-500 hover:text-signal-600 hover:bg-steel-100 transition">
+            className="h-10 w-10 md:h-9 md:w-9 grid place-items-center rounded-lg text-steel-400 hover:text-emerald-600 hover:bg-emerald-50 transition">
             <Icon name="chat" size={17} />
           </WhatsAppButton>
         ) : <span className="h-10 w-10 md:h-9 md:w-9" />}

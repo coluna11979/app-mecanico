@@ -36,7 +36,7 @@ const BADGE: Record<CallReason['kind'], { label: string; cls: string }> = {
 function reasonDetail(r: CallReason) {
   const span = (d: number) => (d < 60 ? `${d} dias` : `${Math.round(d / 30)} meses`);
   switch (r.kind) {
-    case 'quote':   return `há ${r.days} dia${r.days === 1 ? '' : 's'}${r.value > 0 ? ` · ${fmtBRL(r.value)}` : ''}`;
+    case 'quote':   return `parado há ${r.days} dia${r.days === 1 ? '' : 's'}`;
     case 'service': return r.days > 0 ? `vence em ${r.days} dia${r.days === 1 ? '' : 's'}` : r.days === 0 ? 'vence hoje' : `vencida há ${-r.days} dia${r.days === -1 ? '' : 's'}`;
     case 'risk':    return r.intervalDays ? `volta a cada ${span(r.intervalDays)} · faz ${span(r.sinceDays)}` : `faz ${span(r.sinceDays)}`;
     case 'gone':    return `há ${span(r.sinceDays)}`;
@@ -46,8 +46,19 @@ function reasonDetail(r: CallReason) {
 /** Quantos aparecem antes do "Ver todos" (o bloco não pode empurrar a lista de clientes para baixo) */
 const INITIAL = 4;
 
-const BTN_PRI = 'inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-500 text-white px-3 h-10 sm:h-8 text-sm font-semibold hover:bg-brand-600 transition';
-const BTN_SEC = 'inline-flex items-center justify-center gap-1.5 rounded-lg bg-white text-steel-700 ring-1 ring-steel-200 px-3 h-10 sm:h-8 text-sm font-semibold hover:bg-steel-50 transition';
+/** Abas por motivo — orçamento parado primeiro (é dinheiro na mesa) */
+type TabKey = 'all' | CallReason['kind'];
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'all', label: 'Todos' },
+  { key: 'quote', label: 'Orçamentos parados' },
+  { key: 'service', label: 'Revisão' },
+  { key: 'risk', label: 'Em risco' },
+  { key: 'gone', label: 'Sumidos' },
+];
+
+/** WhatsApp: a ação principal, em tom suave (a lista tem várias linhas — laranja cheio em todas cansa) */
+const BTN_PRI = 'inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-50 text-brand-700 ring-1 ring-brand-200 px-3 h-10 sm:h-8 text-sm font-semibold hover:bg-brand-500 hover:text-white hover:ring-brand-500 transition';
+const BTN_SEC = 'inline-flex items-center justify-center gap-1.5 rounded-lg text-steel-600 px-2.5 h-10 sm:h-8 text-sm font-semibold hover:bg-steel-100 hover:text-steel-900 transition';
 /** "Já chamei": secundária, contorno fino e menor que o WhatsApp */
 const BTN_OUTLINE = 'inline-flex items-center justify-center gap-1 rounded-lg bg-white text-steel-600 ring-1 ring-steel-200 px-2.5 h-10 sm:h-7 text-xs font-semibold hover:bg-steel-50 hover:text-steel-900 transition';
 
@@ -79,8 +90,11 @@ export default function CallToday({ items, workshopId, shopName, onContacted, on
   const [showAll, setShowAll] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>('all');
   const [, force] = useState(0);
-  const visible = showAll ? items : items.slice(0, INITIAL);
+  const countOf = (k: TabKey) => (k === 'all' ? items.length : items.filter(c => c.reason.kind === k).length);
+  const inTab = tab === 'all' ? items : items.filter(c => c.reason.kind === tab);
+  const visible = showAll ? inTab : inTab.slice(0, INITIAL);
 
   async function contacted(c: CallItem) {
     setBusy(c.id);
@@ -101,9 +115,9 @@ export default function CallToday({ items, workshopId, shopName, onContacted, on
           <button onClick={() => setEditing(e => !e)} className="text-xs font-semibold text-steel-500 hover:text-steel-800">
             {editing ? 'Fechar mensagens' : 'Editar mensagens'}
           </button>
-          {items.length > INITIAL && (
+          {inTab.length > INITIAL && (
             <button onClick={() => setShowAll(s => !s)} className="text-xs font-semibold text-brand-600 hover:underline">
-              {showAll ? 'Mostrar menos' : `Ver todos (${items.length})`}
+              {showAll ? 'Mostrar menos' : `Ver todos (${inTab.length})`}
             </button>
           )}
         </div>
@@ -121,6 +135,19 @@ export default function CallToday({ items, workshopId, shopName, onContacted, on
           <p className="text-[11px] text-steel-500">
             Use {'{nome}'}, {'{oficina}'}, {'{carro}'}, {'{tempo}'} e {'{servico}'}. Fica salvo neste navegador.
           </p>
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <div className="flex gap-1 overflow-x-auto mb-2 -mx-1 px-1 [scrollbar-width:none]">
+          {TABS.filter(t => t.key === 'all' || countOf(t.key) > 0).map(t => (
+            <button key={t.key} type="button" onClick={() => { setTab(t.key); setShowAll(false); }}
+              className={`shrink-0 inline-flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-semibold transition ${
+                tab === t.key ? 'bg-steel-900 text-white' : 'text-steel-600 hover:bg-steel-100'}`}>
+              {t.label}
+              <span className={`tabular-nums ${tab === t.key ? 'text-steel-300' : t.key === 'quote' ? 'text-brand-600' : 'text-steel-400'}`}>{countOf(t.key)}</span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -146,10 +173,16 @@ export default function CallToday({ items, workshopId, shopName, onContacted, on
                       <span className="text-sm font-semibold text-steel-900 truncate group-hover:underline">{c.name}</span>
                       <span className={`shrink-0 inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${BADGE[r.kind].cls}`}>{BADGE[r.kind].label}</span>
                     </div>
-                    <div className="text-xs text-steel-500 truncate mt-0.5">{reasonDetail(r)}{c.car ? ` · ${c.car}` : ''}</div>
+                    <div className="text-xs text-steel-500 truncate mt-0.5">
+                      {reasonDetail(r)}{c.car ? ` · ${c.car}` : ''}
+                      {r.kind === 'quote' && r.value > 0 && <span className="sm:hidden font-semibold text-steel-800"> · {fmtBRL(r.value)}</span>}
+                    </div>
                   </div>
                 </Link>
-                <div className="flex items-center gap-2 sm:shrink-0">
+                {r.kind === 'quote' && r.value > 0 && (
+                  <span className="hidden sm:block text-sm font-bold text-steel-900 tabular-nums shrink-0">{fmtBRL(r.value)}</span>
+                )}
+                <div className="flex items-center gap-1.5 sm:shrink-0">
                   {r.kind === 'quote' && <Link to={`/oficina/os/${r.osId}`} className={`${BTN_SEC} flex-1 sm:flex-none`}>Ver orçamento</Link>}
                   {r.kind === 'service' && <button onClick={() => onSchedule(c.id)} className={`${BTN_SEC} flex-1 sm:flex-none`}>Agendar</button>}
                   {wa && (
