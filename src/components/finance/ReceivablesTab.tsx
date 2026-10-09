@@ -13,10 +13,10 @@ import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 
 type Rec = ReturnType<typeof receivables>;
 type Row = Rec['rows'][number];
-type Filter = 'todas' | 'depois' | 'vencidas' | 'sem_data';
+type Filter = 'todas' | 'hoje' | 'depois' | 'vencidas' | 'sem_data';
 
 const FILTERS: [Filter, string][] = [
-  ['todas', 'Todas'], ['depois', '🕒 Pagar depois'], ['vencidas', '⚠️ Vencidas'], ['sem_data', 'Sem data combinada'],
+  ['todas', 'Todas'], ['hoje', '📅 A receber hoje'], ['depois', '🕒 Pagar depois'], ['vencidas', '⚠️ Vencidas'], ['sem_data', 'Sem data combinada'],
 ];
 
 const br = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR');
@@ -35,6 +35,7 @@ export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Re
   const rows = useMemo(() => {
     const t = q.trim().toLowerCase();
     return data.rows.filter(r => {
+      if (filter === 'hoje' && r.dueIn !== 0) return false;
       if (filter === 'depois' && r.dueIn == null) return false;
       if (filter === 'vencidas' && !r.overdue) return false;
       if (filter === 'sem_data' && r.dueIn != null) return false;
@@ -48,7 +49,10 @@ export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Re
 
   const total = rows.reduce((a, r) => a + r.open, 0);
   const count = (f: Filter) => data.rows.filter(r =>
-    f === 'todas' ? true : f === 'depois' ? r.dueIn != null : f === 'vencidas' ? r.overdue : r.dueIn == null).length;
+    f === 'todas' ? true : f === 'hoje' ? r.dueIn === 0 : f === 'depois' ? r.dueIn != null : f === 'vencidas' ? r.overdue : r.dueIn == null).length;
+  /** Combinadas para pagar hoje */
+  const today = data.rows.filter(r => r.dueIn === 0);
+  const todayTotal = today.reduce((a, r) => a + r.open, 0);
 
   const waText = (r: Row) => {
     const name = (r.os.customer?.full_name ?? '').split(' ')[0];
@@ -60,8 +64,10 @@ export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Re
   return (
     <div className="space-y-4">
       {/* Resumo */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Box label="Total a receber" value={brl(data.total)} note={`${data.rows.length} OS`} strong />
+        <Box label="📅 A receber hoje" value={brl(todayTotal)} note={`${today.length} OS com pagamento combinado para hoje`}
+          tone={todayTotal > 0 ? 'today' : undefined} onClick={today.length ? () => setFilter('hoje') : undefined} />
         <Box label="🕒 Pagar depois" value={brl(data.laterTotal)} note={`${data.laterCount} combinada${data.laterCount === 1 ? '' : 's'}`} />
         <Box label="⚠️ Vencido" value={brl(data.overdueTotal)} note={`${data.overdue.length} OS`} tone={data.overdueTotal > 0 ? 'bad' : undefined} />
         <Box label="Sem data combinada" value={brl(data.total - data.laterTotal)} note="concluídas sem quitar" />
@@ -132,12 +138,17 @@ export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Re
   );
 }
 
-function Box({ label, value, note, strong, tone }: { label: string; value: string; note: string; strong?: boolean; tone?: 'bad' }) {
+function Box({ label, value, note, strong, tone, onClick }: {
+  label: string; value: string; note: string; strong?: boolean; tone?: 'bad' | 'today'; onClick?: () => void;
+}) {
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <div className={`rounded-2xl px-4 py-3 border ${strong ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200'}`}>
-      <div className={`text-[11px] ${strong ? 'text-steel-400' : 'text-steel-500'}`}>{label}</div>
-      <div className={`text-xl font-bold mt-0.5 ${tone === 'bad' ? 'text-alert-600' : ''}`}>{value}</div>
+    <Tag onClick={onClick}
+      className={`text-left rounded-2xl px-4 py-3 border ${strong ? 'bg-steel-900 text-white border-steel-900'
+        : tone === 'today' ? 'bg-brand-50 border-brand-200 hover:border-brand-300' : 'bg-white border-steel-200'}`}>
+      <div className={`text-[11px] ${strong ? 'text-steel-400' : tone === 'today' ? 'text-brand-700 font-semibold' : 'text-steel-500'}`}>{label}</div>
+      <div className={`text-xl font-bold mt-0.5 ${tone === 'bad' ? 'text-alert-600' : tone === 'today' ? 'text-brand-700' : ''}`}>{value}</div>
       <div className={`text-[11px] ${strong ? 'text-steel-400' : 'text-steel-400'}`}>{note}</div>
-    </div>
+    </Tag>
   );
 }
