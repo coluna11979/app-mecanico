@@ -75,10 +75,8 @@ export function ResponsibleModal({ wid, os, team, current, onClose, onSaved, all
         </div>
         <ResponsiblePicker team={team} value={value} onChange={setValue} />
         {value === PLATFORM && allowCall ? (
-          <div className="grid gap-2 mt-5">
-            <button onClick={() => save(true)} disabled={busy} className="btn-primary">🔧 Salvar e chamar mecânico da plataforma</button>
-            <button onClick={() => save(false)} disabled={busy} className="btn-secondary">Só salvar (já combinei com o mecânico)</button>
-          </div>
+          // Mecânico da plataforma sempre passa por uma demanda (pagamento, taxa e histórico no app)
+          <button onClick={() => save(true)} disabled={busy} className="btn-primary w-full mt-5">🔧 Salvar e chamar mecânico da plataforma</button>
         ) : (
           <button onClick={() => save(false)} disabled={busy || !value} className="btn-primary w-full mt-5">Salvar</button>
         )}
