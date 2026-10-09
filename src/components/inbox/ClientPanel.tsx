@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from '@/components/os/LicensePlate';
 import CustomerForm from '@/components/customers/CustomerForm';
-import { fmtBRL, fmtPhone, osNumber, osStatusColor, osStatusLabel } from '@/components/os/osHelpers';
+import { fmtBRL, fmtPhone, osNumber, osStatusColor, osStatusLabel, statusChange } from '@/components/os/osHelpers';
 import { isSale, onlyDigits, timeAgo } from '@/lib/customers';
 import { chatTitle, type WaChat } from '@/lib/inbox';
 import type { Customer, Vehicle } from '@/types/database';
@@ -13,6 +13,7 @@ import ChatAvatar from './ChatAvatar';
 type PanelOs = {
   id: string; number: number | null; title: string; status: string; quote_status: string | null;
   price: number | null; created_at: string; completed_at: string | null; rework_of_id: string | null;
+  started_at: string | null;
 };
 
 const OPEN = ['open', 'awaiting_approval', 'approved', 'in_progress'];
@@ -26,6 +27,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
   const [os, setOs] = useState<PanelOs[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!chat.customer_id) { setCustomer(null); setVehicles([]); setOs([]); return; }
@@ -35,7 +37,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
       supabase.from('customers').select('*').eq('id', chat.customer_id).maybeSingle(),
       supabase.from('vehicles').select('*').eq('customer_id', chat.customer_id).order('created_at'),
       supabase.from('service_orders')
-        .select('id, number, title, status, quote_status, price, created_at, completed_at, rework_of_id')
+        .select('id, number, title, status, quote_status, price, created_at, completed_at, rework_of_id, started_at')
         .eq('customer_id', chat.customer_id).order('created_at', { ascending: false }).limit(200),
     ]).then(([c, v, o]) => {
       if (!alive) return;
@@ -45,7 +47,19 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
       setLoading(false);
     });
     return () => { alive = false; };
-  }, [chat.customer_id]);
+  }, [chat.customer_id, reload]);
+
+  /** Cliente respondeu na conversa: aprova (pelo WhatsApp) ou marca que não aprovou, sem sair do Inbox */
+  async function decide(o: PanelOs, approved: boolean) {
+    if (!approved && !confirm(`O cliente não aprovou o orçamento da OS ${osNumber(o)}?`)) return;
+    const { patch, message } = approved
+      ? statusChange(o, 'approved', { channel: 'whatsapp' })
+      : statusChange(o, 'cancelled', { declined: true });
+    const { error } = await supabase.from('service_orders').update(patch).eq('id', o.id);
+    if (error) { toast.error('Não salvou: ' + error.message); return; }
+    toast.success(message);
+    setReload(n => n + 1);
+  }
 
   async function link(customerId: string | null) {
     const { error } = await supabase.from('whatsapp_chats').update({ customer_id: customerId }).eq('id', chat.id);
@@ -112,7 +126,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
             </Section>
 
             <Section title="📋 OS em andamento">
-              {open.length === 0 ? <Empty>Nenhuma OS aberta</Empty> : open.map(o => <OsRow key={o.id} o={o} />)}
+              {open.length === 0 ? <Empty>Nenhuma OS aberta</Empty> : open.map(o => <OsRow key={o.id} o={o} onDecide={ok => decide(o, ok)} />)}
             </Section>
 
             {os.length > open.length && (
@@ -193,16 +207,27 @@ function NotLinked({ chat, workshopId, onPick, onCreate }: {
   );
 }
 
-function OsRow({ o }: { o: PanelOs }) {
+function OsRow({ o, onDecide }: { o: PanelOs; onDecide?: (approved: boolean) => void }) {
+  const waiting = o.status === 'awaiting_approval' && !!onDecide;
   return (
-    <Link to={`/oficina/os/${o.id}`} className="block rounded-xl border border-steel-200 px-3 py-2 hover:bg-steel-50 mb-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-bold text-steel-500">{osNumber(o)}</span>
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${osStatusColor(o)}`}>{osStatusLabel(o)}</span>
-      </div>
-      <p className="text-sm font-semibold text-steel-800 truncate">{o.title}</p>
-      <p className="text-xs text-steel-500">{fmtBRL(o.price)} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
-    </Link>
+    <div className={`rounded-xl border mb-1.5 overflow-hidden ${waiting ? 'border-pending-300' : 'border-steel-200'}`}>
+      <Link to={`/oficina/os/${o.id}`} className="block px-3 py-2 hover:bg-steel-50">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-bold text-steel-500">{osNumber(o)}</span>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${osStatusColor(o)}`}>{osStatusLabel(o)}</span>
+        </div>
+        <p className="text-sm font-semibold text-steel-800 truncate">{o.title}</p>
+        <p className="text-xs text-steel-500">{fmtBRL(o.price)} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
+      </Link>
+      {waiting && (
+        <div className="flex border-t border-pending-200">
+          <button type="button" onClick={() => onDecide!(true)}
+            className="flex-1 py-1.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600">✅ Cliente aprovou</button>
+          <button type="button" onClick={() => onDecide!(false)}
+            className="px-3 py-1.5 text-xs font-semibold text-alert-600 bg-white hover:bg-alert-500/5">✕ Não aprovou</button>
+        </div>
+      )}
+    </div>
   );
 }
 
