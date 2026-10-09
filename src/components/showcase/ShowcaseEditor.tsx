@@ -27,17 +27,20 @@ export default function ShowcaseEditor({ workshopId, userId }: { workshopId: str
   const [open, setOpen] = useState<Section | null>(null);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [reviewUrl, setReviewUrl] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [{ data: row }, { data: ph }] = await Promise.all([
+      const [{ data: row }, { data: ph }, { data: ws }] = await Promise.all([
         supabase.from('workshop_showcase').select('*').eq('workshop_id', workshopId).maybeSingle(),
         supabase.from('workshop_showcase_photos').select('*').eq('workshop_id', workshopId).order('position').order('created_at'),
+        supabase.from('workshops').select('google_review_url').eq('id', workshopId).maybeSingle(),
       ]);
       if (!alive) return;
+      setReviewUrl((ws as { google_review_url: string | null } | null)?.google_review_url ?? '');
       setS(row ? { ...emptyShowcase(workshopId), ...(row as Showcase) } : emptyShowcase(workshopId));
       setPhotos((ph as ShowcasePhoto[]) ?? []);
       setDirty(false);
@@ -59,8 +62,10 @@ export default function ShowcaseEditor({ workshopId, userId }: { workshopId: str
     setSaving(true);
     const { updated_at: _u, ...row } = { ...s, ...extra };
     const { error } = await supabase.from('workshop_showcase').upsert(row, { onConflict: 'workshop_id' });
+    if (error) { setSaving(false); toast.error('Não foi possível salvar: ' + error.message); return false; }
+    const { error: e2 } = await supabase.from('workshops').update({ google_review_url: reviewUrl.trim() || null }).eq('id', workshopId);
     setSaving(false);
-    if (error) { toast.error('Não foi possível salvar: ' + error.message); return false; }
+    if (e2) { toast.error('Não foi possível salvar o link de avaliação: ' + e2.message); return false; }
     setS(cur => ({ ...cur, ...extra }));
     setDirty(false);
     if (!quiet) toast.success('Vitrine salva ✓');
@@ -225,8 +230,12 @@ export default function ShowcaseEditor({ workshopId, userId }: { workshopId: str
                       <Field label="Instagram">
                         <input className="input" placeholder="@suaoficina" value={s.instagram ?? ''} onChange={e => patch({ instagram: e.target.value })} />
                       </Field>
-                      <Field label="Link do Google (Maps / Meu Negócio)">
-                        <input className="input" placeholder="https://g.page/…" value={s.google_url ?? ''} onChange={e => patch({ google_url: e.target.value })} />
+                      <Field label="Link de localização (Google Maps)">
+                        <input className="input" placeholder="https://maps.app.goo.gl/…" value={s.google_url ?? ''} onChange={e => patch({ google_url: e.target.value })} />
+                      </Field>
+                      <Field label="Link de avaliação do Google" hint="Usado para pedir avaliação ao cliente depois do serviço.">
+                        <input className="input" placeholder="https://search.google.com/local/writereview?placeid=…" value={reviewUrl}
+                          onChange={e => { setReviewUrl(e.target.value); setDirty(true); }} />
                       </Field>
                       <Field label="Site">
                         <input className="input" placeholder="https://…" value={s.website ?? ''} onChange={e => patch({ website: e.target.value })} />
