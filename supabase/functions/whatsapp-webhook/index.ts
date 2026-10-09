@@ -92,16 +92,28 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
   if (!chat) {
     const { data: customerId } = await admin.rpc('match_customer_by_phone', { _workshop_id: wid, _phone: phone });
     const { data, error } = await admin.from('whatsapp_chats').upsert(
-      { workshop_id: wid, remote_jid: chatid, phone, name: contactName, avatar_url: avatar, customer_id: customerId ?? null },
+      { workshop_id: wid, remote_jid: chatid, phone, name: contactName, customer_id: customerId ?? null },
       { onConflict: 'workshop_id,remote_jid' },
     ).select('id, name, avatar_url, customer_id').single();
     if (error) throw error;
     chat = data;
-  } else if ((contactName && !chat.name) || (avatar && avatar !== chat.avatar_url)) {
-    await admin.from('whatsapp_chats').update({
-      ...(contactName && !chat.name ? { name: contactName } : {}),
-      ...(avatar ? { avatar_url: avatar } : {}),
-    }).eq('id', chat.id);
+  } else if (contactName && !chat.name) {
+    await admin.from('whatsapp_chats').update({ name: contactName }).eq('id', chat.id);
+  }
+
+  // Foto do contato: o link do WhatsApp expira → guarda uma cópia no nosso storage (uma vez por conversa)
+  if (avatar && (!chat.avatar_url || /^https?:/.test(chat.avatar_url))) {
+    try {
+      const img = await fetch(avatar);
+      if (img.ok) {
+        const path = `${wid}/avatars/${chat.id}.jpg`;
+        const { error } = await admin.storage.from('whatsapp-media')
+          .upload(path, await img.arrayBuffer(), { contentType: img.headers.get('content-type') || 'image/jpeg', upsert: true });
+        if (!error) await admin.from('whatsapp_chats').update({ avatar_url: path }).eq('id', chat.id);
+      }
+    } catch (e) {
+      console.error('[whatsapp-webhook] foto', e);
+    }
   }
 
   // Mídia: a URL do WhatsApp vem criptografada → pede o arquivo pronto à UAZAPI e guarda no nosso storage
