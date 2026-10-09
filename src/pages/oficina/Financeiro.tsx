@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import PaymentsList from '@/components/cash/PaymentsList';
 import { supabase } from '@/lib/supabase';
@@ -36,9 +36,15 @@ export default function Financeiro() {
   const period = usePeriod('financeiro-periodo');
   const { preset, range } = period;
   /** Visão geral do dinheiro ou a lista de OS a receber (o Início abre direto em ?aba=receber) */
-  const [tabState, setTab] = useState<'geral' | 'receber'>(() => {
+  const [tabState, setTabState] = useState<'geral' | 'receber'>(() => {
     try { return new URLSearchParams(window.location.search).get('aba') === 'receber' ? 'receber' : 'geral'; } catch { return 'geral'; }
   });
+  // A aba fica no endereço: ao abrir uma OS e voltar, cai de novo na mesma aba
+  const [, setParams] = useSearchParams();
+  const setTab = (t: 'geral' | 'receber') => {
+    setTabState(t);
+    setParams(p => { const n = new URLSearchParams(p); if (t === 'receber') n.set('aba', 'receber'); else n.delete('aba'); return n; }, { replace: true });
+  };
   // Abas desligadas no superadmin (ferramentas do módulo) somem; cai na que estiver liberada
   const feature = useFeature();
   const okTabs = (['geral', 'receber'] as const).filter(t => feature(`financeiro.${t}`));

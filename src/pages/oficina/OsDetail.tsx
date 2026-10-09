@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -78,6 +78,10 @@ export default function OsDetail() {
   /** Abre a correção do pagamento (sem mudar o status da OS) */
   const [fixPay, setFixPay] = useState(0);
   const nav = useNavigate();
+  const loc = useLocation();
+  /** Navegação dentro do app (key 'default' = abriu a OS direto pelo endereço) */
+  const backInApp = loc.key !== 'default';
+  const backLabel = (loc.state as { backLabel?: string } | null)?.backLabel;
 
   // OS importada de orçamento em papel → mostra a foto original
   useEffect(() => {
@@ -365,7 +369,12 @@ export default function OsDetail() {
   return (
     <WorkshopLayout>
       <div className="max-w-6xl mx-auto">
-        <Link to="/oficina/os" className="text-sm text-steel-500 hover:text-steel-800">← {mech ? 'Minhas OS' : 'Ordens de Serviço'}</Link>
+        {/* Veio de outra tela do sistema: volta para ela (ex.: Visão financeira → OS a receber); aberta direto: lista de OS */}
+        {backInApp ? (
+          <button onClick={() => nav(-1)} className="text-sm text-steel-500 hover:text-steel-800">← {backLabel ?? 'Voltar'}</button>
+        ) : (
+          <Link to="/oficina/os" className="text-sm text-steel-500 hover:text-steel-800">← {mech ? 'Minhas OS' : 'Ordens de Serviço'}</Link>
+        )}
 
         {/* ── Cabeçalho ── */}
         <div className="card mt-3 mb-5">

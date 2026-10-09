@@ -102,7 +102,7 @@ export default function ReceivablesTab({ data, firstOpen, shopName }: { data: Re
               const phone = digits((o.customer as { phone?: string | null } | null)?.phone);
               return (
                 <li key={o.id} className="py-3 flex flex-wrap items-center gap-3">
-                  <Link to={`/oficina/os/${o.id}`} className="flex-1 min-w-[200px] hover:text-brand-700">
+                  <Link to={`/oficina/os/${o.id}`} state={{ backLabel: 'Visão financeira' }} className="flex-1 min-w-[200px] hover:text-brand-700">
                     <div className="text-sm font-semibold truncate">OS {osNumber(o)} · {o.customer?.full_name ?? 'Sem cliente'}</div>
                     <div className="text-xs text-steel-500 truncate">
                       {[o.vehicle?.plate, o.title].filter(Boolean).join(' · ')}
