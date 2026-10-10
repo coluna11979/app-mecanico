@@ -58,6 +58,8 @@ export default function Financeiro() {
   const [firstOpen, setFirstOpen] = useState<string | null>(null);
   const [payables, setPayables] = useState<FinPayable[]>([]);
   const [costItems, setCostItems] = useState<CostItem[]>([]);
+  /** Notas de compra de peças lançadas no período (null = ainda não carregou) */
+  const [purchaseCount, setPurchaseCount] = useState<number | null>(null);
   const [loading, setLoading]   = useState(true);
   /** Recebeu uma OS aqui: recarrega os números sem piscar a tela */
   const [reloadKey, setReloadKey] = useState(0);
@@ -66,13 +68,15 @@ export default function Financeiro() {
   // Movimentos: do início do período anterior (comparação) até o fim do atual
   const fromIso = prev.from.toISOString();
   const toIso = range.to.toISOString();
+  const curFromDay = range.from.toLocaleDateString('en-CA');
+  const curToDay = range.to.toLocaleDateString('en-CA');
 
   useEffect(() => {
     if (!wid || !allowed) return;
     let alive = true;
     (async () => {
       if (!reloadKey) setLoading(true);
-      const [e, p, r, o, first, ci, pay] = await Promise.all([
+      const [e, p, r, o, first, ci, pay, pur] = await Promise.all([
         fetchAll((a, b) => supabase.from('cash_entries')
           .select('id, kind, method, amount, installments, category, mechanic_id, created_at')
           .eq('workshop_id', wid).is('cancelled_at', null).gte('created_at', fromIso).lt('created_at', toIso)
@@ -104,6 +108,9 @@ export default function Financeiro() {
           .eq('workshop_id', wid).is('cancelled_at', null)
           .or(`paid_at.is.null,paid_at.gte.${fromIso.slice(0, 10)}`)
           .order('id').range(a, b)),
+        // Só a contagem de notas de compra do período (para o aviso de custo estimado)
+        supabase.from('purchase_invoices').select('id', { count: 'exact', head: true })
+          .eq('workshop_id', wid).gte('issue_date', curFromDay).lt('issue_date', curToDay),
       ]);
       if (!alive) return;
       setEntries((e.data as FinEntry[]) ?? []);
@@ -112,11 +119,12 @@ export default function Financeiro() {
       setOs((o.data as unknown as FinOs[]) ?? []);
       setCostItems((ci.data as CostItem[]) ?? []);
       setPayables((pay.data as FinPayable[]) ?? []);
+      setPurchaseCount(pur.error ? null : pur.count ?? 0);
       setFirstOpen((first.data as { opened_at: string } | null)?.opened_at ?? null);
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [wid, allowed, fromIso, toIso, reloadKey]);
+  }, [wid, allowed, fromIso, toIso, curFromDay, curToDay, reloadKey]);
 
   const f = useMemo(() => {
     /** Faturado, custo das peças vendidas, saídas e resultado de um intervalo */
@@ -178,6 +186,8 @@ export default function Financeiro() {
   const partial = cur.withParts > 0 && cur.costed < cur.withParts;
   /** Teve faturamento e nenhuma despesa lançada: o "resultado" é só receita − custo das peças, não lucro */
   const noExpenses = cur.sales.revenue > 0 && cur.out.operating === 0;
+  /** Tem custo de peça no resultado, mas nenhuma nota de compra no período: o custo vem do cadastro e pode ser estimado */
+  const costUnproven = cur.partsCost > 0 && purchaseCount === 0;
   const hasAlerts = alerts.overduePay.n > 0 || alerts.weekPay.n > 0 || alerts.overdueRec.n > 0 || alerts.unpaidOs.n > 0 || alerts.divergences.length > 0;
   const openReceber = () => { setTab('receber'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
@@ -318,6 +328,12 @@ export default function Financeiro() {
                     <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
                       <strong>Não é lucro.</strong> Nenhuma despesa foi lançada neste período; este valor é só o faturado menos o custo das peças.
                       Lance aluguel, contas, salários e demais despesas para o resultado ficar completo.
+                    </p>
+                  )}
+                  {costUnproven && (
+                    <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
+                      <strong>Custo das peças sem nota de compra.</strong> Nenhuma compra de peças foi lançada neste período; o custo usado vem do cadastro
+                      da peça e pode ser estimado. Lance as compras em Compras para o custo ficar comprovado.
                     </p>
                   )}
                   {partial && (
