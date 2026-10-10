@@ -224,15 +224,26 @@ export default function Pecas() {
           {data && parts && parts.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-steel-600">🚗 Serve em:</span>
-              <input className="input !py-1.5 !w-32 text-sm" placeholder="Marca" list="pv-brands" value={vBrand} onChange={e => setVBrand(e.target.value)} />
-              <input className="input !py-1.5 !w-36 text-sm" placeholder="Modelo" list="pv-models" value={vModel} onChange={e => setVModel(e.target.value)} />
-              <input className="input !py-1.5 !w-20 text-sm" placeholder="Ano" inputMode="numeric" maxLength={4} value={vYear} onChange={e => setVYear(e.target.value.replace(/\D/g, ''))} />
-              <datalist id="pv-brands">{brandOptions.map(b => <option key={b} value={b} />)}</datalist>
-              <datalist id="pv-models">{modelOptionsFor(vBrand).map(m => <option key={m} value={m} />)}</datalist>
+              <select className="input !py-1.5 !w-40 text-sm" value={vBrand}
+                onChange={e => { setVBrand(e.target.value); setVModel(''); if (e.target.value) setNoVehicle(false); }}>
+                <option value="">Todas as marcas</option>
+                {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <select className="input !py-1.5 !w-40 text-sm" value={vModel}
+                onChange={e => { setVModel(e.target.value); if (e.target.value) setNoVehicle(false); }}>
+                <option value="">Todos os modelos</option>
+                {modelOptionsFor(vBrand).map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select className="input !py-1.5 !w-32 text-sm" value={vYear}
+                onChange={e => { setVYear(e.target.value); if (e.target.value) setNoVehicle(false); }}>
+                <option value="">Todos os anos</option>
+                {Array.from({ length: new Date().getFullYear() + 1 - 1989 }, (_, i) => new Date().getFullYear() + 1 - i)
+                  .map(y => <option key={y} value={String(y)}>{y}</option>)}
+              </select>
               {hasVehicleFilter && (
                 <button className="text-xs font-semibold text-brand-700" onClick={() => { setVBrand(''); setVModel(''); setVYear(''); }}>limpar</button>
               )}
-              <QuickChip on={noVehicle} onClick={() => setNoVehicle(v => !v)}>
+              <QuickChip on={noVehicle} onClick={() => { setNoVehicle(v => !v); setVBrand(''); setVModel(''); setVYear(''); }}>
                 Sem veículo ({parts.filter(p => p.active && !p.universal && !vehicles.get(p.id)?.length).length})
               </QuickChip>
               {noVehicle && <button className="text-xs font-semibold text-brand-700" onClick={() => setBulk(true)}>🧩 Atribuir em lote</button>}
