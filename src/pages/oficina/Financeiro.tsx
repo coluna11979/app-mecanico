@@ -176,6 +176,8 @@ export default function Financeiro() {
   const prevLabel = PREV_LABEL[preset];
   const empty = cur.sales.count === 0 && cur.cash.inflow === 0 && cur.out.total === 0;
   const partial = cur.withParts > 0 && cur.costed < cur.withParts;
+  /** Teve faturamento e nenhuma despesa lançada: o "resultado" é só receita − custo das peças, não lucro */
+  const noExpenses = cur.sales.revenue > 0 && cur.out.operating === 0;
   const hasAlerts = alerts.overduePay.n > 0 || alerts.weekPay.n > 0 || alerts.overdueRec.n > 0 || alerts.unpaidOs.n > 0 || alerts.divergences.length > 0;
   const openReceber = () => { setTab('receber'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
@@ -244,9 +246,9 @@ export default function Financeiro() {
                 tip="OS concluídas com saldo em aberto (independe do período), contadas a partir do primeiro caixa aberto." />
               <Kpi label="Saídas" value={brl(cur.out.total)} delta={deltas.out} note={prevLabel} invert
                 tip="Despesas e vales do caixa + contas pagas no período. Sangria e suprimento não entram (só mudam o dinheiro de lugar)." />
-              <Kpi label="Resultado operacional estimado" value={brl(cur.res.result)} delta={deltas.result} note={prevLabel} highlight wide
+              <Kpi label={noExpenses ? 'Resultado parcial (sem despesas)' : 'Resultado operacional estimado'} value={brl(cur.res.result)} delta={deltas.result} note={prevLabel} highlight wide
                 tone={cur.res.result < 0 ? 'bad' : undefined}
-                sub={cur.res.margin != null ? `margem estimada ${Math.round(cur.res.margin)}%` : undefined}
+                sub={noExpenses ? 'despesas não lançadas: não é lucro' : cur.res.margin != null ? `margem estimada ${Math.round(cur.res.margin)}%` : undefined}
                 tip="Faturado − custo das peças vendidas − demais despesas do período. Estimativa: não é lucro contábil." />
             </div>
             <p className="text-[11px] text-steel-400 -mt-2">
@@ -307,11 +309,17 @@ export default function Financeiro() {
                   <Row key={g.key} label={`${g.icon} ${g.label}`} value={brl(g.total)} indent />
                 ))}
                 <div className="flex items-baseline justify-between gap-3 pt-2.5 mt-1 border-t border-steel-200">
-                  <span className="font-bold">= Resultado operacional estimado</span>
+                  <span className="font-bold">= {noExpenses ? 'Resultado parcial (sem despesas)' : 'Resultado operacional estimado'}</span>
                   <span className={`text-lg font-bold font-display ${cur.res.result < 0 ? 'text-alert-600' : ''}`}>{brl(cur.res.result)}</span>
                 </div>
-                {cur.res.margin != null && <div className="text-right text-xs text-steel-500">margem estimada {Math.round(cur.res.margin)}%</div>}
+                {cur.res.margin != null && !noExpenses && <div className="text-right text-xs text-steel-500">margem estimada {Math.round(cur.res.margin)}%</div>}
                 <div className="mt-3 space-y-1.5 text-[11px] text-steel-500 leading-snug">
+                  {noExpenses && (
+                    <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
+                      <strong>Não é lucro.</strong> Nenhuma despesa foi lançada neste período; este valor é só o faturado menos o custo das peças.
+                      Lance aluguel, contas, salários e demais despesas para o resultado ficar completo.
+                    </p>
+                  )}
                   {partial && (
                     <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
                       Estimativa baseada nos custos disponíveis. Custo informado em {cur.costed} de {cur.withParts} OS.
