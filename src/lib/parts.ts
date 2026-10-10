@@ -11,7 +11,7 @@ export type WorkshopPart = {
   unit: string; supplier: string | null; supplier_id: string | null; cost: number;
   margin_percent: number | null; sale_price: number | null;
   stock_qty: number; min_qty: number; category: PartCategory;
-  active: boolean; created_at: string; updated_at: string;
+  universal: boolean; active: boolean; created_at: string; updated_at: string;
 };
 
 /**
