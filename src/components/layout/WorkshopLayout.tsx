@@ -43,6 +43,7 @@ const SECTIONS: NavGroup[] = [
     { to: '/oficina/comercial',  icon: '🤝', label: 'Comercial'            },
     { to: '/oficina/inbox',      icon: '💬', label: 'WhatsApp'             },
     { to: '/oficina/avaliacoes', icon: '⭐', label: 'Avaliações Google'    },
+    { to: '/oficina/agentes',    icon: '🤖', label: 'Agentes de IA'        },
   ] },
   // Check-up é módulo próprio (um dos diferenciais do sistema)
   { key: 'checkup', title: 'Check-up', items: [
