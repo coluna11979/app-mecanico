@@ -38,6 +38,7 @@ export function useMessages(jobId: string | undefined, myId?: string): Message[]
     fetchAll();
 
     // 2. Realtime subscription — stays alive regardless of which UI tab is shown
+    let live = false;
     const channel = supabase
       .channel(`messages:job:${jobId}`)
       .on(
@@ -57,12 +58,17 @@ export function useMessages(jobId: string | undefined, myId?: string): Message[]
           lastEventAt.current = Date.now();
         },
       )
-      .subscribe();
+      .subscribe(status => {
+        const wasLive = live;
+        live = status === 'SUBSCRIBED';
+        // Reconectou: busca o que pode ter chegado enquanto estava fora
+        if (live && !wasLive && initialLoadDone.current) fetchAll();
+      });
 
-    // 3. Polling fallback — fires every 15 s but only re-fetches if realtime
-    //    hasn't delivered anything in the last 14 s (handles WS drop / cold start)
+    // 3. Polling de segurança — só quando o realtime está fora do ar e a aba está visível
+    //    (antes rodava a cada 15 s em toda conversa parada e gastava dados do Supabase)
     const poll = setInterval(() => {
-      if (Date.now() - lastEventAt.current > 14000) {
+      if (!live && !document.hidden && Date.now() - lastEventAt.current > 14000) {
         fetchAll();
       }
     }, 15000);

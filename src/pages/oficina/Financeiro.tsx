@@ -18,6 +18,8 @@ import {
   type FinEntry, type FinOs, type FinPayable, type FinPayment, type FinRegister,
 } from '@/lib/finance';
 
+const FIN_OS_COLS = 'id, number, title, status, quote_status, price, parts_cost, labor_cost, paid_amount, counter_discount, pay_later_due, pay_later_note, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, phone, created_at), vehicle:vehicles(make, model, plate)';
+
 type CostItem = { service_order_id: string; quantity: number; unit_price: number; unit_cost: number };
 
 /**
@@ -83,14 +85,19 @@ export default function Financeiro() {
           .select('id, opened_at, closed_at, opened_by, closed_by, counted_cash, expected_cash, close_notes')
           .eq('workshop_id', wid).eq('status', 'closed').gte('closed_at', fromIso).lt('closed_at', toIso)
           .order('closed_at', { ascending: false }),
-        fetchAll((a, b) => supabase.from('service_orders')
-          .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, paid_amount, counter_discount, pay_later_due, pay_later_note, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, phone, created_at), vehicle:vehicles(make, model, plate)')
-          .eq('workshop_id', wid).eq('status', 'completed').order('id').range(a, b)),
+        // Concluídas no período (e no anterior, p/ comparar) + as que ainda têm saldo a receber —
+        // não baixa o histórico inteiro a cada abertura (economiza dados do Supabase)
+        fetchAll((a, b) => supabase.from('service_orders').select(FIN_OS_COLS)
+          .eq('workshop_id', wid).eq('status', 'completed')
+          .or(`paid_at.is.null,and(completed_at.gte.${fromIso},completed_at.lt.${toIso})`)
+          .order('id').range(a, b)),
         supabase.from('cash_registers').select('opened_at').eq('workshop_id', wid)
           .order('opened_at').limit(1).maybeSingle(),
+        // Custo das peças só das OS concluídas no intervalo exibido
         fetchAll((a, b) => supabase.from('service_order_items')
-          .select('service_order_id, quantity, unit_price, unit_cost')
+          .select('service_order_id, quantity, unit_price, unit_cost, so:service_orders!inner(completed_at)')
           .eq('workshop_id', wid).eq('kind', 'part').not('unit_cost', 'is', null)
+          .gte('so.completed_at', fromIso).lt('so.completed_at', toIso)
           .order('id').range(a, b)),
         // Contas em aberto (todas) + pagas desde o início do período anterior
         fetchAll((a, b) => supabase.from('payables').select('amount, due_date, paid_at, paid_from, category, invoice_id')

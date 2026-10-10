@@ -143,10 +143,12 @@ export default function WorkshopTracking() {
   /* Polling fallback — garante atualização mesmo se realtime cair */
   useEffect(() => {
     if (!id) return;
+    // Só com a aba visível e a cada 15 s: o realtime já entrega as mudanças na hora
     const poll = setInterval(async () => {
+      if (document.hidden) return;
       const { data } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
       if (data) setJob(data as Job);
-    }, 5000);
+    }, 15000);
     return () => clearInterval(poll);
   }, [id]);
 

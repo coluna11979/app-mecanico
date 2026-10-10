@@ -35,6 +35,15 @@ const PERIODS: [PeriodFilter, string][] = [
 const PERIOD_LABEL: Record<PeriodFilter, string> = Object.fromEntries(PERIODS) as Record<PeriodFilter, string>;
 
 /** Período escolhido → [início, fim) em ms; null = sem limite */
+/** Lista enxuta: só o que os cartões e o quadro mostram (economiza dados do Supabase) */
+const OS_LIST_COLS = 'id, workshop_id, vehicle_id, customer_id, workshop_mechanic_id, executor, title, category, status, price, '
+  + 'created_at, started_at, completed_at, scheduled_at, estimated_hours, km_reading, parts_cost, labor_cost, number, '
+  + 'quote_status, approval_requested_at, approved_at, rework_of_id, paid_amount, counter_discount, paid_at, pay_later_due, '
+  + 'customer:customers(id, full_name, phone), vehicle:vehicles(id, plate, make, model, year), '
+  + 'mechanic:workshop_mechanics!fk_so_workshop_mechanic(id, name, photo_url), pauses:service_order_pauses(id, reason, started_at, ended_at)';
+const ACTIVE_STATUSES = ['open', 'awaiting_approval', 'approved', 'in_progress'];
+const RECENT_DAYS = 120;
+
 function periodRange(p: PeriodFilter, from: string, to: string): [number | null, number | null] {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const t = today.getTime(), day = 86400000;
@@ -72,6 +81,9 @@ export default function ServiceOrders() {
   const [periodFrom, setPeriodFrom]       = useState('');
   const [periodTo, setPeriodTo]           = useState('');
   const [search, setSearch]               = useState('');
+  /** OS antigas (concluídas/canceladas há mais de RECENT_DAYS dias) só carregam quando precisa */
+  const [allLoaded, setAllLoaded]         = useState(false);
+  const [loadingOlder, setLoadingOlder]   = useState(false);
   const [onlyScheduled, setOnlyScheduled] = useState(false);
   const [showFilters, setShowFilters]     = useState(false);
   // Lista ou quadro em colunas (só no computador); fica guardado no aparelho
@@ -149,15 +161,32 @@ export default function ServiceOrders() {
     ]).finally(() => setLoading(false));
   }, [user, currentWorkshop?.id]);
 
-  async function fetchOS(wid: string) {
+  /** Só abertas + últimos RECENT_DAYS dias; as antigas vêm sob demanda (busca, período antigo ou botão) */
+  async function fetchOS(wid: string, all = false) {
     // Em páginas: o Supabase devolve no máximo 1000 linhas por consulta
-    const { data } = await fetchAll((a, b) => supabase
-      .from('service_orders')
-      .select('*, customer:customers(*), vehicle:vehicles(*), mechanic:workshop_mechanics!fk_so_workshop_mechanic(*), pauses:service_order_pauses(*)')
-      .eq('workshop_id', wid)
-      .order('created_at', { ascending: false }).order('id')
-      .range(a, b));
-    setList((data as OsRow[]) ?? []);
+    const page = (from: number, to: number, filter: 'active' | 'recent' | 'all') => {
+      let q = supabase.from('service_orders').select(OS_LIST_COLS).eq('workshop_id', wid);
+      if (filter === 'active') q = q.in('status', ACTIVE_STATUSES);
+      else if (filter === 'recent') {
+        const since = new Date(Date.now() - RECENT_DAYS * 86400000).toISOString();
+        q = q.not('status', 'in', `(${ACTIVE_STATUSES.join(',')})`)
+          .or(`created_at.gte.${since},completed_at.gte.${since},paid_at.gte.${since}`);
+      }
+      return q.order('created_at', { ascending: false }).order('id').range(from, to);
+    };
+    const parts = all
+      ? [await fetchAll((a, b) => page(a, b, 'all'))]
+      : await Promise.all([fetchAll((a, b) => page(a, b, 'active')), fetchAll((a, b) => page(a, b, 'recent'))]);
+    const rows = parts.flatMap(r => (r.data as unknown as OsRow[]) ?? []);
+    rows.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    setList(rows);
+    setAllLoaded(all);
+  }
+  async function loadOlder() {
+    if (allLoaded || loadingOlder || !currentWorkshop) return;
+    setLoadingOlder(true);
+    await fetchOS(currentWorkshop.id, true);
+    setLoadingOlder(false);
   }
   async function fetchMechs(wid: string) {
     const { data } = await supabase
@@ -202,6 +231,11 @@ export default function ServiceOrders() {
 
   /* ─── período ─── */
   const [pStart, pEnd] = periodRange(filterPeriod, periodFrom, periodTo);
+  // Buscou algo ou escolheu um período antigo: traz também as OS antigas
+  const needsOlder = search.trim().length >= 2
+    || (pStart !== null && pStart < Date.now() - RECENT_DAYS * 86400000);
+  useEffect(() => { if (needsOlder) loadOlder(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsOlder]);
   // A OS entra se foi aberta, concluída ou paga dentro do período
   const inPeriod = (o: OsRow) => (pStart === null && pEnd === null)
     || [o.created_at, o.completed_at, o.paid_at].some(d => {
@@ -257,7 +291,9 @@ export default function ServiceOrders() {
       <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-2 mb-5">
         <div className="min-w-0">
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight leading-tight">{mech ? 'Minhas OS' : 'Ordens de serviço'}</h1>
-          <p className="text-sm text-steel-500">{mech ? `${list.filter(mine).length} OS suas` : `${list.length} OS cadastradas`}</p>
+          <p className="text-sm text-steel-500">
+            {mech ? `${list.filter(mine).length} OS suas` : allLoaded ? `${list.length} OS cadastradas` : `${list.length} OS · abertas e dos últimos ${RECENT_DAYS} dias`}
+          </p>
         </div>
         <div className="flex gap-2 shrink-0">
           <div className="hidden md:flex rounded-xl border border-steel-200 bg-white p-0.5">
@@ -405,6 +441,13 @@ export default function ServiceOrders() {
                 myCommission={mech ? myComm.byOs.get(os.id)?.value : undefined}
               />
             ))}
+          </div>
+        )}
+        {!loading && !allLoaded && (
+          <div className="text-center pt-1">
+            <button onClick={loadOlder} disabled={loadingOlder} className="btn-ghost text-sm !py-2 border border-steel-200">
+              {loadingOlder ? 'Carregando…' : `Mostrar OS mais antigas (concluídas há mais de ${RECENT_DAYS} dias)`}
+            </button>
           </div>
         )}
       </div>
