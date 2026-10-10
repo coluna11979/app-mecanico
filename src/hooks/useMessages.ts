@@ -38,7 +38,6 @@ export function useMessages(jobId: string | undefined, myId?: string): Message[]
     fetchAll();
 
     // 2. Realtime subscription — stays alive regardless of which UI tab is shown
-    let live = false;
     const channel = supabase
       .channel(`messages:job:${jobId}`)
       .on(
@@ -59,22 +58,23 @@ export function useMessages(jobId: string | undefined, myId?: string): Message[]
         },
       )
       .subscribe(status => {
-        const wasLive = live;
-        live = status === 'SUBSCRIBED';
-        // Reconectou: busca o que pode ter chegado enquanto estava fora
-        if (live && !wasLive && initialLoadDone.current) fetchAll();
+        // (Re)conectou: busca o que pode ter chegado enquanto estava fora
+        if (status === 'SUBSCRIBED' && initialLoadDone.current) fetchAll();
       });
 
-    // 3. Polling de segurança — só quando o realtime está fora do ar e a aba está visível
-    //    (antes rodava a cada 15 s em toda conversa parada e gastava dados do Supabase)
+    // 3. Polling de segurança (igual antes: a cada 15 s se o realtime não entregou nada),
+    //    só com a aba visível; ao voltar para a aba, atualiza na hora
     const poll = setInterval(() => {
-      if (!live && !document.hidden && Date.now() - lastEventAt.current > 14000) {
+      if (!document.hidden && Date.now() - lastEventAt.current > 14000) {
         fetchAll();
       }
     }, 15000);
+    const onVisible = () => { if (!document.hidden) fetchAll(); };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
       supabase.removeChannel(channel);
     };
   }, [jobId, fetchAll]);
