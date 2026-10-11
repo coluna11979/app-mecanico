@@ -58,6 +58,8 @@ export default function Financeiro() {
   const [firstOpen, setFirstOpen] = useState<string | null>(null);
   const [payables, setPayables] = useState<FinPayable[]>([]);
   const [costItems, setCostItems] = useState<CostItem[]>([]);
+  /** Notas de compra de peças lançadas no período (null = ainda não carregou) */
+  const [purchaseCount, setPurchaseCount] = useState<number | null>(null);
   const [loading, setLoading]   = useState(true);
   /** Recebeu uma OS aqui: recarrega os números sem piscar a tela */
   const [reloadKey, setReloadKey] = useState(0);
@@ -66,13 +68,15 @@ export default function Financeiro() {
   // Movimentos: do início do período anterior (comparação) até o fim do atual
   const fromIso = prev.from.toISOString();
   const toIso = range.to.toISOString();
+  const curFromDay = range.from.toLocaleDateString('en-CA');
+  const curToDay = range.to.toLocaleDateString('en-CA');
 
   useEffect(() => {
     if (!wid || !allowed) return;
     let alive = true;
     (async () => {
       if (!reloadKey) setLoading(true);
-      const [e, p, r, o, first, ci, pay] = await Promise.all([
+      const [e, p, r, o, first, ci, pay, pur] = await Promise.all([
         fetchAll((a, b) => supabase.from('cash_entries')
           .select('id, kind, method, amount, installments, category, mechanic_id, created_at')
           .eq('workshop_id', wid).is('cancelled_at', null).gte('created_at', fromIso).lt('created_at', toIso)
@@ -104,6 +108,9 @@ export default function Financeiro() {
           .eq('workshop_id', wid).is('cancelled_at', null)
           .or(`paid_at.is.null,paid_at.gte.${fromIso.slice(0, 10)}`)
           .order('id').range(a, b)),
+        // Só a contagem de notas de compra do período (para o aviso de custo estimado)
+        supabase.from('purchase_invoices').select('id', { count: 'exact', head: true })
+          .eq('workshop_id', wid).gte('issue_date', curFromDay).lt('issue_date', curToDay),
       ]);
       if (!alive) return;
       setEntries((e.data as FinEntry[]) ?? []);
@@ -112,11 +119,12 @@ export default function Financeiro() {
       setOs((o.data as unknown as FinOs[]) ?? []);
       setCostItems((ci.data as CostItem[]) ?? []);
       setPayables((pay.data as FinPayable[]) ?? []);
+      setPurchaseCount(pur.error ? null : pur.count ?? 0);
       setFirstOpen((first.data as { opened_at: string } | null)?.opened_at ?? null);
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [wid, allowed, fromIso, toIso, reloadKey]);
+  }, [wid, allowed, fromIso, toIso, curFromDay, curToDay, reloadKey]);
 
   const f = useMemo(() => {
     /** Faturado, custo das peças vendidas, saídas e resultado de um intervalo */
@@ -144,7 +152,7 @@ export default function Financeiro() {
       cur, before, toReceive,
       deltas: {
         revenue: change(cur.sales.revenue, before.sales.revenue),
-        received: change(cur.cash.inflow, before.cash.inflow),
+        received: change(cur.cash.received, before.cash.received),
         out: change(cur.out.total, before.out.total),
         result: change(cur.res.result, before.res.result),
       },
@@ -176,6 +184,10 @@ export default function Financeiro() {
   const prevLabel = PREV_LABEL[preset];
   const empty = cur.sales.count === 0 && cur.cash.inflow === 0 && cur.out.total === 0;
   const partial = cur.withParts > 0 && cur.costed < cur.withParts;
+  /** Teve faturamento e nenhuma despesa lançada: o "resultado" é só receita − custo das peças, não lucro */
+  const noExpenses = cur.sales.revenue > 0 && cur.out.operating === 0;
+  /** Tem custo de peça no resultado, mas nenhuma nota de compra no período: o custo vem do cadastro e pode ser estimado */
+  const costUnproven = cur.partsCost > 0 && purchaseCount === 0;
   const hasAlerts = alerts.overduePay.n > 0 || alerts.weekPay.n > 0 || alerts.overdueRec.n > 0 || alerts.unpaidOs.n > 0 || alerts.divergences.length > 0;
   const openReceber = () => { setTab('receber'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
@@ -236,21 +248,22 @@ export default function Financeiro() {
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <Kpi label="Faturado" value={brl(cur.sales.revenue)} delta={deltas.revenue} note={prevLabel}
                 tip="Faturado considera as OS concluídas no período." sub={`${cur.sales.count} OS concluída${cur.sales.count === 1 ? '' : 's'}`} />
-              <Kpi label="Recebido" value={brl(cur.cash.inflow)} delta={deltas.received} note={prevLabel}
-                tip="Recebido considera os pagamentos efetivamente recebidos no período (inclui entradas avulsas do caixa)." />
+              <Kpi label="Recebido de clientes" value={brl(cur.cash.received)} delta={deltas.received} note={prevLabel}
+                sub={cur.cash.other > 0 ? `+ ${brl(cur.cash.other)} em outras entradas de caixa` : undefined}
+                tip="Pagamentos de OS efetivamente recebidos no período, sem os cancelados. Entradas avulsas do caixa (sem OS) aparecem à parte, em 'outras entradas de caixa'." />
               <Kpi label="A receber" value={brl(f.toReceive.total)}
                 sub={firstOpen ? (alerts.overdueRec.n > 0 ? `${alerts.overdueRec.n} vencida${alerts.overdueRec.n === 1 ? '' : 's'}` : `${f.toReceive.rows.length} OS em aberto`) : 'conta a partir do 1º caixa'}
                 tone={alerts.overdueRec.n > 0 ? 'warn' : undefined}
                 tip="OS concluídas com saldo em aberto (independe do período), contadas a partir do primeiro caixa aberto." />
               <Kpi label="Saídas" value={brl(cur.out.total)} delta={deltas.out} note={prevLabel} invert
                 tip="Despesas e vales do caixa + contas pagas no período. Sangria e suprimento não entram (só mudam o dinheiro de lugar)." />
-              <Kpi label="Resultado operacional estimado" value={brl(cur.res.result)} delta={deltas.result} note={prevLabel} highlight wide
+              <Kpi label={noExpenses ? 'Resultado parcial (sem despesas)' : 'Resultado operacional estimado'} value={brl(cur.res.result)} delta={deltas.result} note={prevLabel} highlight wide
                 tone={cur.res.result < 0 ? 'bad' : undefined}
-                sub={cur.res.margin != null ? `margem estimada ${Math.round(cur.res.margin)}%` : undefined}
+                sub={noExpenses ? 'despesas não lançadas: não é lucro' : cur.res.margin != null ? `margem estimada ${Math.round(cur.res.margin)}%` : undefined}
                 tip="Faturado − custo das peças vendidas − demais despesas do período. Estimativa: não é lucro contábil." />
             </div>
             <p className="text-[11px] text-steel-400 -mt-2">
-              ⓘ Faturado considera as OS concluídas no período. Recebido considera os pagamentos efetivamente recebidos no período.
+              ⓘ Faturado considera as OS concluídas no período. Recebido de clientes considera os pagamentos de OS efetivamente recebidos no período; entradas avulsas do caixa ficam em "outras entradas".
             </p>
 
             {empty && (
@@ -307,11 +320,23 @@ export default function Financeiro() {
                   <Row key={g.key} label={`${g.icon} ${g.label}`} value={brl(g.total)} indent />
                 ))}
                 <div className="flex items-baseline justify-between gap-3 pt-2.5 mt-1 border-t border-steel-200">
-                  <span className="font-bold">= Resultado operacional estimado</span>
+                  <span className="font-bold">= {noExpenses ? 'Resultado parcial (sem despesas)' : 'Resultado operacional estimado'}</span>
                   <span className={`text-lg font-bold font-display ${cur.res.result < 0 ? 'text-alert-600' : ''}`}>{brl(cur.res.result)}</span>
                 </div>
-                {cur.res.margin != null && <div className="text-right text-xs text-steel-500">margem estimada {Math.round(cur.res.margin)}%</div>}
+                {cur.res.margin != null && !noExpenses && <div className="text-right text-xs text-steel-500">margem estimada {Math.round(cur.res.margin)}%</div>}
                 <div className="mt-3 space-y-1.5 text-[11px] text-steel-500 leading-snug">
+                  {noExpenses && (
+                    <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
+                      <strong>Não é lucro.</strong> Nenhuma despesa foi lançada neste período; este valor é só o faturado menos o custo das peças.
+                      Lance aluguel, contas, salários e demais despesas para o resultado ficar completo.
+                    </p>
+                  )}
+                  {costUnproven && (
+                    <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
+                      <strong>Custo das peças sem nota de compra.</strong> Nenhuma compra de peças foi lançada neste período; o custo usado vem do cadastro
+                      da peça e pode ser estimado. Lance as compras em Compras para o custo ficar comprovado.
+                    </p>
+                  )}
                   {partial && (
                     <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
                       Estimativa baseada nos custos disponíveis. Custo informado em {cur.costed} de {cur.withParts} OS.
