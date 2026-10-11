@@ -152,7 +152,7 @@ export default function Financeiro() {
       cur, before, toReceive,
       deltas: {
         revenue: change(cur.sales.revenue, before.sales.revenue),
-        received: change(cur.cash.inflow, before.cash.inflow),
+        received: change(cur.cash.received, before.cash.received),
         out: change(cur.out.total, before.out.total),
         result: change(cur.res.result, before.res.result),
       },
@@ -248,8 +248,9 @@ export default function Financeiro() {
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <Kpi label="Faturado" value={brl(cur.sales.revenue)} delta={deltas.revenue} note={prevLabel}
                 tip="Faturado considera as OS concluídas no período." sub={`${cur.sales.count} OS concluída${cur.sales.count === 1 ? '' : 's'}`} />
-              <Kpi label="Recebido" value={brl(cur.cash.inflow)} delta={deltas.received} note={prevLabel}
-                tip="Recebido considera os pagamentos efetivamente recebidos no período (inclui entradas avulsas do caixa)." />
+              <Kpi label="Recebido de clientes" value={brl(cur.cash.received)} delta={deltas.received} note={prevLabel}
+                sub={cur.cash.other > 0 ? `+ ${brl(cur.cash.other)} em outras entradas de caixa` : undefined}
+                tip="Pagamentos de OS efetivamente recebidos no período, sem os cancelados. Entradas avulsas do caixa (sem OS) aparecem à parte, em 'outras entradas de caixa'." />
               <Kpi label="A receber" value={brl(f.toReceive.total)}
                 sub={firstOpen ? (alerts.overdueRec.n > 0 ? `${alerts.overdueRec.n} vencida${alerts.overdueRec.n === 1 ? '' : 's'}` : `${f.toReceive.rows.length} OS em aberto`) : 'conta a partir do 1º caixa'}
                 tone={alerts.overdueRec.n > 0 ? 'warn' : undefined}
@@ -262,7 +263,7 @@ export default function Financeiro() {
                 tip="Faturado − custo das peças vendidas − demais despesas do período. Estimativa: não é lucro contábil." />
             </div>
             <p className="text-[11px] text-steel-400 -mt-2">
-              ⓘ Faturado considera as OS concluídas no período. Recebido considera os pagamentos efetivamente recebidos no período.
+              ⓘ Faturado considera as OS concluídas no período. Recebido de clientes considera os pagamentos de OS efetivamente recebidos no período; entradas avulsas do caixa ficam em "outras entradas".
             </p>
 
             {empty && (
