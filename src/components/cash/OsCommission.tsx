@@ -16,7 +16,7 @@ import type { WorkshopMechanic } from '@/types/database';
  */
 
 type Assign = ReturnType<typeof useReceiveAssignments>;
-type Team = (Pick<WorkshopMechanic, 'id' | 'name'> & { no_commission?: boolean | null; commission_revenue_percent?: number | null })[];
+type Team = (Pick<WorkshopMechanic, 'id' | 'name'> & { no_commission?: boolean | null; commission_revenue_only?: boolean | null; commission_revenue_percent?: number | null })[];
 /** Como a comissão da pessoa é calculada: % padrão sobre o total da OS ou valor fechado */
 type Mode = 'p10' | 'p4' | 'fixo';
 const MODES: { key: Mode; label: string; pct: number | null }[] = [
@@ -36,7 +36,7 @@ const modeOf = (value: number, total: number): Mode =>
 
 export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   /** Salário fixo não entra na comissão */
-  const fixed = useMemo(() => new Set(team.filter(t => t.no_commission).map(t => t.id)), [team]);
+  const fixed = useMemo(() => new Set(team.filter(t => t.no_commission || t.commission_revenue_only).map(t => t.id)), [team]);
   const [loaded, setLoaded]   = useState(false);
   const [wasManual, setWasManual] = useState(false);
   const [brought, setBrought] = useState(false);
@@ -206,7 +206,7 @@ export function OsCommission({ c, team, className = 'mt-4 rounded-2xl border bor
                 <select className={`input !py-1.5 text-sm flex-1 min-w-0 ${r.mechanic_id ? '' : '!border-pending-400'}`} value={r.mechanic_id}
                   onChange={e => setRow(r.key, { mechanic_id: e.target.value })}>
                   <option value="">Quem recebe…</option>
-                  {team.filter(t => !t.no_commission || t.id === r.mechanic_id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {team.filter(t => !(t.no_commission || t.commission_revenue_only) || t.id === r.mechanic_id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
                 <button type="button" onClick={() => c.setRows(rs => rs.filter(x => x.key !== r.key))}
                   className="text-steel-400 hover:text-alert-600 px-1" aria-label="Remover">✕</button>

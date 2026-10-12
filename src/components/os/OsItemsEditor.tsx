@@ -78,7 +78,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
   ? { workshop_mechanic_id: null, executor: 'platform' }
   : { workshop_mechanic_id: v || null, executor: v ? 'workshop' : null });
 
-type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null };
+type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
 type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
 
@@ -154,7 +154,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   // Equipe, para dizer quem fez cada item (comissão)
   useEffect(() => {
-    supabase.from('workshop_mechanics').select('id, name, active, no_commission').eq('workshop_id', workshopId).order('name')
+    supabase.from('workshop_mechanics').select('id, name, active, no_commission, commission_revenue_only').eq('workshop_id', workshopId).order('name')
       .then(({ data }) => setTeam((data as TeamMember[]) ?? []));
     loadItemRules(workshopId).then(setItemRules);
   }, [workshopId]);
@@ -193,6 +193,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     if (who === PLATFORM_ITEM) return { who, value: 0, base: '', typed: false, none: 'mecânico da plataforma — sem comissão da equipe' };
     if (!who) return { who: null, value: 0, base: '', typed: false, none: 'escolha quem fez' };
     if (team.find(m => m.id === who)?.no_commission) return { who, value: 0, base: '', typed: false, none: 'salário fixo — sem comissão' };
+    if (team.find(m => m.id === who)?.commission_revenue_only) return { who, value: 0, base: '', typed: false, none: 'ganha só % do faturamento — sem comissão por item' };
     if (r.comm.trim()) return { who, value: Math.max(0, parseMoney(r.comm)), base: 'definido na OS', typed: true };
     const parts = rows.filter(x => x.kind === 'part' && groups.get(x.key)?.key === r.key)
       .map(x => ({ description: x.description, quantity: parseMoney(x.quantity), unit_price: parseMoney(x.unit_price || '0') }));
