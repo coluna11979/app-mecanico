@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { fmtPhone } from '@/components/os/osHelpers';
 import { onlyDigits } from '@/lib/customers';
 import {
-  CHAT_COLUMNS, URGENT_MIN, chatTitle, fmtListTime, fmtWait, followUpDue, followUpLabel, inboxCall, isAwaiting, isUrgent, minutesSince,
+  URGENT_MIN, chatTitle, selectChats, fmtListTime, fmtWait, followUpDue, followUpLabel, inboxCall, isAwaiting, isUrgent, minutesSince,
   sectorVisible, useInboxStatus, useSectors, type InstanceStatus, type Sector, type WaChat, type WaInstance,
 } from '@/lib/inbox';
 import { useOperator } from '@/lib/operators';
@@ -85,8 +85,8 @@ export default function WorkshopInbox() {
   /* ── Conversas (tempo real) ── */
   const loadChats = useCallback(async () => {
     if (!wid) return;
-    const { data, error } = await supabase.from('whatsapp_chats').select(CHAT_COLUMNS)
-      .eq('workshop_id', wid).order('last_message_at', { ascending: false, nullsFirst: false }).limit(500);
+    const { data, error } = await selectChats(cols => supabase.from('whatsapp_chats').select(cols)
+      .eq('workshop_id', wid).order('last_message_at', { ascending: false, nullsFirst: false }).limit(500));
     if (error) toast.error('Erro ao carregar conversas: ' + error.message);
     setChats((data ?? []) as unknown as WaChat[]);
     setLoading(false);
@@ -100,7 +100,7 @@ export default function WorkshopInbox() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_chats', filter: `workshop_id=eq.${wid}` }, async p => {
         if (p.eventType === 'DELETE') { setChats(prev => prev.filter(c => c.id !== (p.old as WaChat).id)); return; }
         // Linha do realtime não traz o cliente (join): busca a conversa completa
-        const { data } = await supabase.from('whatsapp_chats').select(CHAT_COLUMNS).eq('id', (p.new as WaChat).id).maybeSingle();
+        const { data } = await selectChats(cols => supabase.from('whatsapp_chats').select(cols).eq('id', (p.new as WaChat).id).maybeSingle());
         if (!data) return;
         const row = data as unknown as WaChat;
         setChats(prev => [row, ...prev.filter(c => c.id !== row.id)]
