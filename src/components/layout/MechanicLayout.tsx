@@ -1,15 +1,15 @@
 import { ReactNode, useEffect, useState } from 'react';
-import { NavLink, Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
+import { IconBell, IconCalendar, IconDollar, IconUser, IconWrench } from '@/components/mecanico/icons';
 
 const LS_KEY_MEC = 'mecanico_msgs_last_seen';
 
 export default function MechanicLayout({ children }: { children: ReactNode }) {
-  const { signOut, profile, user } = useAuth();
-  const firstName = profile?.full_name?.split(' ')[0] ?? 'Mecânico';
+  const { user } = useAuth();
   const location = useLocation();
   const [unread, setUnread] = useState(0);
   const [agendaCount, setAgendaCount] = useState(0);
@@ -88,45 +88,37 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="dark min-h-screen bg-steel-900 text-steel-100 flex flex-col">
-      {/* ── Header ── */}
+      {/* ── Header ── (Sair foi pro Perfil: no celular ficava colado no sino) */}
       <header className="sticky top-0 z-30 bg-steel-900/95 backdrop-blur border-b border-steel-800 shrink-0">
         <div className="px-4 h-14 flex items-center justify-between">
           <Logo size={28} light />
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-steel-400 hidden sm:block">{firstName}</span>
-            <Link
-              to="/mecanico/avisos"
-              aria-label="Avisos"
-              className="relative h-9 w-9 grid place-items-center rounded-xl text-steel-400 hover:text-brand-400 hover:bg-steel-800 transition"
-            >
-              <IconBell />
-              {unreadNotif > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
-                  {unreadNotif > 9 ? '9+' : unreadNotif}
-                </span>
-              )}
-            </Link>
-            <button
-              onClick={signOut}
-              className="text-xs text-steel-500 hover:text-brand-400 transition px-3 py-2 rounded-xl hover:bg-steel-800 active:scale-95"
-            >
-              Sair
-            </button>
-          </div>
+          <Link
+            to="/mecanico/avisos"
+            aria-label={unreadNotif > 0 ? `Avisos (${unreadNotif} novos)` : 'Avisos'}
+            className="relative h-11 w-11 -mr-2 grid place-items-center rounded-xl text-steel-300 active:bg-steel-800 transition"
+          >
+            <IconBell className="w-6 h-6" />
+            {unreadNotif > 0 && (
+              <span className="absolute top-1 right-1 h-5 min-w-5 px-1 rounded-full bg-alert-500 text-white text-[11px] font-bold grid place-items-center">
+                {unreadNotif > 9 ? '9+' : unreadNotif}
+              </span>
+            )}
+          </Link>
         </div>
       </header>
 
       {/* ── Page content ── */}
-      <main className="flex-1 pb-24">{children}</main>
+      <main className="flex-1 pb-28">{children}</main>
 
-      {/* ── Bottom tab bar ── */}
-      <nav className="fixed bottom-0 inset-x-0 bg-steel-950/98 backdrop-blur border-t border-steel-800 z-30 safe-area-inset-bottom">
-        <div className="grid grid-cols-5 max-w-lg mx-auto">
-          <Tab to="/mecanico/dashboard" label="Jobs"    icon={<IconJobs />}    badge={unread} />
-          <Tab to="/mecanico/agenda"    label="Agenda"  icon={<IconAgenda />}  badge={agendaCount} />
-          <Tab to="/mecanico/mapa"      label="Mapa"    icon={<IconMap />}     />
-          <Tab to="/mecanico/ganhos"    label="Ganhos"  icon={<IconGanhos />}  />
-          <Tab to="/mecanico/perfil"    label="Perfil"  icon={<IconProfile />} />
+      {/* ── Bottom tab bar ── 4 abas: o Mapa vive dentro de Jobs */}
+      <nav className="fixed bottom-0 inset-x-0 bg-steel-900/95 backdrop-blur border-t border-steel-800 z-30 safe-area-inset-bottom">
+        <div className="grid grid-cols-4 max-w-lg mx-auto">
+          <Tab to="/mecanico/dashboard" match={['/mecanico/dashboard', '/mecanico/mapa', '/mecanico/job/']}
+            label="Jobs" icon={<IconWrench />} badge={unread} />
+          <Tab to="/mecanico/agenda"  label="Agenda"   icon={<IconCalendar />}       badge={agendaCount} />
+          <Tab to="/mecanico/ganhos"  match={['/mecanico/ganhos', '/mecanico/embaixador']}
+            label="Ganhos" icon={<IconDollar />} />
+          <Tab to="/mecanico/perfil"  label="Perfil"   icon={<IconUser />} />
         </div>
       </nav>
     </div>
@@ -135,100 +127,41 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
 
 function Tab({
   to,
+  match,
   label,
   icon,
-  end = true,
   badge = 0,
 }: {
   to: string;
+  /** Prefixos de rota que também acendem a aba (padrão: o próprio `to`) */
+  match?: string[];
   label: string;
   icon: ReactNode;
-  end?: boolean;
   badge?: number;
 }) {
+  const { pathname } = useLocation();
+  const isActive = (match ?? [to]).some(p => pathname.startsWith(p));
   return (
-    <NavLink
+    <Link
       to={to}
-      end={end}
-      className={({ isActive }) =>
-        `flex flex-col items-center justify-center gap-1 h-16 text-[10px] font-semibold transition-colors active:scale-95 ${
-          isActive ? 'text-brand-400' : 'text-steel-500 hover:text-steel-300'
-        }`
-      }
+      aria-current={isActive ? 'page' : undefined}
+      className={`flex flex-col items-center justify-center gap-1 h-16 text-[11px] font-semibold transition-colors active:scale-95 ${
+        isActive ? 'text-brand-400' : 'text-steel-300'
+      }`}
     >
-      {({ isActive }) => (
-        <>
-          <span
-            className={`relative h-8 w-8 flex items-center justify-center rounded-xl transition-colors ${
-              isActive ? 'bg-brand-500/15' : ''
-            }`}
-          >
-            {icon}
-            {badge > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
-                {badge > 9 ? '9+' : badge}
-              </span>
-            )}
+      <span
+        className={`relative h-8 w-12 flex items-center justify-center rounded-full transition-colors ${
+          isActive ? 'bg-brand-500/15' : ''
+        }`}
+      >
+        {icon}
+        {badge > 0 && (
+          <span className="absolute -top-1 right-0.5 h-5 min-w-5 px-1 rounded-full bg-alert-500 text-white text-[11px] font-bold grid place-items-center">
+            {badge > 9 ? '9+' : badge}
           </span>
-          {label}
-        </>
-      )}
-    </NavLink>
-  );
-}
-
-function IconJobs() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </svg>
-  );
-}
-
-function IconBell() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
-  );
-}
-
-function IconAgenda() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
-    </svg>
-  );
-}
-
-function IconMap() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-      <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
-      <line x1="9" y1="3" x2="9" y2="18" />
-      <line x1="15" y1="6" x2="15" y2="21" />
-    </svg>
-  );
-}
-
-function IconProfile() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-    </svg>
-  );
-}
-
-function IconGanhos() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-      <line x1="12" y1="1" x2="12" y2="23" />
-      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-    </svg>
+        )}
+      </span>
+      {label}
+    </Link>
   );
 }

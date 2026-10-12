@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -252,6 +252,11 @@ export default function MechanicMapa() {
               Você está offline
             </div>
           )}
+        </div>
+        {/* Lista ↔ Mapa — mesmo seletor da tela de Jobs */}
+        <div className="absolute top-3 right-3 z-10 flex rounded-xl bg-steel-900/90 backdrop-blur border border-steel-700 p-0.5 text-sm font-semibold">
+          <Link to="/mecanico/dashboard" className="h-9 px-3 rounded-lg text-steel-300 grid place-items-center active:bg-steel-700">Lista</Link>
+          <span className="h-9 px-3 rounded-lg bg-steel-700 text-white grid place-items-center">Mapa</span>
         </div>
         {/* Selected job bottom sheet */}
         {selected && (

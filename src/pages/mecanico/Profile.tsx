@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AvatarUpload } from '@/components/AvatarUpload';
 import { mechanicNet } from '@/lib/payment';
+import { IconLogOut } from '@/components/mecanico/icons';
 import type { Mechanic, Job } from '@/types/database';
 
 const SKILL_SUGGESTIONS = [
@@ -19,7 +20,7 @@ type EditForm = {
 };
 
 export default function MechanicProfile() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, signOut } = useAuth();
   const [me, setMe]             = useState<Mechanic | null>(null);
   const [history, setHistory]   = useState<Job[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -225,6 +226,13 @@ export default function MechanicProfile() {
             </div>
           )}
         </div>
+
+        <button
+          onClick={signOut}
+          className="w-full h-12 rounded-2xl border border-steel-700 text-steel-300 font-semibold text-sm flex items-center justify-center gap-2 active:bg-steel-800 transition"
+        >
+          <IconLogOut className="w-4 h-4" /> Sair da conta
+        </button>
       </div>
 
       {/* ── Drawer de edição ── */}
