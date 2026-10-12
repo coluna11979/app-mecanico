@@ -52,6 +52,64 @@ const TYPE_MAP: [RegExp, string][] = [
   [/document/i, 'document'], [/sticker/i, 'sticker'],
 ];
 
+
+/* ── Tipos especiais: respostas de botão/lista, localização, contato, mensagens com botões ──
+   A UAZAPI manda o conteúdo do WhatsApp quase cru (nomes de campo variam entre versões),
+   então a busca ignora maiúsculas e entra nos objetos internos. */
+
+/** Texto do campo mais importante (ordem de `keys`), procurando em até 3 níveis */
+function findText(obj: any, keys: string[]): string {
+  for (const key of keys) { const t = findKey(obj, key.toLowerCase(), 0); if (t) return t; }
+  return '';
+}
+function findKey(obj: any, key: string, depth: number): string {
+  if (!obj || typeof obj !== 'object' || depth > 3) return '';
+  for (const [k, v] of Object.entries(obj)) {
+    if (k.toLowerCase() === key && typeof v === 'string' && v.trim()) return v.trim();
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === 'object') { const t = findKey(v, key, depth + 1); if (t) return t; }
+  }
+  return '';
+}
+function findNum(obj: any, key: string, depth = 0): number | null {
+  if (!obj || typeof obj !== 'object' || depth > 3) return null;
+  for (const [k, v] of Object.entries(obj)) {
+    if (k.toLowerCase() === key.toLowerCase() && Number.isFinite(Number(v))) return Number(v);
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === 'object') { const n = findNum(v, key, depth + 1); if (n != null) return n; }
+  }
+  return null;
+}
+
+/** Texto para os tipos que não são texto nem mídia; null = não é um tipo especial */
+function specialText(msgType: string, c: any): string | null {
+  if (/location/i.test(msgType)) {
+    const lat = findNum(c, 'degreesLatitude'), lng = findNum(c, 'degreesLongitude');
+    const name = findText(c, ['name', 'address']);
+    const link = lat != null && lng != null ? ` https://maps.google.com/?q=${lat},${lng}` : '';
+    return `📍 Localização${name ? `: ${name}` : ''}${link}`;
+  }
+  if (/contact/i.test(msgType)) {
+    const name = findText(c, ['displayName', 'fullName']);
+    const vcard = findText(c, ['vcard']);
+    const tel = vcard.match(/waid=(\d+)/)?.[1] ?? vcard.match(/TEL[^:]*:([+\d\s()-]+)/)?.[1]?.trim() ?? '';
+    return `👤 Contato${name ? `: ${name}` : ''}${tel ? ` (${tel})` : ''}`;
+  }
+  // Resposta tocando num botão / numa lista (comum com robôs de atendimento)
+  if (/response|reply/i.test(msgType)) {
+    const t = findText(c, ['selectedDisplayText', 'title', 'selectedRowId', 'selectedButtonId', 'selectedId', 'text', 'body', 'description']);
+    return t ? `↩️ ${t}` : null;
+  }
+  // Mensagem com botões / lista / modelo enviada por empresas
+  if (/button|list|template|interactive|hydrated/i.test(msgType)) {
+    const t = findText(c, ['contentText', 'hydratedContentText', 'text', 'body', 'description', 'title', 'footerText']);
+    return t || null;
+  }
+  return null;
+}
+
 async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string, token: string, payload: any) {
   const m = payload.message ?? payload;
   const chatInfo = payload.chat ?? {};
@@ -68,9 +126,20 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
   if (!phone) return;
 
   const contentObj = typeof m.content === 'object' && m.content ? m.content : {};
-  const text: string = (typeof m.content === 'string' ? m.content : '') || m.text || contentObj.text || contentObj.caption || '';
-  const kind = TYPE_MAP.find(([re]) => re.test(msgType) || re.test(String(m.mediaType || '')))?.[1]
-    ?? (/conversation|extendedtext|^text$/i.test(msgType) || !msgType ? 'text' : 'other');
+  let text: string = (typeof m.content === 'string' ? m.content : '') || m.text || contentObj.text || contentObj.caption || '';
+  // Resposta de botão/lista, localização, contato… viram texto legível (antes de olhar mídia:
+  // "ButtonsMessage" com imagem de cabeçalho não é foto)
+  const special = specialText(msgType, contentObj);
+  let kind = special != null ? 'text'
+    : TYPE_MAP.find(([re]) => re.test(msgType) || re.test(String(m.mediaType || '')))?.[1]
+      ?? (/conversation|extendedtext|^text$/i.test(msgType) || !msgType ? 'text' : 'other');
+  if (special != null) text = special || text;
+  // Tipo desconhecido: procura qualquer texto dentro; senão deixa o tipo registrado
+  if (kind === 'other' && !text) {
+    text = findText(contentObj, ['text', 'caption', 'body', 'description', 'title', 'contentText', 'conversation']);
+    if (text) kind = 'text';
+    else text = `[${msgType.replace(/Message$/, '') || 'Mensagem'} — tipo não suportado, veja no celular]`;
+  }
 
   // Dedup: UAZAPI reenvia quando demora para responder
   if (messageId) {

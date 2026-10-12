@@ -841,7 +841,7 @@ export default function OsDetail() {
 
       {approvalOpen && (
         <SendWhatsAppModal phone={os.customer?.phone} customerId={os.customer_id} customerName={os.customer?.full_name}
-          title="Enviar orçamento para aprovação"
+          title="Enviar orçamento para aprovação" sectorKind="comercial"
           messages={[{ key: 'approval', label: 'Orçamento', text: whatsappText('approval') }]}
           onSent={() => { if (os.status === 'open') changeStatus('awaiting_approval', { skipConfirm: true }); }}
           onClose={() => setApprovalOpen(false)} />

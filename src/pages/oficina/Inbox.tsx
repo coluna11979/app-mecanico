@@ -7,9 +7,11 @@ import { toast } from '@/components/ui/Toast';
 import { fmtPhone } from '@/components/os/osHelpers';
 import { onlyDigits } from '@/lib/customers';
 import {
-  CHAT_COLUMNS, URGENT_MIN, chatTitle, fmtListTime, fmtWait, followUpDue, followUpLabel, inboxCall, isAwaiting, isUrgent, minutesSince,
-  useInboxStatus, type InstanceStatus, type WaChat, type WaInstance,
+  URGENT_MIN, chatTitle, selectChats, fmtListTime, fmtWait, followUpDue, followUpLabel, inboxCall, isAwaiting, isUrgent, minutesSince,
+  sectorVisible, useInboxStatus, useSectors, type InstanceStatus, type Sector, type WaChat, type WaInstance,
 } from '@/lib/inbox';
+import { useOperator } from '@/lib/operators';
+import SectorsModal from '@/components/inbox/SectorsModal';
 import ChatAvatar from '@/components/inbox/ChatAvatar';
 import ChatView from '@/components/inbox/ChatView';
 import ClientPanel from '@/components/inbox/ClientPanel';
@@ -45,6 +47,20 @@ export default function WorkshopInbox() {
   const [now, setNow] = useState(Date.now());
   const mute = useInboxMute();
 
+  /* ── Setores: cada função do balcão vê os setores dela; o Gestor vê tudo ── */
+  const sectors = useSectors(wid);
+  const op = useOperator();
+  const role = op.balcao ? op.session?.role ?? null : null;
+  const isManager = !role || role === 'gestor';
+  const usingSectors = sectors.active.length > 0;
+  const mySectors = useMemo(() => sectors.active.filter(s => sectorVisible(s, role)), [sectors.active, role]);
+  const [sectorFilter, setSectorFilter] = useState<string>('all');
+  const [sectorsOpen, setSectorsOpen] = useState(false);
+  // Quem só tem um setor já abre nele
+  useEffect(() => {
+    if (!isManager && mySectors.length === 1) setSectorFilter(mySectors[0].id);
+  }, [isManager, mySectors]);
+
   // Relógio dos "aguardando há…"
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
 
@@ -69,8 +85,8 @@ export default function WorkshopInbox() {
   /* ── Conversas (tempo real) ── */
   const loadChats = useCallback(async () => {
     if (!wid) return;
-    const { data, error } = await supabase.from('whatsapp_chats').select(CHAT_COLUMNS)
-      .eq('workshop_id', wid).order('last_message_at', { ascending: false, nullsFirst: false }).limit(500);
+    const { data, error } = await selectChats(cols => supabase.from('whatsapp_chats').select(cols)
+      .eq('workshop_id', wid).order('last_message_at', { ascending: false, nullsFirst: false }).limit(500));
     if (error) toast.error('Erro ao carregar conversas: ' + error.message);
     setChats((data ?? []) as unknown as WaChat[]);
     setLoading(false);
@@ -84,7 +100,7 @@ export default function WorkshopInbox() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_chats', filter: `workshop_id=eq.${wid}` }, async p => {
         if (p.eventType === 'DELETE') { setChats(prev => prev.filter(c => c.id !== (p.old as WaChat).id)); return; }
         // Linha do realtime não traz o cliente (join): busca a conversa completa
-        const { data } = await supabase.from('whatsapp_chats').select(CHAT_COLUMNS).eq('id', (p.new as WaChat).id).maybeSingle();
+        const { data } = await selectChats(cols => supabase.from('whatsapp_chats').select(cols).eq('id', (p.new as WaChat).id).maybeSingle());
         if (!data) return;
         const row = data as unknown as WaChat;
         setChats(prev => [row, ...prev.filter(c => c.id !== row.id)]
@@ -115,24 +131,51 @@ export default function WorkshopInbox() {
   const status: InstanceStatus = instance?.status ?? 'none';
   const connected = status === 'connected';
 
+  /** Conversas que quem está usando pode ver (setores dele; Gestor também vê as sem setor) */
+  const activeIds = useMemo(() => new Set(sectors.active.map(s => s.id)), [sectors.active]);
+  const myIds = useMemo(() => new Set(mySectors.map(s => s.id)), [mySectors]);
+  const allowedChats = useMemo(() => !usingSectors ? chats
+    : chats.filter(c => (c.sector_id && myIds.has(c.sector_id)) || (isManager && (!c.sector_id || !activeIds.has(c.sector_id)))),
+  [chats, usingSectors, myIds, activeIds, isManager]);
+  const scoped = useMemo(() => !usingSectors || sectorFilter === 'all' ? allowedChats
+    : sectorFilter === 'none' ? allowedChats.filter(c => !c.sector_id || !activeIds.has(c.sector_id))
+    : allowedChats.filter(c => c.sector_id === sectorFilter),
+  [allowedChats, usingSectors, sectorFilter, activeIds]);
+  const sectorOf = (c: WaChat) => (c.sector_id ? sectors.active.find(s => s.id === c.sector_id) ?? null : null);
+  const openIn = (pred: (c: WaChat) => boolean) => allowedChats.filter(c => c.status === 'open' && pred(c));
+
+  async function transfer(chat: WaChat, sectorId: string | null) {
+    const target = sectors.active.find(s => s.id === sectorId);
+    const { error } = await supabase.from('whatsapp_chats').update({ sector_id: sectorId }).eq('id', chat.id);
+    if (error) { toast.error('Não transferiu: ' + error.message); return; }
+    const who = (op.balcao ? op.session?.name : null) ?? null;
+    await supabase.from('whatsapp_chat_notes').insert({
+      workshop_id: chat.workshop_id, chat_id: chat.id,
+      body: `↪ Transferido para ${target ? `${target.icon} ${target.name}` : 'sem setor'}`, author_name: who,
+    });
+    toast.success(`Transferido para ${target?.name ?? 'sem setor'}`);
+    // Saiu dos setores de quem transferiu: fecha a conversa na tela
+    if (sectorId && !myIds.has(sectorId) && !isManager) setSelectedId(null);
+  }
+
   /* ── Números do topo ── */
   const metrics = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const awaiting = chats.filter(isAwaiting);
+    const awaiting = scoped.filter(isAwaiting);
     return {
       awaiting: awaiting.length,
-      urgent: chats.filter(c => isUrgent(c, now)).length,
+      urgent: scoped.filter(c => isUrgent(c, now)).length,
       longest: awaiting.reduce((m, c) => Math.max(m, minutesSince(c.awaiting_since, now)), 0),
-      resolvedToday: chats.filter(c => c.status === 'resolved' && c.resolved_at && new Date(c.resolved_at) >= today).length,
-      unread: chats.filter(c => c.unread_count > 0).length,
-      followUps: chats.filter(c => followUpDue(c, now)).length,
+      resolvedToday: scoped.filter(c => c.status === 'resolved' && c.resolved_at && new Date(c.resolved_at) >= today).length,
+      unread: scoped.filter(c => c.unread_count > 0).length,
+      followUps: scoped.filter(c => followUpDue(c, now)).length,
     };
-  }, [chats, now]);
+  }, [scoped, now]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const digits = onlyDigits(q);
-    return chats
+    return scoped
       .filter(c => {
         if (filter === 'abertas') return c.status === 'open';
         if (filter === 'aguardando') return isAwaiting(c);
@@ -149,9 +192,9 @@ export default function WorkshopInbox() {
         : filter === 'retornar'
           ? (a.follow_up_at ?? '').localeCompare(b.follow_up_at ?? '')
           : (b.last_message_at ?? '').localeCompare(a.last_message_at ?? ''));
-  }, [chats, filter, search, now]);
+  }, [scoped, filter, search, now]);
 
-  const selected = chats.find(c => c.id === selectedId) ?? null;
+  const selected = allowedChats.find(c => c.id === selectedId) ?? null;
 
   async function resolve(chat: WaChat, resolved: boolean) {
     const patch = resolved
@@ -196,6 +239,9 @@ export default function WorkshopInbox() {
                   <StatusChip status={status} phone={instance?.phone_number ?? null} loaded={instanceLoaded} />
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {isManager && (
+                    <button type="button" onClick={() => setSectorsOpen(true)} className="btn-ghost !py-1.5 !px-2 text-xs" title="Setores (Atendimento, Comercial…)">🗂️</button>
+                  )}
                   <button type="button" onClick={mute.toggle} className="btn-ghost !py-1.5 !px-2 text-xs"
                     title={mute.muted ? 'Som de mensagem nova desligado — clique para ligar' : 'Som de mensagem nova ligado — clique para silenciar'}>
                     {mute.muted ? '🔕' : '🔔'}
@@ -211,6 +257,27 @@ export default function WorkshopInbox() {
                   )}
                 </div>
               </div>
+
+              {/* Setores */}
+              {usingSectors && (
+                <div className="flex gap-1 overflow-x-auto -mx-1 px-1 [scrollbar-width:none]">
+                  {isManager && (
+                    <SectorTab label="Todos" active={sectorFilter === 'all'} n={openIn(() => true).length}
+                      waiting={openIn(isAwaiting).length > 0} onClick={() => setSectorFilter('all')} />
+                  )}
+                  {mySectors.map(s => (
+                    <SectorTab key={s.id} label={`${s.icon} ${s.name}`} active={sectorFilter === s.id}
+                      n={openIn(c => c.sector_id === s.id).length}
+                      waiting={openIn(c => c.sector_id === s.id && isAwaiting(c)).length > 0}
+                      onClick={() => setSectorFilter(s.id)} />
+                  ))}
+                  {isManager && openIn(c => !c.sector_id || !activeIds.has(c.sector_id)).length > 0 && (
+                    <SectorTab label="Sem setor" active={sectorFilter === 'none'}
+                      n={openIn(c => !c.sector_id || !activeIds.has(c.sector_id)).length}
+                      waiting={false} onClick={() => setSectorFilter('none')} />
+                  )}
+                </div>
+              )}
 
               {/* Números do atendimento */}
               <div className="grid grid-cols-3 gap-1.5">
@@ -270,6 +337,7 @@ export default function WorkshopInbox() {
               ) : (
                 visible.map(c => (
                   <ChatRow key={c.id} c={c} now={now} active={c.id === selectedId}
+                    sector={usingSectors && sectorFilter === 'all' ? sectorOf(c) : null}
                     onClick={() => { setSelectedId(c.id); setShowClient(false); }} />
                 ))
               )}
@@ -293,6 +361,8 @@ export default function WorkshopInbox() {
                   onToggleClient={() => setShowClient(s => !s)}
                   onResolve={r => resolve(selected, r)}
                   onConnect={() => setConnectOpen(true)}
+                  sectors={usingSectors ? sectors.active : undefined}
+                  onTransfer={sectorId => transfer(selected, sectorId)}
                 />
               </section>
               {/* Painel do cliente: fixo no monitor grande, gaveta nas telas menores */}
@@ -320,6 +390,9 @@ export default function WorkshopInbox() {
       {connectOpen && (
         <ConnectWhatsApp workshopId={wid} onClose={() => { setConnectOpen(false); loadInstance(); }}
           onConnected={() => { setConnectOpen(false); loadInstance(); }} />
+      )}
+      {sectorsOpen && (
+        <SectorsModal workshopId={wid} sectors={sectors.list} reload={sectors.reload} onClose={() => setSectorsOpen(false)} />
       )}
       {newOpen && (
         <NewChat workshopId={wid} initial={newOpen.phone ? newOpen : null} onClose={() => setNewOpen(false)}
@@ -364,7 +437,19 @@ function Metric({ label, value, sub, tone, active, onClick }: {
   );
 }
 
-function ChatRow({ c, now, active, onClick }: { c: WaChat; now: number; active: boolean; onClick: () => void }) {
+function SectorTab({ label, n, active, waiting, onClick }: { label: string; n: number; active: boolean; waiting: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`relative shrink-0 inline-flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-xs font-semibold transition ${
+        active ? 'bg-brand-500 text-white' : 'bg-steel-100 text-steel-600 hover:bg-steel-200'}`}>
+      {label}
+      <span className={`tabular-nums ${active ? 'text-white/80' : 'text-steel-400'}`}>{n}</span>
+      {waiting && !active && <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-alert-500" />}
+    </button>
+  );
+}
+
+function ChatRow({ c, now, active, sector, onClick }: { c: WaChat; now: number; active: boolean; sector?: Sector | null; onClick: () => void }) {
   const waiting = isAwaiting(c) ? minutesSince(c.awaiting_since, now) : 0;
   const urgent = isUrgent(c, now);
   return (
@@ -398,6 +483,7 @@ function ChatRow({ c, now, active, onClick }: { c: WaChat; now: number; active: 
             </span>
           )}
           {c.status === 'resolved' && <span className="text-[10px] font-semibold text-emerald-600">✓ Concluída</span>}
+          {sector && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">{sector.icon} {sector.name}</span>}
           {!c.customer_id && <span className="text-[10px] text-steel-400">· sem cadastro</span>}
         </div>
       </div>

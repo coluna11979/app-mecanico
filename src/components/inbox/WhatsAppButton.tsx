@@ -1,16 +1,16 @@
 import { ReactNode, useState } from 'react';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
 import { waNumber } from '@/components/os/osHelpers';
-import { useInboxSender } from '@/lib/inbox';
+import { useInboxSender, type SectorKind } from '@/lib/inbox';
 
 /**
  * Botão "mandar no WhatsApp" das telas (agenda, check-up, cobrança…).
  * Inbox ligado e conectado → abre a janela de envio pelo número da oficina (texto editável);
  * senão é o link wa.me de sempre.
  */
-export default function WhatsAppButton({ phone, text = '', customerId, customerName, title, className, onSent, children }: {
+export default function WhatsAppButton({ phone, text = '', customerId, customerName, title, className, onSent, sectorKind, children }: {
   phone: string | null | undefined; text?: string;
-  customerId?: string | null; customerName?: string | null; title?: string;
+  customerId?: string | null; customerName?: string | null; title?: string; sectorKind?: SectorKind;
   className?: string; onSent?: () => void; children: ReactNode;
 }) {
   const inbox = useInboxSender();
@@ -32,6 +32,7 @@ export default function WhatsAppButton({ phone, text = '', customerId, customerN
           customerId={customerId}
           customerName={customerName}
           title={title}
+          sectorKind={sectorKind}
           onClose={() => setOpen(false)}
           onSent={() => onSent?.()}
         />

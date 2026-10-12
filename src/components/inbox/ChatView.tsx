@@ -4,7 +4,7 @@ import { toast } from '@/components/ui/Toast';
 import { fmtPhone } from '@/components/os/osHelpers';
 import {
   chatTitle, fmtDay, fmtWait, inboxCall, isAwaiting, minutesSince, useComposeInject, useMediaUrl, URGENT_MIN,
-  type WaChat, type WaMessage,
+  type Sector, type WaChat, type WaMessage,
 } from '@/lib/inbox';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatAvatar from './ChatAvatar';
@@ -17,10 +17,13 @@ import { QuickRepliesModal, QuickReplySuggest, fillReply, matchReplies, useQuick
 const PAGE = 60;
 
 /** Conversa aberta: mensagens em tempo real + caixa de resposta */
-export default function ChatView({ chat, workshopId, connected, onBack, onToggleClient, onResolve, onConnect }: {
+export default function ChatView({ chat, workshopId, connected, onBack, onToggleClient, onResolve, onConnect, sectors, onTransfer }: {
   chat: WaChat; workshopId: string; connected: boolean;
   onBack: () => void; onToggleClient: () => void;
   onResolve: (resolved: boolean) => void; onConnect: () => void;
+  /** Setores ativos da oficina (sem = Inbox sem setores) */
+  sectors?: Sector[];
+  onTransfer?: (sectorId: string | null) => void;
 }) {
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -103,6 +106,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
             ⏱ Aguardando {fmtWait(waitMin)}
           </span>
         )}
+        {sectors && onTransfer && <TransferMenu chat={chat} sectors={sectors} onTransfer={onTransfer} />}
         <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setAgendaOpen(v => !v)}
           className={`btn-ghost !py-1.5 !px-2.5 text-xs shrink-0 ${agendaOpen ? '!bg-sky-50 !text-sky-700' : ''}`} title="Agenda: horários livres e compromissos">
           📅<span className="hidden sm:inline ml-1">Agenda</span>
@@ -193,7 +197,9 @@ function Bubble({ m, tight }: { m: WaMessage; tight: boolean }) {
           <>
             {m.media_path && <Media m={m} />}
             {!m.media_path && m.message_type !== 'text' && !m.content && (
-              <p className="text-sm italic text-steel-500">{MEDIA_LABEL[m.message_type] ?? 'Mensagem'} (não foi possível baixar)</p>
+              <p className="text-sm italic text-steel-500">
+                {m.message_type === 'other' ? 'Tipo de mensagem não suportado — veja no celular' : `${MEDIA_LABEL[m.message_type] ?? 'Mensagem'} (não foi possível baixar)`}
+              </p>
             )}
             {m.content && <p className="text-sm text-steel-900 whitespace-pre-wrap break-words">{waFormat(m.content)}</p>}
           </>
@@ -441,5 +447,38 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
         <MaterialsLibrary workshopId={workshopId} onSend={sendMaterials} onClose={() => setMaterialsOpen(false)} />
       )}
     </form>
+  );
+}
+
+/** "↪ Setor": mostra onde a conversa está e transfere para outro setor */
+function TransferMenu({ chat, sectors, onTransfer }: { chat: WaChat; sectors: Sector[]; onTransfer: (id: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+  const current = sectors.find(s => s.id === chat.sector_id) ?? null;
+  return (
+    <div ref={box} className="relative shrink-0">
+      <button type="button" onClick={() => setOpen(v => !v)} title="Setor da conversa — clique para transferir"
+        className="btn-ghost !py-1.5 !px-2.5 text-xs">
+        {current ? `${current.icon}` : '🗂️'}<span className="hidden sm:inline ml-1">{current?.name ?? 'Sem setor'}</span> ▾
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-steel-200 bg-white shadow-xl z-30 py-1">
+          <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-steel-400">Transferir para</p>
+          {sectors.map(s => (
+            <button key={s.id} type="button" disabled={s.id === chat.sector_id}
+              onClick={() => { setOpen(false); onTransfer(s.id); }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-steel-50 disabled:opacity-40 disabled:hover:bg-transparent">
+              {s.icon} {s.name}{s.id === chat.sector_id ? ' · atual' : ''}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

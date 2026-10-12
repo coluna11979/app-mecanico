@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fmtPhone, waNumber } from '@/components/os/osHelpers';
 import { toast } from '@/components/ui/Toast';
-import { useInboxAccess, useInboxSender } from '@/lib/inbox';
+import { useInboxAccess, useInboxSender, type SectorKind } from '@/lib/inbox';
 
 export type WaMessage = { key: string; label: string; text: string };
 
@@ -12,11 +12,13 @@ export type WaMessage = { key: string; label: string; text: string };
  * Oficina com o Inbox ligado e conectado: sai pelo número da oficina e fica gravado na conversa;
  * senão abre o WhatsApp do aparelho (wa.me).
  */
-export default function SendWhatsAppModal({ phone, messages, onClose, onSent, customerId, customerName, title }: {
+export default function SendWhatsAppModal({ phone, messages, onClose, onSent, customerId, customerName, title, sectorKind }: {
   phone: string | null | undefined; messages: WaMessage[]; onClose: () => void; onSent?: (key: string) => void;
   /** Liga a conversa do Inbox ao cliente (sem isso a ligação é pelo telefone) */
   customerId?: string | null; customerName?: string | null;
   title?: string;
+  /** Oficina com setores: a conversa vai para esse setor depois do envio (orçamento → comercial…) */
+  sectorKind?: SectorKind;
 }) {
   const nav = useNavigate();
   const inbox = useInboxSender();
@@ -45,7 +47,7 @@ export default function SendWhatsAppModal({ phone, messages, onClose, onSent, cu
     if (!text.trim()) return toast.error('Escreva a mensagem');
     setSending(true);
     try {
-      const chatId = await inbox.send({ phone: wa, text, customerId, name: customerName });
+      const chatId = await inbox.send({ phone: wa, text, customerId, name: customerName, sectorKind });
       toast.success('Enviado pelo WhatsApp da oficina ✓');
       onSent?.(kind);
       onClose();
