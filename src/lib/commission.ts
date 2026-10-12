@@ -82,6 +82,8 @@ export type CommissionCalc = {
   labor: number; laborOwn: number; parts: number; svc: number; mo: number; revenue: number; commission: number;
   manual: number;
   fixed: number;
+  /** R$ que veio da % sobre o faturamento da loja */
+  revCommission: number;
 };
 
 /** Colunas de comissão para os selects de workshop_mechanics */
@@ -156,11 +158,11 @@ export function commissionFor(m: CommissionMech, done: Done | undefined, revenue
   const manual = r2(done?.manual ?? 0);
   const fixed = r2(done?.fixed ?? 0);
   // Salário fixo: mostra o que fez, mas não ganha comissão
-  if (m.no_commission) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: 0, manual: 0, fixed: 0, commission: 0 };
+  if (m.no_commission) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: 0, manual: 0, fixed: 0, revCommission: 0, commission: 0 };
   // Só % do faturamento: mostra o que fez, mas a comissão é só a % sobre o faturamento da loja
-  if (m.commission_revenue_only) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual: 0, fixed: 0, commission: r2(rev * p.revenue / 100) };
+  if (m.commission_revenue_only) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual: 0, fixed: 0, revCommission: r2(rev * p.revenue / 100), commission: r2(rev * p.revenue / 100) };
   return {
-    labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual, fixed,
+    labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual, fixed, revCommission: r2(rev * p.revenue / 100),
     commission: r2(labor * p.labor / 100 + laborOwn * p.own / 100 + parts * p.parts / 100
       + svc * RULE.service / 100 + mo * RULE.labor / 100 + rev * p.revenue / 100 + manual + fixed),
   };

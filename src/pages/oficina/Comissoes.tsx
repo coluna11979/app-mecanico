@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL } from '@/components/os/osHelpers';
 import { fmtDate, todayISO } from '@/lib/purchasing';
+import { RULE } from '@/lib/commission';
 import {
   currentHalf, halfLabel, loadCommissionHalf, payDate, shiftHalf, type CommissionRow, type Half,
 } from '@/lib/commissionClosing';
@@ -197,20 +198,25 @@ export default function Comissoes() {
           </div>
         ) : (
           <div className="card !p-0 overflow-hidden">
-            <div className="hidden md:grid grid-cols-[28px_1.8fr_1fr_1fr_1fr_1.1fr] gap-3 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
+            <div className="hidden md:grid grid-cols-[28px_1.7fr_1.1fr_1.1fr_1fr_1fr_1.1fr] gap-3 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
               <span />
               <span>Colaborador</span>
-              <span className="text-right">Serviços que fez</span>
-              <span className="text-right">Peças que fez</span>
-              <span className="text-right">Faturamento</span>
+              <span className="text-right">Serviço + peças <span className="text-brand-600">{RULE.service}%</span></span>
+              <span className="text-right">Mão de obra <span className="text-brand-600">{RULE.labor}%</span></span>
+              <span className="text-right">Definido na OS / outros</span>
+              <span className="text-right">% do faturamento</span>
               <span className="text-right">Comissão</span>
             </div>
             <ul className="divide-y divide-steel-100">
               {rows.map(r => {
-                const c = r.closed ?? { labor: r.calc.labor + r.calc.laborOwn, parts: r.calc.parts, revenue: r.calc.revenue, commission: r.calc.commission };
-                const labor = r.closed ? Number(r.closed.labor) + Number(r.closed.labor_own) : r.calc.labor + r.calc.laborOwn;
+                const k = r.calc;
+                const commission = r.closed ? Number(r.closed.commission) : k.commission;
+                // Cada coluna mostra a base e, embaixo, quanto rendeu; "outros" é o que sobra (valores digitados na OS, fixos, regra antiga)
+                const svcC = Math.round(k.svc * RULE.service) / 100;
+                const moC = Math.round(k.mo * RULE.labor) / 100;
+                const others = Math.max(0, Math.round((commission - svcC - moC - k.revCommission) * 100) / 100);
                 return (
-                  <li key={r.mechanicId} className={`px-5 py-3 grid grid-cols-2 md:grid-cols-[28px_1.8fr_1fr_1fr_1fr_1.1fr] gap-x-3 gap-y-1 items-center ${r.closed ? 'bg-steel-50/60' : ''}`}>
+                  <li key={r.mechanicId} className={`px-5 py-3 grid grid-cols-2 md:grid-cols-[28px_1.7fr_1.1fr_1.1fr_1fr_1fr_1.1fr] gap-x-3 gap-y-1 items-center ${r.closed ? 'bg-steel-50/60' : ''}`}>
                     <span className="hidden md:block">
                       {!r.closed && r.calc.commission > 0 && (
                         <input type="checkbox" checked={!!include[r.mechanicId]} onChange={e => setInclude(x => ({ ...x, [r.mechanicId]: e.target.checked }))} />
@@ -231,12 +237,13 @@ export default function Comissoes() {
                         ) : <span className="text-steel-400">{r.rule || 'sem % definido'}</span>}
                       </div>
                     </div>
-                    <Cell label="Serviços" value={fmtBRL(labor)} />
-                    <Cell label="Peças" value={fmtBRL(c.parts)} />
-                    <Cell label="Faturamento" value={Number(c.revenue) > 0 ? fmtBRL(c.revenue) : '—'} />
+                    <Cell label={`Serviço + peças ${RULE.service}%`} value={k.svc > 0 ? fmtBRL(k.svc) : '—'} sub={k.svc > 0 ? `→ ${fmtBRL(svcC)}` : undefined} />
+                    <Cell label={`Mão de obra ${RULE.labor}%`} value={k.mo > 0 ? fmtBRL(k.mo) : '—'} sub={k.mo > 0 ? `→ ${fmtBRL(moC)}` : undefined} />
+                    <Cell label="Definido na OS / outros" value={others > 0 ? fmtBRL(others) : '—'} />
+                    <Cell label="% do faturamento" value={k.revCommission > 0 ? fmtBRL(k.revCommission) : '—'} sub={k.revCommission > 0 ? `de ${fmtBRL(k.revenue)}` : undefined} />
                     <div className="text-right">
                       <span className="md:hidden text-[10px] text-steel-400 uppercase block">Comissão</span>
-                      <div className={`text-base font-bold ${Number(c.commission) > 0 ? '' : 'text-steel-400'}`}>{fmtBRL(c.commission)}</div>
+                      <div className={`text-base font-bold ${commission > 0 ? '' : 'text-steel-400'}`}>{fmtBRL(commission)}</div>
                     </div>
                   </li>
                 );
@@ -258,7 +265,7 @@ export default function Comissoes() {
         {wid && <ItemRulesCard wid={wid} />}
 
         <p className="text-xs text-steel-400 leading-relaxed">
-          Comissão sobre os serviços e as peças que cada um fez nas OS concluídas na quinzena (+ % sobre o faturamento da loja, para quem tiver).
+          Em cada coluna, o valor de cima é a base (o que a pessoa fez nas OS concluídas na quinzena) e o de baixo é quanto rendeu de comissão. Serviço + peças e mão de obra seguem a regra da loja; “definido na OS” são os valores digitados na OS e fixos por item; o % do faturamento só vale para quem tem na ficha.
           Os vales não entram aqui: são descontados do salário no <Link to="/oficina/folha" className="underline">Fechar folha</Link> do fim do mês.
         </p>
       </div>
@@ -276,11 +283,12 @@ function SumCard({ label, value, sub, tone }: { label: string; value: string; su
   );
 }
 
-function Cell({ label, value }: { label: string; value: string }) {
+function Cell({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="text-right">
       <span className="md:hidden text-[10px] text-steel-400 uppercase block">{label}</span>
       <div className="text-sm">{value}</div>
+      {sub && <div className="text-[11px] text-signal-700">{sub}</div>}
     </div>
   );
 }
