@@ -143,11 +143,15 @@ export default function WorkshopTracking() {
   /* Polling fallback — garante atualização mesmo se realtime cair */
   useEffect(() => {
     if (!id) return;
-    const poll = setInterval(async () => {
+    // A cada 5 s com a aba visível (pausa em segundo plano) e atualiza na hora ao voltar
+    const refresh = async () => {
       const { data } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
       if (data) setJob(data as Job);
-    }, 5000);
-    return () => clearInterval(poll);
+    };
+    const poll = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
   }, [id]);
 
   /* Detecta mudanças de status e dispara toast.

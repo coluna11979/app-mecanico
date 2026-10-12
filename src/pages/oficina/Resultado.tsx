@@ -11,7 +11,7 @@ import { change, revenueSeries, salesOf, type PanelOs } from '@/lib/workshopMetr
 import { cashFlowOf, receivables, type FinEntry, type FinOs } from '@/lib/finance';
 import { platformJobStatus, type JobTone, type PlatformJob } from '@/lib/platformJob';
 import { addDays, startOfDay } from '@/components/PeriodPicker';
-import { greeting } from '@/lib/today';
+import { TODAY_OS_COLS, attentionSummary, greeting, osAttention, type AttentionTone, type TodayOs } from '@/lib/today';
 import { timeAgo } from '@/lib/relativeTime';
 
 /**
@@ -21,16 +21,15 @@ import { timeAgo } from '@/lib/relativeTime';
  */
 
 type Job = PlatformJob & { title: string };
-type ActiveOs = { id: string; status: string; price: number };
 type Payable = { id: string; amount: number; due_date: string };
 type Mech = { id: string; name: string };
 
 type Data = {
   sales: PanelOs[];
-  active: ActiveOs[];
+  active: TodayOs[];
   entriesToday: FinEntry[];
   payables: Payable[];
-  toReceive: { total: number; overdueTotal: number; count: number };
+  toReceive: { total: number; overdueTotal: number; overdueCount: number; count: number };
   mechanics: Mech[];
   jobs: Job[];
   at: string;
@@ -119,7 +118,7 @@ export default function Resultado() {
         fetchAll((a, b) => supabase.from('service_orders').select(SALE_COLS)
           .in('workshop_id', ids).eq('status', 'completed').gte('completed_at', prevMonthStart.toISOString())
           .order('id').range(a, b)),
-        fetchAll((a, b) => supabase.from('service_orders').select('id, status, price')
+        fetchAll((a, b) => supabase.from('service_orders').select(TODAY_OS_COLS)
           .in('workshop_id', ids).in('status', ['open', 'awaiting_approval', 'approved', 'in_progress'])
           .order('id').range(a, b)),
         supabase.from('cash_entries').select('id, kind, method, amount, installments, category, mechanic_id, created_at')
@@ -137,12 +136,13 @@ export default function Resultado() {
       if (!alive) return;
       setData({
         sales: (sales.data as unknown as PanelOs[]) ?? [],
-        active: (active.data as ActiveOs[]) ?? [],
+        active: (active.data as unknown as TodayOs[]) ?? [],
         entriesToday: (ent.data as FinEntry[]) ?? [],
         payables: (pay.data as Payable[]) ?? [],
         toReceive: {
           total: recs.reduce((a, r) => a + r.total, 0),
           overdueTotal: recs.reduce((a, r) => a + r.overdueTotal, 0),
+          overdueCount: recs.reduce((a, r) => a + r.overdue.length, 0),
           count: recs.reduce((a, r) => a + r.rows.length, 0),
         },
         mechanics: (mech.data as Mech[]) ?? [],
@@ -198,7 +198,15 @@ export default function Resultado() {
     const sumP = (l: Payable[]) => l.reduce((a, p) => a + Number(p.amount), 0);
     const awaiting = data.active.filter(o => o.status === 'awaiting_approval');
 
+    // O que precisa de atenção: as mesmas pendências do Início, só as 3 mais urgentes
+    const attention = attentionSummary({
+      att: osAttention(data.active, now),
+      receivableOverdue: { total: data.toReceive.overdueTotal, count: data.toReceive.overdueCount },
+      payablesLate: { total: sumP(late), count: late.length },
+    }, modAllows);
+
     return {
+      attention,
       day, month, before, prevFull, projection, elapsed,
       dayChange: change(day.revenue, lastWeek.revenue),
       monthChange: change(month.revenue, before.revenue),
@@ -213,7 +221,7 @@ export default function Resultado() {
       weekTotal: sumP(week), weekCount: week.length,
       platformJobs: [...data.jobs.filter(j => j.status === 'completed'), ...data.jobs.filter(j => j.status !== 'completed')],
     };
-  }, [data]);
+  }, [data, modAllows]);
 
   const name = firstName(profile?.full_name ?? '');
   const now = new Date();
@@ -285,6 +293,40 @@ export default function Resultado() {
                   <HeroStat label="Na oficina" value={String(v.inProgress)} divider />
                 </dl>
               </div>
+            </section>
+
+            {/* ── O que precisa de atenção (as 3 mais urgentes; o resto fica em Pendências do dia) ── */}
+            <section className="animate-rise" style={rise(1)} aria-label="O que precisa de atenção">
+              <SectionTitle title="O que precisa de atenção"
+                to={allStores || v.attention.total <= v.attention.shown.length ? undefined : '/oficina/inicio'}
+                link={`Ver todas (${v.attention.total})`} />
+              {v.attention.shown.length === 0 ? (
+                <Card pad="px-4 py-3.5">
+                  <p className="text-sm text-steel-600">Nada vencido, parado ou sem responsável agora.</p>
+                </Card>
+              ) : (
+                <ul className="rounded-2xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
+                  {v.attention.shown.map(it => {
+                    const body = (
+                      <>
+                        <span className={`grid place-items-center h-9 w-9 rounded-xl shrink-0 ${ATTN_TONE[it.tone]}`}><Icon name={it.icon} size={17} /></span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-semibold text-steel-900 truncate">{it.title}</span>
+                          {it.meta && <span className="block text-xs text-steel-500 truncate">{it.meta}</span>}
+                        </span>
+                        {!allStores && <Chevron />}
+                      </>
+                    );
+                    return (
+                      <li key={it.key}>
+                        {allStores
+                          ? <div className="flex items-center gap-3 px-4 min-h-[56px] py-2.5">{body}</div>
+                          : <Link to={it.to} className="flex items-center gap-3 px-4 min-h-[56px] py-2.5 active:bg-steel-50">{body}</Link>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </section>
 
             {/* ── Plataforma: botão de emergência + o que está rolando ── */}
@@ -472,6 +514,7 @@ export default function Resultado() {
 const TONE_DOT: Record<JobTone, string> = {
   wait: 'bg-pending-400', move: 'bg-signal-500', action: 'bg-alert-500', done: 'bg-steel-300', off: 'bg-steel-200',
 };
+const ATTN_TONE: Record<AttentionTone, string> = { urgent: 'bg-alert-50 text-alert-600', important: 'bg-pending-50 text-pending-700' };
 /** Ouro, prata e bronze nas iniciais do top 3 */
 const MEDAL = ['bg-pending-100 text-pending-800', 'bg-steel-200 text-steel-700', 'bg-brand-100 text-brand-700'];
 

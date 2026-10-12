@@ -32,7 +32,7 @@ const EMPTY = {
   // públicos (workshop_mechanics)
   name: '', phone: '', role_title: '', specialty: '', skills: [] as string[],
   employment_type: '' as EmploymentType | '', hired_at: '', work_schedule: '', status: 'active' as TeamStatus,
-  terminated_at: '', commission: '', commission_parts: '', commission_revenue: '', commission_own: '', no_commission: false, cnh_category: '', cnh_expires_at: '', notes: '',
+  terminated_at: '', commission: '', commission_parts: '', commission_revenue: '', commission_own: '', no_commission: false, revenue_only: false, cnh_category: '', cnh_expires_at: '', notes: '',
   // sensíveis (workshop_mechanic_private)
   cpf: '', rg: '', birth_date: '', email: '', address: '', emergency_name: '', emergency_phone: '',
   salary: '', pix_key: '', bank_name: '', bank_agency: '', bank_account: '',
@@ -93,6 +93,7 @@ export default function EquipeFicha() {
       commission_revenue: x.commission_revenue_percent ? String(x.commission_revenue_percent).replace('.', ',') : '',
       commission_own: x.commission_own_parts_percent != null ? String(x.commission_own_parts_percent).replace('.', ',') : '',
       no_commission: !!x.no_commission,
+      revenue_only: !!x.commission_revenue_only,
       cnh_category: x.cnh_category ?? '', cnh_expires_at: x.cnh_expires_at ?? '', notes: x.notes ?? '',
       cpf: pv?.cpf ?? '', rg: pv?.rg ?? '', birth_date: pv?.birth_date ?? '', email: pv?.email ?? '', address: pv?.address ?? '',
       emergency_name: pv?.emergency_name ?? '', emergency_phone: pv?.emergency_phone ?? '',
@@ -164,6 +165,7 @@ export default function EquipeFicha() {
       commission_revenue_percent: commissionRevenue,
       commission_own_parts_percent: commissionOwn,
       no_commission: f.no_commission,
+      commission_revenue_only: f.revenue_only && !f.no_commission,
       cnh_category: f.cnh_category.trim().toUpperCase() || null, cnh_expires_at: f.cnh_expires_at || null,
       notes: f.notes.trim() || null,
     };
@@ -281,7 +283,8 @@ export default function EquipeFicha() {
           parts={f.commission_parts} onParts={v => { setF(s => ({ ...s, commission_parts: v })); setDirty(true); }}
           revenue={f.commission_revenue} onRevenue={v => { setF(s => ({ ...s, commission_revenue: v })); setDirty(true); }}
           own={f.commission_own} onOwn={v => { setF(s => ({ ...s, commission_own: v })); setDirty(true); }}
-          fixed={f.no_commission} onFixed={v => { setF(s => ({ ...s, no_commission: v })); setDirty(true); }} />
+          fixed={f.no_commission} onFixed={v => { setF(s => ({ ...s, no_commission: v })); setDirty(true); }}
+          revOnly={f.revenue_only} onRevOnly={v => { setF(s => ({ ...s, revenue_only: v })); setDirty(true); }} />
 
         {/* Abas */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 mb-4">
@@ -485,8 +488,9 @@ function Qualifications({ role, specialty, skills, onSpecialty, onSkills }: {
 const COMMISSION_PRESETS = ['0', '20', '30', '40', '50'];
 
 /** Comissão: regra única da loja (10% mão de obra / 4% serviço + peças) + % do faturamento, se tiver */
-function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, own, onOwn, fixed, onFixed }: {
+function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, own, onOwn, fixed, onFixed, revOnly, onRevOnly }: {
   fixed: boolean; onFixed: (v: boolean) => void;
+  revOnly: boolean; onRevOnly: (v: boolean) => void;
   value: string; onChange: (v: string) => void;
   parts: string; onParts: (v: string) => void;
   revenue: string; onRevenue: (v: string) => void;
@@ -515,7 +519,15 @@ function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, ow
       </label>
       {!fixed && <>
 
-      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+      <label className={`mt-3 flex items-start gap-2 rounded-xl border px-3 py-2.5 cursor-pointer ${revOnly ? 'border-brand-300 bg-brand-50' : 'border-steel-200'}`}>
+        <input type="checkbox" className="mt-0.5" checked={revOnly} onChange={e => onRevOnly(e.target.checked)} />
+        <span>
+          <span className="text-sm font-semibold">Só ganha a % do faturamento da loja</span>
+          <span className="block text-[11px] text-steel-500">Marcado: a regra de 4% / 10% não vale para ele. Recebe apenas a % sobre tudo que a loja fatura (preencha abaixo). Ex.: gerente 1,5%.</span>
+        </span>
+      </label>
+
+      {!revOnly && <div className="grid sm:grid-cols-2 gap-2 mt-3">
         <div className="rounded-xl border border-steel-200 px-3 py-2.5 flex items-center gap-3">
           <div className="text-2xl font-bold text-brand-600 w-14 shrink-0">{RULE.labor}%</div>
           <div className="min-w-0">
@@ -530,14 +542,14 @@ function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, ow
             <div className="text-[11px] text-steel-500">Sobre o serviço somado às peças dele. Ex.: {fmtBRL(150)} + {fmtBRL(250)} de peças → <strong className="text-signal-700">{fmtBRL(400 * RULE.service / 100)}</strong></div>
           </div>
         </div>
-      </div>
+      </div>}
 
       <div className="mt-3 pt-3 border-t border-steel-100">
-        <PctField label="+ % sobre o faturamento da loja (opcional)" hint="Só para quem ganha sobre tudo que a loja fatura no mês, ex.: gerente 1,5%. Mecânico deixa vazio."
+        <PctField label={revOnly ? '% sobre o faturamento da loja' : '+ % sobre o faturamento da loja (opcional)'} hint="Só para quem ganha sobre tudo que a loja fatura no mês, ex.: gerente 1,5%. Mecânico deixa vazio."
           value={revenue} onChange={onRevenue} />
       </div>
 
-      {hasLegacy && (
+      {hasLegacy && !revOnly && (
         <div className="mt-3">
           <button type="button" onClick={() => setShowLegacy(v => !v)} className="text-[11px] text-steel-400 hover:text-steel-600">
             {showLegacy ? '▾' : '▸'} Regra antiga desta ficha (vale só para o histórico até 30/09/2026)

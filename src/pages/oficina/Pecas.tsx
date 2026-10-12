@@ -15,6 +15,7 @@ import {
   SITUATIONS, ago, costToConfirm, isBelowMin, isNegative, isZeroBought, loadStockData, matchSituation, osShortage,
   type Situation, type StockData,
 } from '@/lib/stock';
+import { addVehicleToParts, fitsVehicle, fmtVehicle, fmtYears, loadPartVehicles, markPartsUniversal, norm, partLabel, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
 import SupplierPicker from '@/components/parts/SupplierPicker';
 import StockTabs, { useStockAccess } from '@/components/stock/StockTabs';
 import { StockHistoryModal, StockMoveModal, type MoveMode } from '@/components/stock/StockModals';
@@ -47,18 +48,26 @@ export default function Pecas() {
   const [moving, setMoving]     = useState<{ part: WorkshopPart; mode: MoveMode } | null>(null);
   const [history, setHistory]   = useState<WorkshopPart | null>(null);
   const [menu, setMenu]         = useState<string | null>(null);
+  const [vehicles, setVehicles] = useState<Map<string, PartVehicle[]>>(new Map());
+  const [vBrand, setVBrand]     = useState('');
+  const [vModel, setVModel]     = useState('');
+  const [vYear, setVYear]       = useState('');
+  const [noVehicle, setNoVehicle] = useState(false);
+  const [bulk, setBulk]       = useState(false);
 
   const situation = (SITUATIONS.some(s => s.value === params.get('situacao')) ? params.get('situacao') : 'todas') as Situation;
   const setSituation = (s: Situation) => setParams(p => { const n = new URLSearchParams(p); if (s === 'todas') n.delete('situacao'); else n.set('situacao', s); return n; }, { replace: true });
 
   const load = useCallback(async () => {
     if (!wid) return;
-    const [d, m, s] = await Promise.all([
+    const [d, m, s, v] = await Promise.all([
       loadStockData(wid),
       loadDefaultMargin(wid),
       supabase.from('suppliers').select('*').eq('workshop_id', wid).order('name'),
+      loadPartVehicles(wid),
     ]);
     setData(d);
+    setVehicles(v);
     setMargin(m);
     setSuppliers((s.data as Supplier[]) ?? []);
   }, [wid]);
@@ -76,10 +85,26 @@ export default function Pecas() {
     setParams(p => { const n = new URLSearchParams(p); n.delete('peca'); n.delete('nova'); return n; }, { replace: true });
   }, [data, params, setParams]);
 
-  useEffect(() => { setLimit(PAGE); }, [q, situation, supplierF, cat, showInactive]);
+  useEffect(() => { setLimit(PAGE); }, [q, situation, supplierF, cat, showInactive, vBrand, vModel, vYear, noVehicle]);
 
   const parts = data?.parts ?? null;
   const supplierName = useMemo(() => new Map(suppliers.map(x => [x.id, x.name])), [suppliers]);
+
+  const yearNum = /^\d{4}$/.test(vYear.trim()) ? Number(vYear.trim()) : null;
+  const hasVehicleFilter = !!(vBrand.trim() || vModel.trim() || yearNum);
+
+  // Sugestões de marca/modelo a partir do que já foi cadastrado
+  const brandOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of vehicles.values()) for (const v of l) if (!m.has(norm(v.brand))) m.set(norm(v.brand), v.brand);
+    return [...m.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [vehicles]);
+  const modelOptionsFor = (brand: string) => {
+    const m = new Map<string, string>();
+    for (const l of vehicles.values()) for (const v of l)
+      if ((!brand.trim() || norm(v.brand) === norm(brand)) && !m.has(norm(v.model))) m.set(norm(v.model), v.model);
+    return [...m.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  };
 
   const list = useMemo(() => {
     if (!data || !parts) return [];
@@ -88,11 +113,13 @@ export default function Pecas() {
       && matchSituation(p, situation, data)
       && (!supplierF || p.supplier_id === supplierF)
       && (!cat || p.category === cat)
+      && (!noVehicle || (!p.universal && !vehicles.get(p.id)?.length))
+      && (!hasVehicleFilter || p.universal || fitsVehicle(vehicles.get(p.id), vBrand, vModel, yearNum))
       && (!t || p.name.toLowerCase().includes(t) || p.code?.toLowerCase().includes(t)
         || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supplierName.get(p.supplier_id)?.toLowerCase().includes(t))
         || partCategory(p.category).label.toLowerCase().includes(t)))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [data, parts, q, showInactive, situation, supplierF, cat, supplierName]);
+  }, [data, parts, q, showInactive, situation, supplierF, cat, supplierName, vehicles, vBrand, vModel, yearNum, hasVehicleFilter, noVehicle]);
 
   const counts = useMemo(() => {
     const c = {} as Record<Situation, number>;
@@ -194,6 +221,37 @@ export default function Pecas() {
               <span className="ml-auto text-xs text-steel-500">{list.length} peça{list.length === 1 ? '' : 's'}</span>
             </div>
           )}
+          {data && parts && parts.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-steel-600">🚗 Serve em:</span>
+              <select className="input !py-1.5 !w-40 text-sm" value={vBrand}
+                onChange={e => { setVBrand(e.target.value); setVModel(''); if (e.target.value) setNoVehicle(false); }}>
+                <option value="">Todas as marcas</option>
+                {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <select className="input !py-1.5 !w-40 text-sm" value={vModel}
+                onChange={e => { setVModel(e.target.value); if (e.target.value) setNoVehicle(false); }}>
+                <option value="">Todos os modelos</option>
+                {modelOptionsFor(vBrand).map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select className="input !py-1.5 !w-32 text-sm" value={vYear}
+                onChange={e => { setVYear(e.target.value); if (e.target.value) setNoVehicle(false); }}>
+                <option value="">Todos os anos</option>
+                {Array.from({ length: new Date().getFullYear() + 1 - 1989 }, (_, i) => new Date().getFullYear() + 1 - i)
+                  .map(y => <option key={y} value={String(y)}>{y}</option>)}
+              </select>
+              {hasVehicleFilter && (
+                <button className="text-xs font-semibold text-brand-700" onClick={() => { setVBrand(''); setVModel(''); setVYear(''); }}>limpar</button>
+              )}
+              <QuickChip on={noVehicle} onClick={() => { setNoVehicle(v => !v); setVBrand(''); setVModel(''); setVYear(''); }}>
+                Sem veículo ({parts.filter(p => p.active && !p.universal && !vehicles.get(p.id)?.length).length})
+              </QuickChip>
+              {noVehicle && <button className="text-xs font-semibold text-brand-700" onClick={() => setBulk(true)}>🧩 Atribuir em lote</button>}
+            </div>
+          )}
+          {hasVehicleFilter && yearNum != null && (
+            <p className="text-xs text-steel-500">Peças cadastradas sem ano e peças universais aparecem junto: o sistema considera que servem em qualquer ano.</p>
+          )}
           {situation === 'atencao' && (
             <p className="text-xs text-steel-500">Em falta: estoque negativo, faltando para OS aberta, abaixo do mínimo ou zerada depois de comprada. Peça que nunca foi comprada por nota não entra aqui.</p>
           )}
@@ -235,6 +293,7 @@ export default function Pecas() {
                     <button className="min-w-0 text-left" onClick={() => setEditing(p)}>
                       <div className="text-sm font-semibold truncate">{p.name}</div>
                       <Flags p={p} d={data} />
+                      <VehicleLine list={vehicles.get(p.id)} universal={p.universal} />
                     </button>
                     <div className="text-xs text-steel-600 truncate">{p.code || <span className="text-steel-300">—</span>}</div>
                     <div className="text-right"><StockQty p={p} /></div>
@@ -262,6 +321,7 @@ export default function Pecas() {
                         {[p.code, p.supplier_id && supplierName.get(p.supplier_id)].filter(Boolean).join(' · ') || partCategory(p.category).label}
                       </div>
                       <Flags p={p} d={data} />
+                      <VehicleLine list={vehicles.get(p.id)} universal={p.universal} />
                     </button>
                     <div className="text-right shrink-0">
                       <StockQty p={p} big />
@@ -295,7 +355,12 @@ export default function Pecas() {
 
       {editing && wid && margin != null && (
         <PartForm wid={wid} part={editing === 'new' ? null : editing} defaultMargin={margin}
+          vehicles={editing === 'new' ? [] : vehicles.get(editing.id) ?? []} brandOptions={brandOptions} modelOptionsFor={modelOptionsFor}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+      )}
+      {bulk && wid && parts && (
+        <BulkVehicleModal wid={wid} parts={parts.filter(p => p.active && !p.universal && !vehicles.get(p.id)?.length)}
+          brandOptions={brandOptions} modelOptionsFor={modelOptionsFor} onClose={() => setBulk(false)} onSaved={load} />
       )}
       {pricing && wid && margin != null && (
         <div className="fixed inset-0 bg-steel-900/60 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setPricing(false)}>
@@ -404,8 +469,16 @@ function DefaultMargin({ wid, value, onSaved }: { wid: string; value: number; on
   );
 }
 
-function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
-  wid: string; part: WorkshopPart | null; defaultMargin: number; onClose: () => void; onSaved: () => void;
+function VehicleLine({ list, universal }: { list: PartVehicle[] | undefined; universal?: boolean }) {
+  if (universal) return <div className="text-[11px] text-steel-500">🌐 Universal</div>;
+  if (!list?.length) return null;
+  const shown = list.slice(0, 2).map(v => `${v.brand} ${v.model}${v.year_from != null || v.year_to != null ? ` ${fmtYears(v)}` : ''}`);
+  return <div className="text-[11px] text-steel-500 truncate">🚗 {shown.join(', ')}{list.length > 2 ? ` +${list.length - 2}` : ''}</div>;
+}
+
+function PartForm({ wid, part, defaultMargin, vehicles, brandOptions, modelOptionsFor, onClose, onSaved }: {
+  wid: string; part: WorkshopPart | null; defaultMargin: number; vehicles: PartVehicle[];
+  brandOptions: string[]; modelOptionsFor: (brand: string) => string[]; onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName]         = useState(part?.name ?? '');
   const [code, setCode]         = useState(part?.code ?? '');
@@ -429,6 +502,22 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
   const [fixed, setFixed]       = useState(part?.sale_price != null ? moneyInput(Number(part.sale_price)) : '');
   const [active, setActive]     = useState(part?.active ?? true);
   const [saving, setSaving]     = useState(false);
+  const [universal, setUniversal] = useState(part?.universal ?? false);
+  const [vList, setVList]       = useState<VehicleDraft[]>(vehicles.map(v => ({ brand: v.brand, model: v.model, year_from: v.year_from, year_to: v.year_to })));
+  const [nBrand, setNBrand]     = useState('');
+  const [nModel, setNModel]     = useState('');
+  const [nFrom, setNFrom]       = useState('');
+  const [nTo, setNTo]           = useState('');
+
+  const yearOrNull = (t: string) => (/^\d{4}$/.test(t.trim()) ? Number(t.trim()) : null);
+  function addVehicle() {
+    if (!nBrand.trim() || !nModel.trim()) return toast.error('Informe a marca e o modelo');
+    const from = yearOrNull(nFrom); const to = yearOrNull(nTo);
+    if ((nFrom.trim() && from == null) || (nTo.trim() && to == null)) return toast.error('Ano com 4 dígitos (ex.: 2012)');
+    if (from != null && to != null && to < from) return toast.error('O ano final é menor que o inicial');
+    setVList(l => [...l, { brand: nBrand.trim(), model: nModel.trim(), year_from: from, year_to: to }]);
+    setNModel(''); setNFrom(''); setNTo('');
+  }
 
   const c = Number.isFinite(parseMoney(cost)) ? parseMoney(cost) : 0;
   const m = parseMoney(marginStr);
@@ -460,6 +549,7 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
       cost: parseMoney(cost || '0'),
       margin_percent: mode === 'margin' ? m : null,
       sale_price: mode === 'fixed' ? f : null,
+      universal,
       active,
     };
     setSaving(true);
@@ -474,6 +564,11 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
       });
       if (e2) { setSaving(false); return toast.error('Peça salva, mas o estoque não foi ajustado: ' + e2.message); }
     }
+    // Veículo digitado e não adicionado: entra junto, para não perder o que a pessoa escreveu
+    const pending: VehicleDraft[] = nBrand.trim() && nModel.trim()
+      ? [{ brand: nBrand.trim(), model: nModel.trim(), year_from: yearOrNull(nFrom), year_to: yearOrNull(nTo) }] : [];
+    const ev = await savePartVehicles(wid, (data as { id: string }).id, [...vList, ...pending]);
+    if (ev) { setSaving(false); return toast.error('Peça salva, mas os veículos não: ' + ev.message); }
     setSaving(false);
     toast.success(part ? 'Peça atualizada ✓' : 'Peça cadastrada ✓');
     onSaved();
@@ -518,6 +613,37 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
             <div>
               <label className="label">Fornecedor</label>
               <SupplierPicker wid={wid} value={supplierId || null} onChange={x => setSupplierId(x?.id ?? '')} placeholder="Buscar…" />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-steel-200 p-4 space-y-3">
+            <div>
+              <label className="label">🚗 Serve em (veículos)</label>
+              <p className="text-[11px] text-steel-400">Marca e modelo. O ano é opcional: em branco = serve em qualquer ano.</p>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-steel-700">
+              <input type="checkbox" checked={universal} onChange={e => setUniversal(e.target.checked)} />
+              Universal (serve em qualquer veículo: óleo, pneu, abraçadeira…)
+            </label>
+            {vList.length > 0 && (
+              <ul className="flex flex-wrap gap-2">
+                {vList.map((v, i) => (
+                  <li key={i} className="flex items-center gap-1 text-xs bg-steel-100 rounded-full pl-3 pr-1 py-1">
+                    {fmtVehicle(v)}
+                    <button type="button" aria-label="Remover" onClick={() => setVList(l => l.filter((_, j) => j !== i))}
+                      className="h-5 w-5 rounded-full grid place-items-center text-steel-500 hover:bg-steel-200">✕</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_72px_72px_auto] gap-2 items-center">
+              <input className="input !py-2 text-sm" placeholder="Marca" list="pf-brands" value={nBrand} onChange={e => setNBrand(e.target.value)} />
+              <input className="input !py-2 text-sm" placeholder="Modelo" list="pf-models" value={nModel} onChange={e => setNModel(e.target.value)} />
+              <input className="input !py-2 text-sm" placeholder="De" inputMode="numeric" maxLength={4} value={nFrom} onChange={e => setNFrom(e.target.value.replace(/\D/g, ''))} />
+              <input className="input !py-2 text-sm" placeholder="Até" inputMode="numeric" maxLength={4} value={nTo} onChange={e => setNTo(e.target.value.replace(/\D/g, ''))} />
+              <button type="button" onClick={addVehicle} className="btn-ghost border border-steel-200 text-sm !py-2 col-span-2 sm:col-span-1">＋ Adicionar</button>
+              <datalist id="pf-brands">{brandOptions.map(b => <option key={b} value={b} />)}</datalist>
+              <datalist id="pf-models">{modelOptionsFor(nBrand).map(m => <option key={m} value={m} />)}</datalist>
             </div>
           </div>
 
@@ -618,6 +744,122 @@ function PartForm({ wid, part, defaultMargin, onClose, onSaved }: {
           <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Salvando…' : part ? 'Salvar' : 'Cadastrar peça'}</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/** Atribui veículo (ou "universal") a várias peças de uma vez, agrupando pelo rótulo entre parênteses do nome. */
+function BulkVehicleModal({ wid, parts, brandOptions, modelOptionsFor, onClose, onSaved }: {
+  wid: string; parts: WorkshopPart[]; brandOptions: string[]; modelOptionsFor: (brand: string) => string[];
+  onClose: () => void; onSaved: () => Promise<void> | void;
+}) {
+  const groups = useMemo(() => {
+    const m = new Map<string, { title: string; parts: WorkshopPart[] }>();
+    for (const p of parts) {
+      const l = partLabel(p.name);
+      const k = l ? norm(l) : '';
+      const g = m.get(k) ?? { title: l ?? '', parts: [] };
+      g.parts.push(p);
+      m.set(k, g);
+    }
+    return [...m.entries()].sort((a, b) => (a[0] === '' ? 1 : b[0] === '' ? -1 : b[1].parts.length - a[1].parts.length));
+  }, [parts]);
+
+  return (
+    <div className="fixed inset-0 bg-steel-900/60 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-2xl max-h-[94vh] flex flex-col shadow-2xl">
+        <div className="px-6 pt-5 pb-3 border-b border-steel-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold">Atribuir veículo em lote</h2>
+            <p className="text-xs text-steel-500">Peças sem veículo agrupadas pelo que está entre parênteses no nome. Escolha o veículo uma vez e vale para o grupo todo.</p>
+          </div>
+          <button type="button" onClick={onClose} className="h-8 w-8 rounded-lg grid place-items-center text-steel-500 hover:bg-steel-100">✕</button>
+        </div>
+        <div className="px-6 py-4 space-y-3 overflow-y-auto">
+          {groups.length === 0 && <p className="text-sm text-steel-500 text-center py-6">Todas as peças já têm veículo ou estão marcadas como universais 🎉</p>}
+          {groups.map(([k, g]) => (
+            <BulkGroup key={k || 'sem'} wid={wid} title={g.title} parts={g.parts} selectable={k === ''}
+              brandOptions={brandOptions} modelOptionsFor={modelOptionsFor} onSaved={onSaved} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkGroup({ wid, title, parts, selectable, brandOptions, modelOptionsFor, onSaved }: {
+  wid: string; title: string; parts: WorkshopPart[]; selectable: boolean;
+  brandOptions: string[]; modelOptionsFor: (brand: string) => string[]; onSaved: () => Promise<void> | void;
+}) {
+  const [brand, setBrand] = useState('');
+  const [model, setModel] = useState('');
+  const [from, setFrom]   = useState('');
+  const [to, setTo]       = useState('');
+  const [open, setOpen]   = useState(selectable);
+  const [sel, setSel]     = useState<Set<string>>(new Set());
+  const [busy, setBusy]   = useState(false);
+  const ids = selectable ? parts.filter(p => sel.has(p.id)).map(p => p.id) : parts.map(p => p.id);
+  const yr = (t: string) => (/^\d{4}$/.test(t.trim()) ? Number(t.trim()) : null);
+
+  async function run(kind: 'veiculo' | 'universal') {
+    if (!ids.length) return toast.error('Marque ao menos uma peça');
+    let err;
+    setBusy(true);
+    if (kind === 'universal') err = await markPartsUniversal(ids, true);
+    else {
+      if (!brand.trim() || !model.trim()) { setBusy(false); return toast.error('Informe a marca e o modelo'); }
+      if ((from.trim() && yr(from) == null) || (to.trim() && yr(to) == null)) { setBusy(false); return toast.error('Ano com 4 dígitos (ex.: 2012)'); }
+      err = await addVehicleToParts(wid, ids, { brand, model, year_from: yr(from), year_to: yr(to) });
+    }
+    setBusy(false);
+    if (err) return toast.error('Não foi possível salvar: ' + err.message);
+    toast.success(`${ids.length} peça${ids.length === 1 ? '' : 's'} atualizada${ids.length === 1 ? '' : 's'} ✓`);
+    await onSaved();
+  }
+
+  return (
+    <div className="rounded-2xl border border-steel-200 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-bold truncate">{title ? `“${title}”` : 'Sem nada entre parênteses'}</div>
+          <div className="text-xs text-steel-500">{parts.length} peça{parts.length === 1 ? '' : 's'}{selectable ? ' — marque as que quer atribuir' : ''}</div>
+        </div>
+        <button type="button" onClick={() => setOpen(v => !v)} className="text-xs font-semibold text-brand-700 shrink-0">{open ? 'Ocultar peças' : 'Ver peças'}</button>
+      </div>
+      {open && (
+        <ul className="max-h-40 overflow-y-auto text-xs divide-y divide-steel-100 rounded-xl bg-steel-50 px-3">
+          {selectable && (
+            <li className="py-1.5 flex gap-3">
+              <button type="button" className="font-semibold text-brand-700" onClick={() => setSel(new Set(parts.map(p => p.id)))}>marcar todas</button>
+              <button type="button" className="font-semibold text-steel-500" onClick={() => setSel(new Set())}>limpar</button>
+            </li>
+          )}
+          {parts.map(p => (
+            <li key={p.id} className="py-1.5">
+              {selectable ? (
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={sel.has(p.id)} onChange={e => setSel(s => { const n = new Set(s); if (e.target.checked) n.add(p.id); else n.delete(p.id); return n; })} />
+                  <span className="truncate">{p.name}</span>
+                </label>
+              ) : <span className="truncate block">{p.name}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_64px_64px] gap-2">
+        <input className="input !py-2 text-sm" placeholder="Marca" list="bk-brands" value={brand} onChange={e => setBrand(e.target.value)} />
+        <input className="input !py-2 text-sm" placeholder="Modelo" list={`bk-models-${title}`} value={model} onChange={e => setModel(e.target.value)} />
+        <input className="input !py-2 text-sm" placeholder="De" inputMode="numeric" maxLength={4} value={from} onChange={e => setFrom(e.target.value.replace(/\D/g, ''))} />
+        <input className="input !py-2 text-sm" placeholder="Até" inputMode="numeric" maxLength={4} value={to} onChange={e => setTo(e.target.value.replace(/\D/g, ''))} />
+        <datalist id="bk-brands">{brandOptions.map(b => <option key={b} value={b} />)}</datalist>
+        <datalist id={`bk-models-${title}`}>{modelOptionsFor(brand).map(m => <option key={m} value={m} />)}</datalist>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy} onClick={() => run('veiculo')} className="btn-primary text-sm !py-2">
+          {busy ? 'Salvando…' : `Aplicar a ${ids.length} peça${ids.length === 1 ? '' : 's'}`}
+        </button>
+        <button type="button" disabled={busy} onClick={() => run('universal')} className="btn-ghost border border-steel-200 text-sm !py-2">🌐 Marcar como universal</button>
+      </div>
     </div>
   );
 }

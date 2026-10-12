@@ -25,27 +25,46 @@ export default function Painel() {
   const [items, setItems]   = useState<PanelItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const prev = useMemo(() => previousRange(range), [range]);
+  /** Primeira compra de cada cliente (só 2 campos do histórico todo) — para "novos × voltaram" */
+  const [firstBuys, setFirstBuys] = useState<PanelOs[]>([]);
+  const fromIso = prev.from.toISOString();
+  const toIso = range.to.toISOString();
+
   useEffect(() => {
     if (!wid) return;
     let alive = true;
     (async () => {
       setLoading(true);
-      const [o, it] = await Promise.all([
+      const today = startOfDay(new Date()).toISOString();
+      const inWin = (c: string) => `and(${c}.gte.${fromIso},${c}.lt.${toIso})`;
+      // Só o que o painel usa: OS em andamento + as que mexeram no período (e no anterior) + as de hoje
+      const [o, it, h] = await Promise.all([
         fetchAll((a, b) => supabase.from('service_orders')
           .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, created_at, started_at, completed_at, approval_requested_at, approved_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, created_at), vehicle:vehicles(make, model, plate)')
-          .eq('workshop_id', wid).order('created_at', { ascending: false }).order('id').range(a, b)),
-        fetchAll((a, b) => supabase.from('service_order_items').select('service_order_id, kind, description, quantity, unit_price')
-          .eq('workshop_id', wid).order('id').range(a, b)),
+          .eq('workshop_id', wid)
+          .or(`status.in.(open,awaiting_approval,approved,in_progress),${inWin('created_at')},${inWin('completed_at')},${inWin('approval_requested_at')},completed_at.gte.${today}`)
+          .order('created_at', { ascending: false }).order('id').range(a, b)),
+        // Itens só das OS concluídas no período exibido (mais vendidos)
+        fetchAll((a, b) => supabase.from('service_order_items')
+          .select('service_order_id, kind, description, quantity, unit_price, so:service_orders!inner(completed_at)')
+          .eq('workshop_id', wid)
+          .gte('so.completed_at', range.from.toISOString()).lt('so.completed_at', toIso)
+          .order('id').range(a, b)),
+        fetchAll((a, b) => supabase.from('service_orders').select('id, status, quote_status, customer_id, completed_at')
+          .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null).not('customer_id', 'is', null)
+          .lt('completed_at', range.from.toISOString())
+          .order('id').range(a, b)),
       ]);
       if (!alive) return;
       setOs(o.data as unknown as PanelOs[]);
-      setItems(it.data as PanelItem[]);
+      setItems(it.data as unknown as PanelItem[]);
+      setFirstBuys((h.data as unknown as PanelOs[]) ?? []);
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [wid]);
-
-  const prev = useMemo(() => previousRange(range), [range]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wid, fromIso, toIso]);
 
   const m = useMemo(() => {
     const cur = salesOf(os, range);
@@ -62,9 +81,9 @@ export default function Painel() {
       approval: approvalRate(os, range),
       topServices: topItems(os, items, range, 'labor'),
       topParts: topItems(os, items, range, 'part'),
-      customers: customerMix(os, range),
+      customers: customerMix([...firstBuys, ...os], range),
     };
-  }, [os, items, range, prev]);
+  }, [os, items, firstBuys, range, prev]);
 
   const maxBar = Math.max(1, ...m.series.map(s => s.value));
 
@@ -87,7 +106,7 @@ export default function Painel() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map(i => <div key={i} className="h-28 bg-white rounded-2xl animate-pulse" />)}
           </div>
-        ) : os.length === 0 ? (
+        ) : os.length === 0 && firstBuys.length === 0 ? (
           <div className="card text-center py-14">
             <div className="text-4xl mb-2">📊</div>
             <h2 className="text-lg font-bold">Suas vendas aparecem aqui</h2>

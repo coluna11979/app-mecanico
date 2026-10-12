@@ -30,6 +30,7 @@ const NAV_GROUPS = [
     label: 'Superadmin',
     items: [
       { to: '/admin/modulos', icon: '🧩', label: 'Módulos por oficina' },
+      { to: '/admin/agentes', icon: '🤖', label: 'Agentes de IA' },
     ],
   },
   {

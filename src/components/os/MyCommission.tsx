@@ -95,6 +95,9 @@ export function MyCommissionSummary({ c }: { c: MyCommission }) {
   if (c.mech.no_commission) {
     return <div className="card !py-3 mb-4 text-sm text-steel-600">💰 Salário fixo — você não recebe comissão por OS.</div>;
   }
+  if (c.mech.commission_revenue_only) {
+    return <div className="card !py-3 mb-4 text-sm text-steel-600">💰 Você ganha só a % do faturamento da loja — sem comissão por OS.</div>;
+  }
   return (
     <div className="card !py-3 mb-4 space-y-2">
       <div className="flex items-center justify-between gap-2">

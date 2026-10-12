@@ -16,7 +16,7 @@ import { timeAgo } from '@/lib/relativeTime';
 import { Icon, type IconName } from '@/components/home/ui';
 import { ABSENCE_REASONS, fmtDay } from '@/lib/team';
 import {
-  agendaDay, greeting, openWorkload, osAttention, teamToday,
+  TODAY_OS_COLS, agendaDay, greeting, openWorkload, osAttention, teamToday,
   type TeamAbsence, type TeamMember, type TodayOs,
 } from '@/lib/today';
 
@@ -41,9 +41,7 @@ type Data = {
   pendingJobs: PendingJob[];
 };
 
-const ACTIVE_COLS = 'id, number, title, status, scheduled_at, started_at, estimated_hours, workshop_mechanic_id, executor, '
-  + 'approval_requested_at, schedule_status, price, customer:customers(full_name, phone), vehicle:vehicles(plate, make, model), '
-  + 'pauses:service_order_pauses(reason, started_at, ended_at)';
+const ACTIVE_COLS = TODAY_OS_COLS;
 
 const dayStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const isoDate = (d: Date) => d.toLocaleDateString('en-CA');

@@ -4,7 +4,7 @@
  * (a receber), as de responsável de ResponsiblePicker, as de pausa de osHelpers e as de vagas de agenda.ts.
  */
 import type { OsStatus } from '@/types/database';
-import { openPause } from '@/components/os/osHelpers';
+import { openPause, osNumber } from '@/components/os/osHelpers';
 import { daySlots, dayKey, type ScheduleConfig } from '@/lib/agenda';
 import { parseSchedule, roleArea, shiftMinutes, isoToday, type WeekDay, type AbsenceReason } from '@/lib/team';
 
@@ -18,6 +18,11 @@ export type TodayOs = {
   vehicle: { plate: string | null; make: string | null; model: string | null } | null;
   pauses: { reason: string; started_at: string; ended_at: string | null }[] | null;
 };
+
+/** Colunas da consulta de OS em aberto que alimenta `osAttention` (Início e Resultado usam a mesma) */
+export const TODAY_OS_COLS = 'id, number, title, status, scheduled_at, started_at, estimated_hours, workshop_mechanic_id, executor, '
+  + 'approval_requested_at, schedule_status, price, customer:customers(full_name, phone), vehicle:vehicles(plate, make, model), '
+  + 'pauses:service_order_pauses(reason, started_at, ended_at)';
 
 /** Mesma regra do ResponsiblePicker: sem mecânico da loja e sem "mecânico da plataforma" */
 const withoutResponsible = (o: TodayOs) => o.executor !== 'platform' && !o.workshop_mechanic_id;
@@ -123,3 +128,66 @@ export function greeting(now = new Date()) {
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
 }
 
+
+export type AttentionTone = 'urgent' | 'important';
+export type AttentionItem = { key: string; tone: AttentionTone; icon: 'wallet' | 'receipt' | 'clock' | 'user' | 'pause' | 'clipboard'; title: string; meta?: string; to: string };
+
+const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const many = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
+
+/**
+ * Resumo do "O que precisa de atenção" do Resultado: as pendências que o Início já calcula, na ordem de
+ * prioridade do dono, cada uma com o caminho de ação. Não calcula nada novo — só escolhe e ordena.
+ * `allow` diz se a tela de destino está liberada (módulo desligado → o item não aparece).
+ */
+export function attentionSummary(
+  src: {
+    att: ReturnType<typeof osAttention>;
+    receivableOverdue: { total: number; count: number };
+    payablesLate: { total: number; count: number };
+  },
+  allow: (path: string) => boolean,
+  now = Date.now(),
+) {
+  const { att } = src;
+  const all: AttentionItem[] = [];
+  const osLink = (o: { id: string }) => `/oficina/os/${o.id}`;
+
+  if (src.receivableOverdue.count > 0 && allow('/oficina/financeiro'))
+    all.push({ key: 'receive', tone: 'urgent', icon: 'wallet', title: `${brl(src.receivableOverdue.total)} a receber vencido`,
+      meta: many(src.receivableOverdue.count, 'OS', 'OS'), to: '/oficina/financeiro?aba=receber' });
+
+  if (src.payablesLate.count > 0 && allow('/oficina/contas-a-pagar'))
+    all.push({ key: 'payables', tone: 'urgent', icon: 'receipt', title: `${brl(src.payablesLate.total)} em contas vencidas`,
+      meta: many(src.payablesLate.count, 'conta', 'contas'), to: '/oficina/contas-a-pagar' });
+
+  if (att.late.length > 0 && allow('/oficina/os')) {
+    const one = att.late.length === 1 ? att.late[0] : null;
+    all.push({ key: 'late', tone: 'urgent', icon: 'clock',
+      title: one ? `OS ${osNumber(one)} passou da hora agendada` : `${att.late.length} agendamentos passaram da hora`,
+      meta: one ? one.title : 'Ainda não começaram', to: one ? osLink(one) : '/oficina/agenda' });
+  }
+
+  if (att.noResponsible.length > 0 && allow('/oficina/os')) {
+    const one = att.noResponsible.length === 1 ? att.noResponsible[0] : null;
+    all.push({ key: 'noresp', tone: 'important', icon: 'user',
+      title: one ? `OS ${osNumber(one)} sem responsável` : `${att.noResponsible.length} OS sem responsável`,
+      meta: one ? one.title : undefined, to: one ? osLink(one) : '/oficina/os' });
+  }
+
+  if (att.stopped.length > 0 && allow('/oficina/os')) {
+    const one = att.stopped.length === 1 ? att.stopped[0] : null;
+    all.push({ key: 'stopped', tone: 'important', icon: 'pause',
+      title: one ? `OS ${osNumber(one.os)} parada` : `${att.stopped.length} serviços parados`,
+      meta: one ? one.pause.reason : undefined, to: one ? osLink(one.os) : '/oficina/os' });
+  }
+
+  // Orçamento de OS sem resposta há 2 dias ou mais (mesmo corte do follow-up do Comercial)
+  const cold = att.awaitingCustomer.filter(o => o.approval_requested_at && now - new Date(o.approval_requested_at).getTime() >= 2 * 86400000);
+  if (cold.length > 0 && (allow('/oficina/comercial') || allow('/oficina/os')))
+    all.push({ key: 'quotes', tone: 'important', icon: 'clipboard',
+      title: `${many(cold.length, 'orçamento sem resposta', 'orçamentos sem resposta')} há 2+ dias`,
+      meta: brl(cold.reduce((a, o) => a + Number(o.price), 0)), to: allow('/oficina/comercial') ? '/oficina/comercial' : '/oficina/os' });
+
+  return { shown: all.slice(0, 3), total: all.length };
+}

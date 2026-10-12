@@ -54,6 +54,7 @@ import WorkshopServicos from './pages/oficina/Servicos';
 import WorkshopAgenda from './pages/oficina/Agenda';
 import WorkshopComercial from './pages/oficina/Comercial';
 import WorkshopInbox from './pages/oficina/Inbox';
+import Agentes from './pages/oficina/Agentes';
 import Avaliacoes from './pages/oficina/Avaliacoes';
 import WorkshopFornecedores from './pages/oficina/Fornecedores';
 import WorkshopCompras from './pages/oficina/Compras';
@@ -83,6 +84,7 @@ import AdminLeads from './pages/admin/Leads';
 import AdminAvisos from './pages/admin/Avisos';
 import AdminEmbaixadores from './pages/admin/Embaixadores';
 import AdminModulos from './pages/admin/Modulos';
+import AdminAgentes from './pages/admin/Agentes';
 
 function LazyFallback() {
   return (
@@ -145,6 +147,7 @@ export default function App() {
       <Route path="/oficina/agenda" element={<ProtectedRoute allow={['workshop']}><WorkshopAgenda /></ProtectedRoute>} />
       <Route path="/oficina/comercial" element={<ProtectedRoute allow={['workshop']}><WorkshopComercial /></ProtectedRoute>} />
       <Route path="/oficina/inbox" element={<ProtectedRoute allow={['workshop']}><WorkshopInbox /></ProtectedRoute>} />
+      <Route path="/oficina/agentes" element={<ProtectedRoute allow={['workshop']}><Agentes /></ProtectedRoute>} />
       <Route path="/oficina/avaliacoes" element={<ProtectedRoute allow={['workshop']}><Avaliacoes /></ProtectedRoute>} />
       <Route path="/oficina/fornecedores" element={<ProtectedRoute allow={['workshop']}><WorkshopFornecedores /></ProtectedRoute>} />
       <Route path="/oficina/compras" element={<ProtectedRoute allow={['workshop']}><WorkshopCompras /></ProtectedRoute>} />
@@ -180,6 +183,7 @@ export default function App() {
       <Route path="/admin/mecanicos" element={<ProtectedRoute allow={['admin']}><AdminMechanics /></ProtectedRoute>} />
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />
       <Route path="/admin/modulos" element={<ProtectedRoute allow={['admin']}><AdminModulos /></ProtectedRoute>} />
+      <Route path="/admin/agentes" element={<ProtectedRoute allow={['admin']}><AdminAgentes /></ProtectedRoute>} />
       <Route path="/admin/usuario/:id"   element={<ProtectedRoute allow={['admin']}><AdminUserDetail /></ProtectedRoute>} />
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
