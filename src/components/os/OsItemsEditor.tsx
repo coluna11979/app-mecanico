@@ -271,7 +271,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   function addRow(kind: OsItemKind | 'mao_de_obra') {
     setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
-      stype: kind === 'part' ? '' : 'mao_de_obra', comm: '' }]);
+      stype: kind === 'part' ? '' : 'servico', comm: '' }]);
   }
   /** Peça já dentro de um serviço: entra logo abaixo dele (e das peças que ele já tem) */
   function addPartTo(serviceKey: string) {
@@ -415,7 +415,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Tipo (cada lançamento = 1 item, como num cupom) */}
             <div className="col-span-6 md:col-span-2">
               {!nested && <div className="text-[10px] font-bold text-steel-400 uppercase tracking-wider mb-0.5">Item {num}</div>}
-              <span className={`badge ${r.kind === 'part' ? 'bg-steel-100 text-steel-700' : 'bg-brand-50 text-brand-700'}`}>{r.kind === 'part' ? (nested ? '↳ Peça' : 'Peça avulsa') : 'Serviço'}</span>
+              {r.kind === 'part' && <span className="badge bg-steel-100 text-steel-700">{nested ? '↳ Peça' : 'Peça'}</span>}
             </div>
             {/* Ações (mobile: ao lado do tipo) */}
             {!readOnly && (
@@ -426,7 +426,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Descrição */}
             <div className="col-span-12 md:col-span-4">
               {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
-                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : 'Ex.: Troca de óleo, Alinhamento…'}
+                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : 'Ex.: Troca de óleo, Pastilha de freio, Alinhamento…'}
                   list={`os-items-sugg-${osId}`} value={r.description}
                   onChange={e => update(r.key, { description: e.target.value })} />
               )}
@@ -552,22 +552,20 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       <div className="px-5 pt-5 pb-3 flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="font-bold text-lg text-steel-900">{saleMode ? 'Itens da venda' : 'Peças e serviços'}</h2>
-          <p className="text-xs text-steel-500">{saleMode ? 'Peças vendidas no balcão.' : 'O total da OS é calculado a partir destes itens.'}</p>
+          <p className="text-xs text-steel-500">{saleMode ? 'Peças vendidas no balcão.' : 'Uma linha para cada item da nota. O total da OS é a soma deles.'}</p>
         </div>
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
             {!saleMode && (
               <button type="button" onClick={() => addRow('labor')}
                 className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
-                + Serviço
+                + Item
               </button>
             )}
-            {/* Com serviço na OS, peça entra por "+ Peça deste serviço"; avulsa só quando não há serviço */}
-            {(saleMode || !rows.some(r => r.kind === 'labor')) && (
+            {saleMode && (
               <button type="button" onClick={() => addRow('part')}
-                title="Peça vendida sem serviço"
                 className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
-                {saleMode ? '+ Peça' : '+ Peça avulsa'}
+                + Peça
               </button>
             )}
             {showCost && (
@@ -658,15 +656,16 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               {b.svc && (!readOnly || hasParts) && (
                 <div className="pl-9 pr-5 pb-3 pt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   {!readOnly && (
-                    <button type="button" onClick={() => addPartTo(b.svc!.key)} className="font-semibold text-brand-700 hover:underline">
-                      + Peça deste serviço
+                    <button type="button" onClick={() => addPartTo(b.svc!.key)} className="text-steel-500 hover:text-brand-700 hover:underline"
+                      title="Opcional: separe a peça para controlar estoque e custo. O valor do item continua sendo o fechado.">
+                      + detalhar peça (estoque / custo)
                     </button>
                   )}
                   {!readOnly && !hasParts && (
-                    <label className="flex items-center gap-1.5 text-steel-500 cursor-pointer" title="Marque se o valor já inclui as peças (ex.: troca de óleo completa). Muda a comissão: 4% sobre o total em vez de 10% sobre a mão de obra.">
-                      <input type="checkbox" checked={b.svc.stype === 'servico'}
-                        onChange={e => update(b.svc!.key, { stype: e.target.checked ? 'servico' : 'mao_de_obra' })} />
-                      O valor já inclui as peças
+                    <label className="flex items-center gap-1.5 text-steel-500 cursor-pointer" title="Marque quando o item é só o serviço, sem peça (ex.: alinhamento). A comissão passa a ser a da mão de obra (10%) em vez dos 4% sobre o valor fechado.">
+                      <input type="checkbox" checked={b.svc.stype === 'mao_de_obra'}
+                        onChange={e => update(b.svc!.key, { stype: e.target.checked ? 'mao_de_obra' : 'servico' })} />
+                      Só mão de obra (sem peça)
                     </label>
                   )}
                   {hasParts && (
@@ -683,7 +682,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         <div className="px-5 pb-6 pt-2 text-center">
           <div className="text-3xl mb-1">🧾</div>
           <p className="text-sm text-steel-500">
-            {readOnly ? 'Nenhum item nesta OS.' : 'Comece por “+ Serviço” (ex.: troca de óleo). Depois, em “+ Peça deste serviço”, inclua as peças usadas — ou marque que o valor já inclui tudo.'}
+            {readOnly ? 'Nenhum item nesta OS.' : 'Lance cada linha da nota: o que foi feito ou trocado, a quantidade e o valor. Clique em “+ Item”.'}
           </p>
         </div>
       )}
