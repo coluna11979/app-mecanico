@@ -17,13 +17,15 @@ import { QuickRepliesModal, QuickReplySuggest, fillReply, matchReplies, useQuick
 const PAGE = 60;
 
 /** Conversa aberta: mensagens em tempo real + caixa de resposta */
-export default function ChatView({ chat, workshopId, connected, onBack, onToggleClient, onResolve, onConnect, sectors, onTransfer }: {
+export default function ChatView({ chat, workshopId, connected, onBack, onToggleClient, onResolve, onConnect, sectors, onTransfer, onArchive }: {
   chat: WaChat; workshopId: string; connected: boolean;
   onBack: () => void; onToggleClient: () => void;
   onResolve: (resolved: boolean) => void; onConnect: () => void;
   /** Setores ativos da oficina (sem = Inbox sem setores) */
   sectors?: Sector[];
   onTransfer?: (sectorId: string, opts: TransferOpts) => Promise<void>;
+  /** Arquivar (não é cliente) / desarquivar (null) */
+  onArchive?: (mode: 'reply' | 'always' | null) => void;
 }) {
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -96,10 +98,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
         <ChatAvatar chat={chat} size={40} />
         <button type="button" onClick={onToggleClient} className="flex-1 min-w-0 text-left">
           <p className="font-bold text-steel-900 truncate">{chatTitle(chat)}</p>
-          <p className="text-xs text-steel-500 truncate">
-            {fmtPhone(chat.phone)}
-            {chat.customer ? ' · cliente cadastrado' : ' · não cadastrado'}
-          </p>
+          <p className="text-xs text-steel-500 truncate whitespace-nowrap">{fmtPhone(chat.phone)}</p>
         </button>
         {waitMin > 0 && (
           <span className={`hidden sm:inline-flex text-[11px] font-bold px-2 py-1 rounded-lg shrink-0 ${waitMin >= URGENT_MIN ? 'bg-alert-500/10 text-alert-600' : 'bg-pending-500/10 text-pending-700'}`}>
@@ -109,12 +108,13 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
         {sectors && onTransfer && <TransferMenu chat={chat} sectors={sectors} onTransfer={onTransfer} />}
         <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => setAgendaOpen(v => !v)}
           className={`btn-ghost !py-1.5 !px-2.5 text-xs shrink-0 ${agendaOpen ? '!bg-sky-50 !text-sky-700' : ''}`} title="Agenda: horários livres e compromissos">
-          📅<span className="hidden sm:inline ml-1">Agenda</span>
+          📅<span className="hidden 2xl:inline ml-1">Agenda</span>
         </button>
         {agendaOpen && (
           <MiniAgenda workshopId={workshopId} onClose={() => setAgendaOpen(false)}
             onPropose={text => { pushCompose(text); setAgendaOpen(false); }} />
         )}
+        {onArchive && !chat.archived_at && <ArchiveMenu onArchive={onArchive} />}
         {chat.status === 'open' ? (
           <button type="button" onClick={() => onResolve(true)} className="btn-secondary !py-1.5 !px-3 text-xs shrink-0">✓ Concluir</button>
         ) : (
@@ -123,6 +123,15 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
         <button type="button" onClick={onToggleClient} className="xl:hidden btn-ghost !py-1.5 !px-2.5 text-xs shrink-0" title="Dados do cliente">👤</button>
       </div>
 
+      {chat.archived_at && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-steel-100 border-b border-steel-200 shrink-0 text-sm">
+          <span>🗄️</span>
+          <span className="flex-1 text-steel-700">
+            Arquivada{chat.archived_mode === 'always' ? ' · não é cliente' : ' · volta se a pessoa escrever'} — não conta nos números
+          </span>
+          {onArchive && <button type="button" onClick={() => onArchive(null)} className="text-xs font-semibold text-brand-700 hover:underline">Desarquivar</button>}
+        </div>
+      )}
       {chat.transferred_at && (
         <div className="flex items-start gap-2 px-4 py-2 bg-sky-50 border-b border-sky-100 shrink-0">
           <span className="text-sm">↪</span>
@@ -482,7 +491,7 @@ function TransferMenu({ chat, sectors, onTransfer }: {
     <div ref={box} className="relative shrink-0">
       <button type="button" onClick={() => setOpen(v => !v)} title="Setor da conversa — clique para transferir"
         className="btn-ghost !py-1.5 !px-2.5 text-xs">
-        {current ? `${current.icon}` : '🗂️'}<span className="hidden sm:inline ml-1">{current?.name ?? 'Sem setor'}</span> ▾
+        {current ? `${current.icon}` : '🗂️'}<span className="hidden 2xl:inline ml-1">{current?.name ?? 'Sem setor'}</span> ▾
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-steel-200 bg-white shadow-xl z-30 py-1">
@@ -550,6 +559,36 @@ function TransferModal({ chat, target, onClose, onConfirm }: {
           <button type="button" className="btn-primary" disabled={busy} onClick={confirm}>{busy ? 'Transferindo…' : 'Transferir'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** 🚫 Arquivar: propaganda, fornecedor, banco… (sai da lista e dos números) */
+function ArchiveMenu({ onArchive }: { onArchive: (mode: 'reply' | 'always') => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+  return (
+    <div ref={box} className="relative shrink-0">
+      <button type="button" onClick={() => setOpen(v => !v)} className="btn-ghost !py-1.5 !px-2.5 text-xs" title="Arquivar (não é cliente)">🗄️</button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-64 rounded-xl border border-steel-200 bg-white shadow-xl z-30 py-1">
+          <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-steel-400">Arquivar conversa</p>
+          <button type="button" onClick={() => { setOpen(false); onArchive('always'); }} className="w-full text-left px-3 py-2 hover:bg-steel-50">
+            <span className="block text-sm font-semibold text-steel-800">🚫 Não é cliente</span>
+            <span className="block text-[11px] text-steel-500">Propaganda, fornecedor, banco. Fica arquivada mesmo se escrever de novo.</span>
+          </button>
+          <button type="button" onClick={() => { setOpen(false); onArchive('reply'); }} className="w-full text-left px-3 py-2 hover:bg-steel-50">
+            <span className="block text-sm font-semibold text-steel-800">🗄️ Arquivar por enquanto</span>
+            <span className="block text-[11px] text-steel-500">Assunto encerrado. Volta para a lista se a pessoa escrever.</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

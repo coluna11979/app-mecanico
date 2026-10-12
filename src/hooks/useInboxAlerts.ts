@@ -28,7 +28,7 @@ export function useInboxAlerts(workshopId: string | null, enabled: boolean, role
     let alive = true;
     const count = async () => {
       const { count: n } = await supabase.from('whatsapp_chats').select('id', { count: 'exact', head: true })
-        .eq('workshop_id', workshopId).gt('unread_count', 0);
+        .eq('workshop_id', workshopId).gt('unread_count', 0).is('archived_at', null);
       if (alive) setUnreadChats(n ?? 0);
     };
     count();
@@ -45,9 +45,12 @@ export function useInboxAlerts(workshopId: string | null, enabled: boolean, role
         if (!useInboxMute.getState().muted) playChatAlert();
         toast.info(`↪ Conversa de ${n.name || n.phone || 'cliente'} transferida para ${s.icon} ${s.name}`);
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `workshop_id=eq.${workshopId}` }, p => {
-        const m = p.new as { from_me?: boolean };
-        if (!m.from_me && !useInboxMute.getState().muted) playChatAlert();
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `workshop_id=eq.${workshopId}` }, async p => {
+        const m = p.new as { from_me?: boolean; chat_id?: string };
+        if (m.from_me || useInboxMute.getState().muted) return;
+        // Conversa arquivada como "não é cliente" não toca
+        const { data } = await supabase.from('whatsapp_chats').select('archived_at').eq('id', m.chat_id ?? '').maybeSingle();
+        if (!data?.archived_at) playChatAlert();
       })
       .subscribe();
     return () => { alive = false; supabase.removeChannel(ch); };
