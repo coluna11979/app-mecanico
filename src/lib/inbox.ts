@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -42,6 +42,8 @@ export type WaChat = {
   lead_note: string | null;
   lead_value: number | null;
   lead_by: string | null;
+  /** Setor da conversa (Atendimento, Comercial…); null = sem setor */
+  sector_id: string | null;
   customer?: { id: string; full_name: string } | null;
 };
 
@@ -61,7 +63,7 @@ export type WaMessage = {
   sent_at: string;
 };
 
-export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, lead_at, lead_note, lead_value, lead_by, customer:customers(id, full_name)';
+export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, lead_at, lead_note, lead_value, lead_by, sector_id, customer:customers(id, full_name)';
 
 /** Esperando resposta há mais que isso = urgente */
 export const URGENT_MIN = 30;
@@ -185,7 +187,11 @@ export const useInboxStatus = create<InboxStatusState>((set, get) => ({
   },
 }));
 
-export type InboxSendInput = { phone: string; text: string; customerId?: string | null; name?: string | null };
+export type InboxSendInput = {
+  phone: string; text: string; customerId?: string | null; name?: string | null;
+  /** Depois de enviar, leva a conversa para o setor desse tipo (ex.: orçamento → comercial) */
+  sectorKind?: SectorKind | null;
+};
 
 /** `ready` = dá para mandar pelo número da oficina agora */
 export function useInboxSender() {
@@ -200,11 +206,12 @@ export function useInboxSender() {
 
   const ready = !!wid && enabled && workshopId === wid && connected;
 
-  async function send({ phone, text, customerId, name }: InboxSendInput) {
+  async function send({ phone, text, customerId, name, sectorKind }: InboxSendInput) {
     if (!wid) throw new Error('Oficina não selecionada');
     const r = await inboxCall<{ chat_id: string }>('whatsapp-send', {
       workshop_id: wid, phone, text, customer_id: customerId ?? null, name: name ?? null,
     });
+    if (sectorKind) await moveToSectorKind(wid, r.chat_id, sectorKind);
     return r.chat_id;
   }
 
@@ -217,4 +224,50 @@ export function useInboxAccess() {
   const op = useOperator();
   const session = op.balcao ? op.session : null;
   return allows('/oficina/inbox') && (!session || sessionAllows(session, '/oficina/inbox'));
+}
+
+/* ── Setores do Inbox (Atendimento, Comercial, Financeiro…) ──────────────────── */
+
+export type SectorKind = 'atendimento' | 'comercial' | 'financeiro' | 'outro';
+export type Sector = {
+  id: string; workshop_id: string; name: string; icon: string; kind: SectorKind;
+  roles: string[]; is_default: boolean; active: boolean; position: number;
+};
+
+/** Setores sugeridos ao ativar (quem vê cada um no modo balcão; o Gestor vê todos) */
+export const DEFAULT_SECTORS: Omit<Sector, 'id' | 'workshop_id'>[] = [
+  { name: 'Atendimento', icon: '🧑‍💼', kind: 'atendimento', roles: ['atendente', 'caixa'], is_default: true, active: true, position: 0 },
+  { name: 'Comercial', icon: '🤝', kind: 'comercial', roles: ['vendedor'], is_default: false, active: true, position: 1 },
+  { name: 'Financeiro', icon: '💰', kind: 'financeiro', roles: ['caixa'], is_default: false, active: true, position: 2 },
+];
+
+export function useSectors(workshopId: string | null) {
+  const [list, setList] = useState<Sector[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const load = useCallback(async () => {
+    if (!workshopId) { setList([]); setLoaded(true); return; }
+    const { data } = await supabase.from('whatsapp_sectors').select('*')
+      .eq('workshop_id', workshopId).order('position').order('created_at');
+    setList((data ?? []) as Sector[]);
+    setLoaded(true);
+  }, [workshopId]);
+  useEffect(() => { load(); }, [load]);
+  return { list, active: list.filter(s => s.active), loaded, reload: load };
+}
+
+/** Quem está operando vê o setor? (fora do balcão ou Gestor = todos; roles vazio = todas as funções) */
+export const sectorVisible = (s: Sector, role: string | null) =>
+  !role || role === 'gestor' || s.roles.length === 0 || s.roles.includes(role);
+
+/** Leva a conversa para o setor do tipo (se a oficina usa setores) e deixa registrado nas notas */
+export async function moveToSectorKind(workshopId: string, chatId: string, kind: SectorKind, by?: string | null) {
+  const { data } = await supabase.from('whatsapp_sectors').select('id, name')
+    .eq('workshop_id', workshopId).eq('kind', kind).eq('active', true).order('position').limit(1).maybeSingle();
+  if (!data) return;
+  const { data: chat } = await supabase.from('whatsapp_chats').select('sector_id').eq('id', chatId).maybeSingle();
+  if (chat?.sector_id === data.id) return;
+  await supabase.from('whatsapp_chats').update({ sector_id: data.id }).eq('id', chatId);
+  await supabase.from('whatsapp_chat_notes').insert({
+    workshop_id: workshopId, chat_id: chatId, body: `↪ Foi para ${data.name} automaticamente`, author_name: by ?? 'Sistema',
+  });
 }

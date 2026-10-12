@@ -142,7 +142,7 @@ export default function ReceivablesTab({ data, firstOpen, shopName, receive }: {
                   </div>
                   <div className="flex gap-1.5 shrink-0">
                     {phone.length >= 10 && (
-                      <WhatsAppButton phone={phone} text={waText(r)} customerName={o.customer?.full_name} title="Lembrar o pagamento"
+                      <WhatsAppButton phone={phone} text={waText(r)} customerName={o.customer?.full_name} title="Lembrar o pagamento" sectorKind="financeiro"
                         className="btn-secondary text-xs !px-2.5 !py-1.5">💬 Cobrar</WhatsAppButton>
                     )}
                     {receive ? (

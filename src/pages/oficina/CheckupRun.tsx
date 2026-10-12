@@ -806,6 +806,7 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
               customerId={checkup.customer_id}
               customerName={checkup.customer_name}
               title={mode === 'quote' ? 'Enviar orçamento do check-up' : 'Enviar relatório do check-up'}
+              sectorKind="comercial"
               onSent={onSent}
               className={`text-center flex-1 ${mode === 'quote' || !noPrice.length ? 'btn-primary !bg-[#25D366]' : 'btn-ghost border border-steel-300 bg-white font-semibold'}`}>
               {mode === 'quote' ? 'Enviar orçamento pelo WhatsApp' : noPrice.length ? 'Enviar somente relatório' : 'Enviar relatório pelo WhatsApp'}

@@ -6,7 +6,7 @@ import { toast } from '@/components/ui/Toast';
 import { useOperator } from '@/lib/operators';
 import { fmtBRL } from '@/components/os/osHelpers';
 import { timeAgo } from '@/lib/customers';
-import type { WaChat } from '@/lib/inbox';
+import { moveToSectorKind, type WaChat } from '@/lib/inbox';
 
 /* ── Oportunidade: contato interessado antes de existir orçamento (vai para Comercial → Interessados) ── */
 
@@ -43,6 +43,7 @@ export default function LeadBox({ chat }: { chat: WaChat }) {
     if (error) { toast.error('Não salvou: ' + error.message); return; }
     setEditing(false);
     toast.success('Interessado no Comercial 💰');
+    if (!chat.lead_at) moveToSectorKind(chat.workshop_id, chat.id, 'comercial', who);
   }
 
   async function discard() {
