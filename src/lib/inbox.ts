@@ -48,6 +48,9 @@ export type WaChat = {
   transferred_at?: string | null;
   transferred_from?: string | null;
   transfer_note?: string | null;
+  /** Arquivada (não é cliente): sai da lista e dos números. 'reply' volta se a pessoa escrever */
+  archived_at?: string | null;
+  archived_mode?: 'reply' | 'always' | null;
   customer?: { id: string; full_name: string } | null;
 };
 
@@ -67,11 +70,11 @@ export type WaMessage = {
   sent_at: string;
 };
 
-export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, lead_at, lead_note, lead_value, lead_by, sector_id, transferred_at, transferred_from, transfer_note, customer:customers(id, full_name)';
+export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, lead_at, lead_note, lead_value, lead_by, sector_id, transferred_at, transferred_from, transfer_note, archived_at, archived_mode, customer:customers(id, full_name)';
 
 /* Banco sem a migration dos setores (0097): a coluna sector_id não existe e a busca inteira falharia.
    Na primeira falha passa a buscar sem ela (o Inbox funciona igual, só sem setores). */
-const CHAT_COLUMNS_NO_SECTOR = CHAT_COLUMNS.replace(', sector_id, transferred_at, transferred_from, transfer_note', '');
+const CHAT_COLUMNS_NO_SECTOR = CHAT_COLUMNS.replace(', sector_id, transferred_at, transferred_from, transfer_note, archived_at, archived_mode', '');
 let hasSectorColumn = true;
 type PgResult<T> = { data: T | null; error: { code?: string; message?: string } | null };
 const missingColumn = (e: PgResult<unknown>['error']) => !!e && (e.code === '42703' || /sector_id/.test(e.message ?? ''));

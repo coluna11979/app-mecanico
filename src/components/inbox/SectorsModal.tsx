@@ -29,6 +29,10 @@ export default function SectorsModal({ workshopId, sectors, reload, onClose }: {
       // Conversas que já existem vão para o setor padrão
       const def = (data ?? []).find(s => s.is_default);
       if (def) await supabase.from('whatsapp_chats').update({ sector_id: def.id }).eq('workshop_id', workshopId).is('sector_id', null);
+      // Quem já estava marcado como interessado vai direto para o Comercial
+      const { data: com } = await supabase.from('whatsapp_sectors').select('id')
+        .eq('workshop_id', workshopId).eq('kind', 'comercial').limit(1).maybeSingle();
+      if (com) await supabase.from('whatsapp_chats').update({ sector_id: com.id }).eq('workshop_id', workshopId).not('lead_at', 'is', null);
     }
     setBusy(false);
     if (error) { toast.error('Não salvou: ' + error.message); return; }

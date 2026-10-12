@@ -18,7 +18,7 @@ import ClientPanel from '@/components/inbox/ClientPanel';
 import ConnectWhatsApp from '@/components/inbox/ConnectWhatsApp';
 import { useInboxMute } from '@/hooks/useInboxAlerts';
 
-type Filter = 'abertas' | 'aguardando' | 'retornar' | 'nao_lidas' | 'concluidas' | 'todas';
+type Filter = 'abertas' | 'aguardando' | 'retornar' | 'nao_lidas' | 'concluidas' | 'todas' | 'arquivadas';
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'abertas', label: 'Abertas' },
   { key: 'aguardando', label: 'Aguardando' },
@@ -26,6 +26,7 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'nao_lidas', label: 'Não lidas' },
   { key: 'concluidas', label: 'Concluídas' },
   { key: 'todas', label: 'Todas' },
+  { key: 'arquivadas', label: '🗄️ Arquivadas' },
 ];
 
 /** Inbox do WhatsApp da oficina: conversas com os clientes pelo número da oficina */
@@ -134,9 +135,12 @@ export default function WorkshopInbox() {
   /** Conversas que quem está usando pode ver (setores dele; Gestor também vê as sem setor) */
   const activeIds = useMemo(() => new Set(sectors.active.map(s => s.id)), [sectors.active]);
   const myIds = useMemo(() => new Set(mySectors.map(s => s.id)), [mySectors]);
-  const allowedChats = useMemo(() => !usingSectors ? chats
-    : chats.filter(c => (c.sector_id && myIds.has(c.sector_id)) || (isManager && (!c.sector_id || !activeIds.has(c.sector_id)))),
-  [chats, usingSectors, myIds, activeIds, isManager]);
+  // Arquivadas (propaganda, fornecedor…) só aparecem no filtro "Arquivadas" e não contam nos números
+  const liveChats = useMemo(() => chats.filter(c => !c.archived_at), [chats]);
+  const archivedChats = useMemo(() => chats.filter(c => !!c.archived_at), [chats]);
+  const allowedChats = useMemo(() => !usingSectors ? liveChats
+    : liveChats.filter(c => (c.sector_id && myIds.has(c.sector_id)) || (isManager && (!c.sector_id || !activeIds.has(c.sector_id)))),
+  [liveChats, usingSectors, myIds, activeIds, isManager]);
   const scoped = useMemo(() => !usingSectors || sectorFilter === 'all' ? allowedChats
     : sectorFilter === 'none' ? allowedChats.filter(c => !c.sector_id || !activeIds.has(c.sector_id))
     : allowedChats.filter(c => c.sector_id === sectorFilter),
@@ -186,8 +190,9 @@ export default function WorkshopInbox() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const digits = onlyDigits(q);
-    return scoped
+    return (filter === 'arquivadas' ? archivedChats : scoped)
       .filter(c => {
+        if (filter === 'arquivadas') return true;
         if (filter === 'abertas') return c.status === 'open';
         if (filter === 'aguardando') return isAwaiting(c);
         if (filter === 'retornar') return followUpDue(c, now);
@@ -203,9 +208,21 @@ export default function WorkshopInbox() {
         : filter === 'retornar'
           ? (a.follow_up_at ?? '').localeCompare(b.follow_up_at ?? '')
           : (b.last_message_at ?? '').localeCompare(a.last_message_at ?? ''));
-  }, [scoped, filter, search, now]);
+  }, [scoped, archivedChats, filter, search, now]);
 
-  const selected = allowedChats.find(c => c.id === selectedId) ?? null;
+  const selected = allowedChats.find(c => c.id === selectedId) ?? archivedChats.find(c => c.id === selectedId) ?? null;
+
+  async function archive(chat: WaChat, mode: 'reply' | 'always' | null) {
+    const who = (op.balcao ? op.session?.name : null) ?? null;
+    const { error } = await supabase.from('whatsapp_chats').update(mode
+      ? { archived_at: new Date().toISOString(), archived_mode: mode, archived_by: who, unread_count: 0 }
+      : { archived_at: null, archived_mode: null, archived_by: null }).eq('id', chat.id);
+    if (error) { toast.error('Não salvou: ' + error.message); return; }
+    if (mode) {
+      toast.success(mode === 'always' ? 'Arquivada — não é cliente 🗄️' : 'Arquivada até a pessoa escrever de novo 🗄️');
+      setSelectedId(null);
+    } else toast.success('Conversa de volta para a lista');
+  }
 
   async function resolve(chat: WaChat, resolved: boolean) {
     const patch = resolved
@@ -277,13 +294,13 @@ export default function WorkshopInbox() {
                       waiting={openIn(isAwaiting).length > 0} onClick={() => setSectorFilter('all')} />
                   )}
                   {mySectors.map(s => (
-                    <SectorTab key={s.id} label={`${s.icon} ${s.name}`} active={sectorFilter === s.id}
+                    <SectorTab key={s.id} label={s.name} icon={s.icon} active={sectorFilter === s.id}
                       n={openIn(c => c.sector_id === s.id).length}
                       waiting={openIn(c => c.sector_id === s.id && isAwaiting(c)).length > 0}
                       onClick={() => setSectorFilter(s.id)} />
                   ))}
                   {isManager && openIn(c => !c.sector_id || !activeIds.has(c.sector_id)).length > 0 && (
-                    <SectorTab label="Sem setor" active={sectorFilter === 'none'}
+                    <SectorTab label="Sem setor" icon="❔" active={sectorFilter === 'none'}
                       n={openIn(c => !c.sector_id || !activeIds.has(c.sector_id)).length}
                       waiting={false} onClick={() => setSectorFilter('none')} />
                   )}
@@ -310,6 +327,7 @@ export default function WorkshopInbox() {
                     {f.label}
                     {f.key === 'nao_lidas' && metrics.unread > 0 && <span className="ml-1 text-emerald-500">{metrics.unread}</span>}
                     {f.key === 'retornar' && metrics.followUps > 0 && <span className="ml-1 text-pending-600">{metrics.followUps}</span>}
+                    {f.key === 'arquivadas' && archivedChats.length > 0 && <span className="ml-1 text-steel-400">{archivedChats.length}</span>}
                   </button>
                 ))}
               </div>
@@ -374,6 +392,7 @@ export default function WorkshopInbox() {
                   onConnect={() => setConnectOpen(true)}
                   sectors={usingSectors ? sectors.active : undefined}
                   onTransfer={(sectorId, opts) => transfer(selected, sectorId, opts)}
+                  onArchive={mode => archive(selected, mode)}
                 />
               </section>
               {/* Painel do cliente: fixo no monitor grande, gaveta nas telas menores */}
@@ -424,8 +443,8 @@ function StatusChip({ status, phone, loaded }: { status: InstanceStatus; phone: 
   };
   const s = map[status];
   return (
-    <p className="text-xs text-steel-500 flex items-center gap-1.5">
-      <span className={`h-2 w-2 rounded-full ${s.dot}`} />{s.label}
+    <p className="text-[11px] text-steel-500 flex items-center gap-1.5 whitespace-nowrap" title={s.label}>
+      <span className={`h-2 w-2 rounded-full shrink-0 ${s.dot}`} />{s.label}
     </p>
   );
 }
@@ -448,12 +467,16 @@ function Metric({ label, value, sub, tone, active, onClick }: {
   );
 }
 
-function SectorTab({ label, n, active, waiting, onClick }: { label: string; n: number; active: boolean; waiting: boolean; onClick: () => void }) {
+function SectorTab({ label, icon, n, active, waiting, onClick }: {
+  label: string; icon?: string; n: number; active: boolean; waiting: boolean; onClick: () => void;
+}) {
+  // Compacta: os outros setores mostram só o ícone e o número (o nome fica no "title")
   return (
-    <button type="button" onClick={onClick}
-      className={`relative shrink-0 inline-flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-xs font-semibold transition ${
+    <button type="button" onClick={onClick} title={label}
+      className={`relative shrink-0 inline-flex items-center gap-1 px-2 h-7 rounded-lg text-xs font-semibold transition ${
         active ? 'bg-brand-500 text-white' : 'bg-steel-100 text-steel-600 hover:bg-steel-200'}`}>
-      {label}
+      {icon && <span>{icon}</span>}
+      {(active || !icon) && <span>{label}</span>}
       <span className={`tabular-nums ${active ? 'text-white/80' : 'text-steel-400'}`}>{n}</span>
       {waiting && !active && <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-alert-500" />}
     </button>
