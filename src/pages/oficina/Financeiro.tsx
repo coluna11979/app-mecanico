@@ -12,6 +12,7 @@ import { daysUntil } from '@/lib/purchasing';
 import { change, previousRange, salesOf } from '@/lib/workshopMetrics';
 import PeriodPicker, { PRESETS, PREV_LABEL, usePeriod, type Preset } from '@/components/PeriodPicker';
 import ReceivablesTab from '@/components/finance/ReceivablesTab';
+import { ShopGoalCard } from '@/components/goals/Goals';
 import CompletedOsList from '@/components/finance/CompletedOsList';
 import {
   cashFlowOf, closings, flowSeriesFull, operatingResult, outflowsOf, receivables, receivedGroups,
@@ -244,6 +245,7 @@ export default function Financeiro() {
           </div>
         ) : (
           <>
+            {wid && <ShopGoalCard wid={wid} canEdit />}
             {/* KPIs principais */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <Kpi label="Faturado" value={brl(cur.sales.revenue)} delta={deltas.revenue} note={prevLabel}

@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { fmtBRL, fmtDur } from '@/components/os/osHelpers';
 import { fetchAll } from '@/lib/fetchAll';
 import { useTeamAccess } from '@/lib/teamAccess';
+import { TeamGoals } from '@/components/goals/Goals';
 import { MIN_SAMPLE, teamPerformance, type MechanicPerf, type PerfMechanic, type PerfOs } from '@/lib/teamPerformance';
 
 type Period = '30d' | '90d' | '6m' | '12m';
@@ -26,7 +27,7 @@ type Os = PerfOs & { price: number | null };
 export default function Desempenho() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
-  const { canRevenue } = useTeamAccess();
+  const { canRevenue, isGestor } = useTeamAccess();
   const [period, setPeriod] = useState<Period>(() => {
     try { return (localStorage.getItem('desempenho-periodo') as Period) || '30d'; } catch { return '30d'; }
   });
@@ -112,6 +113,10 @@ export default function Desempenho() {
           </div>
         ) : (
           <div className="space-y-4">
+            {canRevenue && wid && (
+              <TeamGoals wid={wid} canEdit={isGestor}
+                team={mechs.filter(m => m.active !== false && m.status !== 'terminated').map(m => ({ id: m.id, name: m.name }))} />
+            )}
             {r.shop.unassigned > 0 && (
               <div className="card !py-3 border-l-4 border-l-pending-500 text-sm text-steel-700">
                 {r.shop.unassigned} OS concluída{r.shop.unassigned > 1 ? 's' : ''} no período sem responsável não entra{r.shop.unassigned > 1 ? 'm' : ''} na conta de ninguém. Defina quem executou na OS.

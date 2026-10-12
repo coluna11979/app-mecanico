@@ -18,6 +18,7 @@ import { OS_STATUS_FLOW, openPause, statusChange } from '@/components/os/osHelpe
 import { sessionAllows, useOperator } from '@/lib/operators';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { MyCommissionSummary, useMyCommission } from '@/components/os/MyCommission';
+import { MyGoalCard } from '@/components/goals/Goals';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 /* ─── tipos locais ──────────────────────────────────────────── */
@@ -312,6 +313,7 @@ export default function ServiceOrders() {
       </div>
 
       {mech && access.mechanicId && <MyCommissionSummary c={myComm} />}
+      {mech && access.mechanicId && currentWorkshop && <MyGoalCard wid={currentWorkshop.id} mechanicId={access.mechanicId} />}
 
       {mech && access.ready && !access.mechanicId && (
         <div className="card !py-3 mb-4 bg-pending-50 border-pending-200 text-sm text-steel-700">

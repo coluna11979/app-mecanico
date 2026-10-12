@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { sessionAllows, useOperator } from '@/lib/operators';
+import { canDo, sessionAllows, useOperator } from '@/lib/operators';
 import LicensePlate from '@/components/os/LicensePlate';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
 import { fmtBRL } from '@/components/os/osHelpers';
@@ -12,6 +12,7 @@ import { fetchAll } from '@/lib/fetchAll';
 import PeriodPicker, { PRESETS, usePeriod, type Preset } from '@/components/PeriodPicker';
 import { useModuleAllows } from '@/lib/modules';
 import ComercialInsights from '@/components/commercial/ComercialInsights';
+import { ShopGoalCard } from '@/components/goals/Goals';
 import { toast } from '@/components/ui/Toast';
 import {
   buildOpps, daysSince, followUps, funnelOf, type CkRow, type FollowUp, type Opp, type OsQuote, type Stage,
@@ -207,6 +208,8 @@ export default function Comercial() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-white rounded-2xl animate-pulse" />)}</div>
         ) : (
           <>
+            {wid && canDo(session, balcao, 'ver_financeiro') && <ShopGoalCard wid={wid} canEdit={canDo(session, balcao, 'ver_financeiro')} />}
+
             {/* KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi label="Em aberto" value={String(fn.open.length)} sub="montando + aguardando cliente" />
