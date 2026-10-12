@@ -397,7 +397,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   useEffect(() => { mods.load(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
   const allowed = (to: string) => moduleAllows(mods.disabled, to) && (!role || sessionAllows(op.session!, to));
   // WhatsApp: conversas não lidas no menu + som de mensagem nova (só para quem pode abrir o Inbox)
-  const inboxUnread = useInboxAlerts(shopId, allowed('/oficina/inbox'));
+  const inboxUnread = useInboxAlerts(shopId, allowed('/oficina/inbox'), role);
   const badgeOf = (to: string) => (to === '/oficina/mensagens' ? unread : to === '/oficina/inbox' ? inboxUnread : 0);
   // Tela de entrada desligada (ex.: Painel do check-up) → o item leva pra primeira ferramenta liberada do módulo
   const fix = <T extends NavItem>(i: T): T => ({ ...i, to: moduleEntry(mods.disabled, i.to) ?? i.to });
