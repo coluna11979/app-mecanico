@@ -11,6 +11,7 @@ import { publicReportUrl } from '@/lib/checkup';
 import { fetchAll } from '@/lib/fetchAll';
 import PeriodPicker, { PRESETS, usePeriod, type Preset } from '@/components/PeriodPicker';
 import { useModuleAllows } from '@/lib/modules';
+import ComercialInsights from '@/components/commercial/ComercialInsights';
 import { toast } from '@/components/ui/Toast';
 import {
   buildOpps, daysSince, followUps, funnelOf, type CkRow, type FollowUp, type Opp, type OsQuote, type Stage,
@@ -77,7 +78,7 @@ export default function Comercial() {
       const [ck, os, links] = await Promise.all([
         // Check-ups finalizados: os em aberto (qualquer data) e os dos últimos 12 meses
         fetchAll((a, b) => supabase.from('vehicle_checkups')
-          .select('*, mechanic:workshop_mechanics(name), items:checkup_items(status, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, price)')
+          .select('*, mechanic:workshop_mechanics(name), items:checkup_items(label, status, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, price)')
           .eq('workshop_id', wid).eq('status', 'completed')
           .or(`and(sale_os_id.is.null,customer_responded_at.is.null),completed_at.gte.${s},customer_responded_at.gte.${s}`)
           .order('completed_at', { ascending: false }).order('id').range(a, b)),
@@ -335,6 +336,8 @@ export default function Comercial() {
               )}
             </div>
             </div>
+
+            <ComercialInsights opps={opps} answered={[...fn.aprovado, ...fn.recusado, ...fn.lembrar]} range={range} />
           </>
         )}
       </div>
