@@ -193,7 +193,9 @@ function Bubble({ m, tight }: { m: WaMessage; tight: boolean }) {
           <>
             {m.media_path && <Media m={m} />}
             {!m.media_path && m.message_type !== 'text' && !m.content && (
-              <p className="text-sm italic text-steel-500">{MEDIA_LABEL[m.message_type] ?? 'Mensagem'} (não foi possível baixar)</p>
+              <p className="text-sm italic text-steel-500">
+                {m.message_type === 'other' ? 'Tipo de mensagem não suportado — veja no celular' : `${MEDIA_LABEL[m.message_type] ?? 'Mensagem'} (não foi possível baixar)`}
+              </p>
             )}
             {m.content && <p className="text-sm text-steel-900 whitespace-pre-wrap break-words">{waFormat(m.content)}</p>}
           </>
