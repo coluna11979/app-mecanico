@@ -10,6 +10,7 @@ import { distKm, formatDistance } from '@/lib/geo';
 import { mechanicNet } from '@/lib/payment';
 import { isScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint } from '@/components/ArrivalDeadline';
+import { IconMapPin } from '@/components/mecanico/icons';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Job, Mechanic, Workshop } from '@/types/database';
@@ -239,7 +240,9 @@ export default function MechanicMapa() {
       <div className="relative overflow-hidden" style={{ height: 'calc(100dvh - 56px - 64px)' }}>
 
         {/* Mapbox canvas */}
-        <div ref={mapRef} className="absolute inset-0" />
+        {/* Posição inline: o mapbox-gl.css põe `position: relative` em .mapboxgl-map
+            e derrubava o `absolute inset-0` — o mapa virava uma faixa de ~40px */}
+        <div ref={mapRef} style={{ position: 'absolute', inset: 0 }} />
 
         {/* Top badge */}
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
@@ -350,11 +353,11 @@ export default function MechanicMapa() {
 
         {/* Empty state */}
         {jobs.length === 0 && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center">
+          <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
             <div className="bg-steel-900/90 backdrop-blur border border-steel-800 rounded-2xl px-6 py-5 text-center max-w-xs">
-              <div className="text-3xl mb-2">🔍</div>
+              <IconMapPin className="w-7 h-7 text-steel-400 mx-auto mb-2" />
               <div className="font-bold text-white">Nenhum job no momento</div>
-              <div className="text-sm text-steel-400 mt-1">Novos jobs aparecerão aqui em tempo real.</div>
+              <div className="text-sm text-steel-300 mt-1">Novos jobs aparecerão aqui em tempo real.</div>
             </div>
           </div>
         )}
