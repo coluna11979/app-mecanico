@@ -66,7 +66,7 @@ export default function OsDetail() {
   const [reworkForm, setReworkForm] = useState(false);
   const [original, setOriginal]   = useState<(OsLink & { mechanic: { name: string } | null }) | null>(null);
   const [returns, setReturns]     = useState<OsLink[]>([]);
-  const [team, setTeam]           = useState<{ id: string; name: string; no_commission?: boolean | null; commission_revenue_percent?: number | null }[]>([]);
+  const [team, setTeam]           = useState<{ id: string; name: string; no_commission?: boolean | null; commission_revenue_only?: boolean | null; commission_revenue_percent?: number | null }[]>([]);
   /* false = fechado · 'edit' = escolher · 'platform' = já abre com a plataforma marcada */
   const [scheduling, setScheduling] = useState(false);
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
@@ -129,7 +129,7 @@ export default function OsDetail() {
   // Equipe (responsável da OS e responsável pelo retorno)
   useEffect(() => {
     if (!os?.workshop_id) return;
-    supabase.from('workshop_mechanics').select('id, name, no_commission, commission_revenue_percent').eq('workshop_id', os.workshop_id).neq('status', 'terminated').order('name')
+    supabase.from('workshop_mechanics').select('id, name, no_commission, commission_revenue_only, commission_revenue_percent').eq('workshop_id', os.workshop_id).neq('status', 'terminated').order('name')
       .then(({ data }) => setTeam(data ?? []));
   }, [os?.workshop_id]);
 
@@ -637,6 +637,8 @@ export default function OsDetail() {
                   <div className="text-xs font-bold uppercase tracking-widest text-steel-500">💰 Sua comissão nesta OS</div>
                   {myComm.mech.no_commission ? (
                     <div className="text-sm text-steel-600">Salário fixo — sem comissão por OS.</div>
+                  ) : myComm.mech.commission_revenue_only ? (
+                    <div className="text-sm text-steel-600">Você ganha só a % do faturamento da loja — sem comissão por OS.</div>
                   ) : mine ? (
                     <>
                       <div className="text-2xl font-bold font-display text-signal-700">{fmtBRL(mine.value)}</div>
