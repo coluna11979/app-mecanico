@@ -23,7 +23,7 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
   onResolve: (resolved: boolean) => void; onConnect: () => void;
   /** Setores ativos da oficina (sem = Inbox sem setores) */
   sectors?: Sector[];
-  onTransfer?: (sectorId: string | null) => void;
+  onTransfer?: (sectorId: string, opts: TransferOpts) => Promise<void>;
 }) {
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -122,6 +122,18 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
         )}
         <button type="button" onClick={onToggleClient} className="xl:hidden btn-ghost !py-1.5 !px-2.5 text-xs shrink-0" title="Dados do cliente">👤</button>
       </div>
+
+      {chat.transferred_at && (
+        <div className="flex items-start gap-2 px-4 py-2 bg-sky-50 border-b border-sky-100 shrink-0">
+          <span className="text-sm">↪</span>
+          <div className="flex-1 min-w-0 text-sm">
+            <span className="font-semibold text-sky-800">Veio do {chat.transferred_from ?? 'outro setor'}</span>
+            {chat.transfer_note && <span className="text-steel-700"> · “{chat.transfer_note}”</span>}
+          </div>
+          <button type="button" onClick={() => supabase.from('whatsapp_chats').update({ transferred_at: null }).eq('id', chat.id).then()}
+            className="text-xs font-semibold text-sky-700 hover:underline shrink-0">Entendi</button>
+        </div>
+      )}
 
       {/* Mensagens */}
       <div
@@ -450,9 +462,14 @@ function Composer({ chat, workshopId, onSent }: { chat: WaChat; workshopId: stri
   );
 }
 
-/** "↪ Setor": mostra onde a conversa está e transfere para outro setor */
-function TransferMenu({ chat, sectors, onTransfer }: { chat: WaChat; sectors: Sector[]; onTransfer: (id: string | null) => void }) {
+export type TransferOpts = { note: string; notify: string | null };
+
+/** "↪ Setor": mostra onde a conversa está e abre a transferência */
+function TransferMenu({ chat, sectors, onTransfer }: {
+  chat: WaChat; sectors: Sector[]; onTransfer: (id: string, opts: TransferOpts) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState<Sector | null>(null);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -472,13 +489,67 @@ function TransferMenu({ chat, sectors, onTransfer }: { chat: WaChat; sectors: Se
           <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-steel-400">Transferir para</p>
           {sectors.map(s => (
             <button key={s.id} type="button" disabled={s.id === chat.sector_id}
-              onClick={() => { setOpen(false); onTransfer(s.id); }}
+              onClick={() => { setOpen(false); setTarget(s); }}
               className="w-full text-left px-3 py-2 text-sm hover:bg-steel-50 disabled:opacity-40 disabled:hover:bg-transparent">
               {s.icon} {s.name}{s.id === chat.sector_id ? ' · atual' : ''}
             </button>
           ))}
         </div>
       )}
+      {target && (
+        <TransferModal chat={chat} target={target} onClose={() => setTarget(null)}
+          onConfirm={async opts => { await onTransfer(target.id, opts); setTarget(null); }} />
+      )}
+    </div>
+  );
+}
+
+/** Confirmar transferência: recado para o setor e (opcional) aviso ao cliente */
+function TransferModal({ chat, target, onClose, onConfirm }: {
+  chat: WaChat; target: Sector; onClose: () => void; onConfirm: (opts: TransferOpts) => Promise<void>;
+}) {
+  const first = chatTitle(chat).trim().split(/\s+/)[0];
+  const nome = /\p{L}/u.test(first) ? `, ${first}` : '';
+  const [note, setNote] = useState('');
+  const [notify, setNotify] = useState(false);
+  const [notifyText, setNotifyText] = useState(
+    `Certo${nome}! Vou te passar para o nosso ${target.name.toLowerCase()}, que já vai te atender por aqui. 👍`,
+  );
+  const [busy, setBusy] = useState(false);
+
+  async function confirm() {
+    setBusy(true);
+    try { await onConfirm({ note: note.trim(), notify: notify && notifyText.trim() ? notifyText.trim() : null }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-steel-900/60 grid place-items-center p-4" onClick={onClose}>
+      <div className="card max-w-md w-full space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">↪ Transferir para {target.icon} {target.name}</h2>
+          <button type="button" onClick={onClose} className="text-steel-400 hover:text-steel-700 text-xl">✕</button>
+        </div>
+        <div>
+          <label className="label">Recado para o {target.name} (opcional)</label>
+          <textarea className="input text-sm min-h-[72px]" autoFocus value={note} onChange={e => setNote(e.target.value)}
+            placeholder="Ex.: quer orçamento de embreagem do Gol, já mandou foto" />
+          <p className="text-[11px] text-steel-400 mt-1">Aparece em destaque para quem pegar a conversa. O cliente não vê.</p>
+        </div>
+        <div className="rounded-xl border border-steel-200 p-3 space-y-2">
+          <label className="flex items-center gap-2 text-sm font-semibold text-steel-700 cursor-pointer">
+            <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} />
+            Avisar o cliente
+          </label>
+          {notify && (
+            <textarea className="input text-sm min-h-[64px]" value={notifyText} onChange={e => setNotifyText(e.target.value)} />
+          )}
+        </div>
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="button" className="btn-primary" disabled={busy} onClick={confirm}>{busy ? 'Transferindo…' : 'Transferir'}</button>
+        </div>
+      </div>
     </div>
   );
 }

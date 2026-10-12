@@ -13,7 +13,7 @@ import {
 import { useOperator } from '@/lib/operators';
 import SectorsModal from '@/components/inbox/SectorsModal';
 import ChatAvatar from '@/components/inbox/ChatAvatar';
-import ChatView from '@/components/inbox/ChatView';
+import ChatView, { type TransferOpts } from '@/components/inbox/ChatView';
 import ClientPanel from '@/components/inbox/ClientPanel';
 import ConnectWhatsApp from '@/components/inbox/ConnectWhatsApp';
 import { useInboxMute } from '@/hooks/useInboxAlerts';
@@ -144,18 +144,29 @@ export default function WorkshopInbox() {
   const sectorOf = (c: WaChat) => (c.sector_id ? sectors.active.find(s => s.id === c.sector_id) ?? null : null);
   const openIn = (pred: (c: WaChat) => boolean) => allowedChats.filter(c => c.status === 'open' && pred(c));
 
-  async function transfer(chat: WaChat, sectorId: string | null) {
+  async function transfer(chat: WaChat, sectorId: string, opts: TransferOpts) {
     const target = sectors.active.find(s => s.id === sectorId);
-    const { error } = await supabase.from('whatsapp_chats').update({ sector_id: sectorId }).eq('id', chat.id);
+    const from = sectorOf(chat);
+    // Aviso ao cliente sai antes (se o WhatsApp falhar, a transferência não acontece pela metade)
+    if (opts.notify) {
+      try { await inboxCall('whatsapp-send', { workshop_id: chat.workshop_id, chat_id: chat.id, text: opts.notify }); }
+      catch (e) { toast.error('Não avisou o cliente: ' + (e instanceof Error ? e.message : '')); return; }
+    }
+    // Chega como não lida e com "↪ Veio do…" para o setor de destino
+    const { error } = await supabase.from('whatsapp_chats').update({
+      sector_id: sectorId, transferred_at: new Date().toISOString(), transferred_from: from?.name ?? 'sem setor',
+      transfer_note: opts.note || null, unread_count: Math.max(1, chat.unread_count),
+    }).eq('id', chat.id);
     if (error) { toast.error('Não transferiu: ' + error.message); return; }
     const who = (op.balcao ? op.session?.name : null) ?? null;
     await supabase.from('whatsapp_chat_notes').insert({
       workshop_id: chat.workshop_id, chat_id: chat.id,
-      body: `↪ Transferido para ${target ? `${target.icon} ${target.name}` : 'sem setor'}`, author_name: who,
+      body: `↪ Transferido de ${from?.name ?? 'sem setor'} para ${target ? `${target.icon} ${target.name}` : 'sem setor'}${opts.note ? `\nRecado: ${opts.note}` : ''}`,
+      author_name: who,
     });
     toast.success(`Transferido para ${target?.name ?? 'sem setor'}`);
     // Saiu dos setores de quem transferiu: fecha a conversa na tela
-    if (sectorId && !myIds.has(sectorId) && !isManager) setSelectedId(null);
+    if (!myIds.has(sectorId) && !isManager) setSelectedId(null);
   }
 
   /* ── Números do topo ── */
@@ -362,7 +373,7 @@ export default function WorkshopInbox() {
                   onResolve={r => resolve(selected, r)}
                   onConnect={() => setConnectOpen(true)}
                   sectors={usingSectors ? sectors.active : undefined}
-                  onTransfer={sectorId => transfer(selected, sectorId)}
+                  onTransfer={(sectorId, opts) => transfer(selected, sectorId, opts)}
                 />
               </section>
               {/* Painel do cliente: fixo no monitor grande, gaveta nas telas menores */}
@@ -483,6 +494,11 @@ function ChatRow({ c, now, active, sector, onClick }: { c: WaChat; now: number; 
             </span>
           )}
           {c.status === 'resolved' && <span className="text-[10px] font-semibold text-emerald-600">✓ Concluída</span>}
+          {c.transferred_at && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700" title={c.transfer_note ?? undefined}>
+              ↪ Veio do {c.transferred_from ?? 'outro setor'}
+            </span>
+          )}
           {sector && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">{sector.icon} {sector.name}</span>}
           {!c.customer_id && <span className="text-[10px] text-steel-400">· sem cadastro</span>}
         </div>
