@@ -232,7 +232,7 @@ export const TOOLS: Record<string, {
 
       const [mechs, base, sales, closed] = await Promise.all([
         db.from('workshop_mechanics')
-          .select('id, name, active, commission_percent, commission_parts_percent, commission_revenue_percent, commission_own_parts_percent, no_commission')
+          .select('id, name, active, commission_percent, commission_parts_percent, commission_revenue_percent, commission_own_parts_percent, no_commission, commission_revenue_only')
           .eq('workshop_id', ws).order('name'),
         fetchAll((a, b) => db.from('os_commission_base')
           .select('service_order_id, mechanic_id, labor, parts, customer_brought_parts, labor_only, done_at, rule_v2, svc_base, mo_base, manual, fixed')
@@ -270,16 +270,18 @@ export const TOOLS: Record<string, {
         const pown = mc.commission_own_parts_percent != null ? num(mc.commission_own_parts_percent) : pl;
         const pp = num(mc.commission_parts_percent), pr = num(mc.commission_revenue_percent);
         const rev = pr > 0 ? brl(revenue) : 0;
-        const comissao = mc.no_commission ? 0 : brl(
+        const soFaturamento = !!mc.commission_revenue_only;
+        const comissao = mc.no_commission ? 0 : soFaturamento ? brl(rev * pr / 100) : brl(
           num(e?.labor) * pl / 100 + num(e?.laborOwn) * pown / 100 + num(e?.parts) * pp / 100
           + num(e?.svc) * 4 / 100 + num(e?.mo) * 10 / 100 + rev * pr / 100 + num(e?.manual) + num(e?.fixed));
         const fechado = closedBy.get(mc.id);
-        const relevante = !!fechado || comissao > 0 || (mc.active && !mc.no_commission && (pl > 0 || pown > 0 || pp > 0 || pr > 0));
+        const relevante = !!fechado || comissao > 0 || (mc.active && !mc.no_commission && (soFaturamento ? pr > 0 : (pl > 0 || pown > 0 || pp > 0 || pr > 0)));
         return {
           relevante,
           row: {
             colaborador: mc.name, ativo: mc.active, comissao,
             ...(mc.no_commission ? { obs: 'salário fixo, sem comissão' } : {}),
+            ...(soFaturamento ? { obs: 'ganha só a % do faturamento da loja' } : {}),
             base: {
               servico_mais_pecas_4pct: brl(num(e?.svc)), mao_de_obra_10pct: brl(num(e?.mo)),
               valores_digitados_na_os: brl(num(e?.manual)), valores_fixos_por_item: brl(num(e?.fixed)),

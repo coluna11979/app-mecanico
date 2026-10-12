@@ -35,6 +35,8 @@ export type CommissionMech = {
   commission_own_parts_percent?: number | null;
   /** Salário fixo: não recebe comissão nenhuma */
   no_commission?: boolean | null;
+  /** Só a % do faturamento da loja (ex.: gerente 1,5%): nada de 4%/10% nem valores da OS */
+  commission_revenue_only?: boolean | null;
 };
 
 export type CommissionBaseRow = {
@@ -83,7 +85,7 @@ export type CommissionCalc = {
 };
 
 /** Colunas de comissão para os selects de workshop_mechanics */
-export const COMMISSION_COLS = 'commission_percent, commission_parts_percent, commission_revenue_percent, commission_own_parts_percent, no_commission';
+export const COMMISSION_COLS = 'commission_percent, commission_parts_percent, commission_revenue_percent, commission_own_parts_percent, no_commission, commission_revenue_only';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -101,6 +103,7 @@ export const pcts = (m: CommissionMech) => ({
 export const hasCommission = (m: CommissionMech) => {
   if (m.no_commission) return false;
   const p = pcts(m);
+  if (m.commission_revenue_only) return p.revenue > 0;
   return p.labor > 0 || p.own > 0 || p.parts > 0 || p.revenue > 0;
 };
 
@@ -154,6 +157,8 @@ export function commissionFor(m: CommissionMech, done: Done | undefined, revenue
   const fixed = r2(done?.fixed ?? 0);
   // Salário fixo: mostra o que fez, mas não ganha comissão
   if (m.no_commission) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: 0, manual: 0, fixed: 0, commission: 0 };
+  // Só % do faturamento: mostra o que fez, mas a comissão é só a % sobre o faturamento da loja
+  if (m.commission_revenue_only) return { labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual: 0, fixed: 0, commission: r2(rev * p.revenue / 100) };
   return {
     labor: r2(labor + (done?.vLabor ?? 0)), laborOwn, parts: r2(parts + (done?.vParts ?? 0)), svc, mo, revenue: rev, manual, fixed,
     commission: r2(labor * p.labor / 100 + laborOwn * p.own / 100 + parts * p.parts / 100
@@ -174,6 +179,7 @@ export const workedIn = (c: Pick<CommissionCalc, 'labor' | 'laborOwn' | 'parts' 
 export function commissionRule(m: CommissionMech, ctx?: { worked: boolean; manual?: boolean }) {
   if (m.no_commission) return 'Salário fixo — sem comissão';
   const p = pcts(m);
+  if (m.commission_revenue_only) return `${pctStr(p.revenue)} do faturamento`;
   if (ctx && !ctx.worked && p.revenue > 0) return `${pctStr(p.revenue)} do faturamento`;
   return [
     `${pctStr(RULE.service)} serviço + peças`,
