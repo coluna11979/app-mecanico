@@ -8,7 +8,7 @@ import {
   approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf,
   type PanelItem, type PanelOs,
 } from '@/lib/workshopMetrics';
-import { servicesExecuted } from '@/lib/serviceCatalog';
+import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/serviceCatalog';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
 import { fetchAll } from '@/lib/fetchAll';
 import PeriodPicker, { PREV_LABEL, addDays, startOfDay, usePeriod } from '@/components/PeriodPicker';
@@ -86,22 +86,8 @@ export default function Painel() {
   }, [os, items, firstBuys, range, prev]);
 
   const maxBar = Math.max(1, ...m.series.map(s => s.value));
-  /** Faturamento por tipo de serviço: os 6 maiores e o resto junto ("Serviço não identificado" sempre separado) */
-  const revenueByService = useMemo(() => {
-    const byValue = [...m.services.rows].sort((x, y) => y.revenue - x.revenue);
-    const known = byValue.filter(r => r.identified);
-    const unknown = byValue.filter(r => !r.identified);
-    const top = known.slice(0, 6);
-    const rest = known.slice(6);
-    const out = [...top];
-    if (rest.length) out.push({ name: `Outros serviços (${rest.length})`, orders: 0, revenue: rest.reduce((t, x) => t + x.revenue, 0), parts: 0, labor: 0, identified: true });
-    return [...out, ...unknown];
-  }, [m.services]);
-  const partsShare = (() => {
-    const p = m.services.rows.reduce((t, x) => t + x.parts, 0);
-    const l = m.services.rows.reduce((t, x) => t + x.labor, 0);
-    return p + l > 0 ? (p / (p + l)) * 100 : 0;
-  })();
+  const revenueRows = useMemo(() => revenueByService(m.services.rows), [m.services]);
+  const partsShare = partsSharePct(m.services.rows);
 
   return (
     <WorkshopLayout>
@@ -150,14 +136,14 @@ export default function Painel() {
               <div className="card">
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">De onde veio o faturamento</div>
                 <p className="text-[11px] text-steel-400 mb-3">Por tipo de serviço executado (peças + mão de obra de cada serviço)</p>
-                {revenueByService.length === 0 ? (
+                {revenueRows.length === 0 ? (
                   <p className="text-sm text-steel-400">Sem serviços no período.</p>
-                ) : revenueByService.map(r => (
+                ) : revenueRows.map(r => (
                   <Split key={r.name} label={r.name} value={r.revenue} total={m.services.total} color={r.identified ? 'bg-brand-500' : 'bg-steel-300'} />
                 ))}
                 {m.services.total > 0 && (
                   <p className="text-[11px] text-steel-400 mt-1">
-                    Dentro dos serviços: peças {Math.round(partsShare)}% · mão de obra {100 - Math.round(partsShare)}%.
+                    Dentro dos serviços: peças {partsShare}% · mão de obra {100 - partsShare}%.
                     Soma dos itens lançados nas OS; pode diferir do faturamento por descontos ou OS sem itens.
                   </p>
                 )}

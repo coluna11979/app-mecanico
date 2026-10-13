@@ -82,3 +82,21 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
     .sort((a, b) => Number(a.name === UNKNOWN_SERVICE) - Number(b.name === UNKNOWN_SERVICE) || b.orders - a.orders || b.revenue - a.revenue);
   return { rows: rows.slice(0, limit), total: rows.reduce((t, x) => t + x.revenue, 0), unmatchedItems };
 }
+
+/** Faturamento por tipo de serviço: os 6 maiores e o resto junto; "Serviço não identificado" sempre separado, no fim */
+export function revenueByService(rows: ServiceExecuted[], top = 6) {
+  const byValue = [...rows].sort((x, y) => y.revenue - x.revenue);
+  const known = byValue.filter(r => r.identified);
+  const unknown = byValue.filter(r => !r.identified);
+  const rest = known.slice(top);
+  const out = known.slice(0, top);
+  if (rest.length) out.push({ name: `Outros serviços (${rest.length})`, orders: 0, revenue: rest.reduce((t, x) => t + x.revenue, 0), parts: 0, labor: 0, identified: true });
+  return [...out, ...unknown];
+}
+
+/** % de peças dentro dos serviços (o resto é mão de obra); fecha sempre em 100% */
+export function partsSharePct(rows: ServiceExecuted[]) {
+  const p = rows.reduce((t, x) => t + x.parts, 0);
+  const l = rows.reduce((t, x) => t + x.labor, 0);
+  return p + l > 0 ? Math.round((p / (p + l)) * 100) : 0;
+}

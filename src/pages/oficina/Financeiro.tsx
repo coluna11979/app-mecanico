@@ -9,7 +9,8 @@ import { useFeature } from '@/lib/modules';
 import { brl } from '@/lib/cash';
 import { fetchAll } from '@/lib/fetchAll';
 import { daysUntil } from '@/lib/purchasing';
-import { change, previousRange, salesOf } from '@/lib/workshopMetrics';
+import { change, previousRange, salesOf, type PanelItem } from '@/lib/workshopMetrics';
+import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/serviceCatalog';
 import PeriodPicker, { PRESETS, PREV_LABEL, usePeriod, type Preset } from '@/components/PeriodPicker';
 import ReceivablesTab from '@/components/finance/ReceivablesTab';
 import { ShopGoalCard } from '@/components/goals/Goals';
@@ -59,6 +60,8 @@ export default function Financeiro() {
   const [firstOpen, setFirstOpen] = useState<string | null>(null);
   const [payables, setPayables] = useState<FinPayable[]>([]);
   const [costItems, setCostItems] = useState<CostItem[]>([]);
+  /** Itens das OS concluídas no período (descrição) — para mostrar o faturamento por tipo de serviço */
+  const [svcItems, setSvcItems] = useState<PanelItem[]>([]);
   /** Notas de compra de peças lançadas no período (null = ainda não carregou) */
   const [purchaseCount, setPurchaseCount] = useState<number | null>(null);
   const [loading, setLoading]   = useState(true);
@@ -66,6 +69,20 @@ export default function Financeiro() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const prev = useMemo(() => previousRange(range), [range]);
+  const rangeFrom = range.from.getTime();
+  const rangeTo = range.to.getTime();
+  useEffect(() => {
+    if (!wid || !allowed) return;
+    let alive = true;
+    fetchAll((a, b) => supabase.from('service_order_items')
+      .select('service_order_id, kind, description, quantity, unit_price, so:service_orders!inner(completed_at)')
+      .eq('workshop_id', wid)
+      .gte('so.completed_at', new Date(rangeFrom).toISOString()).lt('so.completed_at', new Date(rangeTo).toISOString())
+      .order('id').range(a, b))
+      .then(r => { if (alive) setSvcItems((r.data as unknown as PanelItem[]) ?? []); });
+    return () => { alive = false; };
+  }, [wid, allowed, rangeFrom, rangeTo, reloadKey]);
+
   // Movimentos: do início do período anterior (comparação) até o fim do atual
   const fromIso = prev.from.toISOString();
   const toIso = range.to.toISOString();
@@ -183,6 +200,9 @@ export default function Financeiro() {
 
   const { cur, deltas, alerts } = f;
   const prevLabel = PREV_LABEL[preset];
+  const svc = useMemo(() => servicesExecuted(os, svcItems, range, 100), [os, svcItems, range]);
+  const svcRows = useMemo(() => revenueByService(svc.rows), [svc]);
+  const partsShare = partsSharePct(svc.rows);
   const empty = cur.sales.count === 0 && cur.cash.inflow === 0 && cur.out.total === 0;
   const partial = cur.withParts > 0 && cur.costed < cur.withParts;
   /** Teve faturamento e nenhuma despesa lançada: o "resultado" é só receita − custo das peças, não lucro */
@@ -371,13 +391,15 @@ export default function Financeiro() {
                 <SectionTitle>Origem do faturamento</SectionTitle>
                 {cur.sales.revenue <= 0 ? <p className="text-sm text-steel-400">Nenhuma OS concluída no período.</p> : (
                   <>
-                    <Split label="🔧 Mão de obra" value={cur.sales.labor} total={cur.sales.revenue} color="bg-brand-500" />
-                    <Split label="🔩 Peças" value={cur.sales.parts} total={cur.sales.revenue} color="bg-steel-500" />
-                    {cur.sales.unsplit > 0.009 && (
-                      <Split label="Sem detalhamento" value={cur.sales.unsplit} total={cur.sales.revenue} color="bg-steel-300" />
-                    )}
-                    {cur.sales.unsplit > 0.009 && (
-                      <p className="text-[11px] text-steel-400">“Sem detalhamento”: OS antigas ou com desconto, em que o total não se divide entre mão de obra e peças.</p>
+                    <p className="text-[11px] text-steel-400 mb-3 -mt-1">Por tipo de serviço executado (peças + mão de obra de cada serviço)</p>
+                    {svcRows.map(r => (
+                      <Split key={r.name} label={r.name} value={r.revenue} total={svc.total} color={r.identified ? 'bg-brand-500' : 'bg-steel-300'} />
+                    ))}
+                    {svc.total > 0 && (
+                      <p className="text-[11px] text-steel-400">
+                        Dentro dos serviços: peças {partsShare}% · mão de obra {100 - partsShare}%.
+                        Soma dos itens lançados nas OS; pode diferir do faturado por descontos ou OS sem itens.
+                      </p>
                     )}
                   </>
                 )}
