@@ -5,9 +5,10 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { fmtBRL, osNumber } from '@/components/os/osHelpers';
 import {
-  approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf, topItems,
+  approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf,
   type PanelItem, type PanelOs,
 } from '@/lib/workshopMetrics';
+import { servicesExecuted } from '@/lib/serviceCatalog';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
 import { fetchAll } from '@/lib/fetchAll';
 import PeriodPicker, { PREV_LABEL, addDays, startOfDay, usePeriod } from '@/components/PeriodPicker';
@@ -79,8 +80,7 @@ export default function Painel() {
       todaySales: salesOf(os, { from: today, to: addDays(today, 1) }),
       funnel: funnel(os),
       approval: approvalRate(os, range),
-      topServices: topItems(os, items, range, 'labor'),
-      topParts: topItems(os, items, range, 'part'),
+      services: servicesExecuted(os, items, range),
       customers: customerMix([...firstBuys, ...os], range),
     };
   }, [os, items, firstBuys, range, prev]);
@@ -215,8 +215,17 @@ export default function Painel() {
 
             {/* Mais vendidos + clientes */}
             <div className="grid md:grid-cols-3 gap-4">
-              <RankCard title="🔧 Serviços mais vendidos" rows={m.topServices.map(t => ({ name: t.name, value: fmtBRL(t.revenue), sub: `${t.qty}x` }))} />
-              <RankCard title="🔩 Peças mais vendidas" rows={m.topParts.map(t => ({ name: t.name, value: fmtBRL(t.revenue), sub: `${String(t.qty).replace('.', ',')} un.` }))} />
+              <div className="md:col-span-2">
+                <RankCard title="🔧 Serviços mais executados"
+                  rows={m.services.rows.map(t => ({
+                    name: t.name, value: fmtBRL(t.revenue),
+                    sub: `${t.orders} OS${t.parts > 0 && t.labor > 0 ? ` · peças ${fmtBRL(t.parts)} + mão de obra ${fmtBRL(t.labor)}` : ''}`,
+                  }))} />
+                <p className="text-[11px] text-steel-400 mt-1.5">
+                  Peças e mão de obra do mesmo serviço são somadas (ex.: par de disco + pastilha = serviço de freios). O valor é o que foi vendido no serviço.
+                  {m.services.unmatchedParts > 0 && ` ${m.services.unmatchedParts} peça${m.services.unmatchedParts === 1 ? '' : 's'} ainda sem serviço identificado, em "Outras peças".`}
+                </p>
+              </div>
               <div className="card">
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">👥 Clientes atendidos</div>
                 <div className="text-3xl font-bold font-display">{m.customers.served}</div>
