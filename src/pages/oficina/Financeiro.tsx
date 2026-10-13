@@ -186,6 +186,10 @@ export default function Financeiro() {
     };
   }, [entries, payments, regs, os, range, prev, firstOpen, costItems, payables]);
 
+  const svc = useMemo(() => servicesExecuted(os, svcItems, range, 100), [os, svcItems, range]);
+  const svcRows = useMemo(() => revenueByService(svc.rows), [svc]);
+  const partsShare = partsSharePct(svc.rows);
+
   if (!allowed) {
     return (
       <WorkshopLayout>
@@ -200,9 +204,6 @@ export default function Financeiro() {
 
   const { cur, deltas, alerts } = f;
   const prevLabel = PREV_LABEL[preset];
-  const svc = useMemo(() => servicesExecuted(os, svcItems, range, 100), [os, svcItems, range]);
-  const svcRows = useMemo(() => revenueByService(svc.rows), [svc]);
-  const partsShare = partsSharePct(svc.rows);
   const empty = cur.sales.count === 0 && cur.cash.inflow === 0 && cur.out.total === 0;
   const partial = cur.withParts > 0 && cur.costed < cur.withParts;
   /** Teve faturamento e nenhuma despesa lançada: o "resultado" é só receita − custo das peças, não lucro */
