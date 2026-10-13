@@ -110,6 +110,42 @@ function specialText(msgType: string, c: any): string | null {
   return null;
 }
 
+/** Botões da mensagem (modelo, link, resposta rápida, botões interativos novos), em qualquer nível.
+ *  Formatos conhecidos: urlButton{displayText,url} · quickReplyButton{displayText} ·
+ *  buttons[{buttonText:{displayText}}] · nativeFlow buttons[{name, buttonParamsJSON:'{"display_text","url"}'}] */
+type MsgButton = { text: string; url?: string };
+function extractButtons(obj: any): MsgButton[] {
+  const out: MsgButton[] = [];
+  const seen = new Set<string>();
+  const add = (text: unknown, url?: unknown) => {
+    const t = typeof text === 'string' ? text.trim() : '';
+    const u = typeof url === 'string' && /^https?:\/\//i.test(url.trim()) ? url.trim() : undefined;
+    if (!t || seen.has(t + (u ?? ''))) return;
+    seen.add(t + (u ?? ''));
+    out.push(u ? { text: t, url: u } : { text: t });
+  };
+  const get = (o: any, key: string) => {
+    if (!o || typeof o !== 'object') return undefined;
+    const k = Object.keys(o).find(x => x.toLowerCase() === key.toLowerCase());
+    return k ? o[k] : undefined;
+  };
+  const walk = (o: any, depth: number) => {
+    if (!o || typeof o !== 'object' || depth > 6) return;
+    if (Array.isArray(o)) { o.forEach(x => walk(x, depth + 1)); return; }
+    // Botões novos: o conteúdo vem num JSON em texto
+    const params = get(o, 'buttonParamsJSON') ?? get(o, 'buttonParamsJson');
+    if (typeof params === 'string') {
+      try { const p = JSON.parse(params); add(p.display_text ?? p.displayText ?? p.title, p.url ?? p.merchant_url); } catch { /* ignora */ }
+    }
+    const url = get(o, 'url');
+    const display = get(o, 'displayText') ?? get(get(o, 'buttonText'), 'displayText');
+    if (typeof display === 'string') add(display, url);
+    for (const v of Object.values(o)) if (v && typeof v === 'object') walk(v, depth + 1);
+  };
+  walk(obj, 0);
+  return out.slice(0, 10);
+}
+
 async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string, token: string, payload: any) {
   const m = payload.message ?? payload;
   const chatInfo = payload.chat ?? {};
@@ -134,6 +170,13 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
     : TYPE_MAP.find(([re]) => re.test(msgType) || re.test(String(m.mediaType || '')))?.[1]
       ?? (/conversation|extendedtext|^text$/i.test(msgType) || !msgType ? 'text' : 'other');
   if (special != null) text = special || text;
+  const buttons = extractButtons(contentObj);
+  // Tipos especiais: registra o formato (sem dados pessoais) para acertar a leitura se vier algo novo
+  if (special != null || buttons.length || kind === 'other') {
+    const shape = (o: any, d = 0): any => !o || typeof o !== 'object' || d > 3 ? typeof o
+      : Array.isArray(o) ? [shape(o[0], d + 1)] : Object.fromEntries(Object.entries(o).map(([k, v]) => [k, shape(v, d + 1)]));
+    console.log('[whatsapp-webhook] tipo especial', msgType, JSON.stringify({ buttons: buttons.length, content: shape(contentObj) }).slice(0, 1500));
+  }
   // Tipo desconhecido: procura qualquer texto dentro; senão deixa o tipo registrado
   if (kind === 'other' && !text) {
     text = findText(contentObj, ['text', 'caption', 'body', 'description', 'title', 'contentText', 'conversation']);
@@ -225,6 +268,7 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
     media_path: mediaPath,
     media_mime: mediaMime,
     file_name: fileName,
+    buttons: buttons.length ? buttons : null,
     status: fromMe ? 'sent' : 'delivered',
     sent_at: sentAt,
   });
