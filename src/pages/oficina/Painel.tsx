@@ -218,11 +218,11 @@ export default function Painel() {
               <div className="md:col-span-2">
                 <RankCard title="🔧 Serviços mais executados"
                   rows={m.services.rows.map(t => ({
-                    name: t.name, value: fmtBRL(t.revenue),
-                    sub: `${t.orders} OS${t.parts > 0 && t.labor > 0 ? ` · peças ${fmtBRL(t.parts)} + mão de obra ${fmtBRL(t.labor)}` : ''}`,
+                    name: t.name, value: `${t.orders} ${t.orders === 1 ? 'serviço' : 'serviços'}`,
+                    sub: `${fmtBRL(t.revenue)}${t.parts > 0 && t.labor > 0 ? ` · peças ${fmtBRL(t.parts)} + mão de obra ${fmtBRL(t.labor)}` : ''}`,
                   }))} />
                 <p className="text-[11px] text-steel-400 mt-1.5">
-                  Peças e mão de obra do mesmo serviço são somadas (ex.: par de disco + pastilha = serviço de freios). O valor é o que foi vendido no serviço.
+                  Peças e mão de obra do mesmo serviço são somadas (ex.: par de disco + pastilha = serviço de freios). Ordenado por quantidade de serviços executados; o valor aparece abaixo de cada um.
                   {m.services.unmatchedParts > 0 && ` ${m.services.unmatchedParts} peça${m.services.unmatchedParts === 1 ? '' : 's'} ainda sem serviço identificado, em "Outras peças".`}
                 </p>
               </div>

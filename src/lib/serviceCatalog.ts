@@ -63,6 +63,7 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
     map.set(name, cur);
   }
   const rows = [...map.values()].map(({ ids, ...x }) => ({ ...x, orders: ids.size }))
-    .sort((a, b) => b.revenue - a.revenue);
+    // Pelo volume (quantas vezes o serviço foi feito); valor só desempata. "Outras peças" sempre por último.
+    .sort((a, b) => Number(a.name === OTHER_PARTS) - Number(b.name === OTHER_PARTS) || b.orders - a.orders || b.revenue - a.revenue);
   return { rows: rows.slice(0, limit), unmatchedParts };
 }
