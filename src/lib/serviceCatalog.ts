@@ -37,33 +37,44 @@ export function serviceOf(description: string): string | null {
 
 export type ServiceExecuted = {
   name: string; orders: number; revenue: number; parts: number; labor: number;
-  /** Não casou com nenhuma regra (mão de obra mantém o próprio nome; peças ficam juntas em "Outras peças") */
   identified: boolean;
 };
-export const OTHER_PARTS = 'Outras peças (serviço não identificado)';
+export const UNKNOWN_SERVICE = 'Serviço não identificado';
 
 /**
- * Serviços executados no período: junta peças e mão de obra do mesmo serviço (a OS conta uma vez por serviço).
- * Ex.: "Par de disco c/ pastilha" + "Troca de pastilhas" = 1 serviço de freios.
+ * Serviços executados no período. Mão de obra não é um serviço: é o que foi cobrado para executar um.
+ * Cada item é ligado ao serviço que ele representa; o que não diz qual é (ex.: "Mão de obra") vai para o
+ * serviço principal da própria OS — o de maior valor entre os itens identificados — ou, se nenhum item
+ * se identifica, para o que o título da OS indica. A OS conta uma vez por serviço.
+ * Ex.: "Par de disco c/ pastilha" + "Mão de obra" na mesma OS = 1 serviço de freios.
  */
 export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, limit = 8) {
-  const saleIds = new Set(salesOf(list, r).sales.map(o => o.id));
-  const map = new Map<string, ServiceExecuted & { ids: Set<string> }>();
-  let unmatchedParts = 0;
+  const sales = new Map(salesOf(list, r).sales.map(o => [o.id, o]));
+  const byOs = new Map<string, PanelItem[]>();
   for (const i of items) {
-    if (!saleIds.has(i.service_order_id)) continue;
-    const cat = serviceOf(i.description);
-    if (!cat && i.kind === 'part') unmatchedParts += 1;
-    const name = cat ?? (i.kind === 'part' ? OTHER_PARTS : i.description.trim());
-    const cur = map.get(name) ?? { name, orders: 0, revenue: 0, parts: 0, labor: 0, identified: !!cat, ids: new Set<string>() };
-    const value = Number(i.quantity) * Number(i.unit_price);
-    cur.revenue += value;
-    if (i.kind === 'part') cur.parts += value; else cur.labor += value;
-    cur.ids.add(i.service_order_id);
-    map.set(name, cur);
+    if (!sales.has(i.service_order_id)) continue;
+    const arr = byOs.get(i.service_order_id) ?? [];
+    arr.push(i); byOs.set(i.service_order_id, arr);
+  }
+  const map = new Map<string, ServiceExecuted & { ids: Set<string> }>();
+  let unmatchedItems = 0;
+  for (const [osId, its] of byOs) {
+    const tagged = its.map(i => ({ i, cat: serviceOf(i.description), value: Number(i.quantity) * Number(i.unit_price) }));
+    const totals = new Map<string, number>();
+    for (const t of tagged) if (t.cat) totals.set(t.cat, (totals.get(t.cat) ?? 0) + t.value);
+    const main = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? serviceOf(sales.get(osId)!.title ?? '');
+    for (const t of tagged) {
+      const name = t.cat ?? main ?? UNKNOWN_SERVICE;
+      if (!t.cat && !main) unmatchedItems += 1;
+      const cur = map.get(name) ?? { name, orders: 0, revenue: 0, parts: 0, labor: 0, identified: name !== UNKNOWN_SERVICE, ids: new Set<string>() };
+      cur.revenue += t.value;
+      if (t.i.kind === 'part') cur.parts += t.value; else cur.labor += t.value;
+      cur.ids.add(osId);
+      map.set(name, cur);
+    }
   }
   const rows = [...map.values()].map(({ ids, ...x }) => ({ ...x, orders: ids.size }))
-    // Pelo volume (quantas vezes o serviço foi feito); valor só desempata. "Outras peças" sempre por último.
-    .sort((a, b) => Number(a.name === OTHER_PARTS) - Number(b.name === OTHER_PARTS) || b.orders - a.orders || b.revenue - a.revenue);
-  return { rows: rows.slice(0, limit), unmatchedParts };
+    // Pelo volume (quantas vezes o serviço foi feito); valor só desempata. "Não identificado" sempre por último.
+    .sort((a, b) => Number(a.name === UNKNOWN_SERVICE) - Number(b.name === UNKNOWN_SERVICE) || b.orders - a.orders || b.revenue - a.revenue);
+  return { rows: rows.slice(0, limit), unmatchedItems };
 }

@@ -222,8 +222,8 @@ export default function Painel() {
                     sub: `${fmtBRL(t.revenue)}${t.parts > 0 && t.labor > 0 ? ` · peças ${fmtBRL(t.parts)} + mão de obra ${fmtBRL(t.labor)}` : ''}`,
                   }))} />
                 <p className="text-[11px] text-steel-400 mt-1.5">
-                  Peças e mão de obra do mesmo serviço são somadas (ex.: par de disco + pastilha = serviço de freios). Ordenado por quantidade de serviços executados; o valor aparece abaixo de cada um.
-                  {m.services.unmatchedParts > 0 && ` ${m.services.unmatchedParts} peça${m.services.unmatchedParts === 1 ? '' : 's'} ainda sem serviço identificado, em "Outras peças".`}
+                  Peças e mão de obra entram no serviço que elas executaram (ex.: par de disco + pastilha + mão de obra = 1 serviço de freios). Ordenado por quantidade de serviços executados; o valor aparece abaixo de cada um.
+                  {m.services.unmatchedItems > 0 && ` ${m.services.unmatchedItems} ${m.services.unmatchedItems === 1 ? 'item' : 'itens'} de OS sem serviço identificado (ver "Serviço não identificado").`}
                 </p>
               </div>
               <div className="card">
