@@ -225,6 +225,20 @@ function Bubble({ m, tight }: { m: WaMessage; tight: boolean }) {
             {m.content && <p className="text-sm text-steel-900 whitespace-pre-wrap break-words">{waFormat(m.content)}</p>}
           </>
         )}
+        {!m.is_deleted && m.buttons && m.buttons.length > 0 && (
+          <div className="mt-1.5 -mx-2.5 border-t border-steel-200/70 divide-y divide-steel-200/70">
+            {m.buttons.map((b, i) => b.url ? (
+              <a key={i} href={b.url} target="_blank" rel="noreferrer"
+                className="flex items-center justify-center gap-1.5 py-1.5 text-sm font-semibold text-sky-700 hover:bg-black/[0.03]">
+                🔗 {b.text}
+              </a>
+            ) : (
+              <div key={i} className="flex items-center justify-center gap-1.5 py-1.5 text-sm font-semibold text-sky-700/80" title="Botão de resposta (o cliente toca no celular)">
+                ↩ {b.text}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex items-center justify-end gap-1 mt-0.5">
           <span className="text-[10px] text-steel-500">{time}</span>
           {m.from_me && <span className={`text-[10px] font-bold ${tick.cls}`} title={tick.title}>{tick.icon}</span>}

@@ -68,6 +68,8 @@ export type WaMessage = {
   status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
   is_deleted: boolean;
   sent_at: string;
+  /** Botões da mensagem (link ou resposta rápida), como no WhatsApp */
+  buttons?: { text: string; url?: string }[] | null;
 };
 
 export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, lead_at, lead_note, lead_value, lead_by, sector_id, transferred_at, transferred_from, transfer_note, archived_at, archived_mode, customer:customers(id, full_name)';
