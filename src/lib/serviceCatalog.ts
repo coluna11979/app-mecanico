@@ -80,5 +80,5 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
   const rows = [...map.values()].map(({ ids, ...x }) => ({ ...x, orders: ids.size }))
     // Pelo volume (quantas vezes o serviço foi feito); valor só desempata. "Não identificado" sempre por último.
     .sort((a, b) => Number(a.name === UNKNOWN_SERVICE) - Number(b.name === UNKNOWN_SERVICE) || b.orders - a.orders || b.revenue - a.revenue);
-  return { rows: rows.slice(0, limit), unmatchedItems };
+  return { rows: rows.slice(0, limit), total: rows.reduce((t, x) => t + x.revenue, 0), unmatchedItems };
 }

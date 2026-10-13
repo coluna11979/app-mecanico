@@ -80,12 +80,28 @@ export default function Painel() {
       todaySales: salesOf(os, { from: today, to: addDays(today, 1) }),
       funnel: funnel(os),
       approval: approvalRate(os, range),
-      services: servicesExecuted(os, items, range),
+      services: servicesExecuted(os, items, range, 100),
       customers: customerMix([...firstBuys, ...os], range),
     };
   }, [os, items, firstBuys, range, prev]);
 
   const maxBar = Math.max(1, ...m.series.map(s => s.value));
+  /** Faturamento por tipo de serviço: os 6 maiores e o resto junto ("Serviço não identificado" sempre separado) */
+  const revenueByService = useMemo(() => {
+    const byValue = [...m.services.rows].sort((x, y) => y.revenue - x.revenue);
+    const known = byValue.filter(r => r.identified);
+    const unknown = byValue.filter(r => !r.identified);
+    const top = known.slice(0, 6);
+    const rest = known.slice(6);
+    const out = [...top];
+    if (rest.length) out.push({ name: `Outros serviços (${rest.length})`, orders: 0, revenue: rest.reduce((t, x) => t + x.revenue, 0), parts: 0, labor: 0, identified: true });
+    return [...out, ...unknown];
+  }, [m.services]);
+  const partsShare = (() => {
+    const p = m.services.rows.reduce((t, x) => t + x.parts, 0);
+    const l = m.services.rows.reduce((t, x) => t + x.labor, 0);
+    return p + l > 0 ? (p / (p + l)) * 100 : 0;
+  })();
 
   return (
     <WorkshopLayout>
@@ -132,10 +148,19 @@ export default function Painel() {
             {/* Peças × mão de obra + gráfico */}
             <div className="grid lg:grid-cols-3 gap-4">
               <div className="card">
-                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">De onde veio o faturamento</div>
-                <Split label="🔧 Mão de obra" value={m.cur.labor} total={m.cur.revenue} color="bg-brand-500" />
-                <Split label="🔩 Peças" value={m.cur.parts} total={m.cur.revenue} color="bg-steel-500" />
-                {m.cur.unsplit > 0 && <Split label="Sem detalhamento" value={m.cur.unsplit} total={m.cur.revenue} color="bg-steel-300" />}
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">De onde veio o faturamento</div>
+                <p className="text-[11px] text-steel-400 mb-3">Por tipo de serviço executado (peças + mão de obra de cada serviço)</p>
+                {revenueByService.length === 0 ? (
+                  <p className="text-sm text-steel-400">Sem serviços no período.</p>
+                ) : revenueByService.map(r => (
+                  <Split key={r.name} label={r.name} value={r.revenue} total={m.services.total} color={r.identified ? 'bg-brand-500' : 'bg-steel-300'} />
+                ))}
+                {m.services.total > 0 && (
+                  <p className="text-[11px] text-steel-400 mt-1">
+                    Dentro dos serviços: peças {Math.round(partsShare)}% · mão de obra {100 - Math.round(partsShare)}%.
+                    Soma dos itens lançados nas OS; pode diferir do faturamento por descontos ou OS sem itens.
+                  </p>
+                )}
               </div>
               <div className="card lg:col-span-2">
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">Faturamento por {m.series.length > 62 ? 'mês' : 'dia'}</div>
@@ -217,7 +242,7 @@ export default function Painel() {
             <div className="grid md:grid-cols-3 gap-4">
               <div className="md:col-span-2">
                 <RankCard title="🔧 Serviços mais executados"
-                  rows={m.services.rows.map(t => ({
+                  rows={m.services.rows.slice(0, 8).map(t => ({
                     name: t.name, value: `${t.orders} ${t.orders === 1 ? 'serviço' : 'serviços'}`,
                     sub: `${fmtBRL(t.revenue)}${t.parts > 0 && t.labor > 0 ? ` · peças ${fmtBRL(t.parts)} + mão de obra ${fmtBRL(t.labor)}` : ''}`,
                   }))} />
