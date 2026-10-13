@@ -9,6 +9,7 @@ import {
   type PanelItem, type PanelOs,
 } from '@/lib/workshopMetrics';
 import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/serviceCatalog';
+import PartsLaborBar from '@/components/finance/PartsLaborBar';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
 import { fetchAll } from '@/lib/fetchAll';
 import PeriodPicker, { PREV_LABEL, addDays, startOfDay, usePeriod } from '@/components/PeriodPicker';
@@ -132,7 +133,7 @@ export default function Painel() {
             </div>
 
             {/* Peças × mão de obra + gráfico */}
-            <div className="grid lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="card">
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">De onde veio o faturamento</div>
                 <p className="text-[11px] text-steel-400 mb-3">Por tipo de serviço executado (peças + mão de obra de cada serviço)</p>
@@ -142,10 +143,10 @@ export default function Painel() {
                   <Split key={r.name} label={r.name} value={r.revenue} total={m.services.total} color={r.identified ? 'bg-brand-500' : 'bg-steel-300'} />
                 ))}
                 {m.services.total > 0 && (
-                  <p className="text-[11px] text-steel-400 mt-1">
-                    Dentro dos serviços: peças {partsShare}% · mão de obra {100 - partsShare}%.
-                    Soma dos itens lançados nas OS; pode diferir do faturamento por descontos ou OS sem itens.
-                  </p>
+                  <>
+                    <PartsLaborBar partsPct={partsShare} />
+                    <p className="text-[11px] text-steel-400 mt-3">Soma dos itens lançados nas OS; pode diferir do faturamento por descontos ou OS sem itens.</p>
+                  </>
                 )}
               </div>
               <div className="card lg:col-span-2">
@@ -172,7 +173,7 @@ export default function Painel() {
             </div>
 
             {/* Vendas de hoje + funil de orçamentos */}
-            <div className="grid lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="card">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">💰 Vendas de hoje</div>
@@ -225,7 +226,7 @@ export default function Painel() {
             </div>
 
             {/* Mais vendidos + clientes */}
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="md:col-span-2">
                 <RankCard title="🔧 Serviços mais executados"
                   rows={m.services.rows.slice(0, 8).map(t => ({
@@ -284,13 +285,16 @@ function Kpi({ label, value, delta, note, highlight = false }: {
 function Split({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
   const pct = total ? (value / total) * 100 : 0;
   return (
-    <div className="mb-3">
-      <div className="flex justify-between text-sm mb-1">
-        <span className="text-steel-700">{label}</span>
-        <span className="font-semibold">{fmtBRL(value)} <span className="text-xs text-steel-400">{Math.round(pct)}%</span></span>
+    <div className="mb-3.5 last:mb-0">
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-sm text-steel-700 leading-snug min-w-0 break-words">{label}</span>
+        <span className="text-sm font-bold shrink-0 tabular-nums">{fmtBRL(value)}</span>
       </div>
-      <div className="h-2 rounded-full bg-steel-100 overflow-hidden">
-        <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+      <div className="flex items-center gap-2 mt-1.5">
+        <div className="h-2 rounded-full bg-steel-100 overflow-hidden flex-1">
+          <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-[11px] font-semibold text-steel-500 w-9 text-right tabular-nums">{Math.round(pct)}%</span>
       </div>
     </div>
   );

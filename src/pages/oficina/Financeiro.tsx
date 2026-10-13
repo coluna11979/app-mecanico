@@ -13,6 +13,7 @@ import { change, previousRange, salesOf, type PanelItem } from '@/lib/workshopMe
 import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/serviceCatalog';
 import PeriodPicker, { PRESETS, PREV_LABEL, usePeriod, type Preset } from '@/components/PeriodPicker';
 import ReceivablesTab from '@/components/finance/ReceivablesTab';
+import PartsLaborBar from '@/components/finance/PartsLaborBar';
 import { ShopGoalCard } from '@/components/goals/Goals';
 import CompletedOsList from '@/components/finance/CompletedOsList';
 import {
@@ -333,7 +334,7 @@ export default function Financeiro() {
             )}
 
             {/* Resultado do período + evolução */}
-            <div className="grid lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="card">
                 <SectionTitle>Resultado do período</SectionTitle>
                 <Row label="Faturado" value={brl(cur.sales.revenue)} strong />
@@ -387,7 +388,7 @@ export default function Financeiro() {
             </div>
 
             {/* Origem do faturamento + recebimentos */}
-            <div className="grid lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="card">
                 <SectionTitle>Origem do faturamento</SectionTitle>
                 {cur.sales.revenue <= 0 ? <p className="text-sm text-steel-400">Nenhuma OS concluída no período.</p> : (
@@ -397,10 +398,10 @@ export default function Financeiro() {
                       <Split key={r.name} label={r.name} value={r.revenue} total={svc.total} color={r.identified ? 'bg-brand-500' : 'bg-steel-300'} />
                     ))}
                     {svc.total > 0 && (
-                      <p className="text-[11px] text-steel-400">
-                        Dentro dos serviços: peças {partsShare}% · mão de obra {100 - partsShare}%.
-                        Soma dos itens lançados nas OS; pode diferir do faturado por descontos ou OS sem itens.
-                      </p>
+                      <>
+                        <PartsLaborBar partsPct={partsShare} />
+                        <p className="text-[11px] text-steel-400 mt-3">Soma dos itens lançados nas OS; pode diferir do faturado por descontos ou OS sem itens.</p>
+                      </>
                     )}
                   </>
                 )}
@@ -490,13 +491,16 @@ function Row({ label, value, strong, indent }: { label: string; value: string; s
 function Split({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
   const pct = total ? (value / total) * 100 : 0;
   return (
-    <div className="mb-3">
-      <div className="flex justify-between text-sm mb-1 gap-2">
-        <span className="text-steel-700 truncate">{label}</span>
-        <span className="font-semibold shrink-0">{brl(value)} <span className="text-xs text-steel-400">{Math.round(pct)}%</span></span>
+    <div className="mb-3.5 last:mb-0">
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-sm text-steel-700 leading-snug min-w-0 break-words">{label}</span>
+        <span className="text-sm font-bold shrink-0 tabular-nums">{brl(value)}</span>
       </div>
-      <div className="h-2 rounded-full bg-steel-100 overflow-hidden">
-        <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+      <div className="flex items-center gap-2 mt-1.5">
+        <div className="h-2 rounded-full bg-steel-100 overflow-hidden flex-1">
+          <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-[11px] font-semibold text-steel-500 w-9 text-right tabular-nums">{Math.round(pct)}%</span>
       </div>
     </div>
   );
