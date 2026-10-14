@@ -130,6 +130,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
               ) : seg && (
                 <span title={seg.hint} className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${seg.cls}`}>{seg.icon} {seg.label}</span>
               )}
+              {chat.source === 'site' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-50 text-brand-700" title="Começou pelo site da oficina">🌐 Veio do site</span>}
               {customer?.contact_opt_out && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-pending-100 text-pending-800" title="Pediu para não receber mensagens de marketing">🚫 sem marketing</span>}
             </div>
             {chat.name && customer && chat.name !== customer.full_name && (
@@ -267,6 +268,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
         <CustomerForm
           workshopId={workshopId}
           initial={{ full_name: chat.name ?? '', phone: chat.phone }}
+          source={chat.source === 'site' ? 'site' : undefined}
           onClose={() => setCreating(false)}
           onSaved={id => { setCreating(false); link(id); }}
         />

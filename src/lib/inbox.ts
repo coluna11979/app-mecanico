@@ -42,6 +42,9 @@ export type WaChat = {
   lead_note: string | null;
   lead_value: number | null;
   lead_by: string | null;
+  /** Origem: 'site' = começou pelo site da oficina ("Vim pelo site…") */
+  source?: string | null;
+  source_at?: string | null;
   /** Setor da conversa (Atendimento, Comercial…); null = sem setor */
   sector_id: string | null;
   /** Transferida de outro setor e ainda não vista: "↪ Veio do Atendimento" + recado */
@@ -72,7 +75,7 @@ export type WaMessage = {
   buttons?: { text: string; url?: string }[] | null;
 };
 
-export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, lead_at, lead_note, lead_value, lead_by, sector_id, transferred_at, transferred_from, transfer_note, archived_at, archived_mode, customer:customers(id, full_name)';
+export const CHAT_COLUMNS = 'id, workshop_id, remote_jid, phone, name, avatar_url, customer_id, status, unread_count, awaiting_since, last_message_at, last_message_preview, last_message_from_me, resolved_at, created_at, follow_up_at, follow_up_note, follow_up_by, lead_at, lead_note, lead_value, lead_by, source, source_at, sector_id, transferred_at, transferred_from, transfer_note, archived_at, archived_mode, customer:customers(id, full_name)';
 
 /* Banco sem a migration dos setores (0097): a coluna sector_id não existe e a busca inteira falharia.
    Na primeira falha passa a buscar sem ela (o Inbox funciona igual, só sem setores). */

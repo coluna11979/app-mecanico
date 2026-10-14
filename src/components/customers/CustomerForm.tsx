@@ -63,10 +63,12 @@ const fromCustomer = (c?: Customer | null) => ({
 });
 
 /** Cadastro (com carro opcional) ou edição de cliente */
-export default function CustomerForm({ workshopId, customer, initial, onClose, onSaved }: {
+export default function CustomerForm({ workshopId, customer, initial, source, onClose, onSaved }: {
   workshopId: string; customer?: Customer | null;
   /** Cadastro novo já preenchido (ex.: contato que chamou no WhatsApp) */
   initial?: { full_name?: string; phone?: string };
+  /** Origem do cadastro novo (ex.: 'site' = contato que veio pelo site da oficina) */
+  source?: string;
   onClose: () => void; onSaved: (customerId: string) => void;
 }) {
   const editing = !!customer;
@@ -109,7 +111,7 @@ export default function CustomerForm({ workshopId, customer, initial, onClose, o
       onSaved(customer!.id);
       return;
     }
-    const { data, error } = await supabase.from('customers').insert({ ...payload, workshop_id: workshopId }).select('id').single();
+    const { data, error } = await supabase.from('customers').insert({ ...payload, workshop_id: workshopId, ...(source ? { source } : {}) }).select('id').single();
     if (error || !data) { setSaving(false); toast.error('Não foi possível salvar: ' + (error?.message ?? '')); return; }
     if (withCar) {
       const { error: vErr } = await supabase.from('vehicles').insert({
