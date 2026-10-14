@@ -30,7 +30,7 @@
 <meta property="og:site_name" content="Check All Serviços Automotivos">
 <meta property="og:title" content="Check All — Mecânica de confiança, perto de você">
 <meta property="og:description" content="Mecânica geral, freios, suspensão, revisão, pneus e mais na Estrada do M'Boi Mirim, 10003. Fale com a oficina pelo WhatsApp.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ffc21a'/%3E%3Cg fill='none' stroke='%2316181c' stroke-width='5' stroke-linecap='round'%3E%3Ccircle cx='32' cy='32' r='19'/%3E%3Cpath d='M14 29l12 2M50 29l-12 2M32 37v14'/%3E%3C/g%3E%3Ccircle cx='32' cy='32' r='5' fill='%2316181c'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ff5c0a'/%3E%3Cg fill='none' stroke='%2316181c' stroke-width='5' stroke-linecap='round'%3E%3Ccircle cx='32' cy='32' r='19'/%3E%3Cpath d='M14 29l12 2M50 29l-12 2M32 37v14'/%3E%3C/g%3E%3Ccircle cx='32' cy='32' r='5' fill='%2316181c'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
@@ -71,8 +71,8 @@
   --muted-dark:#aeb3bb;
   --line:rgba(22,24,28,.13);
   --line-dark:rgba(255,255,255,.13);
-  --yellow:#ffc21a;
-  --yellow-2:#ffb000;
+  --yellow:#ff5c0a;
+  --yellow-2:#e84e00;
   --green:#22a35a;
   --red:#e0533f;
   --orange:#e0711a;
@@ -113,7 +113,7 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 .btn svg{width:20px;height:20px;flex:none}
 .btn:hover{transform:translateY(-1px)}
 .btn:active{transform:translateY(1px) scale(.99)}
-.btn-primary{background:var(--yellow);color:var(--ink);box-shadow:0 8px 22px -10px rgba(255,194,26,.75)}
+.btn-primary{background:var(--yellow);color:var(--ink);box-shadow:0 8px 22px -10px rgba(255,92,10,.75)}
 .btn-primary:hover{background:var(--yellow-2)}
 .btn-ghost{background:transparent;color:inherit;border-color:currentColor}
 .btn-ghost:hover{background:rgba(255,255,255,.08)}
@@ -142,7 +142,7 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 /* ---------- Hero ---------- */
 .hero{position:relative;background:var(--ink);color:var(--white);overflow:hidden;isolation:isolate}
 .hero::before{content:"";position:absolute;inset:0;z-index:-1;background:
-  radial-gradient(60% 70% at 85% 10%,rgba(255,194,26,.15),transparent 60%),
+  radial-gradient(60% 70% at 85% 10%,rgba(255,92,10,.15),transparent 60%),
   radial-gradient(50% 60% at 0% 100%,rgba(255,255,255,.05),transparent 60%)}
 .hero-bg{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:70% 50%;opacity:.9}
 .hero::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,rgba(22,24,28,.94) 0%,rgba(22,24,28,.72) 45%,rgba(22,24,28,.35) 100%)}
@@ -189,7 +189,7 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 .field label{display:block;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 8px}
 .step-label span,.field label span{text-transform:none;letter-spacing:0;font-weight:500}
 .field input{width:100%;min-height:48px;padding:0 14px;border-radius:var(--radius-sm);border:1.5px solid var(--line);background:var(--white);font:inherit;font-size:16px;color:var(--text)}
-.field input:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(255,194,26,.55)}
+.field input:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(255,92,10,.55)}
 .preview{margin-top:14px;padding:12px 14px;border-radius:var(--radius-sm);background:var(--paper-2);font-size:14px;line-height:1.5;color:#33373e;white-space:pre-line;border-left:4px solid var(--green)}
 .preview strong{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
 .triage .btn{margin-top:14px}
@@ -336,7 +336,7 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 .step p{color:#c3c8cf;font-size:16px;margin-top:8px}
 .step.highlight{background:var(--yellow);color:var(--ink);border-color:transparent}
 .step.highlight::before{color:var(--ink)}
-.step.highlight p{color:#3b3420}
+.step.highlight p{color:#2b1406}
 .steps-note{margin-top:20px;font-size:14px;color:var(--muted-dark)}
 
 /* Avaliações */
@@ -365,7 +365,7 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 .faq details{border-bottom:1px solid var(--line)}
 .faq summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 0;font-size:19px;font-weight:700;min-height:44px;border-radius:6px}
 .faq summary::-webkit-details-marker{display:none}
-.faq summary::after{content:"";width:28px;height:28px;flex:none;border-radius:50%;background:var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffc21a' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M12 6v12M6 12h12'/%3E%3C/svg%3E") center/14px no-repeat;transition:transform .25s var(--ease)}
+.faq summary::after{content:"";width:28px;height:28px;flex:none;border-radius:50%;background:var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff5c0a' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M12 6v12M6 12h12'/%3E%3C/svg%3E") center/14px no-repeat;transition:transform .25s var(--ease)}
 .faq details[open] summary::after{transform:rotate(45deg)}
 .faq .answer{padding:0 0 22px;color:var(--muted);font-size:17px;max-width:70ch}
 .faq details[open] .answer{animation:fadeIn .25s var(--ease)}
@@ -390,8 +390,8 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 .final{background:var(--yellow);color:var(--ink)}
 .final .wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:28px;padding-block:clamp(56px,8vw,88px)}
 .final h2{font-size:clamp(28px,4.4vw,50px);font-weight:900;max-width:17ch}
-.final p{font-size:18px;margin-top:12px;max-width:48ch;color:#3b3420}
-.final .micro{color:#3b3420}
+.final p{font-size:18px;margin-top:12px;max-width:48ch;color:#2b1406}
+.final .micro{color:#2b1406}
 
 /* Footer */
 .footer{background:var(--ink);color:var(--muted-dark);font-size:15px}
