@@ -71,6 +71,8 @@ export interface Mechanic {
   city: string | null;
   state: string | null;
   work_reference: string | null;
+  birth_date: string | null;
+  mother_name: string | null;
   // Programa de embaixador
   is_embaixador: boolean;
   codigo_indicacao: string | null;
