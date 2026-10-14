@@ -47,6 +47,28 @@ function useRefCode(): string | null {
   }
 }
 
+/** 15/03/1990 enquanto digita */
+const maskDate = (v: string) =>
+  onlyDigits(v).slice(0, 8).replace(/(\d{2})(\d)/, '$1/$2').replace(/(\d{2})\/(\d{2})(\d)/, '$1/$2/$3');
+
+/** DD/MM/AAAA → AAAA-MM-DD, ou null se a data não existe */
+function parseBrDate(v: string): string | null {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v);
+  if (!m) return null;
+  const [, d, mo, y] = m;
+  const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+  if (dt.getFullYear() !== Number(y) || dt.getMonth() !== Number(mo) - 1 || dt.getDate() !== Number(d)) return null;
+  return `${y}-${mo}-${d}`;
+}
+
+function ageFrom(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
+  return age;
+}
+
 /** Referência conta quando tem nome e um telefone completo. */
 const refFilled = (r: Ref) => r.name.trim() !== '' && onlyDigits(r.phone).length >= 10;
 
@@ -70,6 +92,7 @@ export default function SignupMechanic() {
   const [refInfo, setRefInfo] = useState<{ valid: boolean; name?: string } | null>(null);
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '', cpf: '', cnh: '',
+    birth_date: '', mother_name: '',
     experience_years: 1, hourly_rate: 80, pix_key: '', skills: [] as string[],
     cep: '', neighborhood: '', city: '', state: '',
   });
@@ -155,6 +178,11 @@ export default function SignupMechanic() {
     }
     if (s === 2) {
       if (!isValidCpf(f.cpf)) e.cpf = 'CPF inválido. Confira os números.';
+      const birthIso = parseBrDate(f.birth_date);
+      if (!birthIso) e.birth_date = 'Data inválida. Use DD/MM/AAAA.';
+      else if (ageFrom(birthIso) < 18) e.birth_date = 'É preciso ter 18 anos ou mais.';
+      else if (ageFrom(birthIso) > 90) e.birth_date = 'Confira o ano de nascimento.';
+      if (f.mother_name.trim().length < 3) e.mother_name = 'Informe o nome completo da sua mãe.';
       if (!(f.experience_years >= 0)) e.experience_years = 'Informe os anos de experiência.';
       if (!(f.hourly_rate > 0)) e.hourly_rate = 'Informe quanto cobra por hora.';
       if (!f.pix_key.trim()) e.pix_key = 'Sem chave PIX você não recebe os pagamentos.';
@@ -215,6 +243,8 @@ export default function SignupMechanic() {
           phone: f.phone,
           cpf: f.cpf,
           cnh: f.cnh || '',
+          birth_date: parseBrDate(f.birth_date),
+          mother_name: f.mother_name.trim(),
           skills: f.skills,
           experience_years: Number(f.experience_years),
           hourly_rate: Number(f.hourly_rate),
@@ -318,6 +348,17 @@ export default function SignupMechanic() {
                   <input className={inputCls('cpf')} inputMode="numeric" value={f.cpf}
                     onChange={e => update('cpf', maskCpf(e.target.value))} placeholder="000.000.000-00" />
                   <FieldError k="cpf" /></div>
+                <div><label className="label">Data de nascimento</label>
+                  <input className={inputCls('birth_date')} inputMode="numeric" autoComplete="bday" value={f.birth_date}
+                    onChange={e => update('birth_date', maskDate(e.target.value))} placeholder="DD/MM/AAAA" />
+                  <FieldError k="birth_date" /></div>
+                <div><label className="label">Nome completo da mãe</label>
+                  <input className={inputCls('mother_name')} value={f.mother_name}
+                    onChange={e => update('mother_name', e.target.value)} placeholder="Como está no seu documento" />
+                  {errors.mother_name
+                    ? <FieldError k="mother_name" />
+                    : <p className="text-xs text-steel-500 mt-1">Usado só para confirmar sua identidade na análise do cadastro.</p>}
+                </div>
                 <div><label className="label">CNH (opcional)</label>
                   <input className="input" inputMode="numeric" value={f.cnh}
                     onChange={e => update('cnh', onlyDigits(e.target.value).slice(0, 11))} /></div>
@@ -454,7 +495,8 @@ export default function SignupMechanic() {
                     <Link to="/privacidade" target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline font-semibold">
                       Política de Privacidade
                     </Link>
-                    , incluindo as regras de cancelamento, taxas e responsabilidade.
+                    , incluindo as regras de cancelamento, taxas e responsabilidade, e autorizo a consulta
+                    do meu CPF e de antecedentes criminais em bases oficiais para a análise do meu cadastro.
                   </span>
                 </label>
               </div>

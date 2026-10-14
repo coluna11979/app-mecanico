@@ -347,6 +347,12 @@ function ApprovalDrawer({
           {row.mechanic && (
             <Section title="Dados profissionais">
               <Field label="CPF">{row.mechanic.cpf}</Field>
+              <Field label="Nascimento">
+                {row.mechanic.birth_date
+                  ? new Date(row.mechanic.birth_date + 'T12:00:00').toLocaleDateString('pt-BR')
+                  : '—'}
+              </Field>
+              <Field label="Nome da mãe">{row.mechanic.mother_name || '—'}</Field>
               <Field label="CNH">{row.mechanic.cnh || '—'}</Field>
               <Field label="Anos de experiência">{row.mechanic.experience_years} anos</Field>
               <Field label="Valor/hora">R$ {row.mechanic.hourly_rate}/h</Field>
