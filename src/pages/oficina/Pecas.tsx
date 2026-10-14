@@ -166,6 +166,7 @@ export default function Pecas() {
         <StockTabs title="Peças" subtitle="Custo, preço e quantidade. O orçamento puxa o preço daqui e a OS concluída dá baixa no estoque."
           actions={<>
             <button className="btn-ghost border border-steel-200 text-sm !py-2" onClick={() => setPricing(true)} title="Margem padrão da oficina">⚙️ Preços</button>
+            <Link to="/oficina/pecas/contagem" className="btn-ghost border border-steel-200 text-sm !py-2">📋 Contagem</Link>
             {access.compras && <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200 text-sm !py-2">🧾 Lançar nota</Link>}
             <button className="btn-primary text-sm !py-2" onClick={() => setEditing('new')}>+ Nova peça</button>
           </>} />
