@@ -1,7 +1,7 @@
 /**
  * Funil comercial — cálculos puros (sem banco). Junta duas origens, sem duplicar:
  * - Check-up (vehicle_checkups): finalizado → enviado → cliente viu → respondeu / virou OS.
- * - Orçamento da OS: só OS que foram ENVIADAS para aprovação (approval_requested_at), sem as OS
+ * - Orçamento da OS: OS ENVIADAS para aprovação (approval_requested_at) ou aprovadas direto (approved_at), sem as OS
  *   criadas a partir de um check-up (essas contam no check-up).
  *
  * Etapas: Montando orçamento · Aguardando cliente · Aprovado · Perdido (recusado) — e, à parte,
@@ -22,7 +22,7 @@ export type CkRow = VehicleCheckup & {
 };
 export type OsQuote = {
   id: string; number: number | null; title: string; status: string; quote_status: string | null; price: number;
-  approval_requested_at: string; approved_at: string | null; customer_id: string | null;
+  approval_requested_at: string | null; approved_at: string | null; customer_id: string | null;
   customer: { id: string; full_name: string; phone: string | null } | null;
   vehicle: { make: string | null; model: string | null; plate: string | null } | null;
 };
@@ -87,7 +87,7 @@ export function fromCheckup(r: CkRow): Opp | null {
 
 export function fromOsQuote(o: OsQuote): Opp | null {
   let stage: Stage; let since: string | null;
-  if (o.status === 'awaiting_approval') { stage = 'aguardando'; since = o.approval_requested_at; }
+  if (o.status === 'awaiting_approval' && o.approval_requested_at) { stage = 'aguardando'; since = o.approval_requested_at; }
   else if (o.status === 'cancelled' && o.quote_status === 'declined') { stage = 'recusado'; since = o.approval_requested_at; }
   else if (['approved', 'in_progress', 'completed'].includes(o.status)) { stage = 'aprovado'; since = o.approved_at ?? o.approval_requested_at; }
   else return null; // cancelada sem recusa, ou voltou a "aberta": fora do funil

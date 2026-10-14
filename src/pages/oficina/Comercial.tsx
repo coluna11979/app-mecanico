@@ -87,11 +87,12 @@ export default function Comercial() {
           .eq('workshop_id', wid).eq('status', 'completed')
           .or(`and(sale_os_id.is.null,customer_responded_at.is.null),completed_at.gte.${s},customer_responded_at.gte.${s}`)
           .order('completed_at', { ascending: false }).order('id').range(a, b)),
-        // Orçamentos de OS que foram enviados para aprovação
+        // Orçamentos de OS: enviados para aprovação ou aprovados direto
         fetchAll((a, b) => supabase.from('service_orders')
           .select('id, number, title, status, quote_status, price, approval_requested_at, approved_at, customer_id, customer:customers(id, full_name, phone), vehicle:vehicles(make, model, plate)')
-          .eq('workshop_id', wid).not('approval_requested_at', 'is', null)
-          .or(`status.eq.awaiting_approval,approval_requested_at.gte.${s}`)
+          .eq('workshop_id', wid)
+          // Enviadas para aprovação, ou aprovadas direto no balcão (sem envio)
+          .or(`status.eq.awaiting_approval,approval_requested_at.gte.${s},approved_at.gte.${s}`)
           .order('id').range(a, b)),
         // OS que nasceram de check-up (não entram de novo como orçamento de OS)
         fetchAll((a, b) => supabase.from('vehicle_checkups').select('sale_os_id')
