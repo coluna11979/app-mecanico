@@ -228,14 +228,10 @@ export default function Painel() {
             {/* Mais vendidos + clientes */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="md:col-span-2">
-                <RankCard title="🔧 Serviços mais executados"
-                  rows={m.services.rows.slice(0, 8).map(t => ({
-                    name: t.name, value: `${t.orders} ${t.orders === 1 ? 'serviço' : 'serviços'}`,
-                    sub: `${fmtBRL(t.revenue)}${t.parts > 0 && t.labor > 0 ? ` · peças ${fmtBRL(t.parts)} + mão de obra ${fmtBRL(t.labor)}` : ''}`,
-                  }))} />
-                <p className="text-[11px] text-steel-400 mt-1.5">
-                  Peças e mão de obra entram no serviço que elas executaram (ex.: par de disco + pastilha + mão de obra = 1 serviço de freios). Ordenado por quantidade de serviços executados; o valor aparece abaixo de cada um.
-                  {m.services.unmatchedItems > 0 && ` ${m.services.unmatchedItems} ${m.services.unmatchedItems === 1 ? 'item' : 'itens'} de OS sem serviço identificado (ver "Serviço não identificado").`}
+                <ServiceRanking rows={m.services.rows.slice(0, 8)} />
+                <p className="text-[11px] text-steel-400 mt-2 px-1">
+                  Peças e mão de obra entram no serviço que executaram (ex.: disco + pastilha + mão de obra = 1 serviço de freios).
+                  {m.services.unmatchedItems > 0 && ` ${m.services.unmatchedItems} ${m.services.unmatchedItems === 1 ? 'item' : 'itens'} sem serviço identificado.`}
                 </p>
               </div>
               <div className="card">
@@ -300,18 +296,38 @@ function Split({ label, value, total, color }: { label: string; value: number; t
   );
 }
 
-function RankCard({ title, rows, empty = 'Sem dados no período.' }: {
-  title: string; rows: { name: string; value: string; sub?: string }[]; empty?: string;
-}) {
+function ServiceRanking({ rows }: { rows: { name: string; orders: number; revenue: number; parts: number; labor: number; identified: boolean }[] }) {
+  const max = Math.max(1, ...rows.map(r => r.orders));
   return (
     <div className="card">
-      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">{title}</div>
-      {rows.length === 0 ? <p className="text-sm text-steel-400">{empty}</p> : (
-        <ol className="space-y-2">
-          {rows.map((r, i) => (
-            <li key={i} className="flex items-start justify-between gap-2 text-sm">
-              <span className="min-w-0 truncate"><span className="text-steel-400 mr-1">{i + 1}.</span>{r.name}</span>
-              <span className="shrink-0 text-right font-semibold">{r.value}{r.sub && <span className="block text-[10px] font-normal text-steel-400">{r.sub}</span>}</span>
+      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">🔧 Serviços mais executados</div>
+      <p className="text-[11px] text-steel-400 mb-4">Quantos serviços foram feitos no período, do que mais saiu para o que menos saiu</p>
+      {rows.length === 0 ? <p className="text-sm text-steel-400">Sem dados no período.</p> : (
+        <ol className="space-y-4">
+          {rows.map((t, i) => (
+            <li key={t.name} className="flex items-start gap-3">
+              <span className="shrink-0 w-6 h-6 rounded-full bg-steel-100 text-steel-600 text-xs font-bold grid place-items-center mt-0.5">{i + 1}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm font-semibold text-steel-800 leading-snug break-words">{t.name}</span>
+                  <span className="shrink-0 text-right leading-none">
+                    <span className="text-lg font-bold font-display tabular-nums">{t.orders}</span>
+                    <span className="block text-[10px] text-steel-400 mt-0.5">{t.orders === 1 ? 'serviço' : 'serviços'}</span>
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-steel-100 mt-2 overflow-hidden">
+                  <div className={`h-full rounded-full ${t.identified ? 'bg-brand-500' : 'bg-steel-300'}`} style={{ width: `${(t.orders / max) * 100}%` }} />
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
+                  <strong className="text-steel-700 tabular-nums">{fmtBRL(t.revenue)}</strong>
+                  {t.parts > 0 && t.labor > 0 && (
+                    <>
+                      <span className="text-steel-400 whitespace-nowrap">peças {fmtBRL(t.parts)}</span>
+                      <span className="text-steel-400 whitespace-nowrap">mão de obra {fmtBRL(t.labor)}</span>
+                    </>
+                  )}
+                </div>
+              </div>
             </li>
           ))}
         </ol>
