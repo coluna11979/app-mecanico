@@ -10,7 +10,8 @@ import { fmtBRL } from '@/components/os/osHelpers';
 import { publicReportUrl } from '@/lib/checkup';
 import { fetchAll } from '@/lib/fetchAll';
 import PeriodPicker, { PRESETS, usePeriod, type Preset } from '@/components/PeriodPicker';
-import { useModuleAllows } from '@/lib/modules';
+import { useFeature, useModuleAllows } from '@/lib/modules';
+import SiteStats from '@/components/commercial/SiteStats';
 import ComercialInsights from '@/components/commercial/ComercialInsights';
 import { ShopGoalCard } from '@/components/goals/Goals';
 import { toast } from '@/components/ui/Toast';
@@ -38,6 +39,8 @@ const MONTHS_BACK = 12;
 type Lead = {
   id: string; phone: string; name: string | null; customer_id: string | null;
   lead_at: string; lead_note: string | null; lead_value: number | null; lead_by: string | null;
+  /** 'site' = começou pelo site da oficina */
+  source?: string | null;
   customer: { full_name: string } | null;
 };
 type View = 'lista' | 'colunas';
@@ -63,6 +66,7 @@ export default function Comercial() {
   const [view, setViewState] = useState<View>(loadView);
   const setView = (v: View) => { setViewState(v); try { localStorage.setItem(LS_VIEW, v); } catch { /* sem localStorage */ } };
   const inboxOn = useModuleAllows()('/oficina/inbox');
+  const siteOn = useFeature()('site');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [origin, setOrigin] = useState<'all' | 'checkup' | 'os'>('all');
   const [mechanic, setMechanic] = useState('all');
@@ -103,7 +107,7 @@ export default function Comercial() {
   const loadLeads = useCallback(async () => {
     if (!wid || !inboxOn) { setLeads([]); return; }
     const { data } = await supabase.from('whatsapp_chats')
-      .select('id, phone, name, customer_id, lead_at, lead_note, lead_value, lead_by, customer:customers(full_name)')
+      .select('id, phone, name, customer_id, lead_at, lead_note, lead_value, lead_by, source, customer:customers(full_name)')
       .eq('workshop_id', wid).not('lead_at', 'is', null).order('lead_at', { ascending: false });
     const rows = (data ?? []) as unknown as Lead[];
     const ids = [...new Set(rows.map(r => r.customer_id).filter(Boolean))] as string[];
@@ -220,6 +224,8 @@ export default function Comercial() {
               <Kpi label="Aprovados no período" value={`${fn.aprovado.length}`} dark
                 sub={fn.aprovado.length ? `${fmtBRL(fn.approvedValue)} · ticket ${fmtBRL(fn.ticket)}` : 'nenhum no período'} />
             </div>
+
+            {siteOn && wid && <SiteStats workshopId={wid} from={range.from} to={range.to} />}
 
             {view === 'colunas' ? (
               <div className="hidden md:block">
@@ -446,7 +452,7 @@ function LeadRow({ l, canOpen, onDiscard }: { l: Lead; canOpen: (p: string) => b
       <div className="flex-1 min-w-0 space-y-1">
         <div className="text-sm font-semibold truncate">{leadName(l)} <span className="font-normal text-steel-500">· {l.lead_note ?? 'sem descrição'}</span></div>
         <div className="text-[11px] text-steel-400">
-          💬 pelo WhatsApp · {d === 0 ? 'hoje' : `há ${d}d`}{l.lead_by ? ` · marcado por ${l.lead_by}` : ''}{!l.customer_id ? ' · sem cadastro' : ''}
+          {l.source === 'site' ? '🌐 pelo site' : '💬 pelo WhatsApp'} · {d === 0 ? 'hoje' : `há ${d}d`}{l.lead_by ? ` · marcado por ${l.lead_by}` : ''}{!l.customer_id ? ' · sem cadastro' : ''}
         </div>
       </div>
       <div className="text-sm font-bold shrink-0">{l.lead_value ? `~${fmtBRL(Number(l.lead_value))}` : <span className="text-xs text-steel-400">sem valor</span>}</div>
@@ -584,7 +590,7 @@ function LeadCard({ l, canOpen, onDiscard }: { l: Lead; canOpen: (p: string) => 
         <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{leadName(l)}</p>
         <Age days={days} open={days != null && days >= 3 ? true : false} />
       </div>
-      <p className="text-xs text-steel-600 line-clamp-2 mt-0.5">{l.lead_note ?? 'sem descrição'}</p>
+      <p className="text-xs text-steel-600 line-clamp-2 mt-0.5">{l.source === 'site' && <span className="font-bold text-brand-700">🌐 Site · </span>}{l.lead_note ?? 'sem descrição'}</p>
       <div className="flex items-center justify-between gap-2 mt-2.5">
         <span className="text-[15px] font-bold text-steel-900 tabular-nums">
           {l.lead_value ? `~${fmtBRL(Number(l.lead_value))}` : <span className="text-xs font-semibold text-steel-400">sem valor</span>}

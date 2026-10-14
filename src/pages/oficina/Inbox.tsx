@@ -522,6 +522,7 @@ function ChatRow({ c, now, active, sector, onClick }: { c: WaChat; now: number; 
               ↪ Veio do {c.transferred_from ?? 'outro setor'}
             </span>
           )}
+          {c.source === 'site' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-50 text-brand-700" title="Começou pelo site da oficina">🌐 Site</span>}
           {sector && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">{sector.icon} {sector.name}</span>}
           {!c.customer_id && <span className="text-[10px] text-steel-400">· sem cadastro</span>}
         </div>

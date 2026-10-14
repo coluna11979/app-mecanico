@@ -194,11 +194,12 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
   // Conversa (cria na primeira mensagem e liga ao cliente cadastrado)
   const contactName = chatInfo.wa_contactName || chatInfo.wa_name || chatInfo.name || (!fromMe ? m.senderName : null) || null;
   const avatar = chatInfo.imagePreview || chatInfo.image || null;
-  let { data: chat } = await admin.from('whatsapp_chats').select('id, name, avatar_url, customer_id')
+  const CHAT_SEL = 'id, name, avatar_url, customer_id, source, lead_at, sector_id';
+  let { data: chat } = await admin.from('whatsapp_chats').select(CHAT_SEL)
     .eq('workshop_id', wid).eq('remote_jid', chatid).maybeSingle();
   // Conversa aberta pelo sistema (whatsapp-send grava numero@s.whatsapp.net; o WhatsApp pode responder com @lid)
   if (!chat) {
-    ({ data: chat } = await admin.from('whatsapp_chats').select('id, name, avatar_url, customer_id')
+    ({ data: chat } = await admin.from('whatsapp_chats').select(CHAT_SEL)
       .eq('workshop_id', wid).eq('phone', phone).limit(1).maybeSingle());
   }
   if (!chat) {
@@ -206,7 +207,7 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
     const { data, error } = await admin.from('whatsapp_chats').upsert(
       { workshop_id: wid, remote_jid: chatid, phone, name: contactName, customer_id: customerId ?? null },
       { onConflict: 'workshop_id,remote_jid' },
-    ).select('id, name, avatar_url, customer_id').single();
+    ).select(CHAT_SEL).single();
     if (error) throw error;
     chat = data;
   } else if (contactName && !chat.name) {
@@ -274,6 +275,56 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
   });
   // 23505 = chegou duplicada ao mesmo tempo
   if (error && error.code !== '23505') throw error;
+
+  // Contato que veio do site da oficina: marca a origem e já entra como Interessado no Comercial
+  if (!fromMe && !chat.source && text && /vim pelo site/i.test(text)) {
+    try { await markFromSite(admin, wid, chat, text); } catch (e) { console.error('[whatsapp-webhook] site', e); }
+  }
+}
+
+/* ── Site da oficina → CRM (módulo opcional `site`) ──────────────────────────── */
+
+type SiteChat = { id: string; source: string | null; lead_at: string | null; sector_id: string | null };
+
+async function markFromSite(admin: SupabaseClient, wid: string, chat: SiteChat, text: string) {
+  const { data: mods } = await admin.from('workshop_modules').select('enabled_modules').eq('workshop_id', wid).maybeSingle();
+  if (!((mods?.enabled_modules ?? []) as string[]).includes('site')) return;
+
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = { source: 'site', source_at: now };
+  // Já marcado como interessado por alguém: mantém o que a equipe escreveu
+  if (!chat.lead_at) Object.assign(patch, { lead_at: now, lead_note: siteSummary(text), lead_by: 'Site' });
+
+  const { data: sector } = await admin.from('whatsapp_sectors').select('id, name')
+    .eq('workshop_id', wid).eq('kind', 'comercial').eq('active', true).order('position').limit(1).maybeSingle();
+  if (sector && chat.sector_id !== sector.id) patch.sector_id = sector.id;
+
+  // Só a primeira mensagem do site marca (source null → evita corrida com reenvio da UAZAPI)
+  const { data: updated } = await admin.from('whatsapp_chats').update(patch)
+    .eq('id', chat.id).is('source', null).select('id').maybeSingle();
+  if (!updated) return;
+  await admin.from('whatsapp_chat_notes').insert({
+    workshop_id: wid, chat_id: chat.id, author_name: 'Sistema',
+    body: `🌐 Veio pelo site da oficina${sector && patch.sector_id ? ` · foi para ${sector.name}` : ''}`,
+  });
+}
+
+/** Resumo da mensagem pronta do site → "Gol 2015 · barulho ao frear, volante tremendo" */
+export function siteSummary(text: string): string {
+  const t = text.replace(/\r/g, '');
+  const pick = (re: RegExp) => t.match(re)?.[1]?.trim().replace(/[.!]+$/, '') || '';
+  const car = pick(/Carro:\s*([^\n]+)/i);
+  const tag = (prefix: string, v: string) => (v ? prefix + v : '');
+  const free = pick(/Vim pelo site[.!]?[ \t]*(?:e\s+)?([^\n]+)/i)
+    .replace(/^meu carro (está|esta)\s+/i, '').replace(/\s+e quero .*$/i, '');
+  const what =
+    pick(/O que está acontecendo:\s*([^\n]+)/i) ||
+    tag('Oferta: ', pick(/quero a oferta:\s*([^\n]+)/i)) ||
+    tag('Orçamento de ', pick(/quero um orçamento de\s*([^\n]+)/i)) ||
+    tag('Acendeu a ', pick(/Acendeu a (luz [^\n]+?) no painel/i)) ||
+    (free ? free.charAt(0).toUpperCase() + free.slice(1) : '');
+  const out = [car, what].filter(Boolean).join(' · ');
+  return (out || 'Contato pelo site').slice(0, 140);
 }
 
 const RANK: Record<string, number> = { pending: 0, sent: 1, delivered: 2, read: 3 };
