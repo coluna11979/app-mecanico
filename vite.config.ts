@@ -44,7 +44,8 @@ export default defineConfig({
         clientsClaim: true,     // SW toma controle de todas as abas abertas
         globPatterns: ['**/*.{js,css,html,ico,svg,woff2}'],
         navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/sites\//],
+        globIgnores: ['sites/**'],   // sites das oficinas não entram no cache do app
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MB (Mapbox GL é grande)
         runtimeCaching: [
           {

@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  JOTA CAR — Landing page v2 · PILOTO DE 30 DIAS
+  Endereço: https://jotacar.mecanicoapp.com.br (também em /sites/jotacar)
+  Para DESLIGAR: remover as 2 linhas "sites/jotacar" de vercel.json
+  (e o domínio jotacar.mecanicoapp.com.br no painel da Vercel).
+  ------------------------------------------------------------------
+  COMO EDITAR
+  • Contato, mensagens do WhatsApp, horário, fotos e itens confirmados:
+    objeto CONFIG no <script> do fim do arquivo.
+  • Itens que ainda dependem de confirmação do dono têm o atributo
+    data-confirmar="chave". Eles ficam ESCONDIDOS por padrão.
+    Quando o dono confirmar, adicione a chave em CONFIG.confirmados.
+  • Modo revisão (para mostrar ao dono): abra a página com ?revisao=1
+    no fim do endereço. Os itens pendentes aparecem com borda laranja.
+  ------------------------------------------------------------------
+-->
+<title>Jota Car | Oficina mecânica na Estrada do M'Boi Mirim, 9000 – Zona Sul de SP</title>
+<meta name="description" content="Oficina mecânica na Estrada do M'Boi Mirim, 9000, Zona Sul de São Paulo. Revisão, freios, suspensão, injeção eletrônica, pneus, alinhamento e balanceamento. Fale pelo WhatsApp (11) 93418-2002.">
+<meta name="theme-color" content="#16181c">
+<link rel="canonical" href="https://jotacar.mecanicoapp.com.br/">
+<meta property="og:url" content="https://jotacar.mecanicoapp.com.br/">
+<!-- PENDENTE: og:image (URL pública absoluta, 1200x630) quando houver foto oficial. -->
+<meta property="og:type" content="website">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:site_name" content="Jota Car Serviços Automotivos">
+<meta property="og:title" content="Jota Car — Mecânica de confiança, perto de você">
+<meta property="og:description" content="Mecânica geral, freios, suspensão, revisão, pneus e mais na Estrada do M'Boi Mirim, 9000. Fale com a oficina pelo WhatsApp.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ffc21a'/%3E%3Cg fill='none' stroke='%2316181c' stroke-width='5' stroke-linecap='round'%3E%3Ccircle cx='32' cy='32' r='19'/%3E%3Cpath d='M14 29l12 2M50 29l-12 2M32 37v14'/%3E%3C/g%3E%3Ccircle cx='32' cy='32' r='5' fill='%2316181c'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
+
+<!-- Dados estruturados: só dados públicos. CEP fica de fora até confirmar (Google e Receita divergem). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "AutoRepair",
+  "name": "Jota Car Serviços Automotivo",
+  "legalName": "Jairo Costa Pneus LTDA",
+  "taxID": "50.726.597/0001-24",
+  "telephone": "+55-11-93418-2002",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "Estrada do M'Boi Mirim, 9000",
+    "addressLocality": "São Paulo",
+    "addressRegion": "SP",
+    "addressCountry": "BR"
+  },
+  "openingHoursSpecification": [
+    {"@type": "OpeningHoursSpecification", "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday"], "opens": "08:00", "closes": "18:00"},
+    {"@type": "OpeningHoursSpecification", "dayOfWeek": "Saturday", "opens": "08:00", "closes": "14:00"}
+  ],
+  "url": "https://jotacar.mecanicoapp.com.br/",
+  "sameAs": ["https://www.instagram.com/jotacar9000/"]
+}
+</script>
+
+<style>
+:root{
+  --ink:#16181c;
+  --ink-2:#22252b;
+  --ink-3:#2d3139;
+  --paper:#f4f1ea;
+  --paper-2:#ebe6db;
+  --white:#ffffff;
+  --text:#1c1f24;
+  --muted:#565b64;
+  --muted-dark:#aeb3bb;
+  --line:rgba(22,24,28,.13);
+  --line-dark:rgba(255,255,255,.13);
+  --yellow:#ffc21a;
+  --yellow-2:#ffb000;
+  --green:#22a35a;
+  --red:#e0533f;
+  --orange:#e0711a;
+  --radius:18px;
+  --radius-sm:12px;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 14px 32px -14px rgba(0,0,0,.22);
+  --wrap:1180px;
+  --gutter:clamp(16px,4vw,32px);
+  --header-h:68px;
+  --font:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:calc(var(--header-h) + 16px);-webkit-text-size-adjust:100%}
+body{margin:0;font-family:var(--font);font-size:17px;line-height:1.6;color:var(--text);background:var(--paper);-webkit-font-smoothing:antialiased;overflow-wrap:break-word}
+img,svg,iframe{display:block;max-width:100%}
+a{color:inherit}
+button{font:inherit;color:inherit}
+h1,h2,h3{margin:0;line-height:1.08;font-stretch:112%;letter-spacing:-.02em;text-wrap:balance}
+p{margin:0}
+ul.clean,ol.clean{list-style:none;margin:0;padding:0}
+.wrap{width:100%;max-width:var(--wrap);margin-inline:auto;padding-inline:var(--gutter)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:3px;border-radius:6px}
+.on-light :focus-visible,.facts :focus-visible,.final :focus-visible{outline-color:var(--ink)}
+.skip{position:absolute;left:12px;top:-60px;z-index:100;background:var(--yellow);color:var(--ink);padding:10px 16px;border-radius:10px;font-weight:700;text-decoration:none}
+.skip:focus{top:12px}
+
+/* ---------- Itens a confirmar ---------- */
+html:not(.revisao) [data-confirmar]{display:none!important}
+html.revisao [data-confirmar]{position:relative;outline:2px dashed var(--orange);outline-offset:4px;border-radius:6px}
+html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirmar);position:absolute;top:-12px;left:6px;z-index:3;background:var(--orange);color:#fff;font:700 10px/1 var(--font);letter-spacing:.06em;padding:4px 6px;border-radius:4px;pointer-events:none;white-space:nowrap;font-stretch:100%}
+.review-banner{display:none}
+html.revisao .review-banner{display:block;background:var(--orange);color:#fff;font-size:14px;font-weight:600;text-align:center;padding:8px 16px}
+
+/* ---------- Botões ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:52px;padding:0 24px;border-radius:999px;font-weight:700;font-size:16px;line-height:1.2;text-align:center;text-decoration:none;border:2px solid transparent;cursor:pointer;transition:transform .15s var(--ease),background-color .2s,box-shadow .2s,border-color .2s}
+.btn svg{width:20px;height:20px;flex:none}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(1px) scale(.99)}
+.btn-primary{background:var(--yellow);color:var(--ink);box-shadow:0 8px 22px -10px rgba(255,194,26,.75)}
+.btn-primary:hover{background:var(--yellow-2)}
+.btn-ghost{background:transparent;color:inherit;border-color:currentColor}
+.btn-ghost:hover{background:rgba(255,255,255,.08)}
+.on-light .btn-ghost:hover{background:rgba(22,24,28,.06)}
+.btn-dark{background:var(--ink);color:var(--white)}
+.btn-dark:hover{background:var(--ink-3)}
+.btn-block{width:100%}
+.micro{font-size:14px;color:var(--muted);margin-top:10px}
+.on-dark .micro{color:var(--muted-dark)}
+
+/* ---------- Header ---------- */
+.header{position:sticky;top:0;z-index:50;background:rgba(22,24,28,.94);backdrop-filter:saturate(140%) blur(12px);-webkit-backdrop-filter:saturate(140%) blur(12px);color:var(--white);border-bottom:1px solid var(--line-dark)}
+.header .wrap{display:flex;align-items:center;justify-content:space-between;height:var(--header-h);gap:16px}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:900;font-stretch:125%;letter-spacing:.02em;font-size:20px;line-height:1.1}
+.logo-mark{width:36px;height:36px;border-radius:10px;background:var(--yellow);display:grid;place-items:center;flex:none}
+.logo-mark svg{width:20px;height:20px}
+.logo small{display:block;font-size:10px;font-weight:600;letter-spacing:.18em;color:var(--muted-dark);font-stretch:100%;margin-top:3px}
+.nav{display:flex;align-items:center;gap:4px}
+.nav a{text-decoration:none;font-size:15px;font-weight:600;color:#dadde2;padding:10px 14px;border-radius:999px;transition:background .2s,color .2s}
+.nav a:hover{background:rgba(255,255,255,.08);color:var(--white)}
+.header .btn{min-height:44px;padding:0 18px;font-size:15px}
+.menu-btn{display:none;width:44px;height:44px;border-radius:12px;border:1px solid var(--line-dark);background:transparent;cursor:pointer;place-items:center}
+.menu-btn svg{width:22px;height:22px}
+.header-actions{display:flex;align-items:center;gap:8px}
+
+/* ---------- Hero ---------- */
+.hero{position:relative;background:var(--ink);color:var(--white);overflow:hidden;isolation:isolate}
+.hero::before{content:"";position:absolute;inset:0;z-index:-1;background:
+  radial-gradient(60% 70% at 85% 10%,rgba(255,194,26,.15),transparent 60%),
+  radial-gradient(50% 60% at 0% 100%,rgba(255,255,255,.05),transparent 60%)}
+.hero-road{position:absolute;z-index:-1;left:-10%;right:-10%;bottom:-2px;height:120px;opacity:.45;
+  background:repeating-linear-gradient(90deg,var(--yellow) 0 60px,transparent 60px 120px) center 70% / 100% 6px no-repeat;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 30%,#000 70%,transparent);mask:linear-gradient(90deg,transparent,#000 30%,#000 70%,transparent)}
+.hero .wrap{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(32px,5vw,64px);align-items:center;padding-block:clamp(40px,7vw,88px) clamp(56px,8vw,104px)}
+.hero h1{font-size:clamp(34px,5.6vw,64px);font-weight:900}
+.hero h1 em{font-style:normal;color:var(--yellow);display:block}
+.h1-loc{display:block;margin-top:16px;font-size:clamp(15px,1.5vw,18px);font-weight:700;font-stretch:100%;letter-spacing:0;line-height:1.4;color:var(--white)}
+.h1-loc::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--yellow);margin-right:10px;vertical-align:1px}
+.hero-sub{font-size:clamp(17px,1.6vw,19px);color:#cfd3d9;margin-top:16px;max-width:56ch}
+.hero-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+.proof{display:flex;flex-wrap:wrap;gap:12px 24px;margin-top:28px;padding-top:22px;border-top:1px solid var(--line-dark);font-size:15px;color:#cfd3d9}
+.proof li{display:flex;align-items:center;gap:8px}
+.proof svg{width:18px;height:18px;color:var(--yellow);flex:none}
+.proof strong{color:var(--white)}
+.stars{display:inline-flex;gap:2px;color:var(--yellow)}
+.stars svg{width:16px;height:16px}
+
+/* ---------- Triagem por sintomas ---------- */
+.triage{background:var(--paper);color:var(--text);border-radius:24px;padding:clamp(20px,3vw,28px);box-shadow:0 30px 60px -30px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.06);position:relative}
+.triage::after{content:"";position:absolute;inset:auto 24px -10px 24px;height:10px;border-radius:0 0 18px 18px;background:var(--yellow);z-index:-1}
+.triage-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.triage h2{font-size:clamp(20px,2vw,23px);font-weight:800}
+.triage-lead{color:var(--muted);font-size:15px;margin-top:6px}
+.step-label{display:block;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:18px 0 8px}
+.chips{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0;padding:0;border:0;min-width:0}
+.chip{min-height:48px;padding:8px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--white);font-size:15px;font-weight:600;line-height:1.25;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px;transition:border-color .15s,background .15s,color .15s,transform .1s}
+.chip-box{width:20px;height:20px;border-radius:6px;border:2px solid #b9bcc2;flex:none;display:grid;place-items:center;transition:background .15s,border-color .15s}
+.chip-box svg{width:14px;height:14px;color:var(--ink);opacity:0;transform:scale(.6);transition:opacity .15s,transform .15s}
+.chip:hover{border-color:var(--ink)}
+.chip:active{transform:scale(.98)}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--white)}
+.chip[aria-pressed="true"] .chip-box{background:var(--yellow);border-color:var(--yellow)}
+.chip[aria-pressed="true"] .chip-box svg{opacity:1;transform:none}
+.chip-meta{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:14px;color:var(--muted);min-height:32px}
+.link-btn{background:none;border:0;padding:6px 4px;font-weight:700;font-size:14px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;color:var(--text)}
+.link-btn[hidden]{display:none}
+.field label{display:block;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 8px}
+.step-label span,.field label span{text-transform:none;letter-spacing:0;font-weight:500}
+.field input{width:100%;min-height:48px;padding:0 14px;border-radius:var(--radius-sm);border:1.5px solid var(--line);background:var(--white);font:inherit;font-size:16px;color:var(--text)}
+.field input:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(255,194,26,.55)}
+.preview{margin-top:14px;padding:12px 14px;border-radius:var(--radius-sm);background:var(--paper-2);font-size:14px;line-height:1.5;color:#33373e;white-space:pre-line;border-left:4px solid var(--green)}
+.preview strong{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.triage .btn{margin-top:14px}
+.triage .micro{text-align:center}
+
+/* ---------- Faixa de informações ---------- */
+.facts{background:var(--yellow);color:var(--ink)}
+.facts ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 24px;padding-block:8px}
+.facts li{display:flex;align-items:center;gap:12px;padding:12px 0;font-size:15px;line-height:1.35}
+.facts svg{width:26px;height:26px;flex:none}
+.facts strong{display:block;font-weight:800}
+
+/* ---------- Seções ---------- */
+.section{padding-block:clamp(64px,9vw,112px)}
+.section-head{max-width:720px;margin-bottom:clamp(32px,5vw,48px)}
+.kicker{display:inline-block;font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.kicker::before{content:"";display:inline-block;width:20px;height:3px;background:var(--yellow);vertical-align:middle;margin-right:10px;border-radius:2px}
+.section h2{font-size:clamp(28px,4.2vw,48px);font-weight:900}
+.section-head p{font-size:18px;color:var(--muted);margin-top:14px}
+.bg-white{background:var(--white)}
+.bg-ink{background:var(--ink);color:var(--white)}
+.bg-ink .kicker,.bg-ink .section-head p{color:var(--muted-dark)}
+
+/* Sinais */
+.signals{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.signal{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;gap:10px;transition:transform .25s var(--ease),box-shadow .25s,border-color .25s}
+.signal:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:transparent}
+.signal-icon{width:48px;height:48px;border-radius:14px;background:var(--ink);color:var(--yellow);display:grid;place-items:center;margin-bottom:4px}
+.signal-icon svg{width:26px;height:26px}
+.signal h3{font-size:20px;font-weight:800;font-stretch:105%}
+.signal p{color:var(--muted);font-size:16px}
+.signal .tag{font-size:13px;font-weight:700;color:var(--ink);background:var(--paper-2);border-radius:999px;padding:4px 10px;align-self:flex-start}
+.signal a{margin-top:auto;padding-top:6px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;min-height:44px;align-self:flex-start}
+.signal a span{border-bottom:2px solid var(--yellow);transition:border-color .2s}
+.signal a svg{transition:transform .2s var(--ease)}
+.signal a:hover span{border-color:var(--ink)}
+.signal a:hover svg{transform:translateX(3px)}
+.note{margin-top:20px;font-size:14px;color:var(--muted)}
+
+/* Serviços */
+.services{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.service{padding:22px;border-radius:var(--radius);border:1px solid var(--line);background:var(--paper);display:flex;gap:16px;align-items:flex-start;transition:border-color .2s,background .2s}
+.service:hover{border-color:var(--ink);background:var(--white)}
+.service-icon{width:44px;height:44px;border-radius:12px;background:var(--yellow);color:var(--ink);display:grid;place-items:center;flex:none}
+.service-icon svg{width:24px;height:24px}
+.service h3{font-size:18px;font-weight:800;font-stretch:105%}
+.service p{color:var(--muted);font-size:15px;margin-top:4px}
+.services-cta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding:24px;border-radius:var(--radius);background:var(--ink);color:var(--white)}
+.services-cta p{font-weight:700;font-size:18px}
+
+/* Fotos (aparece só quando houver fotos oficiais em CONFIG.fotos) */
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.gallery figure{margin:0;border-radius:var(--radius);overflow:hidden;background:var(--paper-2);aspect-ratio:4/3}
+.gallery img{width:100%;height:100%;object-fit:cover}
+
+/* Como funciona */
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;counter-reset:step}
+.step{position:relative;padding:28px 24px;border-radius:var(--radius);background:var(--ink-2);border:1px solid var(--line-dark)}
+.step::before{counter-increment:step;content:counter(step,decimal-leading-zero);display:block;font-weight:900;font-stretch:125%;font-size:40px;line-height:1;color:var(--yellow);margin-bottom:16px}
+.step h3{font-size:20px;font-weight:800;font-stretch:105%}
+.step p{color:#c3c8cf;font-size:16px;margin-top:8px}
+.step.highlight{background:var(--yellow);color:var(--ink);border-color:transparent}
+.step.highlight::before{color:var(--ink)}
+.step.highlight p{color:#3b3420}
+.steps-note{margin-top:20px;font-size:14px;color:var(--muted-dark)}
+
+/* Avaliações */
+.reviews{display:grid;grid-template-columns:.8fr 1.2fr;gap:clamp(24px,4vw,48px);align-items:start}
+.score{background:var(--ink);color:var(--white);border-radius:24px;padding:32px}
+.score-num{font-size:88px;font-weight:900;font-stretch:125%;line-height:1}
+.score .stars svg{width:24px;height:24px}
+.score-data p{color:var(--muted-dark);margin-top:10px}
+.score-data{margin-bottom:24px}
+.score h3{font-size:24px;font-weight:800}
+.score > p{color:var(--muted-dark);margin-top:8px}
+.score .btn{margin-top:20px}
+.quotes{display:grid;gap:16px}
+.quote{margin:0;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:24px 24px 20px;position:relative}
+.quote::before{content:"\201C";position:absolute;top:-6px;right:20px;font-size:84px;line-height:1;color:var(--yellow);font-weight:900}
+.quote blockquote{margin:0;font-size:19px;font-weight:600;line-height:1.45;padding-right:32px}
+.quote figcaption{margin-top:12px;font-size:14px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.case{display:flex;gap:16px;align-items:center;padding:20px 24px;border-radius:var(--radius);background:var(--white);border:1px solid var(--line);text-decoration:none;transition:border-color .2s,box-shadow .2s}
+.case:hover{border-color:var(--ink);box-shadow:var(--shadow)}
+.case > svg{width:32px;height:32px;flex:none}
+.case strong{display:block;line-height:1.35}
+.case span{font-size:15px;color:var(--muted)}
+
+/* FAQ */
+.faq{max-width:820px}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 0;font-size:19px;font-weight:700;min-height:44px;border-radius:6px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"";width:28px;height:28px;flex:none;border-radius:50%;background:var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffc21a' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M12 6v12M6 12h12'/%3E%3C/svg%3E") center/14px no-repeat;transition:transform .25s var(--ease)}
+.faq details[open] summary::after{transform:rotate(45deg)}
+.faq .answer{padding:0 0 22px;color:var(--muted);font-size:17px;max-width:70ch}
+.faq details[open] .answer{animation:fadeIn .25s var(--ease)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+
+/* Onde fica */
+.location{display:grid;grid-template-columns:.9fr 1.1fr;gap:clamp(24px,4vw,48px);align-items:stretch}
+.addr{font-size:22px;font-weight:800;font-stretch:105%;line-height:1.3;margin-top:8px}
+.addr small{display:block;font-size:16px;font-weight:500;color:var(--muted-dark);margin-top:6px;font-stretch:100%}
+.hours{margin-top:28px;border-top:1px solid var(--line-dark)}
+.hours li{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--line-dark);font-size:16px}
+.hours li[aria-current="true"]{color:var(--yellow);font-weight:700}
+.hours li[aria-current="true"] span:first-child::after{content:" · hoje";font-weight:500}
+.hours-note{font-size:14px;color:var(--muted-dark);margin-top:10px}
+.loc-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+.map{border-radius:24px;overflow:hidden;min-height:380px;background:var(--ink-2);border:1px solid var(--line-dark)}
+.map iframe{width:100%;height:100%;min-height:380px;border:0}
+.a11y-note{display:flex;gap:10px;align-items:center;margin-top:20px;font-size:15px;color:#cfd3d9}
+.a11y-note svg{width:22px;height:22px;color:var(--yellow);flex:none}
+
+/* CTA final */
+.final{background:var(--yellow);color:var(--ink)}
+.final .wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:28px;padding-block:clamp(56px,8vw,88px)}
+.final h2{font-size:clamp(28px,4.4vw,50px);font-weight:900;max-width:17ch}
+.final p{font-size:18px;margin-top:12px;max-width:48ch;color:#3b3420}
+.final .micro{color:#3b3420}
+
+/* Footer */
+.footer{background:var(--ink);color:var(--muted-dark);font-size:15px}
+.footer .wrap{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:32px;padding-block:48px 32px}
+.footer h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--white);font-stretch:100%;margin-bottom:12px}
+.footer a{color:#dadde2;text-decoration:none;display:inline-flex;min-height:40px;align-items:center}
+.footer a:hover{color:var(--yellow)}
+.footer .logo{color:var(--white);margin-bottom:12px}
+.footer-bottom{border-top:1px solid var(--line-dark);padding-block:20px;font-size:13px}
+
+/* Barra fixa no celular */
+.mbar{display:none}
+
+/* Reveal: só com JS e sem esconder conteúdo se a animação falhar */
+.js .reveal{opacity:0;transform:translateY(16px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.js .reveal.in{opacity:1;transform:none}
+.js .reveal[data-delay="1"]{transition-delay:.08s}
+.js .reveal[data-delay="2"]{transition-delay:.16s}
+.js .reveal[data-delay="3"]{transition-delay:.24s}
+
+/* ---------- Responsivo ---------- */
+@media (max-width:1024px){
+  .hero .wrap{grid-template-columns:1fr}
+  .triage{max-width:640px}
+  .signals,.services{grid-template-columns:repeat(2,1fr)}
+  .steps{grid-template-columns:repeat(2,1fr)}
+  .reviews,.location{grid-template-columns:1fr}
+}
+@media (max-width:860px){
+  .nav{display:none}
+  .menu-btn{display:grid}
+  .btn-wa-label{display:none}
+  .header .btn{width:44px;padding:0}
+  .nav.open{display:flex;position:absolute;top:var(--header-h);left:0;right:0;flex-direction:column;align-items:stretch;gap:0;padding:8px var(--gutter) 16px;background:var(--ink);border-bottom:1px solid var(--line-dark);animation:fadeIn .2s var(--ease)}
+  .nav.open a{padding:14px 8px;border-radius:0;border-bottom:1px solid var(--line-dark);font-size:17px}
+  .footer .wrap{grid-template-columns:1fr 1fr}
+  .footer .wrap > :first-child{grid-column:1/-1}
+}
+@media (max-width:640px){
+  body{font-size:16px}
+  .hero .wrap{padding-block:24px 64px;gap:36px}
+  .hero-ctas{margin-top:22px}
+  .hero-ctas .btn{flex:1 1 100%}
+  .proof{gap:10px 18px;margin-top:22px;padding-top:18px;font-size:14px}
+  .signals,.services,.steps{grid-template-columns:1fr}
+  .services-cta{padding:20px}
+  .score{padding:24px}
+  .score-num{font-size:68px}
+  .quote blockquote{font-size:17px}
+  .faq summary{font-size:17px}
+  .map,.map iframe{min-height:300px}
+  .loc-ctas .btn,.final .btn,.services-cta .btn,.score .btn{flex:1 1 100%;width:100%}
+  .footer .wrap{grid-template-columns:1fr}
+  .mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:rgba(22,24,28,.97);border-top:1px solid var(--line-dark);transform:translateY(110%);transition:transform .25s var(--ease)}
+  .mbar.show{transform:none}
+  .mbar .btn{flex:1;min-height:48px;font-size:15px;padding:0 12px}
+  .mbar .btn-ghost{color:var(--white);flex:0 0 52px;padding:0}
+  body.has-mbar{padding-bottom:76px}
+}
+@media (max-width:370px){
+  .chips{grid-template-columns:1fr}
+  .logo{font-size:18px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .js .reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<p class="review-banner" role="note">Modo revisão: os itens com borda laranja ainda precisam de confirmação do dono e ficam escondidos na versão publicada.</p>
+<a class="skip" href="#conteudo">Pular para o conteúdo</a>
+
+<!-- Ícones -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-wa" viewBox="0 0 24 24"><path fill="currentColor" d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm0 18.15h-.01a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.25-8.23 2.2 0 4.27.86 5.83 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.22-8.24 8.22Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.8-.78.97-.15.16-.29.18-.54.06-.25-.13-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.3-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.15-1.18-.06-.1-.23-.17-.48-.29Z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path fill="currentColor" d="m12 2.5 2.94 6.1 6.56.9-4.78 4.6 1.17 6.53L12 17.5l-5.89 3.13 1.17-6.53L2.5 9.5l6.56-.9L12 2.5Z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 10h19M6.5 15h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-a11y" viewBox="0 0 24 24"><circle cx="10" cy="4" r="2" fill="currentColor"/><path d="M10 7v6h6l2.5 5M10 10h5M7.5 11.5a5.5 5.5 0 1 0 8.2 6.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-parts" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4 2.5-2.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-brake" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 6.5A9.5 9.5 0 0 0 5 17.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+  <symbol id="i-wheel" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-align" viewBox="0 0 24 24"><path d="M5 20 9 4M19 20 15 4M12 6v3M12 12v3M12 18v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-engine" viewBox="0 0 24 24"><path d="M4 10h2V8h3V6h6v2h2l2 2h2v6h-2l-2 2H8l-2-2H4v-6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10l-1.5 3h3L12 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 4v3M17 4v3M7 13h3M15.5 11.5v3M14 13h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-susp" viewBox="0 0 24 24"><path d="M12 2v3M9 5h6M9 8l6 2-6 2 6 2-6 2M12 16v3M8 19h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-oil" viewBox="0 0 24 24"><path d="M12 3s-5 6-5 9.5a5 5 0 0 0 10 0C17 9 12 3 12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 13.5a2 2 0 0 0 2 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 10h4v4h-4z" fill="currentColor"/></symbol>
+  <symbol id="i-tire" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><path d="M3 11 21 3l-8 18-2-8-8-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-insta" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor"/></symbol>
+  <symbol id="i-google" viewBox="0 0 24 24"><path d="M20.5 12.2c0-.6-.1-1.2-.2-1.7H12v3.3h4.8a4.1 4.1 0 0 1-1.8 2.7v2.2h2.9c1.7-1.6 2.6-3.9 2.6-6.5Z" fill="currentColor"/><path d="M12 21c2.4 0 4.4-.8 5.9-2.2L15 16.6c-.8.5-1.8.9-3 .9a5.3 5.3 0 0 1-5-3.7H4.1v2.3A9 9 0 0 0 12 21Z" fill="currentColor" opacity=".8"/><path d="M7 13.8a5.4 5.4 0 0 1 0-3.5V8H4.1a9 9 0 0 0 0 8.1L7 13.8Z" fill="currentColor" opacity=".6"/><path d="M12 6.6c1.3 0 2.5.5 3.4 1.3l2.6-2.6A9 9 0 0 0 4.1 8L7 10.2a5.3 5.3 0 0 1 5-3.6Z" fill="currentColor" opacity=".9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="header">
+  <div class="wrap">
+    <a href="#topo" class="logo" aria-label="Jota Car Serviços Automotivos, voltar ao topo">
+      <span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#16181c" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="2.4" fill="#16181c" stroke="none"/><path d="M3.8 10.6 9.7 11.4M20.2 10.6l-5.9.8M12 14.4v6"/></svg></span>
+      <span>JOTA CAR<small>SERVIÇOS AUTOMOTIVOS</small></span>
+    </a>
+    <nav class="nav" id="nav" aria-label="Seções da página">
+      <a href="#servicos">Serviços</a>
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#avaliacoes">Avaliações</a>
+      <a href="#onde-fica">Onde fica</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-primary" data-wa="geral" data-track="wa_header" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20falar%20sobre%20o%20meu%20carro." target="_blank" rel="noopener" aria-label="Falar com a Jota Car no WhatsApp">
+        <svg aria-hidden="true"><use href="#i-wa"/></svg><span class="btn-wa-label">WhatsApp</span>
+      </a>
+      <button type="button" class="menu-btn" id="menuBtn" aria-controls="nav" aria-expanded="false" aria-label="Abrir menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path id="menuIcon" d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="conteudo">
+
+<!-- ================= HERO ================= -->
+<section class="hero on-dark" id="topo" aria-labelledby="hero-title">
+  <div class="hero-road" aria-hidden="true"></div>
+  <div class="wrap">
+    <div>
+      <h1 id="hero-title">Seu carro precisa de cuidado? <em>Conte com a Jota Car.</em><span class="h1-loc">Oficina mecânica na Estrada do M'Boi Mirim, 9000 · Zona Sul de SP</span></h1>
+      <p class="hero-sub">Mecânica geral, freios, suspensão, revisão, injeção eletrônica, pneus e mais, num endereço só. Conte pelo WhatsApp o que o carro está fazendo e a gente explica o próximo passo.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" data-wa="geral" data-track="wa_hero" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20falar%20sobre%20o%20meu%20carro." target="_blank" rel="noopener">
+          <svg aria-hidden="true"><use href="#i-wa"/></svg>Falar com a Jota Car no WhatsApp
+        </a>
+        <a class="btn btn-ghost" href="#servicos" data-track="ver_servicos_hero">Ver nossos serviços</a>
+      </div>
+      <ul class="proof clean">
+        <li data-confirmar="nota"><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span><span><strong>5,0 no Google</strong> · 9 avaliações</span></li>
+        <li><svg aria-hidden="true"><use href="#i-clock"/></svg>Atendimento de segunda a sábado</li>
+        <li data-confirmar="acessibilidade"><svg aria-hidden="true"><use href="#i-a11y"/></svg>Entrada acessível</li>
+      </ul>
+    </div>
+
+    <!-- Triagem por sintomas: ajuda a descrever o problema; NÃO é diagnóstico -->
+    <form class="triage reveal" data-delay="1" id="triage" aria-labelledby="triage-title" novalidate>
+      <div class="triage-head">
+        <h2 id="triage-title">O que o carro está fazendo?</h2>
+      </div>
+      <p class="triage-lead">Marque o que você percebeu. A mensagem vai pronta para o WhatsApp da oficina, sem precisar digitar.</p>
+
+      <fieldset class="chips-wrap" style="border:0;margin:0;padding:0;min-width:0">
+        <legend class="step-label">1 · Sintomas <span>(pode marcar mais de um)</span></legend>
+        <div class="chips" id="chips">
+          <button type="button" class="chip" aria-pressed="false" data-symptom="barulho ao frear"><span class="chip-box" aria-hidden="true"><svg><use href="#i-check"/></svg></span>Barulho ao frear</button>
+          <button type="button" class="chip" aria-pressed="false" data-symptom="luz acesa no painel"><span class="chip-box" aria-hidden="true"><svg><use href="#i-check"/></svg></span>Luz acesa no painel</button>
+          <button type="button" class="chip" aria-pressed="false" data-symptom="volante tremendo"><span class="chip-box" aria-hidden="true"><svg><use href="#i-check"/></svg></span>Volante tremendo</button>
+          <button type="button" class="chip" aria-pressed="false" data-symptom="carro puxando para um lado"><span class="chip-box" aria-hidden="true"><svg><use href="#i-check"/></svg></span>Puxando pro lado</button>
+          <button type="button" class="chip" aria-pressed="false" data-symptom="barulho na suspensão"><span class="chip-box" aria-hidden="true"><svg><use href="#i-check"/></svg></span>Barulho na suspensão</button>
+          <button type="button" class="chip" aria-pressed="false" data-symptom="demora para dar partida"><span class="chip-box" aria-hidden="true"><svg><use href="#i-check"/></svg></span>Demora pra pegar</button>
+          <button type="button" class="chip" aria-pressed="false" data-symptom="revisão / troca de óleo"><span class="chip-box" aria-hidden="true"><svg><use href="#i-check"/></svg></span>Revisão / óleo</button>
+          <button type="button" class="chip" aria-pressed="false" data-symptom="pneus gastos / alinhamento"><span class="chip-box" aria-hidden="true"><svg><use href="#i-check"/></svg></span>Pneus / alinhamento</button>
+        </div>
+        <div class="chip-meta">
+          <span id="chipCount" aria-live="polite">Nenhum marcado</span>
+          <button type="button" class="link-btn" id="chipClear" hidden>Limpar</button>
+        </div>
+      </fieldset>
+
+      <div class="field">
+        <label for="car">2 · Modelo e ano <span>(opcional)</span></label>
+        <input id="car" name="car" type="text" autocomplete="off" autocapitalize="words" enterkeyhint="send" placeholder="Ex.: HB20 2024" maxlength="60">
+      </div>
+
+      <div class="preview" id="preview" aria-live="polite"><strong>Sua mensagem</strong><span id="previewText">Olá, Jota Car! Vim pelo site e quero agendar uma avaliação.</span></div>
+
+      <a class="btn btn-dark btn-block" id="triageBtn" data-track="wa_triagem" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20agendar%20uma%20avalia%C3%A7%C3%A3o." target="_blank" rel="noopener">
+        <svg aria-hidden="true"><use href="#i-wa"/></svg>Enviar pelo WhatsApp
+      </a>
+      <p class="micro">Abre o WhatsApp com o texto pronto. Você revisa antes de enviar, e a oficina responde para combinar o atendimento.</p>
+    </form>
+  </div>
+</section>
+
+<!-- ================= FAIXA DE FATOS ================= -->
+<section class="facts" aria-label="Informações rápidas">
+  <div class="wrap">
+    <ul class="clean">
+      <li><svg aria-hidden="true"><use href="#i-clock"/></svg><span><strong>Seg a sex, 8h às 18h</strong>Sábado, 8h às 14h</span></li>
+      <li><svg aria-hidden="true"><use href="#i-pin"/></svg><span><strong>Estrada do M'Boi Mirim, 9000</strong>Zona Sul de São Paulo</span></li>
+      <li data-confirmar="parcelamento"><svg aria-hidden="true"><use href="#i-card"/></svg><span><strong>Até 10x sem juros</strong>no cartão de crédito</span></li>
+      <li data-confirmar="acessibilidade"><svg aria-hidden="true"><use href="#i-a11y"/></svg><span><strong>Entrada acessível</strong>com rampa para cadeira de rodas</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= SINAIS ================= -->
+<section class="section" id="sinais" aria-labelledby="sinais-title">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Antes que o problema aumente</span>
+      <h2 id="sinais-title">Seu carro está dando algum desses sinais?</h2>
+      <p>Barulho novo, luz acesa ou volante estranho são avisos. Avaliar cedo costuma evitar que uma peça gasta acabe prejudicando outra.</p>
+    </div>
+    <div class="signals">
+      <article class="signal reveal">
+        <div class="signal-icon" aria-hidden="true"><svg><use href="#i-brake"/></svg></div>
+        <h3>Chiado ou barulho de metal ao frear</h3>
+        <p>Pode ser pastilha no fim ou disco gasto. Freio é segurança: não vale deixar para depois.</p>
+        <span class="tag">Freios</span>
+        <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Meu carro está fazendo barulho ao frear e quero agendar uma avaliação." data-track="wa_sinal_freio" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </article>
+      <article class="signal reveal" data-delay="1">
+        <div class="signal-icon" aria-hidden="true"><svg><use href="#i-engine"/></svg></div>
+        <h3>Luz acesa no painel ou motor falhando</h3>
+        <p>O diagnóstico computadorizado lê as falhas registradas pela central do carro e mostra por onde começar, sem trocar peça no chute.</p>
+        <span class="tag">Diagnóstico · Injeção eletrônica</span>
+        <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Acendeu uma luz no painel do meu carro e quero agendar um diagnóstico." data-track="wa_sinal_injecao" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </article>
+      <article class="signal reveal" data-delay="2">
+        <div class="signal-icon" aria-hidden="true"><svg><use href="#i-susp"/></svg></div>
+        <h3>Batida seca em buraco e lombada</h3>
+        <p>Amortecedor, bandeja, bucha ou terminal podem estar pedindo atenção. Isso pesa no conforto e na estabilidade.</p>
+        <span class="tag">Suspensão · Direção</span>
+        <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Meu carro está com barulho na suspensão e quero agendar uma avaliação." data-track="wa_sinal_suspensao" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </article>
+      <article class="signal reveal">
+        <div class="signal-icon" aria-hidden="true"><svg><use href="#i-battery"/></svg></div>
+        <h3>Demora para pegar ou morre do nada</h3>
+        <p>Pode ser bateria, alimentação de combustível ou parte elétrica. A avaliação mostra qual é o caso.</p>
+        <span class="tag">Bateria · Bomba de combustível</span>
+        <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Meu carro está demorando para dar partida e quero agendar uma avaliação." data-track="wa_sinal_partida" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </article>
+      <article class="signal reveal" data-delay="1">
+        <div class="signal-icon" aria-hidden="true"><svg><use href="#i-wheel"/></svg></div>
+        <h3>Volante tremendo em velocidade</h3>
+        <p>Costuma ser roda desbalanceada ou problema no pneu. Corrigir devolve a direção firme.</p>
+        <span class="tag">Balanceamento · Pneus</span>
+        <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. O volante do meu carro está tremendo e quero agendar uma avaliação." data-track="wa_sinal_balanceamento" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </article>
+      <article class="signal reveal" data-delay="2">
+        <div class="signal-icon" aria-hidden="true"><svg><use href="#i-align"/></svg></div>
+        <h3>Carro puxando ou pneu gastando torto</h3>
+        <p>Sinal de alinhamento ou cambagem fora do lugar. Corrigir ajuda a preservar os pneus.</p>
+        <span class="tag">Alinhamento · Cambagem</span>
+        <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Meu carro está puxando para um lado e quero agendar uma avaliação." data-track="wa_sinal_alinhamento" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </article>
+    </div>
+    <p class="note">As causas acima são as mais comuns. Só a avaliação no carro confirma o que precisa ser feito.</p>
+  </div>
+</section>
+
+<!-- ================= SERVIÇOS ================= -->
+<section class="section bg-white on-light" id="servicos" aria-labelledby="servicos-title">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Serviços</span>
+      <h2 id="servicos-title">Do óleo ao motor, num endereço só.</h2>
+      <p>Sem rodar de oficina em oficina: mecânica, pneus e peças no mesmo lugar, aqui na M'Boi Mirim.</p>
+    </div>
+    <ul class="services clean">
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-oil"/></svg></span><div><h3>Revisão e troca de óleo</h3><p>Óleo e filtros no prazo ajudam a proteger o motor e a evitar gasto maior lá na frente.</p></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-brake"/></svg></span><div><h3>Freios</h3><p>Pastilhas, discos, lonas e fluido. Freio em dia é segurança para quem vai dentro do carro.</p></div></li>
+      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-susp"/></svg></span><div><h3>Suspensão e direção</h3><p>Amortecedores, bandejas, buchas, pivôs e terminais, para rodar com conforto e estabilidade.</p></div></li>
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><h3>Injeção eletrônica</h3><p>Diagnóstico computadorizado, limpeza de bicos e troca de bomba de combustível.</p></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-engine"/></svg></span><div><h3>Motor e mecânica geral</h3><p>Avaliação e reparo de motor e dos demais itens de mecânica do dia a dia.</p></div></li>
+      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-align"/></svg></span><div><h3>Alinhamento, balanceamento e cambagem</h3><p>Direção firme e pneus gastando por igual.</p></div></li>
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-tire"/></svg></span><div><h3>Pneus</h3><p>Troca e montagem de pneus para o seu carro.</p></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-battery"/></svg></span><div><h3>Bateria</h3><p>Teste e troca de bateria para o carro não te deixar na mão.</p></div></li>
+      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-parts"/></svg></span><div><h3>Venda de peças</h3><p>Peças novas no balcão.</p></div></li>
+    </ul>
+    <div class="services-cta reveal">
+      <p>Não achou o serviço que procura? Pergunte pra gente.</p>
+      <a class="btn btn-primary" data-wa-msg="Olá, Jota Car! Vim pelo site e queria saber se vocês fazem um serviço." data-track="wa_servicos" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20queria%20saber%20se%20voc%C3%AAs%20fazem%20um%20servi%C3%A7o." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Perguntar no WhatsApp</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FOTOS (aparece sozinha quando houver fotos oficiais em CONFIG.fotos) ================= -->
+<section class="section" id="fotos" aria-labelledby="fotos-title" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker">Por dentro da oficina</span>
+      <h2 id="fotos-title">Conheça a Jota Car</h2>
+    </div>
+    <div class="gallery" id="gallery"></div>
+  </div>
+</section>
+
+<!-- ================= COMO FUNCIONA ================= -->
+<section class="section bg-ink on-dark" id="como-funciona" aria-labelledby="como-title">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Como funciona</span>
+      <h2 id="como-title">Simples do primeiro contato até a entrega.</h2>
+      <p>Você sabe o que vai ser feito e quanto custa antes de o serviço começar.</p>
+    </div>
+    <ol class="steps clean">
+      <li class="step reveal"><h3>Chame no WhatsApp</h3><p>Conte o modelo, o ano e o que o carro está fazendo. Se quiser, use a lista de sintomas lá em cima.</p></li>
+      <li class="step reveal" data-delay="1"><h3>Combine o atendimento</h3><p>A oficina responde e combina com você o melhor dia e horário para trazer o carro.</p></li>
+      <li class="step highlight reveal" data-delay="2"><h3>Avaliação e orçamento</h3><p>Avaliamos o carro e explicamos o que precisa ser feito e quanto custa.</p></li>
+      <li class="step reveal" data-delay="3"><h3>Serviço autorizado</h3><p>Com o orçamento aprovado por você, fazemos o serviço e entregamos o carro.</p></li>
+    </ol>
+    <p class="steps-note">O horário fica confirmado quando a oficina responde no WhatsApp.</p>
+  </div>
+</section>
+
+<!-- ================= AVALIAÇÕES ================= -->
+<section class="section" id="avaliacoes" aria-labelledby="aval-title">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Quem já é cliente</span>
+      <h2 id="aval-title">Veja o que dizem os motoristas que já vieram.</h2>
+      <p>As avaliações são públicas no Google. Leia lá antes de decidir.</p>
+    </div>
+    <div class="reviews">
+      <div class="score reveal">
+        <div class="score-data" data-confirmar="nota">
+          <div class="score-num">5,0</div>
+          <span class="stars" role="img" aria-label="5 de 5 estrelas"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>
+          <p>Média de 9 avaliações no Google.</p>
+        </div>
+        <h3>Avaliações de clientes reais</h3>
+        <p>Veja a opinião de quem já levou o carro na Jota Car, direto na ficha da oficina no Google.</p>
+        <a class="btn btn-primary" href="https://www.google.com/maps/search/?api=1&amp;query=Jota+Car+Servi%C3%A7os+Automotivo+Estrada+do+M%27Boi+Mirim+9000" target="_blank" rel="noopener" data-track="ver_avaliacoes_google"><svg aria-hidden="true"><use href="#i-google"/></svg>Ver avaliações no Google</a>
+      </div>
+      <div class="quotes">
+        <!-- Trechos públicos do Google: liberar com CONFIG.confirmados "depoimentos" após confirmar autenticidade e autorização. -->
+        <figure class="quote reveal" data-confirmar="depoimentos"><blockquote>Profissionais qualificados e atenciosos!!!</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Danielle C. · Google</figcaption></figure>
+        <figure class="quote reveal" data-delay="1" data-confirmar="depoimentos"><blockquote>Com certeza, indico para qualquer pessoa os serviços da Jota Car.</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Renata H. · Google</figcaption></figure>
+        <figure class="quote reveal" data-delay="2" data-confirmar="depoimentos"><blockquote>Deus os abençoe todos aí e continuem assim, pois o cliente retorna.</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Paulo A. · Google</figcaption></figure>
+        <a class="case reveal" href="https://www.instagram.com/jotacar9000/" target="_blank" rel="noopener" data-track="instagram_caso">
+          <svg aria-hidden="true"><use href="#i-insta"/></svg>
+          <div><strong>Do dia a dia da oficina: HB20 2024, troca da bomba de combustível</strong><span>Veja os serviços recentes no Instagram @jotacar9000</span></div>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FAQ ================= -->
+<section class="section bg-white on-light" id="duvidas" aria-labelledby="faq-title">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Dúvidas frequentes</span>
+      <h2 id="faq-title">Antes de trazer o carro</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Preciso agendar?</summary>
+        <p class="answer">Recomendamos chamar no WhatsApp antes de vir. Assim a oficina já sabe o que o carro tem e combina com você o melhor horário.</p>
+      </details>
+      <details>
+        <summary>Vocês passam o orçamento antes de fazer o serviço?</summary>
+        <p class="answer">Sim. Depois da avaliação, você recebe o orçamento com o que precisa ser feito e quanto custa.<span data-confirmar="autorizacao"> Nenhum serviço começa sem a sua aprovação.</span></p>
+      </details>
+      <details>
+        <summary>Dá para saber o defeito só pelo WhatsApp?</summary>
+        <p class="answer">Pela conversa já dá para entender o problema e orientar o próximo passo. Mas o que precisa ser feito, e o preço, só se confirma com o carro avaliado na oficina.</p>
+      </details>
+      <details data-confirmar="parcelamento">
+        <summary>Quais as formas de pagamento?</summary>
+        <p class="answer">Cartão de crédito em até 10x sem juros. Para outras formas de pagamento, fale com a gente pelo WhatsApp.</p>
+      </details>
+      <details>
+        <summary>Fazem diagnóstico computadorizado?</summary>
+        <p class="answer">Sim. Com o scanner lemos as falhas registradas pela central do carro, como quando acende uma luz no painel, e indicamos o reparo a partir disso.</p>
+      </details>
+      <details>
+        <summary>Vocês vendem peças?</summary>
+        <p class="answer">Sim, temos venda de peças novas no balcão, além dos serviços de mecânica.</p>
+      </details>
+      <details>
+        <summary>Abrem aos sábados?</summary>
+        <p class="answer">Sim, aos sábados das 8h às 14h. De segunda a sexta, das 8h às 18h. Domingo fechado. Em feriados, confirme pelo WhatsApp.</p>
+      </details>
+      <details data-confirmar="acessibilidade">
+        <summary>A oficina tem acessibilidade?</summary>
+        <p class="answer">Sim, a entrada tem rampa e é acessível para cadeira de rodas.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ONDE FICA ================= -->
+<section class="section bg-ink on-dark" id="onde-fica" aria-labelledby="loc-title">
+  <div class="wrap location">
+    <div class="reveal">
+      <span class="kicker">Onde fica</span>
+      <h2 id="loc-title">Na Estrada do M'Boi Mirim, perto de você.</h2>
+      <!-- CEP/bairro: Google usa 04945-046 (Pq. Universitário Espírita); Receita usa 04948-030 (Pq. do Lago). Liberar "cep" só após confirmar. -->
+      <p class="addr">Estrada do M'Boi Mirim, 9000<small>São Paulo – SP<span data-confirmar="cep"> · Parque Universitário Espírita · CEP 04945-046</span></small></p>
+      <ul class="hours clean" id="hours" aria-label="Horário de funcionamento">
+        <li data-days="1,2,3,4,5"><span>Segunda a sexta</span><span>8h às 18h</span></li>
+        <li data-days="6"><span>Sábado</span><span>8h às 14h</span></li>
+        <li data-days="0"><span>Domingo</span><span>Fechado</span></li>
+      </ul>
+      <p class="hours-note">Em feriados, confirme pelo WhatsApp.</p>
+      <div class="loc-ctas">
+        <a class="btn btn-primary" href="https://www.google.com/maps/dir/?api=1&amp;destination=Jota+Car+Servi%C3%A7os+Automotivo%2C+Estrada+do+M%27Boi+Mirim%2C+9000%2C+S%C3%A3o+Paulo+-+SP" target="_blank" rel="noopener" data-track="rota_google"><svg aria-hidden="true"><use href="#i-route"/></svg>Traçar rota no Google Maps</a>
+        <a class="btn btn-ghost" href="https://waze.com/ul?q=Estrada%20do%20M'Boi%20Mirim%2C%209000%2C%20S%C3%A3o%20Paulo&amp;navigate=yes" target="_blank" rel="noopener" data-track="rota_waze">Abrir no Waze</a>
+        <a class="btn btn-ghost" href="tel:+5511934182002" data-track="ligar"><svg aria-hidden="true"><use href="#i-phone"/></svg>(11) 93418-2002</a>
+      </div>
+      <p class="a11y-note" data-confirmar="acessibilidade"><svg aria-hidden="true"><use href="#i-a11y"/></svg>Entrada acessível com rampa.</p>
+    </div>
+    <div class="map reveal" data-delay="1">
+      <iframe title="Mapa: Jota Car na Estrada do M'Boi Mirim, 9000, São Paulo" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+        src="https://www.google.com/maps?q=Jota+Car+Servi%C3%A7os+Automotivo,+Estrada+do+M%27Boi+Mirim,+9000,+S%C3%A3o+Paulo&amp;output=embed"></iframe>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CTA FINAL ================= -->
+<section class="final" aria-labelledby="final-title">
+  <div class="wrap">
+    <div>
+      <h2 id="final-title">O carro deu sinal? Chame a Jota Car antes que o problema aumente.</h2>
+      <p>Mande o modelo e o que está acontecendo. A gente responde e combina o atendimento com você.</p>
+    </div>
+    <div>
+      <a class="btn btn-dark" data-wa="geral" data-track="wa_final" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20falar%20sobre%20o%20meu%20carro." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Falar com a Jota Car no WhatsApp</a>
+      <p class="micro">Seg a sex 8h–18h · Sáb 8h–14h</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <div>
+      <a href="#topo" class="logo"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#16181c" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="2.4" fill="#16181c" stroke="none"/><path d="M3.8 10.6 9.7 11.4M20.2 10.6l-5.9.8M12 14.4v6"/></svg></span><span>JOTA CAR<small>SERVIÇOS AUTOMOTIVOS</small></span></a>
+      <p>Mecânica de confiança, perto de você. Mecânica geral, pneus e peças na Estrada do M'Boi Mirim, Zona Sul de São Paulo.</p>
+    </div>
+    <div>
+      <h3>Contato</h3>
+      <a href="https://wa.me/5511934182002" data-wa="geral" data-track="wa_footer" target="_blank" rel="noopener">WhatsApp (11) 93418-2002</a><br>
+      <a href="https://www.instagram.com/jotacar9000/" target="_blank" rel="noopener" data-track="instagram_footer">Instagram @jotacar9000</a>
+    </div>
+    <div>
+      <h3>Endereço e horário</h3>
+      <p>Estrada do M'Boi Mirim, 9000<br>São Paulo – SP</p>
+      <p style="margin-top:8px">Seg a sex 8h–18h<br>Sáb 8h–14h</p>
+    </div>
+  </div>
+  <div class="wrap footer-bottom">
+    Jota Car Serviços Automotivo · Jairo Costa Pneus LTDA · CNPJ 50.726.597/0001-24 · © <span id="year">2026</span>
+  </div>
+</footer>
+
+<!-- Barra de ação no celular: aparece depois do topo; o body ganha respiro para não cobrir conteúdo -->
+<div class="mbar" id="mbar">
+  <a class="btn btn-ghost" href="tel:+5511934182002" aria-label="Ligar para a Jota Car" data-track="ligar_mbar"><svg aria-hidden="true"><use href="#i-phone"/></svg></a>
+  <a class="btn btn-primary" data-wa="geral" data-track="wa_mbar" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20falar%20sobre%20o%20meu%20carro." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Falar no WhatsApp</a>
+</div>
+
+<script>
+(function(){
+  // ================= DADOS EDITÁVEIS =================
+  var CONFIG = {
+    whatsapp: "5511934182002",              // país + DDD + número, só dígitos
+    mensagens: {
+      geral: "Olá, Jota Car! Vim pelo site e quero falar sobre o meu carro.",
+      triagemBase: "Olá, Jota Car! Vim pelo site.",
+      triagemFim: "Quero agendar uma avaliação."
+    },
+    timezone: "America/Sao_Paulo",
+    // [abre, fecha] em horas; null = fechado. Índice 0 = domingo.
+    horario: [null,[8,18],[8,18],[8,18],[8,18],[8,18],[8,14]],
+    // Itens liberados após confirmação do dono. Chaves possíveis:
+    // "nota", "depoimentos", "parcelamento", "acessibilidade", "cep", "autorizacao"
+    confirmados: [],
+    // Fotos oficiais (a seção "Por dentro da oficina" aparece sozinha quando houver itens).
+    // Ex.: { src: "fotos/fachada.jpg", alt: "Fachada da Jota Car na Estrada do M'Boi Mirim" }
+    fotos: []
+  };
+  // ===================================================
+
+  var root = document.documentElement;
+  root.classList.add("js");
+  var params = new URLSearchParams(location.search);
+  if (params.get("revisao") === "1") root.classList.add("revisao");
+
+  // Libera itens confirmados
+  CONFIG.confirmados.forEach(function(k){
+    document.querySelectorAll('[data-confirmar="' + k + '"]').forEach(function(el){ el.removeAttribute("data-confirmar"); });
+  });
+
+  function waLink(msg){ return "https://wa.me/" + CONFIG.whatsapp + "?text=" + encodeURIComponent(msg); }
+
+  // Todos os links de WhatsApp saem da mesma configuração (o href no HTML é o fallback sem JS)
+  document.querySelectorAll('[data-wa="geral"]').forEach(function(a){ a.href = waLink(CONFIG.mensagens.geral); });
+  document.querySelectorAll("[data-wa-msg]").forEach(function(a){ a.href = waLink(a.getAttribute("data-wa-msg")); });
+
+  // ================= RASTREAMENTO =================
+  // Só registra CLIQUES. Mensagem enviada e agendamento confirmado acontecem fora da página
+  // (no WhatsApp) e precisam ser medidos na oficina/sistema. Nenhum analytics está conectado ainda.
+  window.dataLayer = window.dataLayer || [];
+  document.addEventListener("click", function(e){
+    var el = e.target.closest("[data-track]");
+    if (!el) return;
+    var href = el.getAttribute("href") || "";
+    var tipo = href.indexOf("wa.me") > -1 ? "whatsapp_click"
+             : href.indexOf("tel:") === 0 ? "phone_click"
+             : /maps|waze/.test(href) ? "route_click"
+             : "cta_click";
+    var ev = { event: tipo, cta_id: el.getAttribute("data-track") };
+    if (el.id === "triageBtn") ev.sintomas = selecionados().length;
+    window.dataLayer.push(ev);
+  });
+
+  // ================= DIA DE HOJE NO HORÁRIO =================
+  function agoraSP(){
+    try{
+      var p = new Intl.DateTimeFormat("en-US",{timeZone:CONFIG.timezone,weekday:"short",hour:"numeric",minute:"numeric",hour12:false}).formatToParts(new Date());
+      var o = {}; p.forEach(function(x){ o[x.type]=x.value; });
+      return { dia: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(o.weekday), hora: (parseInt(o.hour,10)%24) + parseInt(o.minute,10)/60 };
+    }catch(err){ var d=new Date(); return {dia:d.getDay(),hora:d.getHours()+d.getMinutes()/60}; }
+  }
+  function atualizarStatus(){
+    var n = agoraSP();
+    document.querySelectorAll("#hours li").forEach(function(li){
+      if (li.dataset.days.split(",").indexOf(String(n.dia)) > -1) li.setAttribute("aria-current","true");
+      else li.removeAttribute("aria-current");
+    });
+  }
+  atualizarStatus();
+  setInterval(atualizarStatus, 60000);   // página aberta por muito tempo não fica desatualizada
+  document.addEventListener("visibilitychange", function(){ if (!document.hidden) atualizarStatus(); });
+  document.getElementById("year").textContent = new Date().getFullYear();
+
+  // ================= TRIAGEM POR SINTOMAS =================
+  var chips = Array.prototype.slice.call(document.querySelectorAll(".chip"));
+  var car = document.getElementById("car"), tbtn = document.getElementById("triageBtn");
+  var countEl = document.getElementById("chipCount"), clearBtn = document.getElementById("chipClear");
+  var previewEl = document.getElementById("previewText");
+  function selecionados(){ return chips.filter(function(c){ return c.getAttribute("aria-pressed")==="true"; }).map(function(c){ return c.dataset.symptom; }); }
+  function montarMensagem(){
+    var sel = selecionados(), modelo = car.value.trim();
+    var linhas = [CONFIG.mensagens.triagemBase];
+    if (modelo) linhas.push("Carro: " + modelo + ".");
+    if (sel.length) linhas.push("O que está acontecendo: " + sel.join(", ") + ".");
+    linhas.push(CONFIG.mensagens.triagemFim);
+    var msg = linhas.join("\n");
+    tbtn.href = waLink(msg);
+    previewEl.textContent = msg;
+    countEl.textContent = sel.length === 0 ? "Nenhum marcado" : sel.length === 1 ? "1 sintoma marcado" : sel.length + " sintomas marcados";
+    clearBtn.hidden = sel.length === 0;
+  }
+  chips.forEach(function(c){
+    c.addEventListener("click", function(){
+      c.setAttribute("aria-pressed", c.getAttribute("aria-pressed")==="true" ? "false" : "true");
+      montarMensagem();
+    });
+  });
+  clearBtn.addEventListener("click", function(){
+    chips.forEach(function(c){ c.setAttribute("aria-pressed","false"); });
+    montarMensagem(); chips[0].focus();
+  });
+  car.addEventListener("input", montarMensagem);
+  document.getElementById("triage").addEventListener("submit", function(e){ e.preventDefault(); tbtn.click(); });
+  montarMensagem();
+
+  // ================= FOTOS OFICIAIS =================
+  if (CONFIG.fotos.length){
+    var g = document.getElementById("gallery");
+    CONFIG.fotos.forEach(function(f){
+      var fig = document.createElement("figure"), img = document.createElement("img");
+      img.src = f.src; img.alt = f.alt || ""; img.loading = "lazy"; img.decoding = "async"; img.width = 800; img.height = 600;
+      fig.appendChild(img); g.appendChild(fig);
+    });
+    document.getElementById("fotos").hidden = false;
+  }
+
+  // ================= MENU MOBILE =================
+  var nav = document.getElementById("nav"), mb = document.getElementById("menuBtn"), icon = document.getElementById("menuIcon");
+  function setMenu(open){
+    nav.classList.toggle("open", open);
+    mb.setAttribute("aria-expanded", String(open));
+    mb.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
+    icon.setAttribute("d", open ? "M6 6l12 12M18 6 6 18" : "M4 7h16M4 12h16M4 17h16");
+  }
+  mb.addEventListener("click", function(){ setMenu(!nav.classList.contains("open")); });
+  nav.querySelectorAll("a").forEach(function(a){ a.addEventListener("click", function(){ setMenu(false); }); });
+  document.addEventListener("keydown", function(e){ if (e.key==="Escape" && nav.classList.contains("open")){ setMenu(false); mb.focus(); } });
+  document.addEventListener("click", function(e){ if (nav.classList.contains("open") && !e.target.closest(".header")) setMenu(false); });
+
+  // ================= BARRA MOBILE + REVEAL =================
+  var mbar = document.getElementById("mbar"), hero = document.getElementById("topo");
+  if ("IntersectionObserver" in window){
+    new IntersectionObserver(function(es){
+      var show = !es[0].isIntersecting;
+      mbar.classList.toggle("show", show);
+      document.body.classList.toggle("has-mbar", show);
+    }).observe(hero);
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if (e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
+    }, { rootMargin: "0px 0px -8% 0px" });
+    document.querySelectorAll(".reveal").forEach(function(el){ io.observe(el); });
+  } else {
+    document.querySelectorAll(".reveal").forEach(function(el){ el.classList.add("in"); });
+  }
+  // Rede de segurança: se algo falhar, nada fica invisível
+  setTimeout(function(){ document.querySelectorAll(".reveal:not(.in)").forEach(function(el){
+    var r = el.getBoundingClientRect(); if (r.top < innerHeight) el.classList.add("in");
+  }); }, 1500);
+})();
+</script>
+</body>
+</html>
