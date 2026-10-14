@@ -12,6 +12,7 @@ import {
 import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
 import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '@/lib/invoiceImport';
+import { BUCKET, type PurchaseImport } from '@/lib/purchaseImports';
 
 type Row = { key: string; part_id: string | null; name: string; unit: string; quantity: string; unit_cost: string };
 type Inst = { due_date: string; amount: string };
@@ -58,6 +59,10 @@ export default function CompraNova() {
   const fileRef = useRef<HTMLInputElement>(null);
   /** Parcelas que vieram na nota — usadas enquanto batem com o total e o 1º vencimento */
   const importedInsts = useRef<{ due: string; amount: number }[] | null>(null);
+  /** Conferência de nota da fila de fotos (/oficina/compras/importar) */
+  const importId = params.get('importacao');
+  const [loaded, setLoaded] = useState(false);
+  const [queued, setQueued] = useState<{ imp: PurchaseImport; url: string | null } | null>(null);
 
   useEffect(() => {
     if (!wid || !allowed) return;
@@ -73,6 +78,7 @@ export default function CompraNova() {
       // "Comprar" do estoque: já começa com a peça na nota (custo da última compra)
       const pre = ((p.data as WorkshopPart[]) ?? []).find(x => x.id === params.get('peca'));
       if (pre) setRows([{ ...newRow(), part_id: pre.id, name: pre.name, unit: pre.unit, unit_cost: Number(pre.cost) > 0 ? costInput(Number(pre.cost)) : '' }]);
+      setLoaded(true);
     })();
     hasAiInvoice(wid).then(setAiEnabled);
   }, [wid, allowed]);
@@ -175,6 +181,21 @@ export default function CompraNova() {
     setImported(d);
   }
 
+  // Nota da fila: preenche com o que foi lido e mostra o arquivo para conferir
+  useEffect(() => {
+    if (!loaded || !importId) return;
+    (async () => {
+      const { data } = await supabase.from('purchase_imports').select('*').eq('id', importId).maybeSingle();
+      const imp = data as PurchaseImport | null;
+      if (!imp?.extracted) return toast.error('Nota da fila não encontrada');
+      if (imp.status === 'confirmed') toast.error('Esta nota da fila já foi lançada');
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(imp.file_path, 60 * 60);
+      setQueued({ imp, url: signed?.signedUrl ?? null });
+      applyInvoice(imp.extracted);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, importId]);
+
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -198,6 +219,17 @@ export default function CompraNova() {
       toast.error(err?.message ?? 'Não foi possível ler o arquivo');
     } finally {
       setReading(null);
+    }
+  }
+
+  /** Depois de lançar: marca a nota da fila e volta para a próxima; sem fila, abre a nota lançada */
+  async function finishQueued(invoiceId: string) {
+    if (queued) {
+      await supabase.from('purchase_imports')
+        .update({ status: 'confirmed', invoice_id: invoiceId, confirmed_at: new Date().toISOString() }).eq('id', queued.imp.id);
+      nav('/oficina/compras/importar');
+    } else {
+      nav(`/oficina/compras?nota=${invoiceId}`);
     }
   }
 
@@ -225,6 +257,13 @@ export default function CompraNova() {
     if (total <= 0) return toast.error('O total da nota precisa ser maior que zero');
     if (!instOk) return toast.error(`As parcelas somam ${fmtBRL(instTotal)} e a nota dá ${fmtBRL(total)}`);
 
+    // Mesma nota (nº + fornecedor) já lançada?
+    if (number.trim()) {
+      const { data: same } = await supabase.from('purchase_invoices').select('id').eq('workshop_id', wid!)
+        .eq('supplier_id', supplierId).eq('number', number.trim()).eq('status', 'posted').limit(1);
+      if (same?.length && !confirm(`A nota nº ${number.trim()} deste fornecedor já foi lançada. Lançar de novo vai duplicar a compra e as contas a pagar. Lançar mesmo assim?`)) return;
+    }
+
     setSaving(true);
     const { data, error } = await supabase.rpc('purchase_post', {
       p_workshop: wid, p_supplier: supplierId, p_number: number, p_issue_date: date,
@@ -249,12 +288,12 @@ export default function CompraNova() {
       setSaving(false);
       if (failed) toast.error(`Nota lançada, mas ${failed} peça(s) ficaram somadas no estoque. Ajuste em Peças.`);
       else toast.success('Nota lançada ✓ Peças cadastradas e contas a pagar criadas (estoque não mexido)');
-      nav(`/oficina/compras?nota=${data}`);
+      await finishQueued(data as string);
       return;
     }
     setSaving(false);
     toast.success('Nota lançada ✓ Estoque e contas a pagar atualizados');
-    nav(`/oficina/compras?nota=${data}`);
+    await finishQueued(data as string);
   }
 
   if (!allowed) return <Restricted />;
@@ -268,8 +307,22 @@ export default function CompraNova() {
           <p className="text-sm text-steel-500 mt-1">Ao lançar, o custo das peças é atualizado e as parcelas vão para as contas a pagar. Somar no estoque é opcional (no fim da tela).</p>
         </div>
 
+        {queued && (
+          <div className="card !p-3 flex items-center gap-3 border border-brand-200">
+            {queued.url && queued.imp.media_type.startsWith('image/')
+              ? <a href={queued.url} target="_blank" rel="noreferrer" className="shrink-0"><img src={queued.url} alt="Nota" className="h-20 w-16 object-cover rounded-lg border border-steel-200" /></a>
+              : <div className="h-20 w-16 shrink-0 rounded-lg bg-steel-100 grid place-items-center text-2xl">{queued.imp.media_type.includes('xml') ? '🧾' : '📄'}</div>}
+            <div className="min-w-0 flex-1 text-sm">
+              <div className="font-semibold">Conferindo nota da fila de fotos</div>
+              <div className="text-xs text-steel-500">Compare com o arquivo e corrija o que precisar. Ao lançar, volta para a próxima nota.</div>
+              {queued.url && <a href={queued.url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-brand-700">Abrir a nota em tela cheia →</a>}
+            </div>
+            <Link to="/oficina/compras/importar" className="btn-ghost text-sm shrink-0">Voltar à fila</Link>
+          </div>
+        )}
+
         {/* Importar arquivo da nota */}
-        <div className="card flex flex-col sm:flex-row sm:items-center gap-3 !bg-brand-50/60 border border-brand-100">
+        {!queued && <div className="card flex flex-col sm:flex-row sm:items-center gap-3 !bg-brand-50/60 border border-brand-100">
           <div className="flex-1 min-w-0">
             <div className="font-bold text-steel-900">📎 Importar arquivo da nota</div>
             <p className="text-xs text-steel-600 mt-0.5">
@@ -284,7 +337,7 @@ export default function CompraNova() {
           <button type="button" className="btn-primary shrink-0" disabled={!!reading} onClick={() => fileRef.current?.click()}>
             {reading === 'ia' ? '✨ Lendo a nota com IA…' : reading === 'xml' ? 'Lendo XML…' : aiEnabled ? 'Escolher XML ou PDF' : 'Escolher XML'}
           </button>
-        </div>
+        </div>}
 
         {imported && (
           <ImportSummary d={imported} itemsTotal={itemsTotal} freight={num(freight)} discount={num(discount)} />
