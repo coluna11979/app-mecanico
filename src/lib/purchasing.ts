@@ -100,3 +100,11 @@ export function fmtCnpj(s: string | null | undefined) {
   if (d.length !== 14) return s ?? '';
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
+
+/**
+ * Nota lançada "só no cadastro e financeiro": as peças e o custo entram, as parcelas vão para
+ * contas a pagar, mas o estoque não soma (a compra é devolvida por um ajuste logo em seguida).
+ * O texto fica nas observações da nota: é por ele que o estorno sabe que não precisa tirar do estoque.
+ */
+export const NO_STOCK_NOTE = 'Só cadastro e financeiro: não somou no estoque.';
+export const isNoStockInvoice = (notes: string | null | undefined) => !!notes?.includes(NO_STOCK_NOTE);

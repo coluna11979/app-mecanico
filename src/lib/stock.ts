@@ -6,7 +6,8 @@
  *  • "Custo a confirmar": peça sem nenhuma nota de compra lançada (não estornada) e que tem
  *    estoque ou está sem custo. Peça criada pela importação de notas antigas fica com custo
  *    estimado pela margem — só conta aqui se tiver estoque.
- *  • "Zerada": só para peça que já entrou por nota. As que nunca tiveram compra não alertam.
+ *  • "Zerada": só para peça que entrou por nota e já saiu em OS. Nunca comprada, ou lançada só no
+ *    financeiro, não alerta.
  *  • "Parada": tem estoque e custo, nenhuma saída em OS nos últimos 90 dias e cadastrada há
  *    mais de 90 dias. Só aparece quando a oficina tem 90 dias de histórico de estoque.
  */
@@ -81,7 +82,8 @@ const qty = (p: WorkshopPart) => Number(p.stock_qty);
 export const isNegative = (p: WorkshopPart) => qty(p) < 0;
 export const isBelowMin = (p: WorkshopPart) => Number(p.min_qty) > 0 && qty(p) >= 0 && qty(p) <= Number(p.min_qty);
 /** Zerada só conta para peça que já entrou por nota */
-export const isZeroBought = (p: WorkshopPart, d: StockData) => qty(p) === 0 && d.bought.has(p.id);
+/** Zerada só conta para peça que entrou por nota e saiu em OS (nota "só financeiro" não alerta) */
+export const isZeroBought = (p: WorkshopPart, d: StockData) => qty(p) === 0 && d.bought.has(p.id) && d.lastOut.has(p.id);
 export const costToConfirm = (p: WorkshopPart, d: StockData) =>
   !d.bought.has(p.id) && (qty(p) > 0 || Number(p.cost) <= 0);
 /** Quanto falta para atender as OS abertas (0 = dá conta) */
