@@ -33,6 +33,7 @@ const FIELDS: FieldDef[] = [
   { key: 'ai_refusal_fallback',    label: 'Fallback em recusa',       description: '"default" = se o modelo recusar a imagem, outro modelo tenta automaticamente. Deixe vazio para desligar (necessário em modelos sem suporte).', section: 'Inteligência Artificial' },
   { key: 'uazapi_url',             label: 'Endereço do servidor',      description: 'URL da sua conta UAZAPI (ex.: https://suaconta.uazapi.com). Usada pelo módulo Inbox do WhatsApp das oficinas.', section: 'WhatsApp (UAZAPI)' },
   { key: 'uazapi_admin_token',     label: 'Admin token',               description: 'Cria uma instância por oficina quando ela conecta o número pelo QR code.', type: 'password', section: 'WhatsApp (UAZAPI)' },
+  { key: 'infosimples_token',      label: 'Token da API',              description: 'Consulta CPF na Receita, antecedentes na PF e mandados no CNJ ao analisar cadastro de mecânico. Crie em api.infosimples.com → Administração → Tokens (deixe um limite de gasto mensal baixo).', type: 'password', section: 'Verificação de cadastro (Infosimples)' },
 ];
 
 type Section = { label: string; icon: string; color: string; bg: string };
@@ -45,6 +46,7 @@ const SECTIONS: Record<string, Section> = {
   'Email (Resend)':       { label: 'Email (Resend)',       icon: '📧',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
   'Inteligência Artificial': { label: 'Inteligência Artificial', icon: '🤖', color: 'text-brand-700', bg: 'bg-brand-50' },
   'WhatsApp (UAZAPI)':    { label: 'WhatsApp (UAZAPI)',    icon: '💬',  color: 'text-signal-700', bg: 'bg-signal-50'  },
+  'Verificação de cadastro (Infosimples)': { label: 'Verificação de cadastro (Infosimples)', icon: '🛡️', color: 'text-steel-600', bg: 'bg-steel-100' },
 };
 
 export default function AdminSettings() {
