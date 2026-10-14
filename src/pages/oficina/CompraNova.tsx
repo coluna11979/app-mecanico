@@ -152,12 +152,25 @@ export default function CompraNova() {
 
   /** Preenche a tela com o que veio do arquivo da nota */
   function applyInvoice(d: InvoiceData) {
-    // Fornecedor: pelo CNPJ; senão pelo nome
+    // Fornecedor: pelo CNPJ; senão pelo nome (parecido); não achou → cadastra sozinho com o que veio da nota
     const cnpj = onlyDigits(d.supplier.cnpj);
+    const key = (v: string) => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const nk = key(d.supplier.name);
     const sup = (cnpj && suppliers.find(s => onlyDigits(s.cnpj) === cnpj))
-      || suppliers.find(s => s.name.trim().toLowerCase() === d.supplier.name.trim().toLowerCase());
-    if (sup) { setSupplierId(sup.id); setMissingSupplier(null); }
-    else { setSupplierId(''); setMissingSupplier(d.supplier.name ? d.supplier : null); }
+      || (nk && suppliers.find(s => key(s.name) === nk))
+      || (nk.length >= 6 && suppliers.find(s => { const k = key(s.name); return k.length >= 6 && (k.includes(nk) || nk.includes(k)); }));
+    if (sup) {
+      setSupplierId(sup.id); setMissingSupplier(null);
+      // Completa o CNPJ/telefone que faltava no cadastro
+      if ((!sup.cnpj && cnpj) || (!sup.phone && d.supplier.phone)) {
+        supabase.from('suppliers').update({ cnpj: sup.cnpj || cnpj || null, phone: sup.phone || onlyDigits(d.supplier.phone) || null }).eq('id', sup.id).then(() => {});
+      }
+    } else if (d.supplier.name.trim()) {
+      setSupplierId(''); setMissingSupplier(d.supplier);
+      autoCreateSupplier(d.supplier);
+    } else {
+      setSupplierId(''); setMissingSupplier(null);
+    }
     if (d.number) setNumber(d.number);
     if (d.date) setDate(d.date);
     // Peças: pelo código do fornecedor; senão pelo nome; senão peça nova
@@ -231,6 +244,20 @@ export default function CompraNova() {
     } else {
       nav(`/oficina/compras?nota=${invoiceId}`);
     }
+  }
+
+  /** Fornecedor da nota que ainda não está cadastrado: cadastra e já usa */
+  async function autoCreateSupplier(sp: InvoiceData['supplier']) {
+    if (!wid) return;
+    const { data, error } = await supabase.from('suppliers').insert({
+      workshop_id: wid, name: sp.name.trim(), cnpj: onlyDigits(sp.cnpj) || null, phone: onlyDigits(sp.phone) || null,
+    }).select('*').single();
+    if (error) return; // fica o botão "+ Cadastrar e usar"
+    const s = data as Supplier;
+    setSuppliers(xs => [...xs, s].sort((a, b) => a.name.localeCompare(b.name)));
+    setSupplierId(s.id);
+    setMissingSupplier(null);
+    toast.success(`Fornecedor ${s.name} cadastrado ✓`);
   }
 
   async function createMissingSupplier() {
