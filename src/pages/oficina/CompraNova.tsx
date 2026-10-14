@@ -90,14 +90,28 @@ export default function CompraNova() {
   const itemsTotal = rows.reduce((a, r) => a + num(r.quantity) * num(r.unit_cost), 0);
   const total = Math.round((itemsTotal + num(freight) - num(discount)) * 100) / 100;
 
-  // Vencimento sugerido pelo prazo do fornecedor
-  useEffect(() => { setFirstDue(addDaysISO(date, supplier?.payment_days ?? 0)); }, [date, supplier?.payment_days]);
+  // Vencimento sugerido pelo prazo do fornecedor — a não ser que a nota já traga os vencimentos
+  useEffect(() => {
+    const fromNote = importedInsts.current;
+    setFirstDue(fromNote?.length ? fromNote[0].due : addDaysISO(date, supplier?.payment_days ?? 0));
+  }, [date, supplier?.payment_days]);
   // Parcelas refeitas quando muda total, quantidade ou 1º vencimento
   useEffect(() => {
     const fromNote = importedInsts.current;
-    if (fromNote && fromNote.length === count && fromNote[0]?.due === firstDue
-      && Math.abs(fromNote.reduce((a, i) => a + i.amount, 0) - total) < 0.011) {
-      setInsts(fromNote.map(i => ({ due_date: i.due, amount: moneyInput(i.amount) })));
+    // Vencimentos da nota: valem enquanto a quantidade e o 1º vencimento forem os dela.
+    // Se a soma das parcelas não bater com o total (ex.: imposto rateado nos itens), mantém as datas
+    // e acerta os valores na proporção (a última absorve os centavos).
+    if (fromNote && fromNote.length === count && fromNote[0]?.due === firstDue && total > 0) {
+      const sum = fromNote.reduce((a, i) => a + i.amount, 0);
+      const cents = Math.round(total * 100);
+      let used = 0;
+      const amounts = Math.abs(sum - total) < 0.011 ? fromNote.map(i => i.amount) : fromNote.map((i, k) => {
+        if (k === fromNote.length - 1) return (cents - used) / 100;
+        const c = Math.round((sum > 0 ? i.amount / sum : 1 / fromNote.length) * cents);
+        used += c;
+        return c / 100;
+      });
+      setInsts(fromNote.map((i, k) => ({ due_date: i.due, amount: moneyInput(amounts[k]) })));
       return;
     }
     setInsts(total > 0
