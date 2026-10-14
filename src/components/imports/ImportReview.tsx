@@ -11,6 +11,7 @@ import { OsCommission, useDraftCommission, type AutoCommission } from '@/compone
 import { fixedFor, isExcluded, loadItemRules, type ItemRule } from '@/lib/commissionRules';
 import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, WorkshopMechanic } from '@/types/database';
 import type { EditOs } from '@/lib/importEdit';
+import ServiceTitleInput from './ServiceTitleInput';
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
 type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string; who: string;
@@ -674,7 +675,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
             {/* Serviço */}
             <section className="space-y-2">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Serviço</div>
-              <input className={cls('servico_resumo')} placeholder="Serviço * (ex.: Troca de embreagem)" value={f.titulo} onChange={set('titulo')} />
+              <ServiceTitleInput workshopId={imp.workshop_id} className={cls('servico_resumo')} value={f.titulo}
+                onChange={v => setF(s => ({ ...s, titulo: v }))} />
               <textarea className={cls('observacoes')} rows={2} placeholder="Observações" value={f.obs} onChange={set('obs')} />
             </section>
 
