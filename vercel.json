@@ -21,6 +21,8 @@
     }
   ],
   "rewrites": [
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "jotacar.mecanicoapp.com.br" }], "destination": "/sites/jotacar/index.html" },
+    { "source": "/sites/jotacar", "destination": "/sites/jotacar/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
