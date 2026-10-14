@@ -107,6 +107,17 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
   const [matchVehicle, setMatchVehicle]   = useState<Vehicle | null>(null);
   const [useExisting, setUseExisting]     = useState(true);
   const [saving, setSaving] = useState(false);
+  /** Mesma nota (mesmo nº) já importada antes: aviso para não lançar em dobro */
+  const [dupes, setDupes] = useState<{ number: number | null; date: string | null; total: number | null }[]>([]);
+  useEffect(() => {
+    const doc = x?.numero_documento?.trim();
+    if (!doc || editOs) return;
+    supabase.from('paper_imports').select('id, extracted, os:service_orders(number)')
+      .eq('workshop_id', imp.workshop_id).eq('status', 'confirmed').neq('id', imp.id)
+      .eq('extracted->>numero_documento', doc)
+      .then(({ data }) => setDupes(((data ?? []) as unknown as { extracted: PaperQuoteExtracted | null; os: { number: number | null } | null }[])
+        .map(d => ({ number: d.os?.number ?? null, date: d.extracted?.data ?? null, total: d.extracted?.total ?? null }))));
+  }, [imp.id, imp.workshop_id, x?.numero_documento, editOs]);
   const [zoom, setZoom]     = useState(false);
 
   useEffect(() => {
@@ -276,6 +287,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
     if (whoMissing) { toast.error('Informe quem fez o serviço'); return; }
     if (!comm.valid) { toast.error('Escolha quem recebe cada comissão'); return; }
     if (futureDate) { toast.error('A data da nota está no futuro — corrija antes de importar'); return; }
+    if (dupes.length && !window.confirm(`A nota nº ${x?.numero_documento} já foi importada (OS nº ${dupes.map(d => String(d.number ?? '').padStart(4, '0')).join(', ')}). Importar de novo vai lançar o serviço e o pagamento em dobro. Importar mesmo assim?`)) return;
     // Ano diferente do atual costuma ser leitura errada (ex.: 2006 no lugar de 2026)
     if (f.data && f.data.slice(0, 4) !== todayYmd.slice(0, 4)
       && !window.confirm(`A nota está com data de ${new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')} (ano ${f.data.slice(0, 4)}). A leitura pode ter errado o ano. A data está certa?`)) return;
@@ -589,6 +601,17 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
 
           {/* Dados */}
           <div className="p-5 space-y-5">
+            {dupes.length > 0 && (
+              <div className="text-sm bg-alert-50 border border-alert-200 text-alert-800 rounded-xl px-3 py-2.5">
+                <strong>⚠️ Esta nota já foi importada.</strong> A nota nº {x?.numero_documento} já está no sistema
+                {dupes.map((d, i) => (
+                  <span key={i}>{i ? ',' : ':'} OS nº {String(d.number ?? '').padStart(4, '0')}
+                    {d.date && ` de ${new Date(`${d.date}T12:00:00`).toLocaleDateString('pt-BR')}`}{d.total != null && ` (${fmtBRL(d.total)})`}</span>
+                ))}.
+                <span className="block text-xs mt-1">Se for a mesma nota, clique em “Depois” e descarte esta foto. Para corrigir a outra, use ✏️ Editar na aba Importados.</span>
+              </div>
+            )}
+
             {/* Data da nota (a leitura às vezes erra o dia/mês) */}
             <section className="space-y-1.5">
               <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">📅 Data da nota</div>
