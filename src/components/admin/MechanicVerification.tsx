@@ -40,7 +40,9 @@ export function MechanicVerification({ mechanicId }: { mechanicId: string }) {
       .select('*')
       .eq('mechanic_id', mechanicId)
       .order('created_at', { ascending: false });
-    setItems((data as Verification[]) ?? []);
+    const rows = (data as Verification[]) ?? [];
+    setItems(rows);
+    return rows;
   }
 
   async function verify(only?: Verification['check_type'][]) {
@@ -50,9 +52,10 @@ export function MechanicVerification({ mechanicId }: { mechanicId: string }) {
       : items.length > 0 ? 'Rodar as 3 consultas de novo' : 'Verificar este mecânico';
     if (!confirm(`${what}? Até R$ ${(0.27 * n).toFixed(2).replace('.', ',')} na Infosimples (falha por site fora do ar não é cobrada).`)) return;
     setRunning(true); setErr(null);
+    const before = new Set(items.map(i => i.id));
     const { data, error } = await supabase.functions.invoke('verify-mechanic', { body: { mechanic_id: mechanicId, only } });
-    setRunning(false);
     if (error || data?.error) {
+      setRunning(false);
       let msg = data?.error as string | undefined;
       if (!msg && error && 'context' in error) {
         try { msg = (await (error as any).context.json()).error; } catch { /* ignore */ }
@@ -60,7 +63,15 @@ export function MechanicVerification({ mechanicId }: { mechanicId: string }) {
       setErr(msg || error?.message || 'Falha ao verificar.');
       return;
     }
-    await load();
+    // As consultas rodam no servidor e cada uma grava quando termina — acompanha até chegarem todas
+    const expected: number = data?.started ?? n;
+    const deadline = Date.now() + 5 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000));
+      const rows = await load();
+      if (rows.filter(r => !before.has(r.id)).length >= expected) break;
+    }
+    setRunning(false);
   }
 
   // Última consulta de cada tipo
@@ -118,7 +129,7 @@ export function MechanicVerification({ mechanicId }: { mechanicId: string }) {
           )}
           <button type="button" onClick={() => verify()} disabled={running}
             className={`${failed.length > 0 ? 'btn-ghost' : 'btn-primary'} text-sm`}>
-            {running ? 'Consultando… (até 3 min)' : items.length ? '🔄 Verificar tudo de novo' : '🛡️ Verificar mecânico'}
+            {running ? 'Consultando… (CNJ pode levar até 4 min)' : items.length ? '🔄 Verificar tudo de novo' : '🛡️ Verificar mecânico'}
           </button>
         </div>
       </div>

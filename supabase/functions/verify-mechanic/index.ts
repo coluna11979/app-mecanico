@@ -1,6 +1,8 @@
 // Verificação de cadastro de mecânico via Infosimples — disparada pelo admin em Aprovações.
-// Roda 3 consultas em paralelo (CPF na Receita, antecedentes na PF, mandados no CNJ),
-// grava uma linha por consulta em mechanic_verifications e devolve o resultado.
+// Roda 3 consultas em paralelo (CPF na Receita, antecedentes na PF, mandados no CNJ) em
+// segundo plano e grava uma linha em mechanic_verifications assim que cada uma termina.
+// Responde na hora (202): o gateway corta respostas com mais de 150s e o CNJ às vezes
+// passa disso — a tela acompanha pelos registros gravados.
 // Token vem de app_settings.infosimples_token (Admin → Configurações), nunca do navegador.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -14,10 +16,10 @@ const json = (body: unknown, status = 200) =>
 
 const API = 'https://api.infosimples.com/api/v2/consultas';
 // Infosimples espera até `timeout` segundos pelo site do órgão; cortamos um pouco depois.
-// O portal do CNJ (BNMP) é lento — 90s estourou no primeiro teste. As 3 rodam em paralelo,
-// então o teto é o maior deles (cabe nos 400s de wall clock do plano pago).
-const SOURCE_TIMEOUT_S = 90;
-const CNJ_TIMEOUT_S = 180;
+// O portal do CNJ (BNMP) é lento — 90s estourou no primeiro teste. Tudo roda em background,
+// então o teto é o wall clock de 400s do plano pago.
+const SOURCE_TIMEOUT_S = 120;
+const CNJ_TIMEOUT_S = 240;
 
 type CheckType = 'cpf' | 'antecedentes_pf' | 'mandados_cnj';
 type Status = 'ok' | 'attention' | 'error';
@@ -166,12 +168,17 @@ Deno.serve(async (req) => {
     }),
   ];
 
-  const outcomes = await Promise.all(checks.filter((c): c is Promise<Outcome> => c !== null));
-  if (outcomes.length === 0) return json({ error: 'Nenhuma consulta selecionada.' }, 400);
+  const pending = checks.filter((c): c is Promise<Outcome> => c !== null);
+  if (pending.length === 0) return json({ error: 'Nenhuma consulta selecionada.' }, 400);
 
-  const rows = outcomes.map(o => ({ ...o, mechanic_id: mech.id, created_by: user.id }));
-  const { data: saved, error } = await admin.from('mechanic_verifications').insert(rows).select('*');
-  if (error) return json({ error: error.message, outcomes }, 500);
+  // Cada consulta grava assim que termina — resultado aparece aos poucos na tela
+  const work = Promise.all(pending.map(async p => {
+    const o = await p;
+    const { error } = await admin.from('mechanic_verifications').insert({ ...o, mechanic_id: mech.id, created_by: user.id });
+    if (error) console.error('verify-mechanic insert', o.check_type, error.message);
+  }));
+  // @ts-ignore EdgeRuntime existe no runtime do Supabase
+  EdgeRuntime.waitUntil(work);
 
-  return json({ verifications: saved });
+  return json({ started: pending.length }, 202);
 });
