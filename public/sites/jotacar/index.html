@@ -146,6 +146,12 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 .hero::before{content:"";position:absolute;inset:0;z-index:-1;background:
   radial-gradient(60% 70% at 85% 10%,rgba(255,194,26,.15),transparent 60%),
   radial-gradient(50% 60% at 0% 100%,rgba(255,255,255,.05),transparent 60%)}
+.hero-bg{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:70% 50%;opacity:.9}
+.hero::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,rgba(22,24,28,.94) 0%,rgba(22,24,28,.72) 45%,rgba(22,24,28,.35) 100%)}
+@media (max-width:1024px){
+  .hero-bg{height:620px;bottom:auto;object-position:62% 62%;-webkit-mask:linear-gradient(180deg,#000 60%,transparent);mask:linear-gradient(180deg,#000 60%,transparent)}
+  .hero::after{background:linear-gradient(180deg,rgba(22,24,28,.5) 0%,rgba(22,24,28,.62) 300px,rgba(22,24,28,.9) 560px,rgba(22,24,28,.97) 700px)}
+}
 .hero-road{position:absolute;z-index:-1;left:-10%;right:-10%;bottom:-2px;height:120px;opacity:.45;
   background:repeating-linear-gradient(90deg,var(--yellow) 0 60px,transparent 60px 120px) center 70% / 100% 6px no-repeat;
   -webkit-mask:linear-gradient(90deg,transparent,#000 30%,#000 70%,transparent);mask:linear-gradient(90deg,transparent,#000 30%,#000 70%,transparent)}
@@ -235,6 +241,89 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 .service p{color:var(--muted);font-size:15px;margin-top:4px}
 .services-cta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding:24px;border-radius:var(--radius);background:var(--ink);color:var(--white)}
 .services-cta p{font-weight:700;font-size:18px}
+
+/* Botão de orçamento em cada serviço */
+.service > div{display:flex;flex-direction:column;flex:1;min-width:0}
+.service-cta{margin-top:10px;align-self:flex-start;display:inline-flex;align-items:center;gap:6px;min-height:44px;font-weight:700;font-size:15px;text-decoration:none;color:var(--ink)}
+.service-cta span{border-bottom:2px solid var(--yellow);transition:border-color .2s}
+.service-cta svg{width:16px;height:16px;transition:transform .2s var(--ease)}
+.service-cta:hover span{border-color:var(--ink)}
+.service-cta:hover svg{transform:translateX(3px)}
+
+/* Marcas (aparece só com CONFIG.marcas) */
+.brands{margin-top:28px}
+.brands-label{font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.brands ul{display:flex;flex-wrap:wrap;gap:8px}
+.brands li{padding:8px 16px;border-radius:999px;background:var(--paper);border:1px solid var(--line);font-weight:800;font-stretch:112%;font-size:15px}
+
+/* Ofertas (aparece só com ofertas dentro da validade em CONFIG.ofertas) */
+.offers{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+.offer{position:relative;display:flex;flex-direction:column;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:24px;overflow:hidden;transition:transform .25s var(--ease),box-shadow .25s}
+.offer:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.offer::before{content:"";position:absolute;inset:0 0 auto 0;height:6px;background:var(--yellow)}
+.offer-badge{align-self:flex-start;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;background:var(--ink);color:var(--yellow);border-radius:999px;padding:5px 10px;margin-bottom:14px}
+.offer h3{font-size:21px;font-weight:800;font-stretch:105%}
+.offer-detail{color:var(--muted);font-size:15px;margin-top:6px}
+.offer-price{margin-top:16px;line-height:1}
+.offer-price small{display:block;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
+.offer-price strong{font-size:40px;font-weight:900;font-stretch:115%;letter-spacing:-.02em}
+.offer-price span{font-size:15px;font-weight:600;color:var(--muted);margin-left:4px}
+.offer-cond{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.45}
+.offer .btn{margin-top:auto;width:100%}
+.offer-cond{margin-bottom:18px}
+.offers-note{margin-top:16px;font-size:13px;color:var(--muted)}
+
+/* ---------- Movimento do topo ---------- */
+.hero-bg{animation:kenburns 22s ease-out both}
+@keyframes kenburns{from{transform:scale(1.12)}to{transform:scale(1)}}
+.hero-road{animation:road 5s linear infinite}
+@keyframes road{to{background-position:120px 70%}}
+.hero h1{animation:rise .8s var(--ease) both}
+.h1-loc,.hero-sub{animation:rise .8s .12s var(--ease) both}
+.hero-ctas,.proof{animation:rise .8s .22s var(--ease) both}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+/* ---------- Painel de luzes ---------- */
+.dash{display:grid;grid-template-columns:1fr 1fr;gap:clamp(20px,3vw,40px);align-items:stretch}
+.cluster{position:relative;border-radius:28px;padding:clamp(20px,3vw,32px);background:
+  radial-gradient(120% 90% at 50% 0%,#2a2e36 0%,#141619 70%);border:1px solid var(--line-dark);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 -30px 60px rgba(0,0,0,.45),0 30px 60px -30px rgba(0,0,0,.8)}
+.cluster-top{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7d838d;margin-bottom:18px}
+.cluster-top span:last-child{display:flex;align-items:center;gap:6px}
+.cluster-top span:last-child::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+.lights{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.light{--c:#ff453a;display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 8px 14px;border-radius:18px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.28);color:#5d636c;cursor:pointer;transition:background .2s,border-color .2s,color .2s,transform .15s}
+.light.amber{--c:#ffb000}
+.light svg{width:44px;height:44px;transition:filter .25s,color .25s}
+.light span{font-size:13px;font-weight:700;color:#a2a8b1;line-height:1.2;text-align:center}
+.light:hover{color:#8b929c;border-color:rgba(255,255,255,.14)}
+.light:active{transform:scale(.97)}
+.light[aria-selected="true"]{color:var(--c);background:rgba(255,255,255,.04);border-color:color-mix(in srgb,var(--c) 55%,transparent)}
+.light[aria-selected="true"] svg{filter:drop-shadow(0 0 10px var(--c)) drop-shadow(0 0 2px var(--c))}
+.light[aria-selected="true"] span{color:var(--white)}
+.cluster.ignition .light{color:var(--c)}
+.cluster.ignition .light svg{filter:drop-shadow(0 0 10px var(--c))}
+.cluster-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:16px;font-size:13px;color:#8b929c}
+.cluster-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.dash-info{background:var(--paper);color:var(--text);border-radius:24px;padding:clamp(22px,3vw,32px);display:flex;flex-direction:column}
+.urgency{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:6px 12px;border-radius:999px;color:#fff;background:#d6332a}
+.urgency.amber{background:#e08a00}
+.urgency::before{content:"";width:8px;height:8px;border-radius:50%;background:#fff}
+.dash-info h3{font-size:clamp(22px,2.4vw,28px);font-weight:900;margin-top:14px}
+.dash-info h4{font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:18px 0 6px}
+.dash-info p{font-size:16px;color:#33373e}
+.dash-info .btn{margin-top:22px;align-self:flex-start}
+.dash-info .note{margin-top:14px}
+.dash-info.swap{animation:fadeIn .3s var(--ease)}
+
+@media (max-width:1024px){ .dash{grid-template-columns:1fr} }
+@media (max-width:640px){
+  .lights{gap:8px}
+  .light{padding:14px 4px 12px}
+  .light svg{width:38px;height:38px}
+  .light span{font-size:12px}
+  .dash-info .btn{width:100%}
+}
 
 /* Fotos (aparece só quando houver fotos oficiais em CONFIG.fotos) */
 .gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
@@ -402,6 +491,12 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
   <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
   <symbol id="i-insta" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor"/></symbol>
   <symbol id="i-google" viewBox="0 0 24 24"><path d="M20.5 12.2c0-.6-.1-1.2-.2-1.7H12v3.3h4.8a4.1 4.1 0 0 1-1.8 2.7v2.2h2.9c1.7-1.6 2.6-3.9 2.6-6.5Z" fill="currentColor"/><path d="M12 21c2.4 0 4.4-.8 5.9-2.2L15 16.6c-.8.5-1.8.9-3 .9a5.3 5.3 0 0 1-5-3.7H4.1v2.3A9 9 0 0 0 12 21Z" fill="currentColor" opacity=".8"/><path d="M7 13.8a5.4 5.4 0 0 1 0-3.5V8H4.1a9 9 0 0 0 0 8.1L7 13.8Z" fill="currentColor" opacity=".6"/><path d="M12 6.6c1.3 0 2.5.5 3.4 1.3l2.6-2.6A9 9 0 0 0 4.1 8L7 10.2a5.3 5.3 0 0 1 5-3.6Z" fill="currentColor" opacity=".9"/></symbol>
+  <symbol id="d-oil" viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"><path d="M6 22h6l4-4h8l3 3h4l9-5 3 2-12 13H12a6 6 0 0 1-6-6v-3Z"/><path d="M16 18v-4h8"/><path d="M43 26c0 2-1 3.5-2.2 3.5S38.6 28 38.6 26c0-1.6 2.2-4.5 2.2-4.5S43 24.4 43 26Z" fill="currentColor"/></g></symbol>
+  <symbol id="d-temp" viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M24 6v20"/><circle cx="24" cy="31" r="5"/><path d="M28 11h6M28 17h6M28 23h4"/><path d="M5 40c3-2 5 2 8 0s5 2 8 0 5 2 8 0 5 2 8 0 5 2 6 1"/></g></symbol>
+  <symbol id="d-brake" viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><circle cx="24" cy="24" r="12"/><path d="M9 12a18 18 0 0 0 0 24M39 12a18 18 0 0 1 0 24"/><path d="M24 17v9"/></g><circle cx="24" cy="31" r="2" fill="currentColor"/></symbol>
+  <symbol id="d-battery" viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="14" width="36" height="24" rx="3"/><path d="M13 14v-4h6v4M29 14v-4h6v4M13 26h7M32 22.5v7M28.5 26h7"/></g></symbol>
+  <symbol id="d-engine" viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"><path d="M8 20h4v-4h6v-4h12v4h4l4 4h4v14h-4l-4 4H16l-4-4H8V20Z"/><path d="M4 22v10M18 12h12"/></g></symbol>
+  <symbol id="d-abs" viewBox="0 0 48 48"><g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><circle cx="24" cy="24" r="12"/><path d="M9 12a18 18 0 0 0 0 24M39 12a18 18 0 0 1 0 24"/></g><text x="24" y="28.5" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="900" fill="currentColor">ABS</text></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
@@ -412,6 +507,7 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
       <span>JOTA CAR<small>SERVIÇOS AUTOMOTIVOS</small></span>
     </a>
     <nav class="nav" id="nav" aria-label="Seções da página">
+      <a href="#painel">Luzes do painel</a>
       <a href="#servicos">Serviços</a>
       <a href="#como-funciona">Como funciona</a>
       <a href="#avaliacoes">Avaliações</a>
@@ -432,6 +528,9 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 
 <!-- ================= HERO ================= -->
 <section class="hero on-dark" id="topo" aria-labelledby="hero-title">
+  <!-- Foto ilustrativa (Unsplash, licença gratuita): https://unsplash.com/pt-br/fotografias/mecanico-usando-chave-de-impacto-na-roda-do-carro-u49lt6K02e0
+       Trocar por foto real da Jota Car quando houver. -->
+  <img class="hero-bg" src="https://images.unsplash.com/photo-1764015805414-df7de89d405b?w=1600&q=70&auto=format&fit=crop" srcset="https://images.unsplash.com/photo-1764015805414-df7de89d405b?w=800&q=65&auto=format&fit=crop 800w, https://images.unsplash.com/photo-1764015805414-df7de89d405b?w=1200&q=70&auto=format&fit=crop 1200w, https://images.unsplash.com/photo-1764015805414-df7de89d405b?w=1600&q=70&auto=format&fit=crop 1600w, https://images.unsplash.com/photo-1764015805414-df7de89d405b?w=2200&q=70&auto=format&fit=crop 2200w" sizes="100vw" width="1600" height="1063" alt="" fetchpriority="high" decoding="async">
   <div class="hero-road" aria-hidden="true"></div>
   <div class="wrap">
     <div>
@@ -496,9 +595,59 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
     <ul class="clean">
       <li><svg aria-hidden="true"><use href="#i-clock"/></svg><span><strong>Seg a sex, 8h às 18h</strong>Sábado, 8h às 14h</span></li>
       <li><svg aria-hidden="true"><use href="#i-pin"/></svg><span><strong>Estrada do M'Boi Mirim, 9000</strong>Zona Sul de São Paulo</span></li>
+      <li><svg aria-hidden="true"><use href="#i-chip"/></svg><span><strong>Diagnóstico computadorizado</strong>leitura das falhas da central</span></li>
+      <li><svg aria-hidden="true"><use href="#i-tire"/></svg><span><strong>Mecânica e pneus</strong>no mesmo endereço</span></li>
       <li data-confirmar="parcelamento"><svg aria-hidden="true"><use href="#i-card"/></svg><span><strong>Até 10x sem juros</strong>no cartão de crédito</span></li>
       <li data-confirmar="acessibilidade"><svg aria-hidden="true"><use href="#i-a11y"/></svg><span><strong>Entrada acessível</strong>com rampa para cadeira de rodas</span></li>
     </ul>
+  </div>
+</section>
+
+<!-- ================= OFERTAS (aparece sozinha com ofertas válidas em CONFIG.ofertas) ================= -->
+<section class="section bg-white on-light" id="ofertas" aria-labelledby="ofertas-title" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker">Ofertas</span>
+      <h2 id="ofertas-title">Ofertas da Jota Car</h2>
+      <p>Toque na oferta e fale com a oficina pelo WhatsApp. Cada uma mostra até quando vale e as condições.</p>
+    </div>
+    <div class="offers" id="offerList"></div>
+    <p class="offers-note">Ofertas válidas até a data indicada em cada uma, nas condições descritas.</p>
+  </div>
+</section>
+
+<!-- ================= LUZES DO PAINEL ================= -->
+<section class="section bg-ink on-dark" id="painel" aria-labelledby="painel-title">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Luzes do painel</span>
+      <h2 id="painel-title">Acendeu uma luz no painel? Toque nela e veja o que fazer.</h2>
+      <p>Algumas pedem para parar o carro na hora. Outras dão tempo de agendar. Saber a diferença evita um conserto bem maior.</p>
+    </div>
+    <div class="dash">
+      <div class="cluster reveal" id="cluster">
+        <div class="cluster-top"><span>Painel</span><span>Toque em uma luz</span></div>
+        <div class="lights" role="tablist" aria-label="Luzes do painel">
+          <button type="button" class="light" role="tab" aria-selected="false" aria-controls="dashInfo" data-luz="oleo"><svg aria-hidden="true"><use href="#d-oil"/></svg><span>Óleo</span></button>
+          <button type="button" class="light" role="tab" aria-selected="false" aria-controls="dashInfo" data-luz="temperatura"><svg aria-hidden="true"><use href="#d-temp"/></svg><span>Temperatura</span></button>
+          <button type="button" class="light" role="tab" aria-selected="false" aria-controls="dashInfo" data-luz="freio"><svg aria-hidden="true"><use href="#d-brake"/></svg><span>Freio</span></button>
+          <button type="button" class="light" role="tab" aria-selected="false" aria-controls="dashInfo" data-luz="bateria"><svg aria-hidden="true"><use href="#d-battery"/></svg><span>Bateria</span></button>
+          <button type="button" class="light amber" role="tab" aria-selected="true" aria-controls="dashInfo" data-luz="injecao"><svg aria-hidden="true"><use href="#d-engine"/></svg><span>Injeção</span></button>
+          <button type="button" class="light amber" role="tab" aria-selected="false" aria-controls="dashInfo" data-luz="abs"><svg aria-hidden="true"><use href="#d-abs"/></svg><span>ABS</span></button>
+        </div>
+        <div class="cluster-legend"><span><i style="background:#ff453a"></i>Vermelha: atenção imediata</span><span><i style="background:#ffb000"></i>Amarela: agende logo</span></div>
+      </div>
+      <div class="dash-info reveal" data-delay="1" id="dashInfo" role="tabpanel" aria-live="polite">
+        <span class="urgency amber" id="dUrg">Agende logo</span>
+        <h3 id="dTitle">Luz da injeção</h3>
+        <h4>O que pode ser</h4>
+        <p id="dCausa">A central do carro registrou uma falha: pode ser sensor, vela, bobina, bico injetor, entre outros.</p>
+        <h4>O que fazer agora</h4>
+        <p id="dFazer">Se a luz estiver fixa, dá para rodar com cuidado e agendar o diagnóstico computadorizado. Se estiver piscando, reduza a velocidade e traga o carro o quanto antes.</p>
+        <a class="btn btn-dark" id="dBtn" data-track="wa_painel" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Acendeu a luz da injeção no painel do meu carro e quero agendar uma avaliação." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Falar sobre essa luz</a>
+        <p class="note">Orientação geral. O manual do seu carro e a avaliação na oficina confirmam a causa.</p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -506,8 +655,8 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 <section class="section" id="sinais" aria-labelledby="sinais-title">
   <div class="wrap">
     <div class="section-head reveal">
-      <span class="kicker">Antes que o problema aumente</span>
-      <h2 id="sinais-title">Seu carro está dando algum desses sinais?</h2>
+      <span class="kicker">Barulhos e comportamentos</span>
+      <h2 id="sinais-title">Ou o carro está dando algum desses sinais?</h2>
       <p>Barulho novo, luz acesa ou volante estranho são avisos. Avaliar cedo costuma evitar que uma peça gasta acabe prejudicando outra.</p>
     </div>
     <div class="signals">
@@ -519,11 +668,11 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
         <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Meu carro está fazendo barulho ao frear e quero agendar uma avaliação." data-track="wa_sinal_freio" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       </article>
       <article class="signal reveal" data-delay="1">
-        <div class="signal-icon" aria-hidden="true"><svg><use href="#i-engine"/></svg></div>
-        <h3>Luz acesa no painel ou motor falhando</h3>
-        <p>O diagnóstico computadorizado lê as falhas registradas pela central do carro e mostra por onde começar, sem trocar peça no chute.</p>
-        <span class="tag">Diagnóstico · Injeção eletrônica</span>
-        <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Acendeu uma luz no painel do meu carro e quero agendar um diagnóstico." data-track="wa_sinal_injecao" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <div class="signal-icon" aria-hidden="true"><svg><use href="#i-oil"/></svg></div>
+        <h3>Revisão ou troca de óleo atrasada</h3>
+        <p>Óleo vencido protege menos o motor. Passou da quilometragem ou do prazo? Vale agendar antes de virar problema.</p>
+        <span class="tag">Revisão · Troca de óleo</span>
+        <a href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. A revisão/troca de óleo do meu carro está atrasada e quero agendar." data-track="wa_sinal_revisao" target="_blank" rel="noopener"><span>Falar sobre isso</span><svg width="18" height="18" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       </article>
       <article class="signal reveal" data-delay="2">
         <div class="signal-icon" aria-hidden="true"><svg><use href="#i-susp"/></svg></div>
@@ -564,19 +713,22 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
     <div class="section-head reveal">
       <span class="kicker">Serviços</span>
       <h2 id="servicos-title">Do óleo ao motor, num endereço só.</h2>
-      <p>Sem rodar de oficina em oficina: mecânica, pneus e peças no mesmo lugar, aqui na M'Boi Mirim.</p>
+      <p>Sem rodar de oficina em oficina: mecânica e pneus no mesmo lugar, aqui na M'Boi Mirim.</p>
     </div>
     <ul class="services clean">
-      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-oil"/></svg></span><div><h3>Revisão e troca de óleo</h3><p>Óleo e filtros no prazo ajudam a proteger o motor e a evitar gasto maior lá na frente.</p></div></li>
-      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-brake"/></svg></span><div><h3>Freios</h3><p>Pastilhas, discos, lonas e fluido. Freio em dia é segurança para quem vai dentro do carro.</p></div></li>
-      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-susp"/></svg></span><div><h3>Suspensão e direção</h3><p>Amortecedores, bandejas, buchas, pivôs e terminais, para rodar com conforto e estabilidade.</p></div></li>
-      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><h3>Injeção eletrônica</h3><p>Diagnóstico computadorizado, limpeza de bicos e troca de bomba de combustível.</p></div></li>
-      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-engine"/></svg></span><div><h3>Motor e mecânica geral</h3><p>Avaliação e reparo de motor e dos demais itens de mecânica do dia a dia.</p></div></li>
-      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-align"/></svg></span><div><h3>Alinhamento, balanceamento e cambagem</h3><p>Direção firme e pneus gastando por igual.</p></div></li>
-      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-tire"/></svg></span><div><h3>Pneus</h3><p>Troca e montagem de pneus para o seu carro.</p></div></li>
-      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-battery"/></svg></span><div><h3>Bateria</h3><p>Teste e troca de bateria para o carro não te deixar na mão.</p></div></li>
-      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-parts"/></svg></span><div><h3>Venda de peças</h3><p>Peças novas no balcão.</p></div></li>
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-oil"/></svg></span><div><h3>Revisão e troca de óleo</h3><p>Óleo e filtros no prazo ajudam a proteger o motor e a evitar gasto maior lá na frente.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de revisão e troca de óleo." data-track="wa_servico_1" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-brake"/></svg></span><div><h3>Freios</h3><p>Pastilhas, discos, lonas e fluido. Freio em dia é segurança para quem vai dentro do carro.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de freios." data-track="wa_servico_2" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-susp"/></svg></span><div><h3>Suspensão e direção</h3><p>Amortecedores, bandejas, buchas, pivôs e terminais, para rodar com conforto e estabilidade.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de suspensão e direção." data-track="wa_servico_3" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><h3>Injeção eletrônica</h3><p>Diagnóstico computadorizado, limpeza de bicos e troca de bomba de combustível.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de injeção eletrônica." data-track="wa_servico_4" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-engine"/></svg></span><div><h3>Motor e mecânica geral</h3><p>Avaliação e reparo de motor e dos demais itens de mecânica do dia a dia.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de motor/mecânica geral." data-track="wa_servico_5" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-align"/></svg></span><div><h3>Alinhamento, balanceamento e cambagem</h3><p>Direção firme e pneus gastando por igual.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de alinhamento, balanceamento e cambagem." data-track="wa_servico_6" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-tire"/></svg></span><div><h3>Pneus</h3><p>Troca e montagem de pneus para o seu carro.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de pneus." data-track="wa_servico_7" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-battery"/></svg></span><div><h3>Bateria</h3><p>Teste e troca de bateria para o carro não te deixar na mão.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de bateria." data-track="wa_servico_8" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
     </ul>
+    <div class="brands" id="brands" hidden>
+      <p class="brands-label">Marcas que trabalhamos</p>
+      <ul class="clean" id="brandList"></ul>
+    </div>
     <div class="services-cta reveal">
       <p>Não achou o serviço que procura? Pergunte pra gente.</p>
       <a class="btn btn-primary" data-wa-msg="Olá, Jota Car! Vim pelo site e queria saber se vocês fazem um serviço." data-track="wa_servicos" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20queria%20saber%20se%20voc%C3%AAs%20fazem%20um%20servi%C3%A7o." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Perguntar no WhatsApp</a>
@@ -675,10 +827,6 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
         <p class="answer">Sim. Com o scanner lemos as falhas registradas pela central do carro, como quando acende uma luz no painel, e indicamos o reparo a partir disso.</p>
       </details>
       <details>
-        <summary>Vocês vendem peças?</summary>
-        <p class="answer">Sim, temos venda de peças novas no balcão, além dos serviços de mecânica.</p>
-      </details>
-      <details>
         <summary>Abrem aos sábados?</summary>
         <p class="answer">Sim, aos sábados das 8h às 14h. De segunda a sexta, das 8h às 18h. Domingo fechado. Em feriados, confirme pelo WhatsApp.</p>
       </details>
@@ -738,7 +886,7 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
   <div class="wrap">
     <div>
       <a href="#topo" class="logo"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#16181c" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="2.4" fill="#16181c" stroke="none"/><path d="M3.8 10.6 9.7 11.4M20.2 10.6l-5.9.8M12 14.4v6"/></svg></span><span>JOTA CAR<small>SERVIÇOS AUTOMOTIVOS</small></span></a>
-      <p>Mecânica de confiança, perto de você. Mecânica geral, pneus e peças na Estrada do M'Boi Mirim, Zona Sul de São Paulo.</p>
+      <p>Mecânica de confiança, perto de você. Mecânica geral e pneus na Estrada do M'Boi Mirim, Zona Sul de São Paulo.</p>
     </div>
     <div>
       <h3>Contato</h3>
@@ -780,7 +928,15 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
     confirmados: [],
     // Fotos oficiais (a seção "Por dentro da oficina" aparece sozinha quando houver itens).
     // Ex.: { src: "fotos/fachada.jpg", alt: "Fachada da Jota Car na Estrada do M'Boi Mirim" }
-    fotos: []
+    fotos: [],
+    // Marcas que a loja trabalha DE VERDADE (só nomes). A faixa aparece sozinha quando houver itens.
+    // Ex.: ["Pirelli", "Goodyear"]
+    marcas: [],
+    // Ofertas com preço. Só aparecem até a data de "validade" (AAAA-MM-DD) e somem sozinhas depois.
+    // Preço anunciado obriga a loja (CDC art. 30): validade e condições são obrigatórias, sem elas a oferta não aparece.
+    // Ex.: { selo: "Pneus", titulo: "Pneu aro 14", detalhe: "175/70 R14", prefixo: "A partir de", preco: 219.90,
+    //        sufixo: "cada", condicoes: "Montado na loja. Balanceamento à parte.", validade: "2026-11-15" }
+    ofertas: []
   };
   // ===================================================
 
@@ -868,6 +1024,109 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
   car.addEventListener("input", montarMensagem);
   document.getElementById("triage").addEventListener("submit", function(e){ e.preventDefault(); tbtn.click(); });
   montarMensagem();
+
+  // ================= LUZES DO PAINEL =================
+  var LUZES = {
+    oleo: { nome: "Luz do óleo", cor: "red", urg: "Pare o carro",
+      causa: "Pressão do óleo baixa: nível baixo, vazamento ou problema na bomba de óleo.",
+      fazer: "Pare em local seguro e desligue o motor. Rodar com essa luz acesa pode danificar o motor em pouco tempo. Chame a gente antes de seguir viagem." },
+    temperatura: { nome: "Luz de temperatura", cor: "red", urg: "Pare o carro",
+      causa: "Motor esquentando: falta de água/aditivo, vazamento, ventoinha ou válvula termostática.",
+      fazer: "Pare e desligue o motor. Não abra o reservatório com o motor quente. Espere esfriar e fale com a oficina." },
+    freio: { nome: "Luz do freio", cor: "red", urg: "Atenção imediata",
+      causa: "Freio de mão puxado, fluido de freio baixo ou problema no sistema de freio.",
+      fazer: "Confira se o freio de mão está solto. Se a luz continuar acesa, rode o mínimo possível e traga o carro para avaliação." },
+    bateria: { nome: "Luz da bateria", cor: "red", urg: "Atenção imediata",
+      causa: "O carro não está carregando direito: alternador, correia ou a própria bateria.",
+      fazer: "O carro pode apagar a qualquer momento. Evite desligar longe de casa e agende uma avaliação o quanto antes." },
+    injecao: { nome: "Luz da injeção", cor: "amber", urg: "Agende logo",
+      causa: "A central do carro registrou uma falha: pode ser sensor, vela, bobina, bico injetor, entre outros.",
+      fazer: "Se a luz estiver fixa, dá para rodar com cuidado e agendar o diagnóstico computadorizado. Se estiver piscando, reduza a velocidade e traga o carro o quanto antes." },
+    abs: { nome: "Luz do ABS", cor: "amber", urg: "Agende logo",
+      causa: "Falha no sistema ABS, geralmente em sensor de roda. O freio comum continua funcionando, mas sem o antitravamento.",
+      fazer: "Dirija com mais distância do carro da frente, principalmente na chuva, e agende uma avaliação." }
+  };
+  var lightBtns = Array.prototype.slice.call(document.querySelectorAll(".light"));
+  var dInfo = document.getElementById("dashInfo");
+  function mostrarLuz(btn, foco){
+    var d = LUZES[btn.dataset.luz]; if (!d) return;
+    lightBtns.forEach(function(b){ b.setAttribute("aria-selected", b === btn ? "true" : "false"); b.tabIndex = b === btn ? 0 : -1; });
+    var u = document.getElementById("dUrg"); u.textContent = d.urg; u.className = "urgency" + (d.cor === "amber" ? " amber" : "");
+    document.getElementById("dTitle").textContent = d.nome;
+    document.getElementById("dCausa").textContent = d.causa;
+    document.getElementById("dFazer").textContent = d.fazer;
+    document.getElementById("dBtn").href = waLink("Olá, Jota Car! Vim pelo site. Acendeu a " + d.nome.toLowerCase() + " no painel do meu carro e quero orientação.");
+    dInfo.classList.remove("swap"); void dInfo.offsetWidth; dInfo.classList.add("swap");
+    if (foco) btn.focus();
+  }
+  lightBtns.forEach(function(b, i){
+    b.tabIndex = b.getAttribute("aria-selected") === "true" ? 0 : -1;
+    b.addEventListener("click", function(){ mostrarLuz(b); });
+    b.addEventListener("keydown", function(e){
+      var k = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (k){ e.preventDefault(); mostrarLuz(lightBtns[(i + k + lightBtns.length) % lightBtns.length], true); }
+      if (e.key === "Home"){ e.preventDefault(); mostrarLuz(lightBtns[0], true); }
+      if (e.key === "End"){ e.preventDefault(); mostrarLuz(lightBtns[lightBtns.length-1], true); }
+    });
+  });
+  // "Ignição": as luzes acendem juntas uma vez quando o painel aparece (como ao ligar o carro)
+  var cluster = document.getElementById("cluster");
+  var semMov = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!semMov && "IntersectionObserver" in window){
+    var ign = new IntersectionObserver(function(es){
+      if (!es[0].isIntersecting) return;
+      ign.disconnect();
+      setTimeout(function(){ cluster.classList.add("ignition"); }, 350);
+      setTimeout(function(){ cluster.classList.remove("ignition"); }, 1500);
+    }, { threshold: .5 });
+    ign.observe(cluster);
+  }
+
+  // ================= OFERTAS =================
+  function hojeISO(){
+    try { return new Intl.DateTimeFormat("en-CA",{timeZone:CONFIG.timezone}).format(new Date()); }
+    catch(err){ return new Date().toISOString().slice(0,10); }
+  }
+  function el(tag, cls, txt){ var e=document.createElement(tag); if (cls) e.className=cls; if (txt!=null) e.textContent=txt; return e; }
+  function brl(v){ return Number(v).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+  function dataBR(iso){ var p=iso.split("-"); return p[2]+"/"+p[1]; }
+  var hoje = hojeISO();
+  var ofertas = CONFIG.ofertas.filter(function(o){ return o.titulo && o.preco != null && o.validade && o.condicoes && o.validade >= hoje; });
+  if (ofertas.length){
+    var list = document.getElementById("offerList");
+    ofertas.forEach(function(o, i){
+      var card = el("article","offer");
+      if (o.selo) card.appendChild(el("span","offer-badge",o.selo));
+      card.appendChild(el("h3",null,o.titulo));
+      if (o.detalhe) card.appendChild(el("p","offer-detail",o.detalhe));
+      var pr = el("p","offer-price");
+      if (o.prefixo) pr.appendChild(el("small",null,o.prefixo));
+      pr.appendChild(el("strong",null,brl(o.preco)));
+      if (o.sufixo) pr.appendChild(el("span",null,o.sufixo));
+      card.appendChild(pr);
+      card.appendChild(el("p","offer-cond",o.condicoes + " Válido até " + dataBR(o.validade) + "."));
+      var a = el("a","btn btn-primary");
+      a.href = waLink("Olá, Jota Car! Vim pelo site e quero a oferta: " + o.titulo + (o.detalhe ? " (" + o.detalhe + ")" : "") + " por " + brl(o.preco) + ".");
+      a.target = "_blank"; a.rel = "noopener";
+      a.setAttribute("data-track","wa_oferta_" + (i+1));
+      a.innerHTML = '<svg aria-hidden="true"><use href="#i-wa"/></svg>';
+      a.appendChild(document.createTextNode("Quero essa oferta"));
+      card.appendChild(a);
+      list.appendChild(card);
+    });
+    document.getElementById("ofertas").hidden = false;
+    var link = el("a",null,"Ofertas"); link.href = "#ofertas";
+    link.addEventListener("click", function(){ setMenuSafe(false); });
+    var nav0 = document.getElementById("nav"); nav0.insertBefore(link, nav0.firstChild);
+  }
+  function setMenuSafe(v){ if (typeof setMenu === "function") setMenu(v); }
+
+  // ================= MARCAS =================
+  if (CONFIG.marcas.length){
+    var bl = document.getElementById("brandList");
+    CONFIG.marcas.forEach(function(m){ bl.appendChild(el("li",null,m)); });
+    document.getElementById("brands").hidden = false;
+  }
 
   // ================= FOTOS OFICIAIS =================
   if (CONFIG.fotos.length){
