@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
 import { NewUserModal } from '@/components/admin/NewUserModal';
+import { MechanicVerification } from '@/components/admin/MechanicVerification';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 type Row = Profile & { mechanic?: Mechanic; workshop?: Workshop };
@@ -376,6 +377,12 @@ function ApprovalDrawer({
               <Field label="Cidade / UF">
                 {row.mechanic.city || '—'}{row.mechanic.state ? ` / ${row.mechanic.state}` : ''}
               </Field>
+            </Section>
+          )}
+
+          {row.mechanic && (
+            <Section title="🛡️ Verificação de cadastro">
+              <MechanicVerification mechanicId={row.mechanic.id} />
             </Section>
           )}
 
