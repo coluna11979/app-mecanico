@@ -13,9 +13,11 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 const API = 'https://api.infosimples.com/api/v2/consultas';
-// Infosimples espera até `timeout` segundos pelo site do órgão; cortamos um pouco depois
-// pra caber no limite da edge function.
+// Infosimples espera até `timeout` segundos pelo site do órgão; cortamos um pouco depois.
+// O portal do CNJ (BNMP) é lento — 90s estourou no primeiro teste. As 3 rodam em paralelo,
+// então o teto é o maior deles (cabe nos 400s de wall clock do plano pago).
 const SOURCE_TIMEOUT_S = 90;
+const CNJ_TIMEOUT_S = 180;
 
 type CheckType = 'cpf' | 'antecedentes_pf' | 'mandados_cnj';
 type Status = 'ok' | 'attention' | 'error';
@@ -26,12 +28,12 @@ const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, ''
 const norm = (s: string | null | undefined) =>
   (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z ]/g, ' ').replace(/\s+/g, ' ').trim();
 
-async function consulta(service: string, token: string, params: Record<string, string>): Promise<ApiResponse> {
-  const body = new URLSearchParams({ token, timeout: String(SOURCE_TIMEOUT_S), ...params });
+async function consulta(service: string, token: string, params: Record<string, string>, timeoutS = SOURCE_TIMEOUT_S): Promise<ApiResponse> {
+  const body = new URLSearchParams({ token, timeout: String(timeoutS), ...params });
   const res = await fetch(`${API}/${service}`, {
     method: 'POST',
     body,
-    signal: AbortSignal.timeout((SOURCE_TIMEOUT_S + 15) * 1000),
+    signal: AbortSignal.timeout((timeoutS + 15) * 1000),
   });
   return await res.json();
 }
@@ -66,8 +68,10 @@ Deno.serve(async (req) => {
   const { data: caller } = await admin.from('profiles').select('role').eq('id', user.id).maybeSingle();
   if (caller?.role !== 'admin') return json({ error: 'forbidden' }, 403);
 
-  const { mechanic_id } = await req.json().catch(() => ({}));
+  const { mechanic_id, only } = await req.json().catch(() => ({}));
   if (!mechanic_id) return json({ error: 'mechanic_id obrigatório' }, 400);
+  // `only` = repetir só algumas consultas (ex.: a que deu timeout) sem pagar as outras de novo
+  const wants = (t: CheckType) => !Array.isArray(only) || only.length === 0 || only.includes(t);
 
   const { data: setting } = await admin.from('app_settings').select('value').eq('key', 'infosimples_token').maybeSingle();
   const token = setting?.value?.trim();
@@ -91,9 +95,9 @@ Deno.serve(async (req) => {
     details: null, api_code: null, price: null,
   });
 
-  const checks: Promise<Outcome>[] = [
+  const checks: (Promise<Outcome> | null)[] = [
     // 1) Receita Federal / CPF
-    birthdate ? run('cpf', async () => {
+    !wants('cpf') ? null : birthdate ? run('cpf', async () => {
       const r = await consulta('receita-federal/cpf', token, { cpf, birthdate });
       if (r.code !== 200 || !r.data?.[0]) {
         return { check_type: 'cpf', status: 'error', summary: errorMsg(r), details: r, api_code: r.code ?? null, price: priceOf(r) };
@@ -119,7 +123,7 @@ Deno.serve(async (req) => {
     }) : Promise.resolve(missing('data de nascimento', 'cpf')),
 
     // 2) Antecedentes criminais — Polícia Federal (emissão de certidão)
-    birthdate && nomeMae ? run('antecedentes_pf', async () => {
+    !wants('antecedentes_pf') ? null : birthdate && nomeMae ? run('antecedentes_pf', async () => {
       const r = await consulta('antecedentes-criminais/pf/emit', token, { cpf, nome, birthdate, nome_mae: nomeMae });
       if (r.code !== 200 || !r.data?.[0]) {
         return { check_type: 'antecedentes_pf', status: 'error', summary: errorMsg(r), details: r, api_code: r.code ?? null, price: priceOf(r) };
@@ -139,11 +143,11 @@ Deno.serve(async (req) => {
     }) : Promise.resolve(missing(!birthdate ? 'data de nascimento' : 'nome da mãe', 'antecedentes_pf')),
 
     // 3) Mandados de prisão — CNJ / BNMP
-    run('mandados_cnj', async () => {
+    !wants('mandados_cnj') ? null : run('mandados_cnj', async () => {
       const params: Record<string, string> = { cpf };
       if (nome) params.nome = nome;
       if (nomeMae) params.nome_mae = nomeMae;
-      const r = await consulta('cnj/mandados-prisao', token, params);
+      const r = await consulta('cnj/mandados-prisao', token, params, CNJ_TIMEOUT_S);
       const list = r.code === 200 ? (r.data ?? []) : [];
       // 612 = consulta feita, nenhum registro encontrado
       if (r.code === 612 || (r.code === 200 && list.length === 0)) {
@@ -162,7 +166,8 @@ Deno.serve(async (req) => {
     }),
   ];
 
-  const outcomes = await Promise.all(checks);
+  const outcomes = await Promise.all(checks.filter((c): c is Promise<Outcome> => c !== null));
+  if (outcomes.length === 0) return json({ error: 'Nenhuma consulta selecionada.' }, 400);
 
   const rows = outcomes.map(o => ({ ...o, mechanic_id: mech.id, created_by: user.id }));
   const { data: saved, error } = await admin.from('mechanic_verifications').insert(rows).select('*');

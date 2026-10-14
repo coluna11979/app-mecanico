@@ -43,11 +43,14 @@ export function MechanicVerification({ mechanicId }: { mechanicId: string }) {
     setItems((data as Verification[]) ?? []);
   }
 
-  async function verify() {
-    const again = items.length > 0;
-    if (!confirm(`${again ? 'Rodar a verificação de novo' : 'Verificar este mecânico'}? São 3 consultas na Infosimples (≈ R$ 0,80).`)) return;
+  async function verify(only?: Verification['check_type'][]) {
+    const n = only?.length ?? 3;
+    const what = only
+      ? `Repetir ${n === 1 ? 'a consulta' : `as ${n} consultas`} que ${n === 1 ? 'falhou' : 'falharam'}`
+      : items.length > 0 ? 'Rodar as 3 consultas de novo' : 'Verificar este mecânico';
+    if (!confirm(`${what}? Até R$ ${(0.27 * n).toFixed(2).replace('.', ',')} na Infosimples (falha por site fora do ar não é cobrada).`)) return;
     setRunning(true); setErr(null);
-    const { data, error } = await supabase.functions.invoke('verify-mechanic', { body: { mechanic_id: mechanicId } });
+    const { data, error } = await supabase.functions.invoke('verify-mechanic', { body: { mechanic_id: mechanicId, only } });
     setRunning(false);
     if (error || data?.error) {
       let msg = data?.error as string | undefined;
@@ -64,6 +67,7 @@ export function MechanicVerification({ mechanicId }: { mechanicId: string }) {
   const latest = CHECKS.map(c => ({ ...c, v: items.find(i => i.check_type === c.key) }));
   const lastRun = items[0]?.created_at;
   const spent = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
+  const failed = latest.filter(l => l.v?.status === 'error').map(l => l.key);
 
   return (
     <div className="space-y-2">
@@ -106,9 +110,17 @@ export function MechanicVerification({ mechanicId }: { mechanicId: string }) {
             ? <>Última verificação: {new Date(lastRun).toLocaleString('pt-BR')} · gasto total R$ {spent.toFixed(2).replace('.', ',')}</>
             : 'Consulta paga, roda só quando você clicar.'}
         </div>
-        <button type="button" onClick={verify} disabled={running} className="btn-primary text-sm shrink-0">
-          {running ? 'Consultando… (até 2 min)' : items.length ? '🔄 Verificar de novo' : '🛡️ Verificar mecânico'}
-        </button>
+        <div className="flex flex-wrap justify-end gap-2 shrink-0">
+          {failed.length > 0 && !running && (
+            <button type="button" onClick={() => verify(failed)} className="btn-primary text-sm">
+              🔁 Repetir só o que falhou
+            </button>
+          )}
+          <button type="button" onClick={() => verify()} disabled={running}
+            className={`${failed.length > 0 ? 'btn-ghost' : 'btn-primary'} text-sm`}>
+            {running ? 'Consultando… (até 3 min)' : items.length ? '🔄 Verificar tudo de novo' : '🛡️ Verificar mecânico'}
+          </button>
+        </div>
       </div>
 
       <p className="text-[11px] text-steel-400 leading-snug">
