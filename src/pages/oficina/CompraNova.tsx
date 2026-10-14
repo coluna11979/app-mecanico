@@ -9,7 +9,7 @@ import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
   DEFAULT_MARGIN, UNITS, fmtQty, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
 } from '@/lib/parts';
-import { addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
+import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
 import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '@/lib/invoiceImport';
 
@@ -46,6 +46,10 @@ export default function CompraNova() {
   const [insts, setInsts]         = useState<Inst[]>([]);
   const [newSupplier, setNewSupplier] = useState(false);
   const [saving, setSaving]       = useState(false);
+  /** Somar as peças no estoque? (por oficina, lembra a última escolha) */
+  const stockKey = `compra-soma-estoque:${wid ?? ''}`;
+  const [addStock, setAddStock] = useState(() => { try { return localStorage.getItem(stockKey) !== 'nao'; } catch { return true; } });
+  const toggleStock = (v: boolean) => { setAddStock(v); try { localStorage.setItem(stockKey, v ? 'sim' : 'nao'); } catch { /* ignora */ } };
   // Importar arquivo da nota (XML sem IA; PDF com IA, se liberado)
   const [aiEnabled, setAiEnabled] = useState(false);
   const [reading, setReading]     = useState<null | 'xml' | 'ia'>(null);
@@ -227,10 +231,28 @@ export default function CompraNova() {
       p_freight: num(freight), p_discount: num(discount),
       p_items: items.map(r => ({ part_id: r.part_id, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: num(r.unit_cost) })),
       p_installments: insts.map(i => ({ due_date: i.due_date, amount: num(i.amount) })),
-      p_notes: notes,
+      p_notes: addStock ? notes : [notes.trim(), NO_STOCK_NOTE].filter(Boolean).join(' · '),
     });
+    if (error) { setSaving(false); return toast.error(error.message); }
+    if (!addStock) {
+      // Devolve o que a nota somou: as peças ficam cadastradas com o custo, o estoque fica como estava
+      const { data: its } = await supabase.from('purchase_items').select('part_id, quantity').eq('invoice_id', data as string);
+      const byPart = new Map<string, number>();
+      for (const it of (its ?? []) as { part_id: string; quantity: number }[]) byPart.set(it.part_id, (byPart.get(it.part_id) ?? 0) + Number(it.quantity));
+      let failed = 0;
+      for (const [partId, q] of byPart) {
+        const { data: p } = await supabase.from('workshop_parts').select('stock_qty').eq('id', partId).single();
+        const counted = Number((p as { stock_qty: number } | null)?.stock_qty ?? 0) - q;
+        const { error: e2 } = await supabase.rpc('stock_adjust', { p_part: partId, p_counted: Math.max(0, counted), p_note: `Nota ${number.trim() || 's/ nº'}: só cadastro e financeiro` });
+        if (e2) failed++;
+      }
+      setSaving(false);
+      if (failed) toast.error(`Nota lançada, mas ${failed} peça(s) ficaram somadas no estoque. Ajuste em Peças.`);
+      else toast.success('Nota lançada ✓ Peças cadastradas e contas a pagar criadas (estoque não mexido)');
+      nav(`/oficina/compras?nota=${data}`);
+      return;
+    }
     setSaving(false);
-    if (error) return toast.error(error.message);
     toast.success('Nota lançada ✓ Estoque e contas a pagar atualizados');
     nav(`/oficina/compras?nota=${data}`);
   }
@@ -243,7 +265,7 @@ export default function CompraNova() {
         <div>
           <Link to="/oficina/compras" className="text-sm text-steel-500 hover:text-steel-700">← Notas de compra</Link>
           <h1 className="text-3xl font-bold tracking-tight mt-1">🧾 Lançar nota de compra</h1>
-          <p className="text-sm text-steel-500 mt-1">Ao lançar, as peças entram no estoque, o custo é atualizado e as parcelas vão para as contas a pagar.</p>
+          <p className="text-sm text-steel-500 mt-1">Ao lançar, o custo das peças é atualizado e as parcelas vão para as contas a pagar. Somar no estoque é opcional (no fim da tela).</p>
         </div>
 
         {/* Importar arquivo da nota */}
@@ -430,6 +452,18 @@ export default function CompraNova() {
             <input className="input" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
         </div>
+
+        <label className={`card flex items-start gap-3 cursor-pointer !py-3 ${addStock ? '' : '!bg-pending-50 border border-pending-200'}`}>
+          <input type="checkbox" className="mt-1" checked={addStock} onChange={e => toggleStock(e.target.checked)} />
+          <span className="text-sm">
+            <strong>Somar as peças no estoque</strong>
+            <span className="block text-xs text-steel-500">
+              {addStock
+                ? 'As quantidades da nota entram na prateleira.'
+                : 'Desmarcado: as peças são cadastradas com o custo da nota e as parcelas vão para contas a pagar, mas o estoque não muda. Use enquanto o controle de estoque não começou.'}
+            </span>
+          </span>
+        </label>
 
         <div className="flex justify-end gap-2 pb-6">
           <Link to="/oficina/compras" className="btn-ghost">Cancelar</Link>

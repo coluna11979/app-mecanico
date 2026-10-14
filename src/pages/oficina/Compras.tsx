@@ -8,7 +8,7 @@ import { canDo, useOperator } from '@/lib/operators';
 import { fetchAll } from '@/lib/fetchAll';
 import { fmtBRL } from '@/components/os/osHelpers';
 import { fmtQty } from '@/lib/parts';
-import { addDaysISO, fmtDate, todayISO, type Payable, type PurchaseInvoice, type PurchaseItem } from '@/lib/purchasing';
+import { addDaysISO, fmtDate, isNoStockInvoice, todayISO, type Payable, type PurchaseInvoice, type PurchaseItem } from '@/lib/purchasing';
 import StockTabs from '@/components/stock/StockTabs';
 import { Restricted } from './Fornecedores';
 
@@ -219,8 +219,18 @@ function InvoiceDetail({ id, onClose, onChanged }: { id: string; onClose: () => 
     if (!reason.trim()) return toast.error('Informe o motivo do estorno');
     setBusy(true);
     const { error } = await supabase.rpc('purchase_cancel', { p_invoice: id, p_reason: reason });
+    if (error) { setBusy(false); return toast.error(error.message); }
+    // Nota que não somou no estoque: o estorno tirou as quantidades; devolve para ficar como estava
+    if (inv && isNoStockInvoice(inv.notes)) {
+      const byPart = new Map<string, number>();
+      for (const it of items) byPart.set(it.part_id, (byPart.get(it.part_id) ?? 0) + Number(it.quantity));
+      for (const [partId, q] of byPart) {
+        const { data: p } = await supabase.from('workshop_parts').select('stock_qty').eq('id', partId).single();
+        const now = Number((p as { stock_qty: number } | null)?.stock_qty ?? 0);
+        await supabase.rpc('stock_adjust', { p_part: partId, p_counted: Math.max(0, now + q), p_note: `Estorno de nota só cadastro e financeiro` });
+      }
+    }
     setBusy(false);
-    if (error) return toast.error(error.message);
     toast.success('Nota estornada. Estoque e contas a pagar desfeitos.');
     setCancelling(false);
     load(); onChanged();
