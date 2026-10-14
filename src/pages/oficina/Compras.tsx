@@ -96,7 +96,10 @@ export default function Compras() {
     <WorkshopLayout>
       <div className="max-w-6xl mx-auto space-y-4">
         <StockTabs title="Compras" subtitle="Cada nota lançada coloca as peças no estoque e as parcelas nas contas a pagar."
-          actions={<Link to="/oficina/compras/nova" className="btn-primary text-sm !py-2">🧾 Lançar nota</Link>} />
+          actions={<>
+            <Link to="/oficina/compras/importar" className="btn-ghost border border-steel-200 text-sm !py-2">📷 Importar fotos das notas</Link>
+            <Link to="/oficina/compras/nova" className="btn-primary text-sm !py-2">🧾 Lançar nota</Link>
+          </>} />
 
         {list === null ? (
           <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white rounded-2xl animate-pulse" />)}</div>

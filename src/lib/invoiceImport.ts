@@ -96,7 +96,7 @@ type AiExtracted = {
   campos_incertos: string[];
 };
 
-const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+const fileToBase64 = (file: Blob) => new Promise<string>((resolve, reject) => {
   const r = new FileReader();
   r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
   r.onerror = () => reject(r.error);
@@ -104,9 +104,10 @@ const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
 });
 
 /** PDF/imagem → IA. Lança erro com mensagem para o usuário. */
-export async function readInvoiceWithAi(workshopId: string, file: File): Promise<InvoiceData> {
+export async function readInvoiceWithAi(workshopId: string, file: Blob, mediaType?: string): Promise<InvoiceData> {
   if (file.size > 10 * 1024 * 1024) throw new Error('Arquivo muito grande (máx. 10 MB)');
-  const media = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : '');
+  const name = (file as File).name ?? '';
+  const media = mediaType || file.type || (name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : '');
   const { data, error } = await supabase.functions.invoke('read-purchase-invoice', {
     body: { workshop_id: workshopId, file_base64: await fileToBase64(file), media_type: media },
   });
