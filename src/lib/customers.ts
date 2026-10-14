@@ -18,6 +18,24 @@ export function maskCpf(v: string) {
   return d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
 }
 
+/** Confere os dígitos verificadores do CPF (rejeita 000.000.000-00 e afins) */
+export function isValidCpf(v: string) {
+  const d = onlyDigits(v);
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const dv = (len: number) => {
+    let sum = 0;
+    for (let i = 0; i < len; i++) sum += Number(d[i]) * (len + 1 - i);
+    const r = (sum * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
+}
+
+/** 00000-000 enquanto digita */
+export function maskCep(v: string) {
+  return onlyDigits(v).slice(0, 8).replace(/(\d{5})(\d)/, '$1-$2');
+}
+
 export type StatOs = {
   id: string; customer_id: string | null; vehicle_id: string | null; status: string; quote_status: string | null;
   price: number; created_at: string; completed_at: string | null; rework_of_id: string | null;
