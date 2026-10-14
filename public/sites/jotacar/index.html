@@ -236,6 +236,37 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
 .services-cta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding:24px;border-radius:var(--radius);background:var(--ink);color:var(--white)}
 .services-cta p{font-weight:700;font-size:18px}
 
+/* Botão de orçamento em cada serviço */
+.service > div{display:flex;flex-direction:column;flex:1;min-width:0}
+.service-cta{margin-top:10px;align-self:flex-start;display:inline-flex;align-items:center;gap:6px;min-height:44px;font-weight:700;font-size:15px;text-decoration:none;color:var(--ink)}
+.service-cta span{border-bottom:2px solid var(--yellow);transition:border-color .2s}
+.service-cta svg{width:16px;height:16px;transition:transform .2s var(--ease)}
+.service-cta:hover span{border-color:var(--ink)}
+.service-cta:hover svg{transform:translateX(3px)}
+
+/* Marcas (aparece só com CONFIG.marcas) */
+.brands{margin-top:28px}
+.brands-label{font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.brands ul{display:flex;flex-wrap:wrap;gap:8px}
+.brands li{padding:8px 16px;border-radius:999px;background:var(--paper);border:1px solid var(--line);font-weight:800;font-stretch:112%;font-size:15px}
+
+/* Ofertas (aparece só com ofertas dentro da validade em CONFIG.ofertas) */
+.offers{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+.offer{position:relative;display:flex;flex-direction:column;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:24px;overflow:hidden;transition:transform .25s var(--ease),box-shadow .25s}
+.offer:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.offer::before{content:"";position:absolute;inset:0 0 auto 0;height:6px;background:var(--yellow)}
+.offer-badge{align-self:flex-start;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;background:var(--ink);color:var(--yellow);border-radius:999px;padding:5px 10px;margin-bottom:14px}
+.offer h3{font-size:21px;font-weight:800;font-stretch:105%}
+.offer-detail{color:var(--muted);font-size:15px;margin-top:6px}
+.offer-price{margin-top:16px;line-height:1}
+.offer-price small{display:block;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
+.offer-price strong{font-size:40px;font-weight:900;font-stretch:115%;letter-spacing:-.02em}
+.offer-price span{font-size:15px;font-weight:600;color:var(--muted);margin-left:4px}
+.offer-cond{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.45}
+.offer .btn{margin-top:auto;width:100%}
+.offer-cond{margin-bottom:18px}
+.offers-note{margin-top:16px;font-size:13px;color:var(--muted)}
+
 /* Fotos (aparece só quando houver fotos oficiais em CONFIG.fotos) */
 .gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
 .gallery figure{margin:0;border-radius:var(--radius);overflow:hidden;background:var(--paper-2);aspect-ratio:4/3}
@@ -502,6 +533,19 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
   </div>
 </section>
 
+<!-- ================= OFERTAS (aparece sozinha com ofertas válidas em CONFIG.ofertas) ================= -->
+<section class="section bg-white on-light" id="ofertas" aria-labelledby="ofertas-title" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker">Ofertas</span>
+      <h2 id="ofertas-title">Ofertas da Jota Car</h2>
+      <p>Toque na oferta e fale com a oficina pelo WhatsApp. Cada uma mostra até quando vale e as condições.</p>
+    </div>
+    <div class="offers" id="offerList"></div>
+    <p class="offers-note">Ofertas válidas até a data indicada em cada uma, nas condições descritas.</p>
+  </div>
+</section>
+
 <!-- ================= SINAIS ================= -->
 <section class="section" id="sinais" aria-labelledby="sinais-title">
   <div class="wrap">
@@ -567,16 +611,20 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
       <p>Sem rodar de oficina em oficina: mecânica, pneus e peças no mesmo lugar, aqui na M'Boi Mirim.</p>
     </div>
     <ul class="services clean">
-      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-oil"/></svg></span><div><h3>Revisão e troca de óleo</h3><p>Óleo e filtros no prazo ajudam a proteger o motor e a evitar gasto maior lá na frente.</p></div></li>
-      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-brake"/></svg></span><div><h3>Freios</h3><p>Pastilhas, discos, lonas e fluido. Freio em dia é segurança para quem vai dentro do carro.</p></div></li>
-      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-susp"/></svg></span><div><h3>Suspensão e direção</h3><p>Amortecedores, bandejas, buchas, pivôs e terminais, para rodar com conforto e estabilidade.</p></div></li>
-      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><h3>Injeção eletrônica</h3><p>Diagnóstico computadorizado, limpeza de bicos e troca de bomba de combustível.</p></div></li>
-      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-engine"/></svg></span><div><h3>Motor e mecânica geral</h3><p>Avaliação e reparo de motor e dos demais itens de mecânica do dia a dia.</p></div></li>
-      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-align"/></svg></span><div><h3>Alinhamento, balanceamento e cambagem</h3><p>Direção firme e pneus gastando por igual.</p></div></li>
-      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-tire"/></svg></span><div><h3>Pneus</h3><p>Troca e montagem de pneus para o seu carro.</p></div></li>
-      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-battery"/></svg></span><div><h3>Bateria</h3><p>Teste e troca de bateria para o carro não te deixar na mão.</p></div></li>
-      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-parts"/></svg></span><div><h3>Venda de peças</h3><p>Peças novas no balcão.</p></div></li>
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-oil"/></svg></span><div><h3>Revisão e troca de óleo</h3><p>Óleo e filtros no prazo ajudam a proteger o motor e a evitar gasto maior lá na frente.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de revisão e troca de óleo." data-track="wa_servico_1" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-brake"/></svg></span><div><h3>Freios</h3><p>Pastilhas, discos, lonas e fluido. Freio em dia é segurança para quem vai dentro do carro.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de freios." data-track="wa_servico_2" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-susp"/></svg></span><div><h3>Suspensão e direção</h3><p>Amortecedores, bandejas, buchas, pivôs e terminais, para rodar com conforto e estabilidade.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de suspensão e direção." data-track="wa_servico_3" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><h3>Injeção eletrônica</h3><p>Diagnóstico computadorizado, limpeza de bicos e troca de bomba de combustível.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de injeção eletrônica." data-track="wa_servico_4" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-engine"/></svg></span><div><h3>Motor e mecânica geral</h3><p>Avaliação e reparo de motor e dos demais itens de mecânica do dia a dia.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de motor/mecânica geral." data-track="wa_servico_5" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-align"/></svg></span><div><h3>Alinhamento, balanceamento e cambagem</h3><p>Direção firme e pneus gastando por igual.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de alinhamento, balanceamento e cambagem." data-track="wa_servico_6" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal"><span class="service-icon" aria-hidden="true"><svg><use href="#i-tire"/></svg></span><div><h3>Pneus</h3><p>Troca e montagem de pneus para o seu carro.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de pneus." data-track="wa_servico_7" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="1"><span class="service-icon" aria-hidden="true"><svg><use href="#i-battery"/></svg></span><div><h3>Bateria</h3><p>Teste e troca de bateria para o carro não te deixar na mão.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de bateria." data-track="wa_servico_8" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
+      <li class="service reveal" data-delay="2"><span class="service-icon" aria-hidden="true"><svg><use href="#i-parts"/></svg></span><div><h3>Venda de peças</h3><p>Peças novas no balcão.</p><a class="service-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de peças." data-track="wa_servico_9" target="_blank" rel="noopener"><span>Pedir orçamento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></div></li>
     </ul>
+    <div class="brands" id="brands" hidden>
+      <p class="brands-label">Marcas que trabalhamos</p>
+      <ul class="clean" id="brandList"></ul>
+    </div>
     <div class="services-cta reveal">
       <p>Não achou o serviço que procura? Pergunte pra gente.</p>
       <a class="btn btn-primary" data-wa-msg="Olá, Jota Car! Vim pelo site e queria saber se vocês fazem um serviço." data-track="wa_servicos" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20queria%20saber%20se%20voc%C3%AAs%20fazem%20um%20servi%C3%A7o." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Perguntar no WhatsApp</a>
@@ -780,7 +828,15 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
     confirmados: [],
     // Fotos oficiais (a seção "Por dentro da oficina" aparece sozinha quando houver itens).
     // Ex.: { src: "fotos/fachada.jpg", alt: "Fachada da Jota Car na Estrada do M'Boi Mirim" }
-    fotos: []
+    fotos: [],
+    // Marcas que a loja trabalha DE VERDADE (só nomes). A faixa aparece sozinha quando houver itens.
+    // Ex.: ["Pirelli", "Goodyear"]
+    marcas: [],
+    // Ofertas com preço. Só aparecem até a data de "validade" (AAAA-MM-DD) e somem sozinhas depois.
+    // Preço anunciado obriga a loja (CDC art. 30): validade e condições são obrigatórias, sem elas a oferta não aparece.
+    // Ex.: { selo: "Pneus", titulo: "Pneu aro 14", detalhe: "175/70 R14", prefixo: "A partir de", preco: 219.90,
+    //        sufixo: "cada", condicoes: "Montado na loja. Balanceamento à parte.", validade: "2026-11-15" }
+    ofertas: []
   };
   // ===================================================
 
@@ -868,6 +924,52 @@ html.revisao .review-banner{display:block;background:var(--orange);color:#fff;fo
   car.addEventListener("input", montarMensagem);
   document.getElementById("triage").addEventListener("submit", function(e){ e.preventDefault(); tbtn.click(); });
   montarMensagem();
+
+  // ================= OFERTAS =================
+  function hojeISO(){
+    try { return new Intl.DateTimeFormat("en-CA",{timeZone:CONFIG.timezone}).format(new Date()); }
+    catch(err){ return new Date().toISOString().slice(0,10); }
+  }
+  function el(tag, cls, txt){ var e=document.createElement(tag); if (cls) e.className=cls; if (txt!=null) e.textContent=txt; return e; }
+  function brl(v){ return Number(v).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+  function dataBR(iso){ var p=iso.split("-"); return p[2]+"/"+p[1]; }
+  var hoje = hojeISO();
+  var ofertas = CONFIG.ofertas.filter(function(o){ return o.titulo && o.preco != null && o.validade && o.condicoes && o.validade >= hoje; });
+  if (ofertas.length){
+    var list = document.getElementById("offerList");
+    ofertas.forEach(function(o, i){
+      var card = el("article","offer");
+      if (o.selo) card.appendChild(el("span","offer-badge",o.selo));
+      card.appendChild(el("h3",null,o.titulo));
+      if (o.detalhe) card.appendChild(el("p","offer-detail",o.detalhe));
+      var pr = el("p","offer-price");
+      if (o.prefixo) pr.appendChild(el("small",null,o.prefixo));
+      pr.appendChild(el("strong",null,brl(o.preco)));
+      if (o.sufixo) pr.appendChild(el("span",null,o.sufixo));
+      card.appendChild(pr);
+      card.appendChild(el("p","offer-cond",o.condicoes + " Válido até " + dataBR(o.validade) + "."));
+      var a = el("a","btn btn-primary");
+      a.href = waLink("Olá, Jota Car! Vim pelo site e quero a oferta: " + o.titulo + (o.detalhe ? " (" + o.detalhe + ")" : "") + " por " + brl(o.preco) + ".");
+      a.target = "_blank"; a.rel = "noopener";
+      a.setAttribute("data-track","wa_oferta_" + (i+1));
+      a.innerHTML = '<svg aria-hidden="true"><use href="#i-wa"/></svg>';
+      a.appendChild(document.createTextNode("Quero essa oferta"));
+      card.appendChild(a);
+      list.appendChild(card);
+    });
+    document.getElementById("ofertas").hidden = false;
+    var link = el("a",null,"Ofertas"); link.href = "#ofertas";
+    link.addEventListener("click", function(){ setMenuSafe(false); });
+    var nav0 = document.getElementById("nav"); nav0.insertBefore(link, nav0.firstChild);
+  }
+  function setMenuSafe(v){ if (typeof setMenu === "function") setMenu(v); }
+
+  // ================= MARCAS =================
+  if (CONFIG.marcas.length){
+    var bl = document.getElementById("brandList");
+    CONFIG.marcas.forEach(function(m){ bl.appendChild(el("li",null,m)); });
+    document.getElementById("brands").hidden = false;
+  }
 
   // ================= FOTOS OFICIAIS =================
   if (CONFIG.fotos.length){
