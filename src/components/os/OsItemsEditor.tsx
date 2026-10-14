@@ -4,6 +4,7 @@ import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
 import { DEFAULT_MARGIN, fmtPct, fmtQty, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
 import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
@@ -80,7 +81,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -147,6 +148,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   /** Cadastro rápido de peça: key = linha que vai receber a peça (null = cria linha nova) */
   const [quick, setQuick]       = useState<{ key: string | null; name: string; qty: number } | null>(null);
   const [team, setTeam]         = useState<TeamMember[]>([]);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   /** Regras por item da loja (ex.: alinhamento sem comissão) — para mostrar a comissão de cada serviço */
   const [itemRules, setItemRules] = useState<ItemRule[]>([]);
   /** Serviço com o campo de comissão aberto */
@@ -280,6 +282,23 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       let j = i + 1;
       while (j < rs.length && rs[j].kind === 'part') j++;
       const row: Row = { key: newKey(), kind: 'part', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: '', comm: '' };
+      return [...rs.slice(0, j), row, ...rs.slice(j)];
+    });
+  }
+  /** Item escolhido no painel do catálogo: serviço entra como item; peça entra dentro do serviço escolhido (ou avulsa se não há serviço) */
+  function addFromCatalog(sg: Suggestion, targetKey: string) {
+    const price = sg.unit_price > 0 ? moneyInput(sg.unit_price) : '';
+    if (sg.kind === 'labor') {
+      setRows(rs => [...rs, { key: newKey(), kind: 'labor', description: sg.description, quantity: '1', unit_price: price, unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
+      return;
+    }
+    const row: Row = { key: newKey(), kind: 'part', description: sg.description, quantity: '1', unit_price: price,
+      unit_cost: sg.cost ? moneyInput(sg.cost) : '', part_id: sg.part_id ?? null, mechanic_id: '', used_in: '', stype: '', comm: '' };
+    setRows(rs => {
+      const i = targetKey ? rs.findIndex(r => r.key === targetKey) : -1;
+      if (i < 0) return [...rs, row];
+      let j = i + 1;
+      while (j < rs.length && rs[j].kind === 'part') j++;
       return [...rs.slice(0, j), row, ...rs.slice(j)];
     });
   }
@@ -568,6 +587,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 + Peça
               </button>
             )}
+            <button type="button" onClick={() => setCatalogOpen(true)}
+              className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
+              🔍 Buscar no catálogo
+            </button>
             {showCost && (
               <button type="button" onClick={() => setQuick({ key: null, name: '', qty: 1 })}
                 className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
@@ -624,6 +647,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           <div className="col-span-2 text-right">Total</div>
           <div className="col-span-1" />
         </div>
+      )}
+
+      {catalogOpen && (
+        <CatalogPanel suggestions={suggestions} itemCount={blocks.length} total={total}
+          services={rows.filter(r => r.kind === 'labor').map(r => ({ key: r.key, name: r.description.trim() }))}
+          onPick={addFromCatalog} onClose={() => setCatalogOpen(false)} />
       )}
 
       {quick && (

@@ -1,7 +1,7 @@
 /**
  * Funil comercial — cálculos puros (sem banco). Junta duas origens, sem duplicar:
  * - Check-up (vehicle_checkups): finalizado → enviado → cliente viu → respondeu / virou OS.
- * - Orçamento da OS: só OS que foram ENVIADAS para aprovação (approval_requested_at), sem as OS
+ * - Orçamento da OS: OS abertas com valor (montando), ENVIADAS para aprovação (approval_requested_at) ou aprovadas direto (approved_at), sem as OS
  *   criadas a partir de um check-up (essas contam no check-up).
  *
  * Etapas: Montando orçamento · Aguardando cliente · Aprovado · Perdido (recusado) — e, à parte,
@@ -21,8 +21,8 @@ export type CkRow = VehicleCheckup & {
   sale_os: { number: number | null; status: string; price: number } | null;
 };
 export type OsQuote = {
-  id: string; number: number | null; title: string; status: string; quote_status: string | null; price: number;
-  approval_requested_at: string; approved_at: string | null; customer_id: string | null;
+  id: string; number: number | null; title: string; status: string; source?: string | null; created_at?: string; quote_status: string | null; price: number;
+  approval_requested_at: string | null; approved_at: string | null; customer_id: string | null;
   customer: { id: string; full_name: string; phone: string | null } | null;
   vehicle: { make: string | null; model: string | null; plate: string | null } | null;
 };
@@ -87,10 +87,11 @@ export function fromCheckup(r: CkRow): Opp | null {
 
 export function fromOsQuote(o: OsQuote): Opp | null {
   let stage: Stage; let since: string | null;
-  if (o.status === 'awaiting_approval') { stage = 'aguardando'; since = o.approval_requested_at; }
+  if (o.status === 'awaiting_approval' && o.approval_requested_at) { stage = 'aguardando'; since = o.approval_requested_at; }
   else if (o.status === 'cancelled' && o.quote_status === 'declined') { stage = 'recusado'; since = o.approval_requested_at; }
   else if (['approved', 'in_progress', 'completed'].includes(o.status)) { stage = 'aprovado'; since = o.approved_at ?? o.approval_requested_at; }
-  else return null; // cancelada sem recusa, ou voltou a "aberta": fora do funil
+  else if (o.status === 'open' && Number(o.price) > 0 && o.created_at) { stage = 'montando'; since = o.created_at; } // aberta com valor lançado = orçamento sendo montado
+  else return null; // cancelada sem recusa ou aberta sem valor: fora do funil
   return {
     key: `os-${o.id}`, origin: 'os', stage, id: o.id,
     customerId: o.customer_id, customerName: o.customer?.full_name ?? null, phone: o.customer?.phone ?? null,
@@ -107,7 +108,7 @@ export function buildOpps(checkups: CkRow[], osQuotes: OsQuote[], checkupSaleOsI
   const out: Opp[] = [];
   for (const c of checkups) { const o = fromCheckup(c); if (o) out.push(o); }
   for (const q of osQuotes) {
-    if (checkupSaleOsIds.has(q.id)) continue;
+    if (checkupSaleOsIds.has(q.id) || q.source === 'balcao') continue; // balcão é venda direta, não orçamento
     const o = fromOsQuote(q); if (o) out.push(o);
   }
   return out;
@@ -139,7 +140,7 @@ export function funnelOf(opps: Opp[], r: Range) {
       { label: 'aguardando resposta há mais de 7 dias', n: aguardando.filter(o => (daysSince(o.since) ?? 0) > 7).length },
       { label: 'enviados e ainda não abertos', n: aguardando.filter(o => o.origin === 'checkup' && !o.viewed).length },
       { label: 'recusados no período', n: recusado.length },
-      { label: 'check-ups prontos sem enviar', n: montando.length },
+      { label: 'orçamentos prontos sem enviar', n: montando.length },
     ].filter(x => x.n > 0).sort((a, b) => b.n - a.n),
   };
 }
