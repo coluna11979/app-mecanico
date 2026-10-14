@@ -12,7 +12,7 @@ import {
 import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
 import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '@/lib/invoiceImport';
-import { BUCKET, type PurchaseImport } from '@/lib/purchaseImports';
+import { BUCKET, mergePages, type PurchaseImport } from '@/lib/purchaseImports';
 
 type Row = { key: string; part_id: string | null; name: string; unit: string; quantity: string; unit_cost: string };
 type Inst = { due_date: string; amount: string };
@@ -62,7 +62,8 @@ export default function CompraNova() {
   /** Conferência de nota da fila de fotos (/oficina/compras/importar) */
   const importId = params.get('importacao');
   const [loaded, setLoaded] = useState(false);
-  const [queued, setQueued] = useState<{ imp: PurchaseImport; url: string | null } | null>(null);
+  /** Uma ou mais fotos (páginas) da mesma nota */
+  const [queued, setQueued] = useState<{ imp: PurchaseImport; url: string | null }[] | null>(null);
 
   useEffect(() => {
     if (!wid || !allowed) return;
@@ -212,13 +213,17 @@ export default function CompraNova() {
   useEffect(() => {
     if (!loaded || !importId) return;
     (async () => {
-      const { data } = await supabase.from('purchase_imports').select('*').eq('id', importId).maybeSingle();
-      const imp = data as PurchaseImport | null;
-      if (!imp?.extracted) return toast.error('Nota da fila não encontrada');
-      if (imp.status === 'confirmed') toast.error('Esta nota da fila já foi lançada');
-      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(imp.file_path, 60 * 60);
-      setQueued({ imp, url: signed?.signedUrl ?? null });
-      applyInvoice(imp.extracted);
+      // ?importacao=id ou id1,id2 (páginas da mesma nota, na ordem em que foram enviadas)
+      const ids = importId.split(',').filter(Boolean);
+      const { data } = await supabase.from('purchase_imports').select('*').in('id', ids).order('created_at');
+      const imps = ((data as PurchaseImport[]) ?? []).filter(i => i.extracted);
+      if (!imps.length) return toast.error('Nota da fila não encontrada');
+      if (imps.some(i => i.status === 'confirmed')) toast.error('Esta nota da fila já foi lançada');
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrls(imps.map(i => i.file_path), 60 * 60);
+      const byPath = new Map((signed ?? []).map(x => [x.path, x.signedUrl]));
+      setQueued(imps.map(imp => ({ imp, url: byPath.get(imp.file_path) ?? null })));
+      applyInvoice(mergePages(imps.map(i => i.extracted!)));
+      if (imps.length > 1) toast.success(`${imps.length} páginas da mesma nota juntadas ✓ — confira os itens`);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, importId]);
@@ -253,7 +258,7 @@ export default function CompraNova() {
   async function finishQueued(invoiceId: string) {
     if (queued) {
       await supabase.from('purchase_imports')
-        .update({ status: 'confirmed', invoice_id: invoiceId, confirmed_at: new Date().toISOString() }).eq('id', queued.imp.id);
+        .update({ status: 'confirmed', invoice_id: invoiceId, confirmed_at: new Date().toISOString() }).in('id', queued.map(q => q.imp.id));
       nav('/oficina/compras/importar');
     } else {
       nav(`/oficina/compras?nota=${invoiceId}`);
@@ -349,14 +354,15 @@ export default function CompraNova() {
         </div>
 
         {queued && (
-          <div className="card !p-3 flex items-center gap-3 border border-brand-200">
-            {queued.url && queued.imp.media_type.startsWith('image/')
-              ? <a href={queued.url} target="_blank" rel="noreferrer" className="shrink-0"><img src={queued.url} alt="Nota" className="h-20 w-16 object-cover rounded-lg border border-steel-200" /></a>
-              : <div className="h-20 w-16 shrink-0 rounded-lg bg-steel-100 grid place-items-center text-2xl">{queued.imp.media_type.includes('xml') ? '🧾' : '📄'}</div>}
+          <div className="card !p-3 flex flex-wrap items-center gap-3 border border-brand-200">
+            <div className="flex gap-2 shrink-0">
+              {queued.map((q, i) => q.url && q.imp.media_type.startsWith('image/')
+                ? <a key={q.imp.id} href={q.url} target="_blank" rel="noreferrer" title={`Página ${i + 1}`}><img src={q.url} alt={`Página ${i + 1}`} className="h-20 w-16 object-cover rounded-lg border border-steel-200" /></a>
+                : <a key={q.imp.id} href={q.url ?? undefined} target="_blank" rel="noreferrer" className="h-20 w-16 rounded-lg bg-steel-100 grid place-items-center text-2xl">{q.imp.media_type.includes('xml') ? '🧾' : '📄'}</a>)}
+            </div>
             <div className="min-w-0 flex-1 text-sm">
-              <div className="font-semibold">Conferindo nota da fila de fotos</div>
-              <div className="text-xs text-steel-500">Compare com o arquivo e corrija o que precisar. Ao lançar, volta para a próxima nota.</div>
-              {queued.url && <a href={queued.url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-brand-700">Abrir a nota em tela cheia →</a>}
+              <div className="font-semibold">{queued.length > 1 ? `Conferindo nota de ${queued.length} páginas (juntadas)` : 'Conferindo nota da fila de fotos'}</div>
+              <div className="text-xs text-steel-500">Toque na foto para abrir em tela cheia. Compare e corrija o que precisar. Ao lançar, volta para a próxima nota.</div>
             </div>
             <Link to="/oficina/compras/importar" className="btn-ghost text-sm shrink-0">Voltar à fila</Link>
           </div>

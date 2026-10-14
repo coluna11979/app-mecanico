@@ -63,3 +63,36 @@ export async function readPurchaseImport(imp: Pick<PurchaseImport, 'id' | 'works
     return msg;
   }
 }
+
+/* ── Nota em várias páginas (várias fotos da mesma nota) ─────────────────── */
+
+/**
+ * Chave da nota: mesmo número e mesma data de emissão = mesma nota (páginas diferentes).
+ * Não usa o nome do fornecedor: a leitura às vezes troca uma letra entre as páginas.
+ */
+export const pageKey = (x: InvoiceData | null) => (x?.number?.trim() ? `${x.number.trim()}|${x.date}` : null);
+
+/** Junta as páginas: itens de todas (sem repetir linha idêntica), total e parcelas da página que tem */
+export function mergePages(pages: InvoiceData[]): InvoiceData {
+  if (pages.length === 1) return pages[0];
+  const base = pages.find(p => p.supplier.cnpj) ?? pages[0];
+  const seen = new Set<string>();
+  const items = pages.flatMap(p => p.items).filter(it => {
+    const k = `${it.code}|${it.name.toLowerCase()}|${it.qty}|${it.unitCost}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const totals = pages.map(p => p.total).filter((t): t is number => t != null);
+  const withInst = [...pages].sort((a, b) => b.installments.length - a.installments.length)[0];
+  return {
+    ...base,
+    supplier: { ...base.supplier, phone: base.supplier.phone || pages.find(p => p.supplier.phone)?.supplier.phone || '' },
+    items,
+    freight: Math.max(...pages.map(p => p.freight || 0)),
+    discount: Math.max(...pages.map(p => p.discount || 0)),
+    total: totals.length ? Math.max(...totals) : null,
+    installments: withInst.installments,
+    uncertain: pages.flatMap((p, i) => p.uncertain.map(u => `pág. ${i + 1}: ${u}`)),
+  };
+}

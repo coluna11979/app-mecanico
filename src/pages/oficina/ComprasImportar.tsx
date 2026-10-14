@@ -8,7 +8,7 @@ import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL } from '@/components/os/osHelpers';
 import { fmtDate } from '@/lib/purchasing';
 import { hasAiInvoice } from '@/lib/invoiceImport';
-import { BUCKET, readPurchaseImport, uploadPurchaseFile, type PurchaseImport, type PurchaseImportStatus } from '@/lib/purchaseImports';
+import { BUCKET, mergePages, pageKey, readPurchaseImport, uploadPurchaseFile, type PurchaseImport, type PurchaseImportStatus } from '@/lib/purchaseImports';
 import StockTabs from '@/components/stock/StockTabs';
 import { Restricted } from './Fornecedores';
 
@@ -116,11 +116,12 @@ export default function ComprasImportar() {
     else toast.success('Nota lida ✓');
   }
 
-  async function discard(imp: PurchaseImport) {
-    if (!confirm('Descartar esta nota da fila?')) return;
-    const { error } = await supabase.from('purchase_imports').update({ status: 'discarded' }).eq('id', imp.id);
+  async function discard(imps: PurchaseImport[]) {
+    if (!confirm(imps.length > 1 ? `Descartar as ${imps.length} páginas desta nota da fila?` : 'Descartar esta nota da fila?')) return;
+    const ids = imps.map(i => i.id);
+    const { error } = await supabase.from('purchase_imports').update({ status: 'discarded' }).in('id', ids);
     if (error) return toast.error(error.message);
-    setList(l => (l ?? []).filter(r => r.id !== imp.id));
+    setList(l => (l ?? []).filter(r => !ids.includes(r.id)));
   }
 
   if (!allowed) return <Restricted />;
@@ -128,6 +129,16 @@ export default function ComprasImportar() {
   const counts = Object.fromEntries((Object.keys(TAB_STATUS) as Tab[]).map(t =>
     [t, (list ?? []).filter(r => TAB_STATUS[t].includes(r.status)).length])) as Record<Tab, number>;
   const shown = (list ?? []).filter(r => TAB_STATUS[tab].includes(r.status));
+  // Fotos da mesma nota (mesmo nº e data) viram um card só, com as páginas juntas
+  const cards: PurchaseImport[][] = [];
+  const byKey = new Map<string, PurchaseImport[]>();
+  for (const r of [...shown].reverse()) {
+    const k = r.status === 'extracted' || r.status === 'confirmed' ? pageKey(r.extracted) : null;
+    const g = k ? byKey.get(`${r.status}|${k}`) : undefined;
+    if (g) g.push(r);
+    else { const ng = [r]; cards.push(ng); if (k) byKey.set(`${r.status}|${k}`, ng); }
+  }
+  cards.reverse();
   const isDupe = (r: PurchaseImport) => {
     const x = r.extracted;
     if (!x?.number || r.status === 'confirmed') return false;
@@ -175,14 +186,15 @@ export default function ComprasImportar() {
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {shown.map(r => {
-              const x = r.extracted;
+            {cards.map(g => {
+              const r = g[0];
+              const x = g.length > 1 ? mergePages(g.map(i => i.extracted!)) : r.extracted;
               const dupe = isDupe(r);
               return (
                 <div key={r.id} className="card !p-0 overflow-hidden flex flex-col">
-                  <div className="h-36 bg-steel-100 overflow-hidden">
+                  <div className="h-36 bg-steel-100 overflow-hidden flex">
                     {urls[r.id]
-                      ? <img src={urls[r.id]} alt="" className="w-full h-full object-cover" />
+                      ? g.map(i => urls[i.id] && <img key={i.id} src={urls[i.id]} alt="" className="h-full min-w-0 flex-1 object-cover border-r border-white last:border-0" />)
                       : <div className="w-full h-full grid place-items-center text-steel-500"><div className="text-center"><div className="text-4xl">{r.media_type.includes('xml') ? '🧾' : '📄'}</div><div className="text-xs font-semibold mt-1">{r.media_type.includes('xml') ? 'XML' : 'PDF'}</div></div></div>}
                   </div>
                   <div className="p-4 flex-1 flex flex-col">
@@ -194,6 +206,7 @@ export default function ComprasImportar() {
                       <div className="text-sm text-alert-700">⚠️ {r.error ?? 'Não foi possível ler'}</div>
                     ) : (
                       <>
+                        {g.length > 1 && <div className="text-[11px] font-bold text-brand-700 mb-0.5">📑 {g.length} páginas da mesma nota (juntadas)</div>}
                         <div className="font-bold text-steel-900 truncate">{x?.supplier.name || 'Fornecedor não identificado'}</div>
                         <div className="text-xs text-steel-500">
                           Nota {x?.number || 's/ nº'}{x?.date ? ` · ${fmtDate(x.date)}` : ''} · {x?.items.length ?? 0} ite{(x?.items.length ?? 0) === 1 ? 'm' : 'ns'}
@@ -211,7 +224,7 @@ export default function ComprasImportar() {
                     <div className="text-[11px] text-steel-400 mt-1">Enviada em {new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</div>
                     <div className="mt-auto pt-3 flex gap-2">
                       {r.status === 'extracted' && (
-                        <button onClick={() => nav(`/oficina/compras/nova?importacao=${r.id}`)} className="btn-primary text-sm !py-2 flex-1">Conferir →</button>
+                        <button onClick={() => nav(`/oficina/compras/nova?importacao=${g.map(i => i.id).join(',')}`)} className="btn-primary text-sm !py-2 flex-1">Conferir →</button>
                       )}
                       {r.status === 'failed' && (
                         <button onClick={() => retry(r)} className="btn-primary text-sm !py-2 flex-1">↻ Tentar de novo</button>
@@ -220,7 +233,7 @@ export default function ComprasImportar() {
                         <Link to={`/oficina/compras?nota=${r.invoice_id}`} className="btn-ghost text-sm !py-2 flex-1 border border-steel-200 text-center">Ver nota →</Link>
                       )}
                       {r.status !== 'confirmed' && r.status !== 'processing' && (
-                        <button onClick={() => discard(r)} className="btn-ghost text-sm !py-2 text-steel-500" title="Descartar">🗑️</button>
+                        <button onClick={() => discard(g)} className="btn-ghost text-sm !py-2 text-steel-500" title="Descartar">🗑️</button>
                       )}
                     </div>
                   </div>
