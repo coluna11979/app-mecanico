@@ -7,14 +7,14 @@
  * advogado antes de uso em produção real.
  */
 
-export const TERMS_VERSION = 'v1.0-2026-05-09';
-export const TERMS_DATE = '09 de maio de 2026';
+export const TERMS_VERSION = 'v1.1-2026-10-15';
+export const TERMS_DATE = '15 de outubro de 2026';
 export const PLATFORM_NAME = 'MecânicoApp';
 export const PLATFORM_DOMAIN = 'mecanicoapp.com.br';
 export const PLATFORM_CNPJ = '[CNPJ a ser preenchido]';
 export const PLATFORM_FORO = 'São Paulo/SP';
 export const PLATFORM_CONTACT_EMAIL = 'suporte@mecanicoapp.com.br';
-export const PLATFORM_FEE_PERCENT = 18;
+export const PLATFORM_FEE_PERCENT = 20;
 export const CANCELLATION_FEE_PERCENT = 30;
 export const TOLERANCE_MINUTES = 5;
 

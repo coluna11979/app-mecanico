@@ -734,7 +734,7 @@ function EmbaixadorCard({
         </p>
         <div className="bg-steel-50 border border-steel-200 rounded-xl p-3 text-xs text-steel-700 font-mono leading-relaxed">
           <div className="text-[10px] uppercase tracking-widest text-steel-500 font-sans font-bold mb-1">Exemplo</div>
-          Serviço <strong>R$ 500</strong> → nossa comissão (18%) <strong>R$ 90</strong> → embaixador (20% dos 90) = <strong className="text-brand-700">R$ 18</strong>
+          Serviço <strong>R$ 500</strong> → nossa comissão (20%) <strong>R$ 100</strong> → embaixador (20% dos 100) = <strong className="text-brand-700">R$ 20</strong>
         </div>
         <p className="text-xs text-steel-500 leading-relaxed">
           Programa dura 12 meses. Ele precisa fazer ≥1 serviço a cada 30 dias pra continuar recebendo. O indicado <strong>nunca</strong> sabe que existe comissão.

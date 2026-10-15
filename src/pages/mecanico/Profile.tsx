@@ -4,7 +4,7 @@ import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AvatarUpload } from '@/components/AvatarUpload';
-import { mechanicNet } from '@/lib/payment';
+import { jobGross, mechanicNet } from '@/lib/payment';
 import { IconLogOut } from '@/components/mecanico/icons';
 import type { Mechanic, Job } from '@/types/database';
 
@@ -87,10 +87,10 @@ export default function MechanicProfile() {
     setTimeout(() => setMsg(null), 3000);
   }
 
-  const totalEarnings = history.reduce((a, j) => a + mechanicNet(j.price ?? 0), 0);
+  const totalEarnings = history.reduce((a, j) => a + mechanicNet(jobGross(j)), 0);
   const monthEarnings = history
     .filter(j => new Date(j.completed_at!).getMonth() === new Date().getMonth())
-    .reduce((a, j) => a + mechanicNet(j.price ?? 0), 0);
+    .reduce((a, j) => a + mechanicNet(jobGross(j)), 0);
   const initials = (profile?.full_name ?? 'M').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
   if (loading) return (
@@ -217,7 +217,7 @@ export default function MechanicProfile() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-signal-400 font-bold font-display">
-                      {(j.price ?? 0) > 0 ? `R$ ${mechanicNet(j.price ?? 0).toFixed(0)}` : '—'}
+                      {jobGross(j) > 0 ? `R$ ${mechanicNet(jobGross(j)).toFixed(0)}` : '—'}
                     </div>
                     <div className="text-[10px] text-steel-600">no PIX</div>
                   </div>
