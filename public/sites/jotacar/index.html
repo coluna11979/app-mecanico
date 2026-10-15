@@ -119,7 +119,7 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
 html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-size:14px;font-weight:700;text-align:center;padding:8px 16px}
 
 /* Selo de imagem ilustrativa */
-.illus{position:absolute;left:12px;bottom:12px;z-index:2;font-size:11px;font-weight:700;letter-spacing:.02em;color:#fff;background:rgba(21,23,26,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:4px 8px;border-radius:6px}
+.illus{position:absolute;left:12px;bottom:12px;z-index:2;font-size:12px;font-weight:700;letter-spacing:.02em;color:#fff;background:rgba(21,23,26,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:4px 8px;border-radius:6px}
 
 /* =========================================================
    Botões
@@ -171,7 +171,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--muted);background:var(--white);border:1px solid var(--line);padding:6px 12px 6px 8px;border-radius:999px;box-shadow:var(--shadow-sm)}
 .eb-short{display:none}
 .eyebrow svg{width:18px;height:18px;color:var(--yellow-dark)}
-.hero h1{font-size:clamp(38px,6vw,68px);font-weight:800;margin-top:18px;color:var(--ink)}
+.hero h1{font-size:clamp(36px,5.2vw,60px);font-weight:800;margin-top:18px;color:var(--ink)}
 .hero h1 mark{background:linear-gradient(transparent 62%,rgba(255,191,22,.55) 62%);color:inherit;padding:0 .05em}
 .hero-sub{font-size:clamp(17px,1.5vw,19px);color:#3E434B;margin-top:18px;max-width:52ch}
 .hero-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
@@ -249,7 +249,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .chip[aria-pressed="true"] .chip-box{background:var(--yellow);border-color:var(--yellow)}
 .chip[aria-pressed="true"] .chip-box svg{opacity:1;transform:none}
 .chip-meta{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:13px;color:var(--muted-dark);min-height:30px}
-.link-btn{background:none;border:0;padding:6px 4px;font-weight:800;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;color:var(--white)}
+.link-btn{background:none;border:0;min-height:44px;min-width:44px;padding:0 8px;font-weight:800;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;color:var(--white)}
 .link-btn[hidden]{display:none}
 .field label{display:block;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-dark);margin:12px 0 8px}
 .field label span{text-transform:none;letter-spacing:0;font-weight:600}
@@ -257,14 +257,14 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .field input::placeholder{color:#8B919B}
 .field input:focus{outline:none;border-color:var(--yellow);box-shadow:0 0 0 3px rgba(255,191,22,.25)}
 .preview{margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.06);font-size:13px;line-height:1.5;color:#D5D8DD;white-space:pre-line;border-left:3px solid var(--green)}
-.preview strong{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-dark);margin-bottom:4px}
+.preview strong{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-dark);margin-bottom:4px}
 .triage .btn{margin-top:14px}
 .triage .micro{text-align:center;color:var(--muted-dark);font-size:13px}
 
 /* ---------- Painel de luzes ---------- */
 .dash{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(20px,3vw,36px);align-items:stretch}
 .cluster{position:relative;border-radius:24px;padding:clamp(18px,3vw,30px);background:radial-gradient(130% 100% at 50% 0%,#2C3038 0%,#16181C 62%,#0E0F12 100%);border:1px solid rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 -40px 80px rgba(0,0,0,.5),0 40px 80px -40px rgba(0,0,0,.9)}
-.cluster-top{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#7A808A;margin-bottom:10px}
+.cluster-top{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#7A808A;margin-bottom:10px}
 .cluster-top .on{display:flex;align-items:center;gap:6px}
 .cluster-top .on::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
 .gauges{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
@@ -292,7 +292,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .dash-info{background:var(--white);color:var(--text);border-radius:24px;padding:clamp(22px,3vw,32px);display:flex;flex-direction:column}
 .dash-info.swap{animation:fadeIn .3s var(--ease)}
 .sev{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px}
-.sev span{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;text-align:center;padding:8px 4px;border-radius:12px;background:var(--paper);color:var(--muted);transition:background .25s,color .25s}
+.sev span{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;text-align:center;padding:8px 4px;border-radius:12px;background:var(--paper);color:var(--muted);transition:background .25s,color .25s}
 .sev[data-level="1"] span:nth-child(1){background:#FFF1CC;color:#7A5200}
 .sev[data-level="2"] span:nth-child(2){background:#FFE0CF;color:#9A3A07}
 .sev[data-level="3"] span:nth-child(3){background:#FDDAD6;color:#A32116}
@@ -358,7 +358,10 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .promise-ico svg{width:24px;height:24px}
 
 /* ---------- Avaliações + Conheça ---------- */
-.trust{display:grid;grid-template-columns:.85fr 1.15fr;gap:clamp(24px,4vw,48px);align-items:start}
+.trust{display:grid;grid-template-columns:1fr 1fr;gap:clamp(16px,3vw,24px);align-items:stretch}
+.quotes{display:flex;flex-direction:column;gap:14px}
+.quotes .case{flex:1;flex-direction:column;align-items:flex-start;justify-content:center;padding:28px;gap:12px}
+.quotes .case > svg{width:40px;height:40px;color:#C13584}
 .score{background:var(--ink);color:var(--white);border-radius:var(--radius-lg);padding:30px}
 .score-num{font-size:84px;font-weight:800;line-height:1;letter-spacing:-.04em}
 .stars{display:inline-flex;gap:2px;color:var(--yellow)}
@@ -369,10 +372,11 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .score h3{font-size:24px;font-weight:800}
 .score > p{color:var(--muted-dark);margin-top:8px}
 .score .btn{margin-top:20px}
-.quotes{display:grid;gap:14px}
+
 .quote{margin:0;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px 18px;position:relative}
 .quote blockquote{margin:0;font-size:18px;font-weight:700;line-height:1.45;color:var(--ink)}
 .quote figcaption{margin-top:10px;font-size:14px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.about .perks{margin-top:22px;background:var(--white);border:1px solid var(--line)}
 .perks{background:var(--paper);border-radius:var(--radius);padding:22px}
 .perks h3{font-size:18px;font-weight:800;color:var(--ink);margin-bottom:14px}
 .perks ul{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -394,9 +398,9 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .about .values{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}
 .about .values li{display:flex;gap:10px;align-items:flex-start;font-size:15px;font-weight:700;color:var(--ink);background:var(--white);border:1px solid var(--line);border-radius:12px;padding:12px}
 .about .values svg{width:20px;height:20px;color:var(--yellow-dark);flex:none;margin-top:1px}
-.gallery{display:grid;grid-template-columns:1.2fr 1fr;grid-template-rows:1fr 1fr;gap:12px;aspect-ratio:6/5}
+.gallery{display:grid;grid-template-columns:1.25fr 1fr;gap:12px;aspect-ratio:5/4}
 .gallery figure{position:relative;margin:0;border-radius:16px;overflow:hidden;background:var(--paper-2)}
-.gallery figure:first-child{grid-row:1/3}
+
 .gallery img{width:100%;height:100%;object-fit:cover}
 .visit{display:flex;flex-direction:column;justify-content:flex-end;gap:2px;padding:18px;border-radius:16px;background:var(--ink);color:#C9CDD3;text-decoration:none;font-size:14px;transition:background .2s}
 .visit:hover{background:var(--graphite)}
@@ -441,7 +445,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .loc-ctas{display:flex;flex-wrap:wrap;gap:10px;margin-top:auto;padding-top:24px}
 .loc-ctas .btn{flex:1 1 auto}
 .loc-links{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;font-size:14px}
-.loc-links a{color:#D3D6DB;font-weight:700;text-decoration:underline;text-underline-offset:3px;min-height:32px;display:inline-flex;align-items:center}
+.loc-links a{color:#D3D6DB;font-weight:700;text-decoration:underline;text-underline-offset:3px;min-height:44px;display:inline-flex;align-items:center}
 .loc-links a:hover{color:var(--yellow)}
 .map{border-radius:var(--radius-lg);overflow:hidden;min-height:420px;background:var(--graphite);border:1px solid var(--line-dark)}
 .map iframe{width:100%;height:100%;min-height:420px;border:0}
@@ -677,7 +681,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
     <div class="hero-copy">
       <p class="eyebrow"><svg aria-hidden="true"><use href="#i-pin"/></svg><span class="eb-long">Atendimento na região da Estrada do M'Boi Mirim, São Paulo</span><span class="eb-short">Estr. M'Boi Mirim, 9000 · Zona Sul</span></p>
       <h1 id="hero-title">Seu carro merece <mark>cuidado de verdade.</mark></h1>
-      <p class="hero-sub">Na Jota Car, você encontra manutenção, diagnóstico e reparos com atenção ao que o seu veículo realmente precisa. A gente explica tudo de um jeito simples, antes de começar.</p>
+      <p class="hero-sub">Manutenção, diagnóstico e reparos com atenção ao que o seu carro realmente precisa, explicados de um jeito simples.</p>
       <div class="hero-ctas">
         <a class="btn btn-primary" data-wa="geral" data-track="wa_hero" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20falar%20sobre%20o%20meu%20carro." target="_blank" rel="noopener">
           <svg aria-hidden="true"><use href="#i-wa"/></svg>Falar com a Jota Car
@@ -700,7 +704,6 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         <span class="illus">Imagem ilustrativa</span>
       </div>
       <div class="float-card fc-1"><span class="float-ico" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><strong>Diagnóstico com scanner</strong><span>sem trocar peça no chute</span></div></div>
-      <div class="float-card fc-2"><span class="float-ico" aria-hidden="true"><svg><use href="#i-chat"/></svg></span><div><strong>Explicação clara</strong><span>você entende antes de decidir</span></div></div>
       <div class="cars">
         <strong>Cuidamos do carro do dia a dia</strong> · Gol, Onix, HB20, Uno, Palio, Sandero, Ka e muitos outros.
       </div>
@@ -774,7 +777,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
           </article>
           <article class="signal reveal" data-delay="1">
             <div class="signal-top"><span class="signal-ico danger" aria-hidden="true"><svg><use href="#i-drop"/></svg></span><h3>Vazamentos</h3></div>
-            <p>Mancha no chão onde o carro fica parado? Pode ser óleo, água do radiador ou fluido de freio. Repare na cor e fale com a gente.</p>
+            <p>Mancha no chão onde o carro fica parado? Pode ser óleo, água do radiador ou fluido de freio. Se o pedal do freio mudou, não rode.</p>
             <a class="link-cta" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Meu carro está com vazamento e quero agendar uma avaliação." data-track="wa_sinal_vazamento" target="_blank" rel="noopener"><span>Falar sobre esse sinal</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
           </article>
           <article class="signal reveal">
@@ -859,7 +862,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         <h4>O que pode ser</h4>
         <p id="dCausa">A central do carro registrou uma falha: pode ser sensor, vela, bobina, bico injetor, entre outros.</p>
         <h4>O que fazer agora</h4>
-        <p id="dFazer">Se a luz estiver fixa, dá para rodar com cuidado e agendar o diagnóstico computadorizado. Se estiver piscando, reduza a velocidade e traga o carro o quanto antes.</p>
+        <p id="dFazer">Luz fixa: rode com cuidado e agende o diagnóstico computadorizado. Luz piscando: reduza a velocidade e evite rodar, porque pode danificar o motor e o catalisador. Fale com a oficina antes de seguir.</p>
         <p class="alert" id="dAlert" role="alert" hidden><svg aria-hidden="true"><use href="#i-warn"/></svg><span id="dAlertText"></span></p>
         <a class="btn btn-dark" id="dBtn" data-track="wa_painel" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Acendeu a luz da injeção no painel do meu carro e quero orientação." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Falar sobre essa luz</a>
         <p class="disclaimer"><svg aria-hidden="true"><use href="#i-info"/></svg><span>Orientação geral. Identificar a luz não substitui o diagnóstico profissional; consulte também o manual do seu carro. Em caso de dúvida com freio, temperatura ou óleo, não continue rodando.</span></p>
@@ -939,18 +942,9 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         <figure class="quote reveal" data-confirmar="depoimentos"><blockquote>Profissionais qualificados e atenciosos!!!</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Danielle C. · Google</figcaption></figure>
         <figure class="quote reveal" data-delay="1" data-confirmar="depoimentos"><blockquote>Com certeza, indico para qualquer pessoa os serviços da Jota Car.</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Renata H. · Google</figcaption></figure>
         <figure class="quote reveal" data-delay="2" data-confirmar="depoimentos"><blockquote>Deus os abençoe todos aí e continuem assim, pois o cliente retorna.</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Paulo A. · Google</figcaption></figure>
-        <div class="perks reveal">
-          <h3>Por que levar o carro na Jota Car</h3>
-          <ul class="clean">
-            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><strong>Diagnóstico computadorizado</strong><span>leitura das falhas da central, sem trocar peça no chute</span></div></li>
-            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-shield"/></svg></span><div><strong>Orçamento antes do serviço</strong><span>você entende e decide</span></div></li>
-            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-tire"/></svg></span><div><strong>Mecânica e pneus</strong><span>no mesmo endereço</span></div></li>
-            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-clock"/></svg></span><div><strong>Segunda a sábado</strong><span>seg a sex 8h–18h · sáb 8h–14h</span></div></li>
-          </ul>
-        </div>
         <a class="case reveal" href="https://www.instagram.com/jotacar9000/" target="_blank" rel="noopener" data-track="instagram_caso">
           <svg aria-hidden="true"><use href="#i-insta"/></svg>
-          <div><strong>Do dia a dia da oficina: HB20 2024, troca da bomba de combustível</strong><span>Veja os serviços recentes no Instagram @jotacar9000</span></div>
+          <div><strong>Do dia a dia da oficina: HB20 2024, troca da bomba de combustível</strong><span>Veja os serviços recentes no Instagram @jotacar9000</span></div><span class="link-cta"><span>Ver no Instagram</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></span>
         </a>
       </div>
     </div>
@@ -962,15 +956,19 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         <h2>Oficina de bairro, com jeito de quem cuida.</h2>
         <p>A Jota Car fica na Estrada do M'Boi Mirim e atende quem depende do carro todos os dias: para trabalhar, levar as crianças na escola, fazer as compras e resolver a vida.</p>
         <p>Aqui a conversa é direta. Você entende o que o carro tem e o que precisa ser feito antes de decidir.</p>
-        <a class="btn btn-outline about-cta" href="#onde-fica" data-track="ver_localizacao"><svg aria-hidden="true"><use href="#i-pin"/></svg>Ver localização</a>
+        <div class="perks">
+          <h3>Por que levar o carro na Jota Car</h3>
+          <ul class="clean">
+            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><strong>Diagnóstico computadorizado</strong><span>leitura das falhas da central, sem trocar peça no chute</span></div></li>
+            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-shield"/></svg></span><div><strong>Orçamento antes do serviço</strong><span>você entende e decide</span></div></li>
+            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-tire"/></svg></span><div><strong>Mecânica e pneus</strong><span>no mesmo endereço</span></div></li>
+            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-clock"/></svg></span><div><strong>Segunda a sábado</strong><span>seg a sex 8h–18h · sáb 8h–14h</span></div></li>
+          </ul>
+        </div>
       </div>
       <div class="gallery reveal" data-delay="1" id="gallery">
         <figure>
           <img src="https://images.unsplash.com/photo-1728474751252-9c085659f6ab?w=800&q=66&auto=format&fit=crop" width="800" height="1000" loading="lazy" decoding="async" alt="Mãos de mecânico trabalhando embaixo de um carro">
-          <span class="illus">Imagem ilustrativa</span>
-        </figure>
-        <figure>
-          <img src="https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=600&q=62&auto=format&fit=crop&crop=entropy" width="600" height="450" loading="lazy" decoding="async" alt="Mecânico verificando o motor de um carro">
           <span class="illus">Imagem ilustrativa</span>
         </figure>
         <a class="visit" href="#onde-fica" data-track="visit_tile"><svg aria-hidden="true"><use href="#i-pin"/></svg><strong>Venha conhecer</strong><span>Estrada do M'Boi Mirim, 9000</span><em>Ver no mapa →</em></a>
@@ -1002,7 +1000,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         </details>
         <details>
           <summary>Acendeu uma luz no painel. Posso continuar rodando?</summary>
-          <p class="answer">Depende da luz. Luz vermelha de óleo, temperatura ou freio pede para parar o carro em local seguro. Luz amarela, como a da injeção, normalmente dá tempo de agendar. Veja a seção “Luzes do painel” e, na dúvida, fale com a gente antes de seguir.</p>
+          <p class="answer">Depende da luz. Luz vermelha de óleo, temperatura ou freio pede para parar o carro em local seguro e não seguir viagem. Luz amarela fixa, como a da injeção, normalmente dá tempo de agendar; se estiver piscando, evite rodar. Na dúvida, não arrisque: fale com a gente antes de seguir.</p>
         </details>
         <details data-confirmar="parcelamento">
           <summary>Quais as formas de pagamento?</summary>
@@ -1053,7 +1051,6 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         <p class="a11y-note" data-confirmar="acessibilidade"><svg aria-hidden="true"><use href="#i-a11y"/></svg>Entrada acessível com rampa.</p>
         <div class="loc-ctas">
           <a class="btn btn-primary" href="https://www.google.com/maps/dir/?api=1&amp;destination=Jota+Car+Servi%C3%A7os+Automotivo%2C+Estrada+do+M%27Boi+Mirim%2C+9000%2C+S%C3%A3o+Paulo+-+SP" target="_blank" rel="noopener" data-track="rota_google"><svg aria-hidden="true"><use href="#i-route"/></svg>Como chegar</a>
-          <a class="btn btn-outline" data-wa="geral" data-track="wa_localizacao" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20falar%20sobre%20o%20meu%20carro." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Falar no WhatsApp</a>
         </div>
         <div class="loc-links">
           <a href="https://waze.com/ul?q=Estrada%20do%20M'Boi%20Mirim%2C%209000%2C%20S%C3%A3o%20Paulo&amp;navigate=yes" target="_blank" rel="noopener" data-track="rota_waze">Abrir no Waze</a>
@@ -1230,19 +1227,19 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
   var LUZES = {
     oleo: { nome: "Luz do óleo", nivel: 3,
       causa: "Pressão do óleo baixa: nível baixo, vazamento ou problema na bomba de óleo.",
-      fazer: "Pare em local seguro e desligue o motor. Rodar com essa luz acesa pode danificar o motor em pouco tempo. Fale com a oficina antes de seguir." },
+      fazer: "Pare em local seguro e desligue o motor. Rodar com essa luz acesa pode danificar o motor em pouco tempo. Não siga viagem: fale com a oficina e, se precisar tirar o carro do lugar, prefira o guincho." },
     temperatura: { nome: "Luz de temperatura", nivel: 3,
       causa: "Motor esquentando: falta de água/aditivo, vazamento, ventoinha ou válvula termostática.",
-      fazer: "Pare e desligue o motor. Não abra o reservatório com o motor quente. Espere esfriar e fale com a oficina." },
-    freio: { nome: "Luz do freio", nivel: 2,
+      fazer: "Pare em local seguro e desligue o motor. Não abra o reservatório nem jogue água com o motor quente: há risco de queimadura. Espere esfriar e fale com a oficina antes de voltar a rodar." },
+    freio: { nome: "Luz do freio", nivel: 3,
       causa: "Freio de mão puxado, fluido de freio baixo ou problema no sistema de freio.",
-      fazer: "Confira se o freio de mão está solto. Se a luz continuar acesa, rode o mínimo possível e com cuidado, e traga o carro para avaliação. Se o pedal estiver diferente, não rode." },
+      fazer: "Com o carro parado em local seguro, confira se o freio de mão está totalmente solto. Se a luz continuar acesa, não continue rodando: pode ser falta de fluido ou falha no sistema de freio. Fale com a oficina e, se precisar mover o carro, prefira o guincho." },
     bateria: { nome: "Luz da bateria", nivel: 2,
       causa: "O carro não está carregando direito: alternador, correia ou a própria bateria.",
-      fazer: "O carro pode apagar a qualquer momento. Evite desligar longe de casa e agende uma avaliação o quanto antes." },
+      fazer: "O carro pode apagar a qualquer momento. Desligue o que puder (ar, rádio, carregadores) e siga só até um lugar seguro ou até a oficina. Se acender junto com a luz de temperatura, pare: pode ser a correia." },
     injecao: { nome: "Luz da injeção", nivel: 1,
       causa: "A central do carro registrou uma falha: pode ser sensor, vela, bobina, bico injetor, entre outros.",
-      fazer: "Se a luz estiver fixa, dá para rodar com cuidado e agendar o diagnóstico computadorizado. Se estiver piscando, reduza a velocidade e traga o carro o quanto antes." },
+      fazer: "Luz fixa: rode com cuidado e agende o diagnóstico computadorizado. Luz piscando: reduza a velocidade e evite rodar, porque pode danificar o motor e o catalisador. Fale com a oficina antes de seguir." },
     abs: { nome: "Luz do ABS", nivel: 1,
       causa: "Falha no sistema ABS, geralmente em sensor de roda. O freio comum continua funcionando, mas sem o antitravamento.",
       fazer: "Dirija com mais distância do carro da frente, principalmente na chuva, e agende uma avaliação." }
