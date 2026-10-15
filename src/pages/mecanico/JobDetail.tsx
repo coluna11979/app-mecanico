@@ -3,7 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { mechanicNet } from '@/lib/payment';
+import { formatBRL, mechanicNet } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { WorkshopReviews } from '@/components/WorkshopReviews';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
@@ -159,7 +159,7 @@ export default function MechanicJobDetail() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-xs text-steel-500 uppercase tracking-wider">Você recebe</div>
-                  <div className="text-3xl font-bold text-signal-400 font-display mt-1">R$ {net.toFixed(2)}</div>
+                  <div className="text-3xl font-bold text-signal-400 font-display mt-1">R$ {formatBRL(net)}</div>
                   <div className="text-xs text-steel-500 mt-1">no seu PIX</div>
                 </div>
                 <div className="h-12 w-12 rounded-full bg-signal-500/10 grid place-items-center text-2xl">💸</div>

@@ -25,6 +25,12 @@ export function jobGross(j: { price_per_hour?: number | null; max_hours?: number
   return cap > 0 ? cap : Number(j.price ?? 0);
 }
 
+/** Valor para o mecânico: sem centavos quando é redondo (R$ 82), com centavos quando não é (R$ 0,80) */
+export function formatMoney(value: number): string {
+  const v = Math.round((Number(value) || 0) * 100) / 100;
+  return formatBRL(v, { decimals: Number.isInteger(v) ? 0 : 2 });
+}
+
 export function formatBRL(value: number, opts: { decimals?: 0 | 2 } = {}): string {
   const decimals = opts.decimals ?? 2;
   return value.toLocaleString('pt-BR', {

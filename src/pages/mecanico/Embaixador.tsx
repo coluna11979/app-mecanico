@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
+import { formatMoney } from '@/lib/payment';
 import { supabase } from '@/lib/supabase';
 
 type Resumo = {
@@ -158,7 +159,7 @@ export default function MecanicoEmbaixador() {
         <div className="grid grid-cols-2 gap-3">
           <StatCard label="Indicados"        value={String(resumo?.total_indicados ?? 0)} />
           <StatCard label="Ativos (30d)"     value={String(resumo?.ativos_30d ?? 0)} />
-          <StatCard label="Ganho acumulado"  value={`R$ ${Number(resumo?.comissao_acumulada ?? 0).toFixed(0)}`} accent="signal" />
+          <StatCard label="Ganho acumulado"  value={`R$ ${formatMoney(Number(resumo?.comissao_acumulada ?? 0))}`} accent="signal" />
           <StatCard label="A receber"        value={`R$ ${Number(resumo?.comissao_pendente ?? 0).toFixed(2).replace('.', ',')}`} accent="brand" />
         </div>
 
@@ -206,7 +207,7 @@ export default function MecanicoEmbaixador() {
                     <div className="text-right shrink-0">
                       <div className="text-[10px] text-steel-500 uppercase tracking-wider">Você ganhou</div>
                       <div className="text-signal-400 font-bold font-display text-lg">
-                        R$ {Number(ind.comissao_acumulada).toFixed(0)}
+                        R$ {formatMoney(Number(ind.comissao_acumulada))}
                       </div>
                       <div className="text-[10px] text-steel-500 mt-0.5">
                         {ind.servicos_total} {ind.servicos_total === 1 ? 'serviço' : 'serviços'}

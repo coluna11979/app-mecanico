@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet } from '@/lib/payment';
+import { mechanicNet, formatMoney } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Mechanic, Workshop } from '@/types/database';
@@ -215,7 +215,7 @@ export default function MechanicDashboard() {
                 <div className="text-xs font-bold uppercase tracking-wide opacity-90">Nova demanda</div>
                 <div className="font-bold truncate">{capitalize(t.job.title)}</div>
                 <div className="text-xs opacity-90">
-                  R$ {mechanicNet(cap).toFixed(0)} no seu PIX · {previstas(t.job.max_hours)}
+                  R$ {formatMoney(mechanicNet(cap))} no seu PIX · {previstas(t.job.max_hours)}
                 </div>
               </div>
               <button
@@ -292,7 +292,7 @@ export default function MechanicDashboard() {
                     <div className="text-right shrink-0">
                       <div className="text-xs text-white/80">você recebe</div>
                       <div className="text-2xl font-bold font-display leading-tight">
-                        R$ {mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1)).toFixed(0)}
+                        R$ {formatMoney(mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1)))}
                       </div>
                     </div>
                   </div>
@@ -382,7 +382,7 @@ export default function MechanicDashboard() {
                           )}
                         </div>
                         <div className="text-right shrink-0">
-                          <div className="text-signal-500 font-bold font-display text-2xl leading-tight">R$ {net.toFixed(0)}</div>
+                          <div className="text-signal-500 font-bold font-display text-2xl leading-tight">R$ {formatMoney(net)}</div>
                           <div className="text-xs text-steel-300">no seu PIX</div>
                         </div>
                       </div>
