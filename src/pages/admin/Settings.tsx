@@ -6,7 +6,9 @@ import type { AppSetting } from '@/types/database';
 
 interface FieldDef {
   key: string; label: string; description: string;
-  type?: 'text' | 'password' | 'number' | 'toggle' | 'key';
+  type?: 'text' | 'password' | 'number' | 'toggle' | 'key' | 'choice';
+  /** Opções do tipo 'choice' */
+  options?: { value: string; label: string }[];
   section: string;
 }
 
@@ -15,6 +17,9 @@ const FIELDS: FieldDef[] = [
   { key: 'app_public_url',         label: 'URL pública do app',        description: 'Usada nos links dos emails (ex: https://mecanicoapp.com.br).', section: 'Geral' },
   { key: 'maintenance_mode',       label: 'Modo manutenção',           description: 'Bloqueia o acesso de todos os usuários.',   type: 'toggle',   section: 'Geral' },
   { key: 'platform_fee_percent',   label: 'Taxa da plataforma (%)',    description: 'Comissão cobrada do mecânico por job.',     type: 'number',   section: 'Financeiro' },
+  { key: 'payment_gateway',        label: 'Quem recebe o pagamento da oficina', description: 'Stripe = cartão pela Stripe (como antes). NextPay = PIX + cartão pela NextGo. Vale na hora para os próximos pagamentos.', type: 'choice', options: [{ value: 'stripe', label: 'Stripe' }, { value: 'nextpay', label: 'NextPay' }], section: 'Pagamentos' },
+  { key: 'card_fee_passthrough',   label: 'Cobrar a taxa do cartão da oficina', description: 'Desligado = "taxa do cartão por nossa conta no lançamento". Ligado = a oficina paga serviço + taxa no cartão (PIX continua sem taxa). Só vale com NextPay.', type: 'toggle', section: 'Pagamentos' },
+  { key: 'card_fee_percent',       label: 'Taxa do cartão (%)',        description: 'Taxa da NextPay no cartão à vista. Usada para somar a taxa quando a cobrança está ligada.', type: 'number', section: 'Pagamentos' },
   { key: 'stripe_publishable_key', label: 'Chave pública LIVE (pk_live_…)',  description: 'Usada no frontend em modo produção.',  type: 'key',      section: 'Stripe — Produção' },
   { key: 'stripe_secret_key',      label: 'Chave secreta LIVE (sk_live_…)',  description: 'Usada nas Edge Functions em modo produção.', type: 'password', section: 'Stripe — Produção' },
   { key: 'stripe_webhook_secret',  label: 'Webhook secret LIVE (whsec_…)',   description: 'Valida eventos do webhook LIVE.',      type: 'password', section: 'Stripe — Produção' },
@@ -47,6 +52,7 @@ const SECTIONS: Record<string, Section> = {
   'Inteligência Artificial': { label: 'Inteligência Artificial', icon: '🤖', color: 'text-brand-700', bg: 'bg-brand-50' },
   'WhatsApp (UAZAPI)':    { label: 'WhatsApp (UAZAPI)',    icon: '💬',  color: 'text-signal-700', bg: 'bg-signal-50'  },
   'Verificação de cadastro (Infosimples)': { label: 'Verificação de cadastro (Infosimples)', icon: '🛡️', color: 'text-steel-600', bg: 'bg-steel-100' },
+  Pagamentos:             { label: 'Pagamentos',           icon: '💳',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
 };
 
 export default function AdminSettings() {
@@ -230,6 +236,18 @@ export default function AdminSettings() {
                           <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${vals[f.key] === 'true' ? 'translate-x-5' : ''}`} />
                         </button>
 
+                      ) : f.type === 'choice' ? (
+                        <div className="inline-flex gap-1 bg-steel-100 rounded-xl p-1">
+                          {(f.options ?? []).map(o => (
+                            <button key={o.value} type="button"
+                              onClick={() => setVals(v => ({ ...v, [f.key]: o.value }))}
+                              className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
+                                (vals[f.key] ?? '') === o.value ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+
                       ) : f.type === 'key' || f.type === 'password' ? (
                         <div className="relative">
                           <input
@@ -253,7 +271,7 @@ export default function AdminSettings() {
                         <div className="relative w-32">
                           <input
                             type="number"
-                            min={0} max={100}
+                            min={0} max={100} step={0.01}
                             className="w-full rounded-xl border border-steel-200 bg-steel-50 px-3 py-2.5 pr-8 text-sm font-semibold text-steel-800 focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
                             value={vals[f.key] ?? ''}
                             onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
