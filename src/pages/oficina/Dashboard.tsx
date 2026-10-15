@@ -9,13 +9,16 @@ import { MechanicReviews } from '@/components/MechanicReviews';
 import { formatScheduled } from '@/lib/scheduling';
 import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 import type { Job } from '@/types/database';
-import { formatBRL } from '@/lib/payment';
+import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey } from '@/lib/callMechanic';
 import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
 
 type NewJob = {
   title: string; description: string;
   price_per_hour: string; max_hours: string; scheduled_at: string;
+  /** fixed = preço pelo serviço (total); hour = valor/hora × horas. Em "fixed", max_hours é o tempo previsto (opcional) */
+  pricing?: 'hour' | 'fixed';
+  total?: string;
   /** Veio do Caixa ("Chamar mecânico"): a demanda fica ligada a essa OS */
   service_order_id?: string;
   /** Itens da OS que esse mecânico vai fazer (passam a "mecânico da plataforma") */
@@ -24,7 +27,7 @@ type NewJob = {
 type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
 type JobMode = 'open' | 'favorites' | 'direct';
 
-const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '' };
+const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '' };
 
 const draftKey = jobDraftKey;
 function loadDraft(workshopId: string): NewJob | null {
@@ -32,9 +35,10 @@ function loadDraft(workshopId: string): NewJob | null {
     const raw = localStorage.getItem(draftKey(workshopId));
     if (!raw) return null;
     const d = JSON.parse(raw) as Partial<NewJob>;
-    const hasContent = !!(d.title?.trim() || d.description?.trim() || d.price_per_hour || d.scheduled_at);
+    const hasContent = !!(d.title?.trim() || d.description?.trim() || d.price_per_hour || d.total || d.scheduled_at);
     if (!hasContent) return null;
-    return { ...EMPTY, ...d };
+    // Rascunho antigo (antes do "pelo serviço") era sempre por hora
+    return { ...EMPTY, ...d, pricing: d.pricing ?? 'hour' };
   } catch { return null; }
 }
 
@@ -198,8 +202,9 @@ export default function WorkshopDashboard() {
     setForm({
       title: j.title,
       description: j.description,
-      price_per_hour: String(j.price_per_hour ?? ''),
-      max_hours: String(j.max_hours ?? '1'),
+      ...(j.pricing === 'fixed'
+        ? { pricing: 'fixed' as const, total: String(j.price_per_hour ?? ''), price_per_hour: '', max_hours: j.estimated_hours != null ? String(j.estimated_hours) : '' }
+        : { pricing: 'hour' as const, total: '', price_per_hour: String(j.price_per_hour ?? ''), max_hours: String(j.max_hours ?? '1') }),
       scheduled_at: j.scheduled_at ? new Date(j.scheduled_at).toISOString().slice(0, 16) : '',
     });
     setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
@@ -208,7 +213,7 @@ export default function WorkshopDashboard() {
 
   function persistDraft(next: NewJob) {
     if (!currentWorkshop?.id) return;
-    const hasContent = !!(next.title.trim() || next.description.trim() || next.price_per_hour || next.scheduled_at);
+    const hasContent = !!(next.title.trim() || next.description.trim() || next.price_per_hour || next.total || next.scheduled_at);
     if (hasContent) localStorage.setItem(draftKey(currentWorkshop.id), JSON.stringify(next));
     else localStorage.removeItem(draftKey(currentWorkshop.id));
   }
@@ -236,10 +241,19 @@ export default function WorkshopDashboard() {
     // Validação explícita (mobile não mostra o tooltip do browser)
     if (!form.title.trim()) return setFormError('Informe o título do serviço.');
     if (!form.description.trim()) return setFormError('Informe a descrição do serviço.');
-    const pph = Number(form.price_per_hour);
-    const mh  = Number(form.max_hours);
-    if (!pph || pph < 1) return setFormError('Informe o valor por hora (mínimo R$ 1).');
-    if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
+    // Preço pelo serviço: grava valor × 1h (as contas de cobrança não mudam) e o tempo previsto à parte
+    const fixed = form.pricing === 'fixed';
+    const pph = fixed ? Number(form.total) : Number(form.price_per_hour);
+    const mh  = fixed ? 1 : Number(form.max_hours);
+    const est = fixed && form.max_hours ? Number(form.max_hours) : null;
+    if (fixed) {
+      if (!pph || pph < 1) return setFormError('Informe o valor do serviço (mínimo R$ 1).');
+      if (est != null && !(est > 0 && est <= 99)) return setFormError('Tempo previsto inválido.');
+    } else {
+      if (!pph || pph < 1) return setFormError('Informe o valor por hora (mínimo R$ 1).');
+      if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
+    }
+    const pricingFields = { pricing: fixed ? 'fixed' : 'hour', estimated_hours: est };
     if (mode === 'direct' && !pickedMechanic) return setFormError('Selecione o mecânico para contratação direta.');
 
     if (!shop) return setFormError('Oficina não encontrada. Verifique seu cadastro ou recarregue a página.');
@@ -255,6 +269,7 @@ export default function WorkshopDashboard() {
         price_per_hour: pph,
         max_hours:      mh,
         price:          pph * mh,
+        ...pricingFields,
         scheduled_at:   form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null,
       };
       const { error: upErr } = await supabase
@@ -282,6 +297,7 @@ export default function WorkshopDashboard() {
       price_per_hour: pph,
       max_hours:      mh,
       price:          pph * mh,
+      ...pricingFields,
       status:         isDirect ? 'assigned' : 'open',
       mechanic_id:    isDirect ? pickedMechanic : null,
       audience:       isFavorites ? 'favorites' : 'public',
@@ -344,6 +360,7 @@ export default function WorkshopDashboard() {
         .in('status', ['assigned', 'in_progress', 'completed'])
         .eq('workshop.state', state)
         .gt('price_per_hour', 0)
+        .eq('pricing', 'hour') // preço pelo serviço não é valor/hora
         .limit(200);
       if (!alive) return;
       const prices = (data ?? []).map((d: any) => Number(d.price_per_hour)).filter(n => n > 0).sort((a, b) => a - b);
@@ -364,7 +381,7 @@ export default function WorkshopDashboard() {
     return () => { document.body.style.overflow = prev; };
   }, [modal]);
 
-  const estimated = Number(form.price_per_hour) * Number(form.max_hours);
+  const estimated = form.pricing === 'fixed' ? Number(form.total) : Number(form.price_per_hour) * Number(form.max_hours);
   // Preferidos no topo; dentro de cada grupo mantém a ordem por nota do fetch
   const filteredMechanics = mechanics
     .filter(m => m.name.toLowerCase().includes(mechSearch.toLowerCase()))
@@ -505,7 +522,7 @@ export default function WorkshopDashboard() {
               <div className="text-right shrink-0">
                 <div className="font-display text-lg font-bold tabular-nums leading-tight">R$ {formatBRL(j.price, { decimals: 0 })}</div>
                 <div className="text-[11px] text-steel-400 tabular-nums">
-                  {j.max_hours ?? '—'}h × R$ {j.price_per_hour != null ? formatBRL(j.price_per_hour, { decimals: 0 }) : '—'}
+                  {pricingLabel(j)}
                 </div>
               </div>
             </div>
@@ -629,7 +646,37 @@ export default function WorkshopDashboard() {
 
               {/* Precificação */}
               <div>
-                <label className="label">Precificação fechada</label>
+                <label className="label">Como cobrar</label>
+                <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-3">
+                  {([['fixed', 'Pelo serviço'], ['hour', 'Por hora']] as const).map(([k, l]) => (
+                    <button key={k} type="button"
+                      onClick={() => setForm(f => { const next = { ...f, pricing: k }; persistDraft(next); return next; })}
+                      className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+                        (form.pricing ?? 'hour') === k ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                {form.pricing === 'fixed' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                      <input className="input !pl-9" type="number" min={1} step={0.01} required
+                        placeholder="150" value={form.total ?? ''} onChange={set('total')} />
+                    </div>
+                    <div className="text-xs text-steel-400 mt-1">Valor do serviço</div>
+                  </div>
+                  <div>
+                    <div className="relative">
+                      <input className="input !pr-9" type="number" min={0.5} max={99} step={0.5}
+                        placeholder="opcional" value={form.max_hours} onChange={set('max_hours')} />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
+                    </div>
+                    <div className="text-xs text-steel-400 mt-1">Tempo previsto (opcional)</div>
+                  </div>
+                </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="relative">
@@ -648,7 +695,8 @@ export default function WorkshopDashboard() {
                     <div className="text-xs text-steel-400 mt-1">Tempo previsto</div>
                   </div>
                 </div>
-                {marketRate && (
+                )}
+                {marketRate && form.pricing !== 'fixed' && (
                   <div className="mt-2 bg-signal-50 border border-signal-200 rounded-xl px-3 py-2 text-xs text-signal-800 flex items-start gap-2">
                     <span className="text-sm shrink-0">📊</span>
                     <div className="flex-1">
@@ -662,7 +710,9 @@ export default function WorkshopDashboard() {
                   </div>
                 )}
                 <p className="text-[11px] text-steel-500 mt-2 leading-relaxed">
-                  💡 <strong>Valor fechado:</strong> a oficina paga o pacote (hora × tempo previsto) e o mecânico recebe esse valor mesmo se terminar antes ou levar mais tempo. O tempo real é registrado para análise.
+                  💡 <strong>Valor fechado:</strong> {form.pricing === 'fixed'
+                    ? 'a oficina paga o valor do serviço e o mecânico recebe esse valor, não importa quanto tempo leve.'
+                    : 'a oficina paga o pacote (hora × tempo previsto) e o mecânico recebe esse valor mesmo se terminar antes ou levar mais tempo.'} O tempo real é registrado para análise.
                 </p>
                 {estimated > 0 && (
                   <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
@@ -960,7 +1010,7 @@ function HistoryRow({ j }: { j: Job }) {
           {date ? new Date(date).toLocaleDateString('pt-BR') : '—'}
         </div>
         <div className="text-xs text-steel-400">
-          Pacote: {j.max_hours}h × R$ {formatBRL(j.price_per_hour ?? 0, { decimals: 0 })}/h
+          Pacote: {pricingLabel(j)}
           {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
         </div>
       </div>

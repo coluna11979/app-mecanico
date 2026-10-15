@@ -10,7 +10,7 @@ import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
-import { formatBRL } from '@/lib/payment';
+import { formatBRL, pricingLabel } from '@/lib/payment';
 import NextpayPayment from '@/components/payment/NextpayPayment';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
@@ -612,7 +612,7 @@ export default function WorkshopTracking() {
 
             {job && (
               <div className="flex items-center justify-between text-sm py-2 border-b border-steel-100">
-                <span className="text-steel-500">{job.max_hours}h × R$ {formatBRL(job.price_per_hour ?? 0, { decimals: 0 })}/h</span>
+                <span className="text-steel-500">{pricingLabel(job)}</span>
                 <span className="font-bold text-signal-600">R$ {formatBRL(cap)} fechado</span>
               </div>
             )}
@@ -899,7 +899,7 @@ export default function WorkshopTracking() {
               <div className="text-xs text-brand-600 uppercase tracking-widest font-bold mb-1">Valor a pagar</div>
               <div className="text-4xl font-bold font-display text-brand-700">R$ {formatBRL(cap)}</div>
               <div className="text-xs text-brand-500 mt-1">
-                Pacote fechado · {job?.max_hours}h × R$ {formatBRL(job?.price_per_hour ?? 0, { decimals: 0 })}/h
+                Pacote fechado · {job ? pricingLabel(job) : ''}
               </div>
               <div className="text-[11px] text-steel-500 mt-1">
                 Valor não muda se o mecânico terminar antes ou levar mais tempo

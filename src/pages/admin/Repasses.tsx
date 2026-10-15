@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
-import { PLATFORM_FEE, jobGross } from '@/lib/payment';
+import { PLATFORM_FEE, jobGross, jobHours } from '@/lib/payment';
 
 interface RepasseRow {
   job_id: string;
@@ -47,6 +47,8 @@ export default function AdminRepasses() {
         repasse_valor,
         actual_hours,
         max_hours,
+        estimated_hours,
+        pricing,
         price_per_hour,
         price,
         stripe_payment_intent_id,
@@ -73,7 +75,7 @@ export default function AdminRepasses() {
           repasse_pago_at:         j.repasse_pago_at,
           repasse_valor:           j.repasse_valor,
           actual_hours:            j.actual_hours,
-          max_hours:               j.max_hours,
+          max_hours:               jobHours(j), // demanda pelo serviço: tempo previsto informado
           price_per_hour:          j.price_per_hour,
           price:                   total,
           platform_fee_pct:        FEE * 100,

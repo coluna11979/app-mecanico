@@ -9,7 +9,7 @@ import { ChatBox } from '@/components/chat/ChatBox';
 import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { distKm, etaLabel } from '@/lib/geo';
-import { formatBRL, mechanicNet, formatMoney } from '@/lib/payment';
+import { formatBRL, mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
 
@@ -353,7 +353,7 @@ export default function MechanicTracking() {
               )}
             </div>
             <div className="text-xs text-steel-500 mt-1">
-              Pacote: {job?.max_hours ?? '—'}h previstas · <span className="text-signal-400 font-bold">você recebe R$ {formatMoney(netCap)}</span>
+              {job && hoursLabel(job) ? `Pacote: ${hoursLabel(job)} · ` : 'Preço fechado · '}<span className="text-signal-400 font-bold">você recebe R$ {formatMoney(netCap)}</span>
             </div>
           </div>
         )}
