@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { mechanicNet } from '@/lib/payment';
+import { jobGross, mechanicNet } from '@/lib/payment';
 import type { Job } from '@/types/database';
 
 type JobWithShop = Job & { workshop?: { business_name: string } | null };
@@ -65,15 +65,15 @@ export default function MechanicGanhos() {
   // Tudo em líquido — o que o mecânico recebe / vai receber
   const received = filtered
     .filter(j => j.workshop_confirmed_at)
-    .reduce((a, j) => a + mechanicNet(j.price ?? 0), 0);
+    .reduce((a, j) => a + mechanicNet(jobGross(j)), 0);
   const pending = filtered
     .filter(j => !j.workshop_confirmed_at)
-    .reduce((a, j) => a + mechanicNet(j.price ?? 0), 0);
+    .reduce((a, j) => a + mechanicNet(jobGross(j)), 0);
 
   const byMonth: Record<string, number> = {};
   jobs.forEach(j => {
     const key = new Date(j.completed_at!).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    byMonth[key] = (byMonth[key] ?? 0) + mechanicNet(j.price ?? 0);
+    byMonth[key] = (byMonth[key] ?? 0) + mechanicNet(jobGross(j));
   });
   const months = Object.entries(byMonth).slice(0, 6);
 
@@ -85,7 +85,7 @@ export default function MechanicGanhos() {
       const name = j.workshop?.business_name ?? 'Oficina';
       byShop[name] = byShop[name] || { count: 0, total: 0 };
       byShop[name].count += 1;
-      byShop[name].total += mechanicNet(j.price ?? 0);
+      byShop[name].total += mechanicNet(jobGross(j));
     });
     const topShops = Object.entries(byShop)
       .sort(([, a], [, b]) => b.total - a.total)
@@ -98,7 +98,7 @@ export default function MechanicGanhos() {
       if (!j.completed_at) return;
       const dn = DAY_NAMES[new Date(j.completed_at).getDay()];
       byDay[dn].count += 1;
-      byDay[dn].total += mechanicNet(j.price ?? 0);
+      byDay[dn].total += mechanicNet(jobGross(j));
     });
 
     // Por bucket de horário
@@ -110,7 +110,7 @@ export default function MechanicGanhos() {
       const bucket = HOUR_BUCKETS.find(([, test]) => test(h));
       if (!bucket) return;
       byHour[bucket[0]].count += 1;
-      byHour[bucket[0]].total += mechanicNet(j.price ?? 0);
+      byHour[bucket[0]].total += mechanicNet(jobGross(j));
     });
 
     return { topShops, byDay, byHour };
@@ -340,7 +340,7 @@ export default function MechanicGanhos() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-signal-400 font-bold font-display">
-                      {(j.price ?? 0) > 0 ? `R$ ${mechanicNet(j.price ?? 0).toFixed(0)}` : '—'}
+                      {jobGross(j) > 0 ? `R$ ${mechanicNet(jobGross(j)).toFixed(0)}` : '—'}
                     </div>
                     <div className="text-[10px] text-steel-600">
                       {j.workshop_confirmed_at ? 'no PIX' : 'aguardando'}

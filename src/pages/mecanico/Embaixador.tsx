@@ -139,10 +139,10 @@ export default function MecanicoEmbaixador() {
             {share && (
               <div className="mt-3 text-xs text-brand-100 leading-relaxed space-y-2 bg-black/20 rounded-xl p-3 border border-white/10">
                 <p>✓ Manda esse link no WhatsApp pra mecânicos que confia.</p>
-                <p>✓ Cada serviço que ele fizer, a plataforma fica com <strong className="text-white">18%</strong>. Você recebe <strong className="text-white">20% dessa parte</strong>.</p>
+                <p>✓ Cada serviço que ele fizer, a plataforma fica com <strong className="text-white">20%</strong>. Você recebe <strong className="text-white">20% dessa parte</strong>.</p>
                 <div className="bg-white/10 rounded-lg p-2.5 border border-white/10 font-mono text-[11px] leading-snug">
                   <div className="text-[9px] uppercase tracking-wider text-brand-200 font-sans font-bold mb-0.5">Exemplo</div>
-                  Serviço R$ 500 → plataforma R$ 90 → <strong className="text-white">você R$ 18</strong>
+                  Serviço R$ 500 → plataforma R$ 100 → <strong className="text-white">você R$ 20</strong>
                 </div>
                 <p>✓ Enquanto ele trabalhar pela plataforma, você continua ganhando.</p>
                 <p>✓ Você precisa fazer <strong>pelo menos 1 serviço a cada 30 dias</strong> pra continuar ativo.</p>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
+import { PLATFORM_FEE, jobGross } from '@/lib/payment';
 
 interface RepasseRow {
   job_id: string;
@@ -22,7 +23,7 @@ interface RepasseRow {
   stripe_payment_intent_id: string | null;
 }
 
-const FEE = 0.18; // 18% taxa plataforma
+const FEE = PLATFORM_FEE;
 
 export default function AdminRepasses() {
   const [rows, setRows]       = useState<RepasseRow[]>([]);
@@ -61,8 +62,8 @@ export default function AdminRepasses() {
 
     if (data) {
       setRows(data.map((j: any) => {
-        // price já é o valor fechado (price_per_hour × max_hours), salvo na criação da demanda
-        const total = j.price ?? 0;
+        // Valor fechado = o que a oficina pagou (price_per_hour × max_hours)
+        const total = jobGross(j);
         const mechAmount = parseFloat((total * (1 - FEE)).toFixed(2));
         return {
           job_id:                  j.id,
