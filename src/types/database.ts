@@ -129,6 +129,10 @@ export interface Job {
   audience: 'public' | 'favorites';
   /** OS de onde a demanda saiu ("Chamar mecânico" no Caixa) */
   service_order_id?: string | null;
+  /** Forma de preço (0109): hour = valor/hora × horas; fixed = preço pelo serviço (price_per_hour = total, max_hours = 1) */
+  pricing?: 'hour' | 'fixed';
+  /** Tempo previsto da demanda de preço fechado (só informação) */
+  estimated_hours?: number | null;
   /** Pagamento da oficina (0108): gateway, meio, valor pago e taxa do cartão repassada */
   payment_gateway?: 'stripe' | 'nextpay' | null;
   payment_method?: 'card' | 'pix' | null;

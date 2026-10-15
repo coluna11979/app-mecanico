@@ -25,6 +25,33 @@ export function jobGross(j: { price_per_hour?: number | null; max_hours?: number
   return cap > 0 ? cap : Number(j.price ?? 0);
 }
 
+/* ── Forma de preço da demanda (0109) ──
+   hour  = valor/hora × horas previstas
+   fixed = preço pelo serviço: gravado como valor × 1h (as contas de cobrança não mudam);
+           o tempo previsto fica em estimated_hours, só como informação */
+type Pricing = { pricing?: 'hour' | 'fixed' | null; max_hours?: number | null; estimated_hours?: number | null; price_per_hour?: number | null };
+
+export const isFixedPrice = (j: Pricing) => j.pricing === 'fixed';
+
+/** Horas previstas para mostrar (null = a oficina não informou, na demanda de preço fechado) */
+export function jobHours(j: Pricing): number | null {
+  if (isFixedPrice(j)) return j.estimated_hours != null ? Number(j.estimated_hours) : null;
+  return j.max_hours != null ? Number(j.max_hours) : null;
+}
+
+/** "2h previstas" / "1,5h previstas" / null */
+export function hoursLabel(j: Pricing): string | null {
+  const h = jobHours(j);
+  if (h == null) return null;
+  return `${String(h).replace('.', ',')}h prevista${h === 1 ? '' : 's'}`;
+}
+
+/** Como a oficina vê o preço: "Preço pelo serviço" ou "2h × R$ 60/h" */
+export function pricingLabel(j: Pricing): string {
+  if (isFixedPrice(j)) return 'Preço pelo serviço';
+  return `${String(j.max_hours ?? 1).replace('.', ',')}h × R$ ${formatBRL(Number(j.price_per_hour ?? 0), { decimals: 0 })}/h`;
+}
+
 /** Valor para o mecânico: sem centavos quando é redondo (R$ 82), com centavos quando não é (R$ 0,80) */
 export function formatMoney(value: number): string {
   const v = Math.round((Number(value) || 0) * 100) / 100;

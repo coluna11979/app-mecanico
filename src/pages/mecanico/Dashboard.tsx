@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet, formatMoney } from '@/lib/payment';
+import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Mechanic, Workshop } from '@/types/database';
@@ -215,7 +215,7 @@ export default function MechanicDashboard() {
                 <div className="text-xs font-bold uppercase tracking-wide opacity-90">Nova demanda</div>
                 <div className="font-bold truncate">{capitalize(t.job.title)}</div>
                 <div className="text-xs opacity-90">
-                  R$ {formatMoney(mechanicNet(cap))} no seu PIX · {previstas(t.job.max_hours)}
+                  R$ {formatMoney(mechanicNet(cap))} no seu PIX · {previstas(t.job)}
                 </div>
               </div>
               <button
@@ -286,7 +286,7 @@ export default function MechanicDashboard() {
                       </span>
                       <div className="font-bold text-lg leading-snug mt-2 line-clamp-2">{capitalize(j.title)}</div>
                       <div className="text-sm text-white/80 mt-1 flex items-center gap-1">
-                        <IconClock className="w-3.5 h-3.5" /> {previstas(j.max_hours)}
+                        <IconClock className="w-3.5 h-3.5" /> {previstas(j)}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -395,7 +395,7 @@ export default function MechanicDashboard() {
                           </span>
                         )}
                         <span className="inline-flex items-center gap-1">
-                          <IconClock className="w-3.5 h-3.5" /> {previstas(j.max_hours)}
+                          <IconClock className="w-3.5 h-3.5" /> {previstas(j)}
                         </span>
                         {ws && (ws.rating > 0 || ws.total_jobs > 0) && (
                           <span className="inline-flex items-center gap-1">
@@ -582,7 +582,7 @@ function Skeleton() {
 function capitalize(s: string | null | undefined) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
-function previstas(h: number | null | undefined) {
-  const n = h ?? 1;
-  return `${n}h prevista${n === 1 ? '' : 's'}`;
+/** "2h previstas" — ou "Preço fechado" na demanda pelo serviço sem tempo informado */
+function previstas(j: Parameters<typeof hoursLabel>[0]) {
+  return hoursLabel(j) ?? 'Preço fechado';
 }

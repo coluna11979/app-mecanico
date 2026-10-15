@@ -7,7 +7,7 @@ import { getSetting } from '@/lib/settings';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet, formatMoney } from '@/lib/payment';
+import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { isScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint } from '@/components/ArrivalDeadline';
 import { IconMapPin } from '@/components/mecanico/icons';
@@ -299,7 +299,7 @@ export default function MechanicMapa() {
               <div>
                 <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Pacote fechado</div>
                 <div className="text-sm text-steel-300 font-semibold mt-0.5">
-                  {selected.max_hours}h previstas
+                  {hoursLabel(selected) ?? 'Preço fechado'}
                 </div>
               </div>
               <div className="w-px h-10 bg-steel-700" />
