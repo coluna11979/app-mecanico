@@ -129,6 +129,11 @@ export interface Job {
   audience: 'public' | 'favorites';
   /** OS de onde a demanda saiu ("Chamar mecânico" no Caixa) */
   service_order_id?: string | null;
+  /** Pagamento da oficina (0108): gateway, meio, valor pago e taxa do cartão repassada */
+  payment_gateway?: 'stripe' | 'nextpay' | null;
+  payment_method?: 'card' | 'pix' | null;
+  paid_amount?: number | null;
+  card_fee_amount?: number | null;
   created_at: string;
 }
 
