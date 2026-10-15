@@ -84,7 +84,7 @@
   --amber:#F2A60C;
   --green:#21A35B;
   --radius-lg:24px;
-  --radius:18px;
+  --radius:16px;
   --radius-sm:12px;
   --shadow-sm:0 1px 2px rgba(21,23,26,.06);
   --shadow:0 1px 2px rgba(21,23,26,.05),0 10px 30px -12px rgba(21,23,26,.18);
@@ -107,7 +107,7 @@ ul.clean,ol.clean{list-style:none;margin:0;padding:0}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
 :focus-visible{outline:3px solid var(--yellow);outline-offset:3px;border-radius:8px}
 .on-light :focus-visible,.final :focus-visible{outline-color:var(--ink)}
-.skip{position:absolute;left:12px;top:-60px;z-index:100;background:var(--yellow);color:var(--ink);padding:10px 16px;border-radius:10px;font-weight:800;text-decoration:none}
+.skip{position:absolute;left:12px;top:-60px;z-index:100;background:var(--yellow);color:var(--ink);padding:10px 16px;border-radius:12px;font-weight:800;text-decoration:none}
 .skip:focus{top:12px}
 .ico{width:22px;height:22px;flex:none}
 
@@ -124,7 +124,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 /* =========================================================
    Botões
    ========================================================= */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:52px;padding:0 24px;border-radius:14px;font-weight:800;font-size:16px;line-height:1.2;text-align:center;text-decoration:none;border:2px solid transparent;cursor:pointer;transition:transform .15s var(--ease),background-color .2s,box-shadow .2s,border-color .2s,color .2s}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:52px;padding:0 24px;border-radius:12px;font-weight:800;font-size:16px;line-height:1.2;text-align:center;text-decoration:none;border:2px solid transparent;cursor:pointer;transition:transform .15s var(--ease),background-color .2s,box-shadow .2s,border-color .2s,color .2s}
 .btn svg{width:20px;height:20px;flex:none}
 .btn:hover{transform:translateY(-1px)}
 .btn:active{transform:translateY(1px)}
@@ -155,7 +155,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .logo-mark svg{width:22px;height:22px}
 .logo small{display:block;font-size:10px;font-weight:700;letter-spacing:.16em;color:var(--muted-dark);margin-top:3px}
 .nav{display:flex;align-items:center;gap:2px}
-.nav a{text-decoration:none;font-size:15px;font-weight:600;color:#D6D9DE;padding:10px 14px;border-radius:10px;transition:background .2s,color .2s}
+.nav a{text-decoration:none;font-size:15px;font-weight:600;color:#D6D9DE;padding:10px 14px;border-radius:12px;transition:background .2s,color .2s}
 .nav a:hover{background:rgba(255,255,255,.07);color:var(--white)}
 .header-actions{display:flex;align-items:center;gap:8px}
 .header .btn{min-height:44px;padding:0 16px;font-size:15px;border-radius:12px}
@@ -169,6 +169,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .hero::before{content:"";position:absolute;right:-180px;top:-180px;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(255,191,22,.22),transparent 65%);pointer-events:none}
 .hero .wrap{display:grid;grid-template-columns:1fr 1.02fr;gap:clamp(28px,5vw,64px);align-items:center;padding-block:clamp(36px,6vw,80px) clamp(40px,6vw,88px);position:relative}
 .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--muted);background:var(--white);border:1px solid var(--line);padding:6px 12px 6px 8px;border-radius:999px;box-shadow:var(--shadow-sm)}
+.eb-short{display:none}
 .eyebrow svg{width:18px;height:18px;color:var(--yellow-dark)}
 .hero h1{font-size:clamp(38px,6vw,68px);font-weight:800;margin-top:18px;color:var(--ink)}
 .hero h1 mark{background:linear-gradient(transparent 62%,rgba(255,191,22,.55) 62%);color:inherit;padding:0 .05em}
@@ -178,7 +179,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .hero-trust li{display:flex;align-items:center;gap:8px}
 .hero-trust svg{width:18px;height:18px;color:var(--green)}
 .hero-media{position:relative}
-.hero-photo{position:relative;border-radius:28px;overflow:hidden;aspect-ratio:5/4;background:var(--graphite);box-shadow:0 30px 60px -30px rgba(21,23,26,.45)}
+.hero-photo{position:relative;border-radius:24px;overflow:hidden;aspect-ratio:5/4;background:var(--graphite);box-shadow:0 30px 60px -30px rgba(21,23,26,.45)}
 .hero-photo img{width:100%;height:100%;object-fit:cover;object-position:32% 30%}
 .hero-photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(21,23,26,.35))}
 .float-card{position:absolute;z-index:3;background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:12px 14px;display:flex;align-items:center;gap:12px;font-size:14px;line-height:1.3}
@@ -223,12 +224,13 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .signal{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;gap:8px;transition:transform .25s var(--ease),box-shadow .25s,border-color .25s}
 .signal:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:transparent}
 .signal-top{display:flex;align-items:center;gap:12px}
-.signal-ico{width:44px;height:44px;border-radius:13px;background:var(--yellow-soft);color:#8A5A00;display:grid;place-items:center;flex:none}
+.signal-ico{width:44px;height:44px;border-radius:12px;background:var(--yellow-soft);color:#8A5A00;display:grid;place-items:center;flex:none}
 .signal-ico svg{width:24px;height:24px}
 .signal-ico.danger{background:#FDE7E4;color:#B4271B}
 .signal h3{font-size:18px;font-weight:800;color:var(--ink)}
 .signal p{color:var(--muted);font-size:15px;line-height:1.55}
 .signal .link-cta{margin-top:auto;align-self:flex-start}
+.jump{display:none}
 .note{margin-top:18px;font-size:14px;color:var(--muted)}
 
 /* Triagem */
@@ -261,7 +263,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 
 /* ---------- Painel de luzes ---------- */
 .dash{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(20px,3vw,36px);align-items:stretch}
-.cluster{position:relative;border-radius:30px;padding:clamp(18px,3vw,30px);background:radial-gradient(130% 100% at 50% 0%,#2C3038 0%,#16181C 62%,#0E0F12 100%);border:1px solid rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 -40px 80px rgba(0,0,0,.5),0 40px 80px -40px rgba(0,0,0,.9)}
+.cluster{position:relative;border-radius:24px;padding:clamp(18px,3vw,30px);background:radial-gradient(130% 100% at 50% 0%,#2C3038 0%,#16181C 62%,#0E0F12 100%);border:1px solid rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 -40px 80px rgba(0,0,0,.5),0 40px 80px -40px rgba(0,0,0,.9)}
 .cluster-top{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#7A808A;margin-bottom:10px}
 .cluster-top .on{display:flex;align-items:center;gap:6px}
 .cluster-top .on::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
@@ -272,11 +274,12 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .cluster.ignition .gauge .needle{transform:rotate(100deg)}
 .gauge-label{position:absolute;left:0;right:0;bottom:6%;text-align:center;font-size:11px;font-weight:800;letter-spacing:.14em;color:#7A808A}
 .lights{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.light{--c:#FF453A;display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 6px 12px;border-radius:16px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.3);color:#555B64;cursor:pointer;transition:background .2s,border-color .2s,color .2s,transform .15s}
+.light{--c:#FF453A;display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 6px 12px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);color:#8A919B;position:relative;min-height:92px;cursor:pointer;transition:background .2s,border-color .2s,color .2s,transform .15s}
 .light.amber{--c:#FFB000}
 .light svg{width:42px;height:42px;transition:filter .25s,color .25s,transform .25s var(--ease)}
 .light span{font-size:13px;font-weight:700;color:#A3A9B2;line-height:1.2;text-align:center}
-.light:hover{color:#878E98;border-color:rgba(255,255,255,.16)}
+.light:hover{color:#B3B9C2;border-color:rgba(255,255,255,.28)}
+.light[aria-selected="true"]::after{content:"";position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c)}
 .light:active{transform:scale(.97)}
 .light[aria-selected="true"]{color:var(--c);background:rgba(255,255,255,.045);border-color:color-mix(in srgb,var(--c) 60%,transparent)}
 .light[aria-selected="true"] svg{filter:drop-shadow(0 0 10px var(--c)) drop-shadow(0 0 2px var(--c));animation:glow .5s var(--ease)}
@@ -286,10 +289,10 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .cluster.ignition .light svg{filter:drop-shadow(0 0 10px var(--c))}
 .cluster-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:13px;color:#8B929C}
 .cluster-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
-.dash-info{background:var(--white);color:var(--text);border-radius:30px;padding:clamp(22px,3vw,32px);display:flex;flex-direction:column}
+.dash-info{background:var(--white);color:var(--text);border-radius:24px;padding:clamp(22px,3vw,32px);display:flex;flex-direction:column}
 .dash-info.swap{animation:fadeIn .3s var(--ease)}
 .sev{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px}
-.sev span{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;text-align:center;padding:8px 4px;border-radius:10px;background:var(--paper);color:#9AA0A8;transition:background .25s,color .25s}
+.sev span{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;text-align:center;padding:8px 4px;border-radius:12px;background:var(--paper);color:var(--muted);transition:background .25s,color .25s}
 .sev[data-level="1"] span:nth-child(1){background:#FFF1CC;color:#7A5200}
 .sev[data-level="2"] span:nth-child(2){background:#FFE0CF;color:#9A3A07}
 .sev[data-level="3"] span:nth-child(3){background:#FDDAD6;color:#A32116}
@@ -297,6 +300,11 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .dash-info h4{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 6px}
 .dash-info p{font-size:16px;color:#3A3F47}
 .dash-info .btn{margin-top:22px;align-self:flex-start}
+.alert{display:flex;gap:10px;align-items:flex-start;margin-top:16px;padding:12px 14px;border-radius:12px;font-size:15px;font-weight:700;line-height:1.45}
+.alert svg{width:20px;height:20px;flex:none;margin-top:1px}
+.alert.l3{background:#FDE4E1;color:#8E1D13}
+.alert.l2{background:#FFEBD9;color:#7F3305}
+.alert[hidden]{display:none}
 .disclaimer{display:flex;gap:10px;margin-top:16px;padding:12px 14px;border-radius:12px;background:var(--paper);font-size:13px;color:var(--muted);line-height:1.5}
 .disclaimer svg{width:18px;height:18px;flex:none;margin-top:1px;color:var(--muted)}
 
@@ -304,11 +312,13 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .services{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 .service{background:var(--paper);border:1px solid transparent;border-radius:var(--radius);padding:22px;display:flex;flex-direction:column;gap:10px;transition:border-color .2s,background .2s,transform .25s var(--ease),box-shadow .25s}
 .service:hover{border-color:var(--line);background:var(--white);transform:translateY(-3px);box-shadow:var(--shadow)}
-.service-ico{width:48px;height:48px;border-radius:14px;background:var(--ink);color:var(--yellow);display:grid;place-items:center}
+.service-ico{width:48px;height:48px;border-radius:12px;background:var(--ink);color:var(--yellow);display:grid;place-items:center}
 .service-ico svg{width:24px;height:24px}
 .service h3{font-size:18px;font-weight:800;color:var(--ink);margin-top:4px}
 .service p{color:var(--muted);font-size:15px;line-height:1.55}
-.service .link-cta{margin-top:auto}
+.service > div{display:flex;flex-direction:column;flex:1}
+.service .link-cta{margin-top:auto;padding-top:6px}
+.more-link{margin-top:22px;font-size:16px;color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
 .services-cta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-top:20px;padding:22px 24px;border-radius:var(--radius);background:var(--ink);color:var(--white)}
 .services-cta p{font-weight:700;font-size:17px}
 
@@ -332,19 +342,20 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .offer .btn{margin-top:auto;width:100%}
 .offers-note{margin-top:16px;font-size:13px;color:var(--muted)}
 
-/* ---------- Como funciona ---------- */
-.how{display:grid;grid-template-columns:.9fr 1.1fr;gap:clamp(28px,5vw,64px);align-items:center}
-.how-photo{position:relative;border-radius:28px;overflow:hidden;aspect-ratio:4/5;background:var(--graphite)}
-.how-photo img{width:100%;height:100%;object-fit:cover}
-.how-quote{position:absolute;left:16px;right:16px;bottom:44px;z-index:2;background:rgba(21,23,26,.82);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:var(--white);border-radius:16px;padding:16px 18px;font-weight:700;font-size:16px;line-height:1.4}
-.how-quote span{display:block;margin-top:6px;font-size:13px;font-weight:600;color:var(--yellow)}
-.steps{position:relative;display:grid;gap:14px;counter-reset:step}
-.step{position:relative;display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
-.step::before{counter-increment:step;content:counter(step,decimal-leading-zero);width:56px;height:56px;border-radius:16px;background:var(--paper);color:var(--ink);display:grid;place-items:center;font-size:20px;font-weight:800}
-.step.hl::before{background:var(--yellow)}
-.step h3{font-size:19px;font-weight:800;color:var(--ink)}
-.step p{color:var(--muted);font-size:15px;margin-top:4px}
-.steps-note{margin-top:14px;font-size:14px;color:var(--muted)}
+/* ---------- Como funciona: etapas conectadas ---------- */
+.flow{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+.flow::before{content:"";position:absolute;top:28px;left:12.5%;right:12.5%;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--paper-2) 0 33.3%,var(--yellow) 33.3% 100%)}
+.flow li{position:relative;text-align:center}
+.flow .num{position:relative;z-index:1;width:56px;height:56px;margin:0 auto 16px;border-radius:50%;background:var(--white);border:3px solid var(--paper-2);display:grid;place-items:center;font-size:20px;font-weight:800;color:var(--ink)}
+.flow .num svg{width:24px;height:24px}
+.flow li.key .num{background:var(--yellow);border-color:var(--yellow)}
+.flow small{display:block;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.flow h3{font-size:20px;font-weight:800;color:var(--ink);margin-top:4px}
+.flow p{font-size:15px;color:var(--muted);margin-top:6px;max-width:30ch;margin-inline:auto}
+.promise{display:flex;gap:14px;align-items:center;margin:32px auto 0;max-width:820px;padding:18px 22px;border-radius:16px;background:var(--ink);color:#D3D6DB;font-size:15px}
+.promise strong{color:var(--white);font-size:17px}
+.promise-ico{width:44px;height:44px;border-radius:12px;background:var(--yellow);color:var(--ink);display:grid;place-items:center;flex:none}
+.promise-ico svg{width:24px;height:24px}
 
 /* ---------- Avaliações + Conheça ---------- */
 .trust{display:grid;grid-template-columns:.85fr 1.15fr;gap:clamp(24px,4vw,48px);align-items:start}
@@ -362,6 +373,13 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .quote{margin:0;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px 18px;position:relative}
 .quote blockquote{margin:0;font-size:18px;font-weight:700;line-height:1.45;color:var(--ink)}
 .quote figcaption{margin-top:10px;font-size:14px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.perks{background:var(--paper);border-radius:var(--radius);padding:22px}
+.perks h3{font-size:18px;font-weight:800;color:var(--ink);margin-bottom:14px}
+.perks ul{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.perks li{display:flex;gap:12px;align-items:flex-start;font-size:14px;color:var(--muted);line-height:1.4}
+.perks strong{display:block;color:var(--ink);font-size:15px}
+.perk-ico{width:38px;height:38px;border-radius:12px;background:var(--ink);color:var(--yellow);display:grid;place-items:center;flex:none}
+.perk-ico svg{width:20px;height:20px}
 .slot{border:1.5px dashed rgba(21,23,26,.2);border-radius:var(--radius);padding:22px;color:var(--muted);font-size:15px;display:flex;gap:14px;align-items:center;background:rgba(255,255,255,.5)}
 .slot svg{width:28px;height:28px;flex:none;color:#9AA0A8}
 .case{display:flex;gap:14px;align-items:center;padding:18px 20px;border-radius:var(--radius);background:var(--white);border:1px solid var(--line);text-decoration:none;transition:border-color .2s,box-shadow .2s}
@@ -372,13 +390,19 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 
 .about{display:grid;grid-template-columns:1fr 1.1fr;gap:clamp(24px,4vw,56px);align-items:center;margin-top:clamp(56px,8vw,96px)}
 .about p{font-size:17px;color:#3E434B;margin-top:14px}
+.about-cta{margin-top:22px}
 .about .values{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}
-.about .values li{display:flex;gap:10px;align-items:flex-start;font-size:15px;font-weight:700;color:var(--ink);background:var(--white);border:1px solid var(--line);border-radius:14px;padding:12px}
+.about .values li{display:flex;gap:10px;align-items:flex-start;font-size:15px;font-weight:700;color:var(--ink);background:var(--white);border:1px solid var(--line);border-radius:12px;padding:12px}
 .about .values svg{width:20px;height:20px;color:var(--yellow-dark);flex:none;margin-top:1px}
 .gallery{display:grid;grid-template-columns:1.2fr 1fr;grid-template-rows:1fr 1fr;gap:12px;aspect-ratio:6/5}
-.gallery figure{position:relative;margin:0;border-radius:20px;overflow:hidden;background:var(--paper-2)}
+.gallery figure{position:relative;margin:0;border-radius:16px;overflow:hidden;background:var(--paper-2)}
 .gallery figure:first-child{grid-row:1/3}
 .gallery img{width:100%;height:100%;object-fit:cover}
+.visit{display:flex;flex-direction:column;justify-content:flex-end;gap:2px;padding:18px;border-radius:16px;background:var(--ink);color:#C9CDD3;text-decoration:none;font-size:14px;transition:background .2s}
+.visit:hover{background:var(--graphite)}
+.visit svg{width:26px;height:26px;color:var(--yellow);margin-bottom:auto}
+.visit strong{color:var(--white);font-size:17px}
+.visit em{font-style:normal;font-weight:800;color:var(--yellow);margin-top:8px}
 .gallery .ph{display:grid;place-items:center;text-align:center;padding:16px;color:var(--muted);font-size:14px;font-weight:700;border:1.5px dashed rgba(21,23,26,.2);background:transparent}
 .gallery .ph svg{width:30px;height:30px;margin:0 auto 8px;color:#9AA0A8}
 .gallery.real{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));grid-template-rows:none;aspect-ratio:auto}
@@ -391,7 +415,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .faq details[open]{background:var(--white);border-color:var(--line);box-shadow:var(--shadow-sm)}
 .faq summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 20px;font-size:17px;font-weight:800;color:var(--ink);min-height:56px;border-radius:16px}
 .faq summary::-webkit-details-marker{display:none}
-.faq summary::after{content:"";width:30px;height:30px;flex:none;border-radius:10px;background:var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFBF16' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M12 6v12M6 12h12'/%3E%3C/svg%3E") center/14px no-repeat;transition:transform .25s var(--ease)}
+.faq summary::after{content:"";width:30px;height:30px;flex:none;border-radius:12px;background:var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFBF16' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M12 6v12M6 12h12'/%3E%3C/svg%3E") center/14px no-repeat;transition:transform .25s var(--ease)}
 .faq details[open] summary::after{transform:rotate(45deg)}
 .faq .answer{padding:0 20px 20px;color:var(--muted);font-size:16px;max-width:70ch}
 .faq details[open] .answer{animation:fadeIn .25s var(--ease)}
@@ -405,7 +429,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 .location{display:grid;grid-template-columns:.95fr 1.05fr;gap:clamp(20px,3vw,32px);align-items:stretch}
 .loc-card{background:var(--graphite);border:1px solid var(--line-dark);border-radius:var(--radius-lg);padding:clamp(22px,3vw,32px);display:flex;flex-direction:column}
 .addr{display:flex;gap:14px;align-items:flex-start}
-.addr .fi{width:46px;height:46px;border-radius:14px;background:var(--yellow);color:var(--ink);display:grid;place-items:center;flex:none}
+.addr .fi{width:46px;height:46px;border-radius:12px;background:var(--yellow);color:var(--ink);display:grid;place-items:center;flex:none}
 .addr .fi svg{width:24px;height:24px}
 .addr strong{display:block;font-size:20px;font-weight:800;line-height:1.3}
 .addr span{display:block;font-size:15px;color:var(--muted-dark);margin-top:4px}
@@ -490,10 +514,10 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
   .hero .wrap{padding-block:22px 40px;gap:26px}
   .hero h1{margin-top:14px}
   .hero-ctas .btn{flex:1 1 100%}
-  .hero-photo{aspect-ratio:4/3;border-radius:22px}
+  .hero-photo{aspect-ratio:4/3;border-radius:24px}
   .float-card{padding:10px 12px;font-size:13px}
   .float-card strong{font-size:14px}
-  .float-ico{width:34px;height:34px;border-radius:10px}
+  .float-ico{width:34px;height:34px;border-radius:12px}
   .fc-1{left:10px;top:10px}
   .fc-2{display:none}
   .facts ul{grid-template-columns:1fr 1fr;gap:0 14px}
@@ -522,7 +546,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
   .gauges{gap:8px;margin-bottom:10px}
   .dash-info .btn,.services-cta .btn,.score .btn,.final .btn{width:100%}
   .step{grid-template-columns:46px 1fr;padding:16px;gap:14px}
-  .step::before{width:46px;height:46px;font-size:17px;border-radius:13px}
+  .step::before{width:46px;height:46px;font-size:17px;border-radius:12px}
   .about .values{grid-template-columns:1fr}
   .gallery{aspect-ratio:1/1}
   .score{padding:24px}
@@ -538,6 +562,26 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
   .mbar .btn{flex:1;min-height:46px;font-size:15px;padding:0 12px;border-radius:12px}
   .mbar .btn-call{flex:0 0 46px;padding:0;background:rgba(255,255,255,.08);color:var(--white)}
   body.has-mbar{padding-bottom:84px}
+}
+@media (max-width:640px){
+  .eb-long{display:none}
+  .eb-short{display:inline}
+  .float-card{display:none}
+  .header .btn-primary{display:none}
+  .jump{display:flex;align-items:center;gap:10px;margin:-8px 0 18px;padding:12px 14px;min-height:48px;border-radius:12px;background:var(--ink);color:var(--white);font-weight:800;font-size:15px;text-decoration:none}
+  .jump svg{width:20px;height:20px;color:var(--yellow);flex:none}
+  .flow{grid-template-columns:1fr;gap:18px}
+  .flow::before{top:28px;bottom:28px;left:27px;right:auto;width:3px;height:auto;background:linear-gradient(180deg,var(--paper-2) 0 25%,var(--yellow) 25% 100%)}
+  .flow li{display:grid;grid-template-columns:56px 1fr;gap:14px;text-align:left;align-items:start}
+  .flow .num{margin:0}
+  .flow p{margin-inline:0}
+  .promise{flex-direction:row;align-items:flex-start;padding:16px}
+  .perks ul{grid-template-columns:1fr}
+  body.typing .mbar{transform:translateY(140%)}
+}
+@media (max-width:1024px) and (min-width:641px){
+  .flow{grid-template-columns:1fr 1fr;row-gap:32px}
+  .flow::before{display:none}
 }
 @media (max-width:370px){
   .chips{grid-template-columns:1fr}
@@ -566,6 +610,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.5 3.2 8.2 7.5 9.5 4.3-1.3 7.5-5 7.5-9.5V6L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4.5M12 17.2v.3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
   <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4V8Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -630,7 +675,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 <section class="hero on-light" id="topo" aria-labelledby="hero-title">
   <div class="wrap">
     <div class="hero-copy">
-      <p class="eyebrow"><svg aria-hidden="true"><use href="#i-pin"/></svg>Atendimento na região da Estrada do M'Boi Mirim, São Paulo</p>
+      <p class="eyebrow"><svg aria-hidden="true"><use href="#i-pin"/></svg><span class="eb-long">Atendimento na região da Estrada do M'Boi Mirim, São Paulo</span><span class="eb-short">Estr. M'Boi Mirim, 9000 · Zona Sul</span></p>
       <h1 id="hero-title">Seu carro merece <mark>cuidado de verdade.</mark></h1>
       <p class="hero-sub">Na Jota Car, você encontra manutenção, diagnóstico e reparos com atenção ao que o seu veículo realmente precisa. A gente explica tudo de um jeito simples, antes de começar.</p>
       <div class="hero-ctas">
@@ -698,6 +743,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
       <h2 id="sinais-title">Seu carro está dando sinais de que algo não vai bem?</h2>
       <p>Um barulho diferente, uma luz acesa ou uma falha inesperada merecem atenção. Entenda os sinais e saiba quando procurar uma avaliação profissional.</p>
     </div>
+    <a class="jump" href="#triage" data-track="jump_triagem"><svg aria-hidden="true"><use href="#i-chat"/></svg>Prefere descrever? Marque os sintomas e envie</a>
     <div class="signals-layout">
       <div>
         <div class="signals">
@@ -774,7 +820,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         </div>
         <div class="preview" id="preview" aria-live="polite"><strong>Sua mensagem</strong><span id="previewText">Olá, Jota Car! Vim pelo site e quero agendar uma avaliação.</span></div>
         <a class="btn btn-primary btn-block" id="triageBtn" data-track="wa_triagem" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20agendar%20uma%20avalia%C3%A7%C3%A3o." target="_blank" rel="noopener">
-          <svg aria-hidden="true"><use href="#i-wa"/></svg>Solicitar atendimento
+          <svg aria-hidden="true"><use href="#i-wa"/></svg><span id="triageLabel">Solicitar atendimento</span>
         </a>
         <p class="micro">Abre o WhatsApp com o texto pronto. Você revisa antes de enviar.</p>
       </form>
@@ -814,6 +860,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         <p id="dCausa">A central do carro registrou uma falha: pode ser sensor, vela, bobina, bico injetor, entre outros.</p>
         <h4>O que fazer agora</h4>
         <p id="dFazer">Se a luz estiver fixa, dá para rodar com cuidado e agendar o diagnóstico computadorizado. Se estiver piscando, reduza a velocidade e traga o carro o quanto antes.</p>
+        <p class="alert" id="dAlert" role="alert" hidden><svg aria-hidden="true"><use href="#i-warn"/></svg><span id="dAlertText"></span></p>
         <a class="btn btn-dark" id="dBtn" data-track="wa_painel" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site. Acendeu a luz da injeção no painel do meu carro e quero orientação." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Falar sobre essa luz</a>
         <p class="disclaimer"><svg aria-hidden="true"><use href="#i-info"/></svg><span>Orientação geral. Identificar a luz não substitui o diagnóstico profissional; consulte também o manual do seu carro. Em caso de dúvida com freio, temperatura ou óleo, não continue rodando.</span></p>
       </div>
@@ -843,37 +890,27 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
       <p class="brands-label">Marcas que trabalhamos</p>
       <ul class="clean" id="brandList"></ul>
     </div>
-    <div class="services-cta on-dark reveal">
-      <p>Não achou o serviço que procura? Pergunte pra gente.</p>
-      <a class="btn btn-primary" data-wa-msg="Olá, Jota Car! Vim pelo site e queria saber se vocês fazem um serviço." data-track="wa_servicos" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20queria%20saber%20se%20voc%C3%AAs%20fazem%20um%20servi%C3%A7o." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Consultar um serviço</a>
-    </div>
+    <p class="more-link reveal">Não achou o serviço que procura? <a class="link-cta" data-wa-msg="Olá, Jota Car! Vim pelo site e queria saber se vocês fazem um serviço." data-track="wa_servicos" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20queria%20saber%20se%20voc%C3%AAs%20fazem%20um%20servi%C3%A7o." target="_blank" rel="noopener"><span>Pergunte no WhatsApp</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></a></p>
   </div>
 </section>
 
 <!-- ================= COMO FUNCIONA ================= -->
 <section class="section on-light" id="como-funciona" aria-labelledby="como-title">
-  <div class="wrap how">
-    <div class="how-photo reveal">
-      <img src="https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=900&q=68&auto=format&fit=crop"
-           srcset="https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=600&q=65&auto=format&fit=crop 600w, https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=900&q=68&auto=format&fit=crop 900w"
-           sizes="(max-width: 1024px) 100vw, 520px" width="900" height="600" loading="lazy" decoding="async"
-           alt="Mãos de mecânico apertando uma peça do motor com uma chave">
-      <p class="how-quote">“O carro faz parte da rotina da família. A gente trata ele com esse cuidado.”<span>Jota Car</span></p>
-      <span class="illus">Imagem ilustrativa</span>
+  <div class="wrap">
+    <div class="section-head center reveal">
+      <span class="kicker">Como funciona</span>
+      <h2 id="como-title">Cuidar do seu carro pode ser mais simples.</h2>
+      <p>Você sabe o que vai ser feito e quanto custa antes de qualquer serviço começar.</p>
     </div>
-    <div>
-      <div class="section-head reveal">
-        <span class="kicker">Como funciona</span>
-        <h2 id="como-title">Cuidar do seu carro pode ser mais simples.</h2>
-        <p>Do primeiro contato até a entrega, você sabe o que está acontecendo com o seu carro.</p>
-      </div>
-      <ol class="steps clean">
-        <li class="step reveal"><div><h3>Entre em contato</h3><p>Chame no WhatsApp ou ligue. É rápido e sem compromisso.</p></div></li>
-        <li class="step reveal" data-delay="1"><div><h3>Explique o que está acontecendo</h3><p>Conte o modelo, o ano e o que o carro está fazendo. Se quiser, use a lista de sinais desta página.</p></div></li>
-        <li class="step hl reveal" data-delay="2"><div><h3>Receba as orientações</h3><p>A oficina orienta o próximo passo e combina com você o melhor dia para avaliar o carro.</p></div></li>
-        <li class="step reveal" data-delay="3"><div><h3>Acompanhe o atendimento</h3><p>Depois da avaliação, explicamos o que precisa ser feito e o valor. Com a sua aprovação, fazemos o serviço.</p></div></li>
-      </ol>
-      <p class="steps-note">O horário fica confirmado quando a oficina responde no WhatsApp.</p>
+    <ol class="flow clean">
+      <li class="reveal"><span class="num" aria-hidden="true">1</span><div><small>Etapa 1</small><h3>Contato</h3><p>Chame no WhatsApp ou ligue e conte o que o carro está fazendo. A oficina combina com você o melhor horário.</p></div></li>
+      <li class="key reveal" data-delay="1"><span class="num" aria-hidden="true">2</span><div><small>Etapa 2</small><h3>Avaliação</h3><p>No horário combinado, o carro é avaliado com calma, com scanner quando o problema pede.</p></div></li>
+      <li class="key reveal" data-delay="2"><span class="num" aria-hidden="true">3</span><div><small>Etapa 3</small><h3>Orçamento explicado</h3><p>Você recebe o orçamento com o que precisa ser feito e quanto custa, em linguagem simples.</p></div></li>
+      <li class="key reveal" data-delay="3"><span class="num" aria-hidden="true"><svg><use href="#i-check"/></svg></span><div><small>Etapa 4</small><h3>Sua autorização</h3><p>O serviço só começa depois que você aprova. Depois é só retirar o carro.</p></div></li>
+    </ol>
+    <div class="promise reveal">
+      <span class="promise-ico" aria-hidden="true"><svg><use href="#i-shield"/></svg></span>
+      <p><strong>Nenhum serviço começa sem a sua aprovação.</strong> <span>O horário fica confirmado quando a oficina responde no WhatsApp.</span></p>
     </div>
   </div>
 </section>
@@ -902,7 +939,15 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         <figure class="quote reveal" data-confirmar="depoimentos"><blockquote>Profissionais qualificados e atenciosos!!!</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Danielle C. · Google</figcaption></figure>
         <figure class="quote reveal" data-delay="1" data-confirmar="depoimentos"><blockquote>Com certeza, indico para qualquer pessoa os serviços da Jota Car.</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Renata H. · Google</figcaption></figure>
         <figure class="quote reveal" data-delay="2" data-confirmar="depoimentos"><blockquote>Deus os abençoe todos aí e continuem assim, pois o cliente retorna.</blockquote><figcaption><span class="stars" aria-hidden="true"><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg><svg><use href="#i-star"/></svg></span>Paulo A. · Google</figcaption></figure>
-        <div class="slot reveal" id="reviewSlot"><svg aria-hidden="true"><use href="#i-chat"/></svg><span>Em breve, depoimentos de clientes da Jota Car aqui. Já é cliente? Conte como foi no Google.</span></div>
+        <div class="perks reveal">
+          <h3>Por que levar o carro na Jota Car</h3>
+          <ul class="clean">
+            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-chip"/></svg></span><div><strong>Diagnóstico computadorizado</strong><span>leitura das falhas da central, sem trocar peça no chute</span></div></li>
+            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-shield"/></svg></span><div><strong>Orçamento antes do serviço</strong><span>você entende e decide</span></div></li>
+            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-tire"/></svg></span><div><strong>Mecânica e pneus</strong><span>no mesmo endereço</span></div></li>
+            <li><span class="perk-ico" aria-hidden="true"><svg><use href="#i-clock"/></svg></span><div><strong>Segunda a sábado</strong><span>seg a sex 8h–18h · sáb 8h–14h</span></div></li>
+          </ul>
+        </div>
         <a class="case reveal" href="https://www.instagram.com/jotacar9000/" target="_blank" rel="noopener" data-track="instagram_caso">
           <svg aria-hidden="true"><use href="#i-insta"/></svg>
           <div><strong>Do dia a dia da oficina: HB20 2024, troca da bomba de combustível</strong><span>Veja os serviços recentes no Instagram @jotacar9000</span></div>
@@ -917,12 +962,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
         <h2>Oficina de bairro, com jeito de quem cuida.</h2>
         <p>A Jota Car fica na Estrada do M'Boi Mirim e atende quem depende do carro todos os dias: para trabalhar, levar as crianças na escola, fazer as compras e resolver a vida.</p>
         <p>Aqui a conversa é direta. Você entende o que o carro tem e o que precisa ser feito antes de decidir.</p>
-        <ul class="values clean">
-          <li><svg aria-hidden="true"><use href="#i-chat"/></svg>Explicação clara, sem “mecaniquês”</li>
-          <li><svg aria-hidden="true"><use href="#i-shield"/></svg>Orçamento explicado antes do serviço</li>
-          <li><svg aria-hidden="true"><use href="#i-chip"/></svg>Diagnóstico com equipamento</li>
-          <li><svg aria-hidden="true"><use href="#i-pin"/></svg>Perto de você, na Zona Sul</li>
-        </ul>
+        <a class="btn btn-outline about-cta" href="#onde-fica" data-track="ver_localizacao"><svg aria-hidden="true"><use href="#i-pin"/></svg>Ver localização</a>
       </div>
       <div class="gallery reveal" data-delay="1" id="gallery">
         <figure>
@@ -933,7 +973,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
           <img src="https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=600&q=62&auto=format&fit=crop&crop=entropy" width="600" height="450" loading="lazy" decoding="async" alt="Mecânico verificando o motor de um carro">
           <span class="illus">Imagem ilustrativa</span>
         </figure>
-        <figure class="ph"><div><svg aria-hidden="true"><use href="#i-camera"/></svg>Fotos reais da nossa oficina em breve</div></figure>
+        <a class="visit" href="#onde-fica" data-track="visit_tile"><svg aria-hidden="true"><use href="#i-pin"/></svg><strong>Venha conhecer</strong><span>Estrada do M'Boi Mirim, 9000</span><em>Ver no mapa →</em></a>
       </div>
     </div>
   </div>
@@ -1067,7 +1107,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 </footer>
 
 <!-- WhatsApp fixo no celular: aparece depois do topo; o body ganha respiro para não cobrir conteúdo -->
-<div class="mbar" id="mbar">
+<div class="mbar" id="mbar" role="region" aria-label="Contato rápido com a oficina">
   <a class="btn btn-call" href="tel:+5511934182002" aria-label="Ligar para a Jota Car" data-track="ligar_mbar"><svg aria-hidden="true"><use href="#i-phone"/></svg></a>
   <a class="btn btn-primary" data-wa="geral" data-track="wa_mbar" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20falar%20sobre%20o%20meu%20carro." target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#i-wa"/></svg>Falar com a Jota Car</a>
 </div>
@@ -1088,7 +1128,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
     horario: [null,[8,18],[8,18],[8,18],[8,18],[8,18],[8,14]],
     // Itens liberados após confirmação do dono. Chaves possíveis:
     // "nota", "depoimentos", "parcelamento", "acessibilidade", "cep", "autorizacao"
-    confirmados: [],
+    confirmados: ["autorizacao"],
     // Fotos REAIS da oficina: substituem as ilustrativas da seção "Conheça a Jota Car".
     // Ex.: { src: "/sites/jotacar/fotos/fachada.jpg", alt: "Fachada da Jota Car na Estrada do M'Boi Mirim" }
     fotos: [],
@@ -1111,7 +1151,6 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
     document.querySelectorAll('[data-confirmar="' + k + '"]').forEach(function(el){ el.removeAttribute("data-confirmar"); });
   });
   // Com depoimentos confirmados, o espaço "em breve" sai
-  if (CONFIG.confirmados.indexOf("depoimentos") > -1){ var rs = document.getElementById("reviewSlot"); if (rs) rs.hidden = true; }
 
   function waLink(msg){ return "https://wa.me/" + CONFIG.whatsapp + "?text=" + encodeURIComponent(msg); }
   document.querySelectorAll('[data-wa="geral"]').forEach(function(a){ a.href = waLink(CONFIG.mensagens.geral); });
@@ -1170,6 +1209,7 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
     previewEl.textContent = msg;
     countEl.textContent = sel.length === 0 ? "Nenhum marcado" : sel.length === 1 ? "1 sintoma marcado" : sel.length + " sintomas marcados";
     clearBtn.hidden = sel.length === 0;
+    document.getElementById("triageLabel").textContent = sel.length ? "Enviar " + (sel.length === 1 ? "1 sintoma" : sel.length + " sintomas") + " pelo WhatsApp" : "Solicitar atendimento";
   }
   chips.forEach(function(c){
     c.addEventListener("click", function(){
@@ -1216,6 +1256,12 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
     document.getElementById("dTitle").textContent = d.nome;
     document.getElementById("dCausa").textContent = d.causa;
     document.getElementById("dFazer").textContent = d.fazer;
+    var al = document.getElementById("dAlert");
+    al.hidden = d.nivel < 2;
+    al.className = "alert l" + d.nivel;
+    document.getElementById("dAlertText").textContent = d.nivel === 3
+      ? "Segurança primeiro: pare em local seguro e não continue rodando com essa luz acesa."
+      : "Atenção: rode o mínimo possível e só até um lugar seguro ou até a oficina.";
     document.getElementById("dBtn").href = waLink("Olá, Jota Car! Vim pelo site. Acendeu a " + d.nome.toLowerCase() + " no painel do meu carro e quero orientação.");
     dInfo.classList.remove("swap"); void dInfo.offsetWidth; dInfo.classList.add("swap");
     if (foco) btn.focus();
@@ -1314,6 +1360,9 @@ html.revisao .review-banner{display:block;background:#E0711A;color:#fff;font-siz
 
   // ================= WHATSAPP FIXO + ENTRADA SUAVE =================
   var mbar = document.getElementById("mbar"), hero = document.getElementById("topo");
+  // Enquanto a pessoa digita (teclado aberto), a barra fixa se recolhe para não cobrir o campo
+  document.addEventListener("focusin", function(e){ if (e.target.matches("input, textarea")) document.body.classList.add("typing"); });
+  document.addEventListener("focusout", function(e){ if (e.target.matches("input, textarea")) document.body.classList.remove("typing"); });
   if ("IntersectionObserver" in window){
     new IntersectionObserver(function(es){
       var show = !es[0].isIntersecting;
