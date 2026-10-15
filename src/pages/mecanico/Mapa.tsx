@@ -7,7 +7,7 @@ import { getSetting } from '@/lib/settings';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet } from '@/lib/payment';
+import { mechanicNet, formatMoney } from '@/lib/payment';
 import { isScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint } from '@/components/ArrivalDeadline';
 import { IconMapPin } from '@/components/mecanico/icons';
@@ -183,7 +183,7 @@ export default function MechanicMapa() {
       const ws = job.workshop;
       if (!ws?.lat || !ws?.lng) return;
       const gross = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
-      const net = mechanicNet(gross).toFixed(0);
+      const net = formatMoney(mechanicNet(gross));
 
       const el = document.createElement('div');
       el.style.cssText = 'cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px;';
@@ -305,7 +305,7 @@ export default function MechanicMapa() {
               <div className="w-px h-10 bg-steel-700" />
               <div className="text-right">
                 <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Você recebe</div>
-                <div className="text-2xl font-bold text-signal-400 font-display leading-none mt-0.5">R$ {selectedNet.toFixed(0)}</div>
+                <div className="text-2xl font-bold text-signal-400 font-display leading-none mt-0.5">R$ {formatMoney(selectedNet)}</div>
                 <div className="text-xs text-steel-600 mt-1">no PIX em até 24h</div>
               </div>
             </div>

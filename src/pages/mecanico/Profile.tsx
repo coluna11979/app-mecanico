@@ -4,7 +4,7 @@ import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AvatarUpload } from '@/components/AvatarUpload';
-import { jobGross, mechanicNet } from '@/lib/payment';
+import { jobGross, mechanicNet, formatMoney } from '@/lib/payment';
 import { IconLogOut } from '@/components/mecanico/icons';
 import type { Mechanic, Job } from '@/types/database';
 
@@ -165,12 +165,12 @@ export default function MechanicProfile() {
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
             <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Este mês</div>
-            <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {monthEarnings.toFixed(0)}</div>
+            <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {formatMoney(monthEarnings)}</div>
             <div className="text-[11px] text-steel-500 mt-0.5">no seu PIX</div>
           </div>
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
             <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Total recebido</div>
-            <div className="text-2xl font-bold text-white font-display mt-1">R$ {totalEarnings.toFixed(0)}</div>
+            <div className="text-2xl font-bold text-white font-display mt-1">R$ {formatMoney(totalEarnings)}</div>
             <div className="text-[11px] text-steel-500 mt-0.5">{history.length} jobs</div>
           </div>
         </div>
@@ -217,7 +217,7 @@ export default function MechanicProfile() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-signal-400 font-bold font-display">
-                      {jobGross(j) > 0 ? `R$ ${mechanicNet(jobGross(j)).toFixed(0)}` : '—'}
+                      {jobGross(j) > 0 ? `R$ ${formatMoney(mechanicNet(jobGross(j)))}` : '—'}
                     </div>
                     <div className="text-[10px] text-steel-600">no PIX</div>
                   </div>

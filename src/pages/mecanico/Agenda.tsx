@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { mechanicNet } from '@/lib/payment';
+import { mechanicNet, formatMoney } from '@/lib/payment';
 import { formatScheduled } from '@/lib/scheduling';
 import { ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
@@ -119,7 +119,7 @@ export default function MechanicAgenda() {
                           )}
                         </div>
                         <div className="text-right shrink-0">
-                          <div className="text-signal-400 font-bold font-display text-xl">R$ {net.toFixed(0)}</div>
+                          <div className="text-signal-400 font-bold font-display text-xl">R$ {formatMoney(net)}</div>
                           <div className="text-[10px] text-steel-500 uppercase tracking-wider">no seu PIX</div>
                         </div>
                       </div>
