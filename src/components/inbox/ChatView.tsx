@@ -143,6 +143,17 @@ export default function ChatView({ chat, workshopId, connected, onBack, onToggle
             className="text-xs font-semibold text-sky-700 hover:underline shrink-0">Entendi</button>
         </div>
       )}
+      {chat.agent_state === 'active' && (
+        <div className="flex items-start gap-2 px-4 py-2 bg-violet-50 border-b border-violet-100 shrink-0">
+          <span className="text-sm">🤖</span>
+          <div className="flex-1 min-w-0 text-sm text-violet-900">
+            <span className="font-semibold">A Recepção (IA) está atendendo</span>
+            <span className="text-violet-700"> · ela sai sozinha quando você responder</span>
+          </div>
+          <button type="button" onClick={() => supabase.from('whatsapp_chats').update({ agent_state: 'off' }).eq('id', chat.id).then()}
+            className="text-xs font-semibold text-violet-700 hover:underline shrink-0">Tirar a IA</button>
+        </div>
+      )}
 
       {/* Mensagens */}
       <div
@@ -210,7 +221,7 @@ function Bubble({ m, tight }: { m: WaMessage; tight: boolean }) {
     <div className={`flex ${m.from_me ? 'justify-end' : 'justify-start'} ${tight ? 'mt-0.5' : 'mt-2'}`}>
       <div className={`max-w-[85%] sm:max-w-[70%] rounded-xl px-2.5 py-1.5 shadow-sm ${m.from_me ? 'bg-[#d9fdd3]' : 'bg-white'}`}>
         {m.from_me && m.sent_by_name && !tight && (
-          <p className="text-[11px] font-bold text-emerald-700 mb-0.5">{m.sent_by_name}</p>
+          <p className={`text-[11px] font-bold mb-0.5 ${m.by_agent ? 'text-violet-700' : 'text-emerald-700'}`}>{m.sent_by_name}</p>
         )}
         {m.is_deleted ? (
           <p className="text-sm italic text-steel-500">🚫 Mensagem apagada</p>

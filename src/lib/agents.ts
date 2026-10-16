@@ -81,3 +81,31 @@ Regras:
     },
   },
 };
+
+/* ── Agentes de atendimento (falam com o cliente no WhatsApp da oficina) ─────────
+   Rodam no servidor (edge function agent-reception, disparada pelo whatsapp-webhook).
+   O dono edita o jeito de falar; as regras de segurança, preço e horário são fixas no servidor. */
+
+export type ReceptionScope = 'site' | 'novos';
+
+export type ReceptionAgent = {
+  id: string; workshop_id: string; name: string; system_prompt: string; enabled: boolean;
+  settings: { scope?: ReceptionScope };
+};
+
+export const RECEPTION_TEMPLATE = {
+  name: 'Recepção',
+  icon: '👋',
+  desc: 'Responde na hora quem chama no WhatsApp: dá boas-vindas, faz 2 ou 3 perguntas e passa para a equipe com o card do Comercial preenchido.',
+  prompt: `Você é o assistente virtual de recepção desta oficina mecânica no WhatsApp.
+Seu trabalho: receber bem quem chamou, entender o que o carro tem e quando a pessoa pode trazer, e passar para a equipe.
+
+Jeito de falar:
+- Português do Brasil, próximo e simpático, como uma oficina de bairro de confiança. Trate por "você".
+- Na primeira mensagem, cumprimente, diga que é o assistente virtual da oficina e já mostre que leu o que a pessoa escreveu (cite o problema, a oferta ou o serviço com as palavras dela).
+- Seja breve e objetivo. Nada de textão nem de propaganda.`,
+  scopes: {
+    site: 'Só quem vem pelo site da oficina ("Vim pelo site…")',
+    novos: 'Toda conversa nova no WhatsApp',
+  } as Record<ReceptionScope, string>,
+};
