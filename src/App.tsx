@@ -50,6 +50,7 @@ import WorkshopCaixa from './pages/oficina/Caixa';
 import WorkshopFinanceiro from './pages/oficina/Financeiro';
 import WorkshopPecas from './pages/oficina/Pecas';
 import WorkshopEstoquePainel from './pages/oficina/EstoquePainel';
+import WorkshopEstoqueContagem from './pages/oficina/EstoqueContagem';
 import WorkshopServicos from './pages/oficina/Servicos';
 import WorkshopAgenda from './pages/oficina/Agenda';
 import WorkshopComercial from './pages/oficina/Comercial';
@@ -59,6 +60,7 @@ import Avaliacoes from './pages/oficina/Avaliacoes';
 import WorkshopFornecedores from './pages/oficina/Fornecedores';
 import WorkshopCompras from './pages/oficina/Compras';
 import WorkshopCompraNova from './pages/oficina/CompraNova';
+import WorkshopComprasImportar from './pages/oficina/ComprasImportar';
 import WorkshopContasPagar from './pages/oficina/ContasPagar';
 import WorkshopFolha from './pages/oficina/Folha';
 import WorkshopComissoes from './pages/oficina/Comissoes';
@@ -143,6 +145,7 @@ export default function App() {
       <Route path="/oficina/financeiro" element={<ProtectedRoute allow={['workshop']}><WorkshopFinanceiro /></ProtectedRoute>} />
       <Route path="/oficina/pecas" element={<ProtectedRoute allow={['workshop']}><WorkshopPecas /></ProtectedRoute>} />
       <Route path="/oficina/pecas/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopEstoquePainel /></ProtectedRoute>} />
+      <Route path="/oficina/pecas/contagem" element={<ProtectedRoute allow={['workshop']}><WorkshopEstoqueContagem /></ProtectedRoute>} />
       <Route path="/oficina/servicos" element={<ProtectedRoute allow={['workshop']}><WorkshopServicos /></ProtectedRoute>} />
       <Route path="/oficina/agenda" element={<ProtectedRoute allow={['workshop']}><WorkshopAgenda /></ProtectedRoute>} />
       <Route path="/oficina/comercial" element={<ProtectedRoute allow={['workshop']}><WorkshopComercial /></ProtectedRoute>} />
@@ -152,6 +155,7 @@ export default function App() {
       <Route path="/oficina/fornecedores" element={<ProtectedRoute allow={['workshop']}><WorkshopFornecedores /></ProtectedRoute>} />
       <Route path="/oficina/compras" element={<ProtectedRoute allow={['workshop']}><WorkshopCompras /></ProtectedRoute>} />
       <Route path="/oficina/compras/nova" element={<ProtectedRoute allow={['workshop']}><WorkshopCompraNova /></ProtectedRoute>} />
+      <Route path="/oficina/compras/importar" element={<ProtectedRoute allow={['workshop']}><WorkshopComprasImportar /></ProtectedRoute>} />
       <Route path="/oficina/contas-a-pagar" element={<ProtectedRoute allow={['workshop']}><WorkshopContasPagar /></ProtectedRoute>} />
       <Route path="/oficina/folha" element={<ProtectedRoute allow={['workshop']}><WorkshopFolha /></ProtectedRoute>} />
       <Route path="/oficina/comissoes" element={<ProtectedRoute allow={['workshop']}><WorkshopComissoes /></ProtectedRoute>} />

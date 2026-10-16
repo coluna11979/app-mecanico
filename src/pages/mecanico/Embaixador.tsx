@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
+import { formatMoney } from '@/lib/payment';
 import { supabase } from '@/lib/supabase';
 
 type Resumo = {
@@ -139,10 +140,10 @@ export default function MecanicoEmbaixador() {
             {share && (
               <div className="mt-3 text-xs text-brand-100 leading-relaxed space-y-2 bg-black/20 rounded-xl p-3 border border-white/10">
                 <p>✓ Manda esse link no WhatsApp pra mecânicos que confia.</p>
-                <p>✓ Cada serviço que ele fizer, a plataforma fica com <strong className="text-white">18%</strong>. Você recebe <strong className="text-white">20% dessa parte</strong>.</p>
+                <p>✓ Cada serviço que ele fizer, a plataforma fica com <strong className="text-white">20%</strong>. Você recebe <strong className="text-white">20% dessa parte</strong>.</p>
                 <div className="bg-white/10 rounded-lg p-2.5 border border-white/10 font-mono text-[11px] leading-snug">
                   <div className="text-[9px] uppercase tracking-wider text-brand-200 font-sans font-bold mb-0.5">Exemplo</div>
-                  Serviço R$ 500 → plataforma R$ 90 → <strong className="text-white">você R$ 18</strong>
+                  Serviço R$ 500 → plataforma R$ 100 → <strong className="text-white">você R$ 20</strong>
                 </div>
                 <p>✓ Enquanto ele trabalhar pela plataforma, você continua ganhando.</p>
                 <p>✓ Você precisa fazer <strong>pelo menos 1 serviço a cada 30 dias</strong> pra continuar ativo.</p>
@@ -158,7 +159,7 @@ export default function MecanicoEmbaixador() {
         <div className="grid grid-cols-2 gap-3">
           <StatCard label="Indicados"        value={String(resumo?.total_indicados ?? 0)} />
           <StatCard label="Ativos (30d)"     value={String(resumo?.ativos_30d ?? 0)} />
-          <StatCard label="Ganho acumulado"  value={`R$ ${Number(resumo?.comissao_acumulada ?? 0).toFixed(0)}`} accent="signal" />
+          <StatCard label="Ganho acumulado"  value={`R$ ${formatMoney(Number(resumo?.comissao_acumulada ?? 0))}`} accent="signal" />
           <StatCard label="A receber"        value={`R$ ${Number(resumo?.comissao_pendente ?? 0).toFixed(2).replace('.', ',')}`} accent="brand" />
         </div>
 
@@ -206,7 +207,7 @@ export default function MecanicoEmbaixador() {
                     <div className="text-right shrink-0">
                       <div className="text-[10px] text-steel-500 uppercase tracking-wider">Você ganhou</div>
                       <div className="text-signal-400 font-bold font-display text-lg">
-                        R$ {Number(ind.comissao_acumulada).toFixed(0)}
+                        R$ {formatMoney(Number(ind.comissao_acumulada))}
                       </div>
                       <div className="text-[10px] text-steel-500 mt-0.5">
                         {ind.servicos_total} {ind.servicos_total === 1 ? 'serviço' : 'serviços'}

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
+import { sendApprovalEmail } from '@/lib/approvalEmail';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 const STATUS_LABEL: Record<ProfileStatus, string> = {
@@ -44,6 +45,8 @@ export default function AdminUserDetail() {
     cpf: '', cnh: '', experience_years: 0, hourly_rate: 0, pix_key: '',
     // Localização do mecânico + referência opcional
     mech_cep: '', mech_neighborhood: '', mech_city: '', mech_state: '', mech_work_reference: '',
+    mech_address: '', mech_address_number: '', mech_address_complement: '',
+    mech_birth_date: '', mech_mother_name: '',
     business_name: '', cnpj: '',
     address: '', number: '', neighborhood: '', cep: '',
     city: '', state: '', description: '',
@@ -82,6 +85,11 @@ export default function AdminUserDetail() {
         hourly_rate: m?.hourly_rate ?? 0,
         pix_key: (m as any)?.pix_key ?? '',
         mech_cep: m?.cep ?? '',
+        mech_address: m?.address ?? '',
+        mech_address_number: m?.address_number ?? '',
+        mech_address_complement: m?.address_complement ?? '',
+        mech_birth_date: m?.birth_date ?? '',
+        mech_mother_name: m?.mother_name ?? '',
         mech_neighborhood: m?.neighborhood ?? '',
         mech_city: m?.city ?? '',
         mech_state: m?.state ?? '',
@@ -134,6 +142,11 @@ export default function AdminUserDetail() {
         hourly_rate: Number(edit.hourly_rate) || 0,
         pix_key: edit.pix_key.trim() || null,
         cep: edit.mech_cep.trim() || null,
+        address: edit.mech_address.trim() || null,
+        address_number: edit.mech_address_number.trim() || null,
+        address_complement: edit.mech_address_complement.trim() || null,
+        birth_date: edit.mech_birth_date || null,
+        mother_name: edit.mech_mother_name.trim() || null,
         neighborhood: edit.mech_neighborhood.trim() || null,
         city: edit.mech_city.trim() || null,
         state: edit.mech_state.trim().toUpperCase() || null,
@@ -209,8 +222,20 @@ export default function AdminUserDetail() {
 
   async function changeStatus(status: ProfileStatus) {
     if (!profile) return;
+    const previous = profile.status;
     setBusy(true);
     await supabase.from('profiles').update({ status }).eq('id', profile.id);
+
+    // Decisão final: registra no histórico e avisa por email, igual à tela de Aprovações
+    if ((status === 'approved' || status === 'rejected') && status !== previous) {
+      const { data: { user } } = await supabase.auth.getUser();
+      const content = status === 'approved' ? 'cadastro aprovado' : 'cadastro rejeitado';
+      await supabase.from('approval_messages').insert({
+        profile_id: profile.id, sender_id: user?.id, sender_role: 'admin', kind: 'status_change', content,
+      });
+      void sendApprovalEmail(profile.id, content, 'status_change', status);
+    }
+
     setBusy(false);
     load();
   }
@@ -399,6 +424,16 @@ export default function AdminUserDetail() {
                 <Field label="CPF">
                   <input className="input" value={edit.cpf} onChange={e => setEdit(s => ({ ...s, cpf: e.target.value }))} />
                 </Field>
+                <Field label="Data de nascimento">
+                  <input className="input" type="date" value={edit.mech_birth_date}
+                    onChange={e => setEdit(s => ({ ...s, mech_birth_date: e.target.value }))} />
+                </Field>
+                <div className="col-span-2">
+                  <Field label="Nome da mãe">
+                    <input className="input" value={edit.mech_mother_name}
+                      onChange={e => setEdit(s => ({ ...s, mech_mother_name: e.target.value }))} />
+                  </Field>
+                </div>
                 <Field label="CNH (opcional)">
                   <input className="input" value={edit.cnh} onChange={e => setEdit(s => ({ ...s, cnh: e.target.value }))} />
                 </Field>
@@ -441,6 +476,20 @@ export default function AdminUserDetail() {
                   placeholder="00000-000"
                   onChange={e => setEdit(s => ({ ...s, mech_cep: e.target.value }))} />
               </Field>
+              <Field label="Rua">
+                <input className="input" value={edit.mech_address}
+                  onChange={e => setEdit(s => ({ ...s, mech_address: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-[120px_1fr] gap-3">
+                <Field label="Número">
+                  <input className="input" value={edit.mech_address_number}
+                    onChange={e => setEdit(s => ({ ...s, mech_address_number: e.target.value }))} />
+                </Field>
+                <Field label="Complemento">
+                  <input className="input" value={edit.mech_address_complement}
+                    onChange={e => setEdit(s => ({ ...s, mech_address_complement: e.target.value }))} />
+                </Field>
+              </div>
               <Field label="Bairro">
                 <input className="input" value={edit.mech_neighborhood}
                   onChange={e => setEdit(s => ({ ...s, mech_neighborhood: e.target.value }))} />
@@ -734,7 +783,7 @@ function EmbaixadorCard({
         </p>
         <div className="bg-steel-50 border border-steel-200 rounded-xl p-3 text-xs text-steel-700 font-mono leading-relaxed">
           <div className="text-[10px] uppercase tracking-widest text-steel-500 font-sans font-bold mb-1">Exemplo</div>
-          Serviço <strong>R$ 500</strong> → nossa comissão (18%) <strong>R$ 90</strong> → embaixador (20% dos 90) = <strong className="text-brand-700">R$ 18</strong>
+          Serviço <strong>R$ 500</strong> → nossa comissão (20%) <strong>R$ 100</strong> → embaixador (20% dos 100) = <strong className="text-brand-700">R$ 20</strong>
         </div>
         <p className="text-xs text-steel-500 leading-relaxed">
           Programa dura 12 meses. Ele precisa fazer ≥1 serviço a cada 30 dias pra continuar recebendo. O indicado <strong>nunca</strong> sabe que existe comissão.

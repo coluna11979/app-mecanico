@@ -89,6 +89,8 @@ Deno.serve(async (req) => {
       status: 'sent',
     }).select('id').single();
     if (saveErr) console.error('[whatsapp-send] não gravou:', saveErr);
+    // Alguém da equipe respondeu: a Recepção (IA) sai desta conversa
+    await admin.from('whatsapp_chats').update({ agent_state: 'off' }).eq('id', chat.id).eq('agent_state', 'active');
 
     return json({ ok: true, chat_id: chat.id, message_id: saved?.id ?? null });
   } catch (e) {

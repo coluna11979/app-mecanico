@@ -10,7 +10,8 @@ import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
-import { formatBRL } from '@/lib/payment';
+import { formatBRL, pricingLabel } from '@/lib/payment';
+import NextpayPayment from '@/components/payment/NextpayPayment';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -47,6 +48,10 @@ export default function WorkshopTracking() {
   const [mech, setMech]             = useState<(Mechanic & { profile: Profile }) | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [tab, setTab]               = useState<Tab>('progresso');
+
+  /* Gateway do pagamento (Configurações → payment_gateway) e taxa do cartão */
+  const [gateway, setGateway]       = useState<'stripe' | 'nextpay' | null>(null);
+  const [feeCfg, setFeeCfg]         = useState({ passthrough: false, percent: 4.2 });
 
   /* Método de pagamento: cartão (padrão) ou PIX */
   const [payMethod, setPayMethod]   = useState<PayMethod>('card');
@@ -100,8 +105,21 @@ export default function WorkshopTracking() {
     setTimeout(() => setToast(null), 6000);
   }
 
+  useEffect(() => {
+    (async () => {
+      const [g, pass, pct] = await Promise.all([
+        getSetting('payment_gateway', 'stripe'),
+        getSetting('card_fee_passthrough', 'false'),
+        getSetting('card_fee_percent', '4.20'),
+      ]);
+      setGateway(g.trim() === 'nextpay' ? 'nextpay' : 'stripe');
+      setFeeCfg({ passthrough: pass.trim() === 'true', percent: Number(pct.replace(',', '.')) || 0 });
+    })();
+  }, []);
+
   /* Carrega Stripe.js — tenta env var primeiro, depois app_settings */
   useEffect(() => {
+    if (gateway !== 'stripe') return;
     (async () => {
       const cfg = await getPublicStripeConfig();
       const envKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string;
@@ -111,7 +129,7 @@ export default function WorkshopTracking() {
       const s = await loadStripe(key);
       setStripe(s);
     })();
-  }, []);
+  }, [gateway]);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -434,11 +452,11 @@ export default function WorkshopTracking() {
 
   /* Dispara carregamento conforme método selecionado */
   useEffect(() => {
-    if (!showPixModal || !job?.id) return;
+    if (!showPixModal || !job?.id || gateway !== 'stripe') return;
     if (payMethod === 'card') loadCardSecret(job.id);
     if (payMethod === 'pix')  loadPixPayment(job.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPixModal, job?.id, payMethod]);
+  }, [showPixModal, job?.id, payMethod, gateway]);
 
   /** Confirma a conclusão do serviço (sem rating obrigatório) */
   async function confirmJob() {
@@ -594,7 +612,7 @@ export default function WorkshopTracking() {
 
             {job && (
               <div className="flex items-center justify-between text-sm py-2 border-b border-steel-100">
-                <span className="text-steel-500">{job.max_hours}h × R$ {formatBRL(job.price_per_hour ?? 0, { decimals: 0 })}/h</span>
+                <span className="text-steel-500">{pricingLabel(job)}</span>
                 <span className="font-bold text-signal-600">R$ {formatBRL(cap)} fechado</span>
               </div>
             )}
@@ -881,13 +899,20 @@ export default function WorkshopTracking() {
               <div className="text-xs text-brand-600 uppercase tracking-widest font-bold mb-1">Valor a pagar</div>
               <div className="text-4xl font-bold font-display text-brand-700">R$ {formatBRL(cap)}</div>
               <div className="text-xs text-brand-500 mt-1">
-                Pacote fechado · {job?.max_hours}h × R$ {formatBRL(job?.price_per_hour ?? 0, { decimals: 0 })}/h
+                Pacote fechado · {job ? pricingLabel(job) : ''}
               </div>
               <div className="text-[11px] text-steel-500 mt-1">
                 Valor não muda se o mecânico terminar antes ou levar mais tempo
               </div>
             </div>
 
+            {gateway === null ? (
+              <div className="flex justify-center py-6">
+                <div className="h-8 w-8 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
+              </div>
+            ) : gateway === 'nextpay' && job ? (
+              <NextpayPayment jobId={job.id} service={cap} feePassthrough={feeCfg.passthrough} feePercent={feeCfg.percent} />
+            ) : (<>
             {/* Abas de método de pagamento */}
             <div className="flex gap-1 bg-steel-100 rounded-2xl p-1">
               <button
@@ -1021,6 +1046,7 @@ export default function WorkshopTracking() {
                 )}
               </div>
             )}
+            </>)}
           </div>
         </div>
       )}

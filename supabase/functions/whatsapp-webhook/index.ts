@@ -4,6 +4,7 @@
 // Grupos, status e canais ficam de fora: o Inbox é para conversar com clientes.
 import { adminClient, json, mapInstanceStatus, rawMessageId, uaz, uazConfig, type UazConfig } from '../_shared/uazapi.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { workshopHours } from '../_shared/workshopHours.ts';
 
 const ok = () => json({ received: true });
 const stripJid = (j: unknown) => String(j ?? '').replace(/@.*$/, '').replace(/:\d+$/, '').replace(/\D/g, '');
@@ -184,6 +185,19 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
     else text = `[${msgType.replace(/Message$/, '') || 'Mensagem'} — tipo não suportado, veja no celular]`;
   }
 
+  // Eco de mensagem que a Recepção (IA) acabou de enviar: liga o id à linha já gravada e não
+  // registra de novo (senão pareceria resposta de alguém da equipe pelo celular)
+  if (fromMe && messageId && text) {
+    const since = new Date(Date.now() - 3 * 60_000).toISOString();
+    const { data: mine } = await admin.from('whatsapp_messages').select('id')
+      .eq('workshop_id', wid).eq('by_agent', true).is('message_id', null).eq('content', text)
+      .gte('sent_at', since).limit(1).maybeSingle();
+    if (mine) {
+      await admin.from('whatsapp_messages').update({ message_id: messageId }).eq('id', mine.id);
+      return;
+    }
+  }
+
   // Dedup: UAZAPI reenvia quando demora para responder
   if (messageId) {
     const { data: dup } = await admin.from('whatsapp_messages').select('id')
@@ -194,7 +208,7 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
   // Conversa (cria na primeira mensagem e liga ao cliente cadastrado)
   const contactName = chatInfo.wa_contactName || chatInfo.wa_name || chatInfo.name || (!fromMe ? m.senderName : null) || null;
   const avatar = chatInfo.imagePreview || chatInfo.image || null;
-  const CHAT_SEL = 'id, name, avatar_url, customer_id, source, lead_at, sector_id';
+  const CHAT_SEL = 'id, name, avatar_url, customer_id, source, lead_at, sector_id, agent_state';
   let { data: chat } = await admin.from('whatsapp_chats').select(CHAT_SEL)
     .eq('workshop_id', wid).eq('remote_jid', chatid).maybeSingle();
   // Conversa aberta pelo sistema (whatsapp-send grava numero@s.whatsapp.net; o WhatsApp pode responder com @lid)
@@ -257,7 +271,7 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
   const ts = Number(m.messageTimestamp);
   const sentAt = ts ? new Date(ts > 1e12 ? ts : ts * 1000).toISOString() : new Date().toISOString();
 
-  const { error } = await admin.from('whatsapp_messages').insert({
+  const { data: saved, error } = await admin.from('whatsapp_messages').insert({
     workshop_id: wid,
     chat_id: chat.id,
     message_id: messageId,
@@ -272,14 +286,74 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
     buttons: buttons.length ? buttons : null,
     status: fromMe ? 'sent' : 'delivered',
     sent_at: sentAt,
-  });
+  }).select('id').maybeSingle();
   // 23505 = chegou duplicada ao mesmo tempo
   if (error && error.code !== '23505') throw error;
+  if (error) return;
+
+  // Resposta da equipe pelo celular: a Recepção (IA) sai da conversa
+  if (fromMe && chat.agent_state === 'active') {
+    await admin.from('whatsapp_chats').update({ agent_state: 'off' }).eq('id', chat.id);
+  }
 
   // Contato que veio do site da oficina: marca a origem e já entra como Interessado no Comercial
   if (!fromMe && !chat.source && text && /vim pelo site/i.test(text)) {
     try { await markFromSite(admin, wid, chat, text); } catch (e) { console.error('[whatsapp-webhook] site', e); }
   }
+
+  // Recepção (agente de IA): responde o lead enquanto ninguém da equipe falou
+  if (!fromMe && saved?.id) {
+    try { await maybeReception(admin, wid, chat, saved.id, text); } catch (e) { console.error('[whatsapp-webhook] recepção', e); }
+  }
+}
+
+/* ── Recepção (módulo `agentes`, agente 'recepcao') ─────────────────────────────
+   Começa um atendimento quando chega a 1ª mensagem de uma conversa nova (site ou todas, conforme o
+   ajuste do agente) ou, no modo "todos", quando um cliente volta a chamar depois de X dias sem conversa.
+   Segue enquanto agent_state = 'active'. A resposta sai pela edge function agent-reception,
+   que espera o cliente terminar de digitar. */
+
+type ReceptionChat = { id: string; agent_state?: string | null };
+type ReceptionSettings = { scope?: 'site' | 'novos' | 'todos'; return_days?: number; hours?: 'sempre' | 'fora' };
+
+async function maybeReception(admin: SupabaseClient, wid: string, chat: ReceptionChat, messageRowId: string, text: string) {
+  if (chat.agent_state !== 'active') {
+    const { data: agent } = await admin.from('ai_agents').select('enabled, settings')
+      .eq('workshop_id', wid).eq('template', 'recepcao').maybeSingle();
+    if (!agent?.enabled) return;
+    const st = (agent.settings ?? {}) as ReceptionSettings;
+    const scope = st.scope ?? 'site';
+    const returnDays = Math.max(1, Number(st.return_days) || 7);
+
+    // Mensagem anterior a esta: nenhuma = conversa nova; antiga = cliente voltando
+    const { data: prev } = await admin.from('whatsapp_messages').select('sent_at')
+      .eq('chat_id', chat.id).neq('id', messageRowId).order('sent_at', { ascending: false }).limit(1).maybeSingle();
+    const gapDays = prev ? (Date.now() - new Date(prev.sent_at).getTime()) / 86_400_000 : Infinity;
+    const fromSite = /vim pelo site/i.test(text);
+    const fresh = gapDays >= returnDays;   // conversa nova (Infinity) ou parada há X dias
+    const start =
+      (!prev && (scope !== 'site' || fromSite)) ||   // conversa nova
+      (prev && fresh && (scope === 'todos' || fromSite));  // cliente voltando (ou voltando pelo site)
+    if (!start) return;
+
+    const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: wid, _module: 'agentes' });
+    if (!modOn) return;
+    if (st.hours === 'fora' && (await workshopHours(admin, wid)).isOpen) return;
+
+    const { data: started } = await admin.from('whatsapp_chats')
+      .update({ agent_state: 'active', agent_template: 'recepcao', agent_started_at: new Date().toISOString(), agent_replies: 0 })
+      .eq('id', chat.id).or('agent_state.is.null,agent_state.neq.active').select('id').maybeSingle();
+    if (!started) return;
+  }
+  const call = fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/agent-reception`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+    body: JSON.stringify({ chat_id: chat.id, message_id: messageRowId }),
+  }).catch((e) => console.error('[whatsapp-webhook] agent-reception', e));
+  // Não segura o webhook: a UAZAPI precisa do 200 rápido
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(call);
 }
 
 /* ── Site da oficina → CRM (módulo opcional `site`) ──────────────────────────── */

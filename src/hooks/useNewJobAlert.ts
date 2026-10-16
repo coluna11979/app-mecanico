@@ -29,6 +29,7 @@ export function useNewJobAlert({ enabled, onNewJob }: Options) {
           const job = payload.new as Job;
           if (job.status !== 'open') return;
           playJobAlert();
+          try { navigator.vibrate?.([400, 150, 400]); } catch { /* sem vibração */ }
           onNewJobRef.current(job);
         }
       )

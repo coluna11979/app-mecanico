@@ -9,19 +9,26 @@ import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
   DEFAULT_MARGIN, UNITS, fmtQty, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
 } from '@/lib/parts';
-import { addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
+import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
 import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '@/lib/invoiceImport';
+import { BUCKET, mergePages, type PurchaseImport } from '@/lib/purchaseImports';
 
-type Row = { key: string; part_id: string | null; name: string; unit: string; quantity: string; unit_cost: string };
+/** code: código do produto do fornecedor (vem da nota; vai para a peça) */
+type Row = { key: string; part_id: string | null; code: string; name: string; unit: string; quantity: string; unit_cost: string };
 type Inst = { due_date: string; amount: string };
 
 let seq = 0;
-const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, name: '', unit: 'un', quantity: '1', unit_cost: '' });
+const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, code: '', name: '', unit: 'un', quantity: '1', unit_cost: '' });
 const num = (s: string) => { const n = parseMoney(s); return Number.isFinite(n) ? n : 0; };
 /** Custo unitário com até 4 casas (nota de autopeças costuma ter centavos quebrados) */
 const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
+/** "10190 SILENCIOSO INT." com código 10190 → "SILENCIOSO INT." (a leitura às vezes repete o código no nome) */
+const stripCode = (name: string, code: string) => {
+  const c = code.trim();
+  return c && name.trim().startsWith(`${c} `) ? name.trim().slice(c.length).trim() : name.trim();
+};
 
 export default function CompraNova() {
   const { currentWorkshop } = useAuth();
@@ -46,6 +53,10 @@ export default function CompraNova() {
   const [insts, setInsts]         = useState<Inst[]>([]);
   const [newSupplier, setNewSupplier] = useState(false);
   const [saving, setSaving]       = useState(false);
+  /** Somar as peças no estoque? (por oficina, lembra a última escolha) */
+  const stockKey = `compra-soma-estoque:${wid ?? ''}`;
+  const [addStock, setAddStock] = useState(() => { try { return localStorage.getItem(stockKey) !== 'nao'; } catch { return true; } });
+  const toggleStock = (v: boolean) => { setAddStock(v); try { localStorage.setItem(stockKey, v ? 'sim' : 'nao'); } catch { /* ignora */ } };
   // Importar arquivo da nota (XML sem IA; PDF com IA, se liberado)
   const [aiEnabled, setAiEnabled] = useState(false);
   const [reading, setReading]     = useState<null | 'xml' | 'ia'>(null);
@@ -54,6 +65,11 @@ export default function CompraNova() {
   const fileRef = useRef<HTMLInputElement>(null);
   /** Parcelas que vieram na nota — usadas enquanto batem com o total e o 1º vencimento */
   const importedInsts = useRef<{ due: string; amount: number }[] | null>(null);
+  /** Conferência de nota da fila de fotos (/oficina/compras/importar) */
+  const importId = params.get('importacao');
+  const [loaded, setLoaded] = useState(false);
+  /** Uma ou mais fotos (páginas) da mesma nota */
+  const [queued, setQueued] = useState<{ imp: PurchaseImport; url: string | null }[] | null>(null);
 
   useEffect(() => {
     if (!wid || !allowed) return;
@@ -69,6 +85,7 @@ export default function CompraNova() {
       // "Comprar" do estoque: já começa com a peça na nota (custo da última compra)
       const pre = ((p.data as WorkshopPart[]) ?? []).find(x => x.id === params.get('peca'));
       if (pre) setRows([{ ...newRow(), part_id: pre.id, name: pre.name, unit: pre.unit, unit_cost: Number(pre.cost) > 0 ? costInput(Number(pre.cost)) : '' }]);
+      setLoaded(true);
     })();
     hasAiInvoice(wid).then(setAiEnabled);
   }, [wid, allowed]);
@@ -80,14 +97,28 @@ export default function CompraNova() {
   const itemsTotal = rows.reduce((a, r) => a + num(r.quantity) * num(r.unit_cost), 0);
   const total = Math.round((itemsTotal + num(freight) - num(discount)) * 100) / 100;
 
-  // Vencimento sugerido pelo prazo do fornecedor
-  useEffect(() => { setFirstDue(addDaysISO(date, supplier?.payment_days ?? 0)); }, [date, supplier?.payment_days]);
+  // Vencimento sugerido pelo prazo do fornecedor — a não ser que a nota já traga os vencimentos
+  useEffect(() => {
+    const fromNote = importedInsts.current;
+    setFirstDue(fromNote?.length ? fromNote[0].due : addDaysISO(date, supplier?.payment_days ?? 0));
+  }, [date, supplier?.payment_days]);
   // Parcelas refeitas quando muda total, quantidade ou 1º vencimento
   useEffect(() => {
     const fromNote = importedInsts.current;
-    if (fromNote && fromNote.length === count && fromNote[0]?.due === firstDue
-      && Math.abs(fromNote.reduce((a, i) => a + i.amount, 0) - total) < 0.011) {
-      setInsts(fromNote.map(i => ({ due_date: i.due, amount: moneyInput(i.amount) })));
+    // Vencimentos da nota: valem enquanto a quantidade e o 1º vencimento forem os dela.
+    // Se a soma das parcelas não bater com o total (ex.: imposto rateado nos itens), mantém as datas
+    // e acerta os valores na proporção (a última absorve os centavos).
+    if (fromNote && fromNote.length === count && fromNote[0]?.due === firstDue && total > 0) {
+      const sum = fromNote.reduce((a, i) => a + i.amount, 0);
+      const cents = Math.round(total * 100);
+      let used = 0;
+      const amounts = Math.abs(sum - total) < 0.011 ? fromNote.map(i => i.amount) : fromNote.map((i, k) => {
+        if (k === fromNote.length - 1) return (cents - used) / 100;
+        const c = Math.round((sum > 0 ? i.amount / sum : 1 / fromNote.length) * cents);
+        used += c;
+        return c / 100;
+      });
+      setInsts(fromNote.map((i, k) => ({ due_date: i.due, amount: moneyInput(amounts[k]) })));
       return;
     }
     setInsts(total > 0
@@ -142,20 +173,33 @@ export default function CompraNova() {
 
   /** Preenche a tela com o que veio do arquivo da nota */
   function applyInvoice(d: InvoiceData) {
-    // Fornecedor: pelo CNPJ; senão pelo nome
+    // Fornecedor: pelo CNPJ; senão pelo nome (parecido); não achou → cadastra sozinho com o que veio da nota
     const cnpj = onlyDigits(d.supplier.cnpj);
+    const key = (v: string) => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const nk = key(d.supplier.name);
     const sup = (cnpj && suppliers.find(s => onlyDigits(s.cnpj) === cnpj))
-      || suppliers.find(s => s.name.trim().toLowerCase() === d.supplier.name.trim().toLowerCase());
-    if (sup) { setSupplierId(sup.id); setMissingSupplier(null); }
-    else { setSupplierId(''); setMissingSupplier(d.supplier.name ? d.supplier : null); }
+      || (nk && suppliers.find(s => key(s.name) === nk))
+      || (nk.length >= 6 && suppliers.find(s => { const k = key(s.name); return k.length >= 6 && (k.includes(nk) || nk.includes(k)); }));
+    if (sup) {
+      setSupplierId(sup.id); setMissingSupplier(null);
+      // Completa o CNPJ/telefone que faltava no cadastro
+      if ((!sup.cnpj && cnpj) || (!sup.phone && d.supplier.phone)) {
+        supabase.from('suppliers').update({ cnpj: sup.cnpj || cnpj || null, phone: sup.phone || onlyDigits(d.supplier.phone) || null }).eq('id', sup.id).then(() => {});
+      }
+    } else if (d.supplier.name.trim()) {
+      setSupplierId(''); setMissingSupplier(d.supplier);
+      autoCreateSupplier(d.supplier);
+    } else {
+      setSupplierId(''); setMissingSupplier(null);
+    }
     if (d.number) setNumber(d.number);
     if (d.date) setDate(d.date);
     // Peças: pelo código do fornecedor; senão pelo nome; senão peça nova
     const byCode = new Map(parts.filter(p => p.code).map(p => [p.code!.trim().toLowerCase(), p]));
     setRows(d.items.length ? d.items.map(it => {
-      const p = (it.code && byCode.get(it.code.toLowerCase())) || byName.get(it.name.toLowerCase());
+      const p = (it.code && byCode.get(it.code.trim().toLowerCase())) || byName.get(stripCode(it.name, it.code).toLowerCase()) || byName.get(it.name.toLowerCase());
       return {
-        key: `r${++seq}`, part_id: p?.id ?? null, name: p ? p.name : it.name, unit: p ? p.unit : it.unit,
+        key: `r${++seq}`, part_id: p?.id ?? null, code: it.code || p?.code || '', name: p ? p.name : stripCode(it.name, it.code), unit: p ? p.unit : it.unit,
         quantity: String(it.qty).replace('.', ','), unit_cost: costInput(it.unitCost),
       };
     }) : [newRow()]);
@@ -170,6 +214,25 @@ export default function CompraNova() {
     }
     setImported(d);
   }
+
+  // Nota da fila: preenche com o que foi lido e mostra o arquivo para conferir
+  useEffect(() => {
+    if (!loaded || !importId) return;
+    (async () => {
+      // ?importacao=id ou id1,id2 (páginas da mesma nota, na ordem em que foram enviadas)
+      const ids = importId.split(',').filter(Boolean);
+      const { data } = await supabase.from('purchase_imports').select('*').in('id', ids).order('created_at');
+      const imps = ((data as PurchaseImport[]) ?? []).filter(i => i.extracted);
+      if (!imps.length) return toast.error('Nota da fila não encontrada');
+      if (imps.some(i => i.status === 'confirmed')) toast.error('Esta nota da fila já foi lançada');
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrls(imps.map(i => i.file_path), 60 * 60);
+      const byPath = new Map((signed ?? []).map(x => [x.path, x.signedUrl]));
+      setQueued(imps.map(imp => ({ imp, url: byPath.get(imp.file_path) ?? null })));
+      applyInvoice(mergePages(imps.map(i => i.extracted!)));
+      if (imps.length > 1) toast.success(`${imps.length} páginas da mesma nota juntadas ✓ — confira os itens`);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, importId]);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -197,6 +260,31 @@ export default function CompraNova() {
     }
   }
 
+  /** Depois de lançar: marca a nota da fila e volta para a próxima; sem fila, abre a nota lançada */
+  async function finishQueued(invoiceId: string) {
+    if (queued) {
+      await supabase.from('purchase_imports')
+        .update({ status: 'confirmed', invoice_id: invoiceId, confirmed_at: new Date().toISOString() }).in('id', queued.map(q => q.imp.id));
+      nav('/oficina/compras/importar');
+    } else {
+      nav(`/oficina/compras?nota=${invoiceId}`);
+    }
+  }
+
+  /** Fornecedor da nota que ainda não está cadastrado: cadastra e já usa */
+  async function autoCreateSupplier(sp: InvoiceData['supplier']) {
+    if (!wid) return;
+    const { data, error } = await supabase.from('suppliers').insert({
+      workshop_id: wid, name: sp.name.trim(), cnpj: onlyDigits(sp.cnpj) || null, phone: onlyDigits(sp.phone) || null,
+    }).select('*').single();
+    if (error) return; // fica o botão "+ Cadastrar e usar"
+    const s = data as Supplier;
+    setSuppliers(xs => [...xs, s].sort((a, b) => a.name.localeCompare(b.name)));
+    setSupplierId(s.id);
+    setMissingSupplier(null);
+    toast.success(`Fornecedor ${s.name} cadastrado ✓`);
+  }
+
   async function createMissingSupplier() {
     if (!wid || !missingSupplier) return;
     const { data, error } = await supabase.from('suppliers').insert({
@@ -221,18 +309,43 @@ export default function CompraNova() {
     if (total <= 0) return toast.error('O total da nota precisa ser maior que zero');
     if (!instOk) return toast.error(`As parcelas somam ${fmtBRL(instTotal)} e a nota dá ${fmtBRL(total)}`);
 
+    // Mesma nota (nº + fornecedor) já lançada?
+    if (number.trim()) {
+      const { data: same } = await supabase.from('purchase_invoices').select('id').eq('workshop_id', wid!)
+        .eq('supplier_id', supplierId).eq('number', number.trim()).eq('status', 'posted').limit(1);
+      if (same?.length && !confirm(`A nota nº ${number.trim()} deste fornecedor já foi lançada. Lançar de novo vai duplicar a compra e as contas a pagar. Lançar mesmo assim?`)) return;
+    }
+
     setSaving(true);
     const { data, error } = await supabase.rpc('purchase_post', {
       p_workshop: wid, p_supplier: supplierId, p_number: number, p_issue_date: date,
       p_freight: num(freight), p_discount: num(discount),
-      p_items: items.map(r => ({ part_id: r.part_id, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: num(r.unit_cost) })),
+      p_items: items.map(r => ({ part_id: r.part_id, code: r.code.trim() || null, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: num(r.unit_cost) })),
       p_installments: insts.map(i => ({ due_date: i.due_date, amount: num(i.amount) })),
-      p_notes: notes,
+      p_notes: addStock ? notes : [notes.trim(), NO_STOCK_NOTE].filter(Boolean).join(' · '),
     });
+    if (error) { setSaving(false); return toast.error(error.message); }
+    if (!addStock) {
+      // Devolve o que a nota somou: as peças ficam cadastradas com o custo, o estoque fica como estava
+      const { data: its } = await supabase.from('purchase_items').select('part_id, quantity').eq('invoice_id', data as string);
+      const byPart = new Map<string, number>();
+      for (const it of (its ?? []) as { part_id: string; quantity: number }[]) byPart.set(it.part_id, (byPart.get(it.part_id) ?? 0) + Number(it.quantity));
+      let failed = 0;
+      for (const [partId, q] of byPart) {
+        const { data: p } = await supabase.from('workshop_parts').select('stock_qty').eq('id', partId).single();
+        const counted = Number((p as { stock_qty: number } | null)?.stock_qty ?? 0) - q;
+        const { error: e2 } = await supabase.rpc('stock_adjust', { p_part: partId, p_counted: Math.max(0, counted), p_note: `Nota ${number.trim() || 's/ nº'}: só cadastro e financeiro` });
+        if (e2) failed++;
+      }
+      setSaving(false);
+      if (failed) toast.error(`Nota lançada, mas ${failed} peça(s) ficaram somadas no estoque. Ajuste em Peças.`);
+      else toast.success('Nota lançada ✓ Peças cadastradas e contas a pagar criadas (estoque não mexido)');
+      await finishQueued(data as string);
+      return;
+    }
     setSaving(false);
-    if (error) return toast.error(error.message);
     toast.success('Nota lançada ✓ Estoque e contas a pagar atualizados');
-    nav(`/oficina/compras?nota=${data}`);
+    await finishQueued(data as string);
   }
 
   if (!allowed) return <Restricted />;
@@ -243,11 +356,26 @@ export default function CompraNova() {
         <div>
           <Link to="/oficina/compras" className="text-sm text-steel-500 hover:text-steel-700">← Notas de compra</Link>
           <h1 className="text-3xl font-bold tracking-tight mt-1">🧾 Lançar nota de compra</h1>
-          <p className="text-sm text-steel-500 mt-1">Ao lançar, as peças entram no estoque, o custo é atualizado e as parcelas vão para as contas a pagar.</p>
+          <p className="text-sm text-steel-500 mt-1">Ao lançar, o custo das peças é atualizado e as parcelas vão para as contas a pagar. Somar no estoque é opcional (no fim da tela).</p>
         </div>
 
+        {queued && (
+          <div className="card !p-3 flex flex-wrap items-center gap-3 border border-brand-200">
+            <div className="flex gap-2 shrink-0">
+              {queued.map((q, i) => q.url && q.imp.media_type.startsWith('image/')
+                ? <a key={q.imp.id} href={q.url} target="_blank" rel="noreferrer" title={`Página ${i + 1}`}><img src={q.url} alt={`Página ${i + 1}`} className="h-20 w-16 object-cover rounded-lg border border-steel-200" /></a>
+                : <a key={q.imp.id} href={q.url ?? undefined} target="_blank" rel="noreferrer" className="h-20 w-16 rounded-lg bg-steel-100 grid place-items-center text-2xl">{q.imp.media_type.includes('xml') ? '🧾' : '📄'}</a>)}
+            </div>
+            <div className="min-w-0 flex-1 text-sm">
+              <div className="font-semibold">{queued.length > 1 ? `Conferindo nota de ${queued.length} páginas (juntadas)` : 'Conferindo nota da fila de fotos'}</div>
+              <div className="text-xs text-steel-500">Toque na foto para abrir em tela cheia. Compare e corrija o que precisar. Ao lançar, volta para a próxima nota.</div>
+            </div>
+            <Link to="/oficina/compras/importar" className="btn-ghost text-sm shrink-0">Voltar à fila</Link>
+          </div>
+        )}
+
         {/* Importar arquivo da nota */}
-        <div className="card flex flex-col sm:flex-row sm:items-center gap-3 !bg-brand-50/60 border border-brand-100">
+        {!queued && <div className="card flex flex-col sm:flex-row sm:items-center gap-3 !bg-brand-50/60 border border-brand-100">
           <div className="flex-1 min-w-0">
             <div className="font-bold text-steel-900">📎 Importar arquivo da nota</div>
             <p className="text-xs text-steel-600 mt-0.5">
@@ -262,7 +390,7 @@ export default function CompraNova() {
           <button type="button" className="btn-primary shrink-0" disabled={!!reading} onClick={() => fileRef.current?.click()}>
             {reading === 'ia' ? '✨ Lendo a nota com IA…' : reading === 'xml' ? 'Lendo XML…' : aiEnabled ? 'Escolher XML ou PDF' : 'Escolher XML'}
           </button>
-        </div>
+        </div>}
 
         {imported && (
           <ImportSummary d={imported} itemsTotal={itemsTotal} freight={num(freight)} discount={num(discount)} />
@@ -333,6 +461,7 @@ export default function CompraNova() {
                   <div className="col-span-12 md:col-span-5">
                     <input className="input !py-2 text-sm" list="compra-pecas" placeholder="Nome da peça (do cadastro ou uma nova)"
                       value={r.name} onChange={e => update(r.key, { name: e.target.value })} />
+                    {r.code && <div className="text-[11px] text-steel-400 mt-0.5 pl-1">Cód. fornecedor: {r.code}</div>}
                   </div>
                   <div className="col-span-4 md:col-span-2 flex gap-1">
                     <input className="input !py-2 text-sm text-right" inputMode="decimal" value={r.quantity}
@@ -430,6 +559,18 @@ export default function CompraNova() {
             <input className="input" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
         </div>
+
+        <label className={`card flex items-start gap-3 cursor-pointer !py-3 ${addStock ? '' : '!bg-pending-50 border border-pending-200'}`}>
+          <input type="checkbox" className="mt-1" checked={addStock} onChange={e => toggleStock(e.target.checked)} />
+          <span className="text-sm">
+            <strong>Somar as peças no estoque</strong>
+            <span className="block text-xs text-steel-500">
+              {addStock
+                ? 'As quantidades da nota entram na prateleira.'
+                : 'Desmarcado: as peças são cadastradas com o custo da nota e as parcelas vão para contas a pagar, mas o estoque não muda. Use enquanto o controle de estoque não começou.'}
+            </span>
+          </span>
+        </label>
 
         <div className="flex justify-end gap-2 pb-6">
           <Link to="/oficina/compras" className="btn-ghost">Cancelar</Link>

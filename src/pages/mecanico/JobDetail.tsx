@@ -3,7 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { mechanicNet } from '@/lib/payment';
+import { formatBRL, mechanicNet, hoursLabel } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { WorkshopReviews } from '@/components/WorkshopReviews';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
@@ -119,7 +119,7 @@ export default function MechanicJobDetail() {
         {/* Pacote (sem expor R$/h ou bruto — só horas previstas) */}
         <div className="card !bg-steel-800 text-center">
           <div className="text-[10px] text-steel-500 uppercase tracking-wider">Pacote</div>
-          <div className="text-xl font-bold text-white font-display mt-1">{job.max_hours ?? 1}h previstas</div>
+          <div className="text-xl font-bold text-white font-display mt-1">{hoursLabel(job) ?? 'Preço fechado'}</div>
           <div className="text-xs text-steel-500 mt-1">valor fechado · não muda com o tempo real</div>
         </div>
 
@@ -159,12 +159,12 @@ export default function MechanicJobDetail() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-xs text-steel-500 uppercase tracking-wider">Você recebe</div>
-                  <div className="text-3xl font-bold text-signal-400 font-display mt-1">R$ {net.toFixed(2)}</div>
+                  <div className="text-3xl font-bold text-signal-400 font-display mt-1">R$ {formatBRL(net)}</div>
                   <div className="text-xs text-steel-500 mt-1">no seu PIX</div>
                 </div>
                 <div className="h-12 w-12 rounded-full bg-signal-500/10 grid place-items-center text-2xl">💸</div>
               </div>
-              <div className="text-xs text-steel-600 mt-3">Liberado em até 24h após confirmação da oficina.</div>
+              <div className="text-xs text-steel-600 mt-3">Liberado depois que a oficina confirma a conclusão.</div>
             </div>
           );
         })()}

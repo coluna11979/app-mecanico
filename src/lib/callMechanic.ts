@@ -52,11 +52,11 @@ export function saveJobDraft(wid: string, origin: string, draft: {
   scheduledAt: string;
 }) {
   const hours = Math.max(0.5, draft.hours);
-  // A demanda é "valor/hora × horas"; o campo de valor/hora só aceita inteiro, então arredonda para cima
-  const pph = Math.max(1, Math.ceil(draft.total / hours));
+  // Preço pelo serviço: o mecânico recebe exatamente o total sugerido, com o tempo previsto como informação
   localStorage.setItem(jobDraftKey(wid), JSON.stringify({
     title: draft.title, description: draft.description,
-    price_per_hour: String(pph), max_hours: String(hours), scheduled_at: draft.scheduledAt,
+    pricing: 'fixed', total: String(Math.max(1, Math.round(draft.total * 100) / 100)), price_per_hour: '',
+    max_hours: String(hours), scheduled_at: draft.scheduledAt,
     service_order_id: draft.serviceOrderId, service_order_item_ids: draft.itemIds,
     ...(draft.serviceOrderIds ? { service_order_ids: draft.serviceOrderIds } : {}),
   }));

@@ -9,7 +9,7 @@ import { ChatBox } from '@/components/chat/ChatBox';
 import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { distKm, etaLabel } from '@/lib/geo';
-import { mechanicNet } from '@/lib/payment';
+import { formatBRL, mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
 
@@ -330,7 +330,9 @@ export default function MechanicTracking() {
         {shop && (
           <div>
             <div className="text-xs text-brand-400 uppercase tracking-wider font-bold mb-1">
-              {job?.status === 'in_progress'
+              {job?.status === 'completed'
+                ? (job.workshop_confirmed_at ? '✅ Serviço concluído' : '⏳ Aguardando a oficina confirmar')
+                : job?.status === 'in_progress'
                 ? '🔧 Em serviço'
                 : arrived && !pixPaid
                   ? '⏳ Aguardando pagamento'
@@ -351,7 +353,7 @@ export default function MechanicTracking() {
               )}
             </div>
             <div className="text-xs text-steel-500 mt-1">
-              Pacote: {job?.max_hours ?? '—'}h previstas · <span className="text-signal-400 font-bold">você recebe R$ {netCap.toFixed(0)}</span>
+              {job && hoursLabel(job) ? `Pacote: ${hoursLabel(job)} · ` : 'Preço fechado · '}<span className="text-signal-400 font-bold">você recebe R$ {formatMoney(netCap)}</span>
             </div>
           </div>
         )}
@@ -426,7 +428,7 @@ export default function MechanicTracking() {
               <div className="text-3xl mb-1">⏳</div>
               <div className="text-pending-300 font-bold text-base">Aguardando confirmação da oficina</div>
               <div className="text-xs text-steel-400 mt-1">
-                Notificação enviada — assim que confirmarem, seu PIX de <strong>R$ {netCap.toFixed(2)}</strong> é liberado.
+                Notificação enviada — assim que confirmarem, seu PIX de <strong>R$ {formatBRL(netCap)}</strong> é liberado.
               </div>
             </div>
             <div className="bg-steel-900/60 rounded-xl py-2 text-center">

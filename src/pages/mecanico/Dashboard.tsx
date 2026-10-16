@@ -6,9 +6,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet } from '@/lib/payment';
+import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
+import { PushAlertCard } from '@/components/mecanico/PushAlertCard';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 import {
   IconAlert, IconBuilding, IconCalendar, IconChevronDown, IconChevronRight, IconClock, IconDollar,
@@ -215,7 +216,7 @@ export default function MechanicDashboard() {
                 <div className="text-xs font-bold uppercase tracking-wide opacity-90">Nova demanda</div>
                 <div className="font-bold truncate">{capitalize(t.job.title)}</div>
                 <div className="text-xs opacity-90">
-                  R$ {mechanicNet(cap).toFixed(0)} no seu PIX · {previstas(t.job.max_hours)}
+                  R$ {formatMoney(mechanicNet(cap))} no seu PIX · {previstas(t.job)}
                 </div>
               </div>
               <button
@@ -254,6 +255,9 @@ export default function MechanicDashboard() {
           </button>
         </div>
 
+        {/* ── Alerta no celular (push) ── */}
+        <PushAlertCard />
+
         {/* ── Bloqueador: sem PIX não recebe ── */}
         {missingPix && (
           <Link to="/mecanico/perfil"
@@ -286,13 +290,13 @@ export default function MechanicDashboard() {
                       </span>
                       <div className="font-bold text-lg leading-snug mt-2 line-clamp-2">{capitalize(j.title)}</div>
                       <div className="text-sm text-white/80 mt-1 flex items-center gap-1">
-                        <IconClock className="w-3.5 h-3.5" /> {previstas(j.max_hours)}
+                        <IconClock className="w-3.5 h-3.5" /> {previstas(j)}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-xs text-white/80">você recebe</div>
                       <div className="text-2xl font-bold font-display leading-tight">
-                        R$ {mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1)).toFixed(0)}
+                        R$ {formatMoney(mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1)))}
                       </div>
                     </div>
                   </div>
@@ -355,7 +359,7 @@ export default function MechanicDashboard() {
               <div className="font-semibold text-white mt-3">Nenhum job aberto agora</div>
               <div className="text-sm text-steel-300 mt-1">
                 {online
-                  ? 'Fique com o app aberto — avisamos com som quando chegar um novo.'
+                  ? 'Quando chegar um novo, avisamos aqui e no seu celular, mesmo com o app fechado.'
                   : 'Fique online para ser avisado quando chegar um novo.'}
               </div>
             </div>
@@ -382,7 +386,7 @@ export default function MechanicDashboard() {
                           )}
                         </div>
                         <div className="text-right shrink-0">
-                          <div className="text-signal-500 font-bold font-display text-2xl leading-tight">R$ {net.toFixed(0)}</div>
+                          <div className="text-signal-500 font-bold font-display text-2xl leading-tight">R$ {formatMoney(net)}</div>
                           <div className="text-xs text-steel-300">no seu PIX</div>
                         </div>
                       </div>
@@ -395,7 +399,7 @@ export default function MechanicDashboard() {
                           </span>
                         )}
                         <span className="inline-flex items-center gap-1">
-                          <IconClock className="w-3.5 h-3.5" /> {previstas(j.max_hours)}
+                          <IconClock className="w-3.5 h-3.5" /> {previstas(j)}
                         </span>
                         {ws && (ws.rating > 0 || ws.total_jobs > 0) && (
                           <span className="inline-flex items-center gap-1">
@@ -463,15 +467,15 @@ export default function MechanicDashboard() {
               </span>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm text-white">Como você recebe</div>
-                <div className="text-xs text-steel-300">PIX em até 24h após a oficina confirmar</div>
+                <div className="text-xs text-steel-300">No seu PIX, depois que a oficina confirma</div>
               </div>
               <IconChevronDown className="w-5 h-5 text-steel-400 shrink-0 transition-transform group-open:rotate-180" />
             </summary>
             <ol className="px-4 pb-4 space-y-3">
               {[
                 ['Aceita o job', 'O valor mostrado é o que cai no seu PIX — sem letra miúda.'],
-                ['Faz o serviço', 'A oficina paga antes de começar; o dinheiro fica garantido.'],
-                ['Recebe no PIX', 'Quando a oficina confirma a conclusão, em até 24h.'],
+                ['Faz o serviço', 'O pagamento da oficina passa pela plataforma — você não precisa cobrar ninguém.'],
+                ['Recebe no PIX', 'Depois que a oficina confirma a conclusão, o valor vai para a sua chave PIX.'],
               ].map(([t, d], i) => (
                 <li key={t} className="flex gap-3">
                   <span className="h-6 w-6 rounded-full bg-steel-700 text-white text-xs font-bold grid place-items-center shrink-0">{i + 1}</span>
@@ -582,7 +586,7 @@ function Skeleton() {
 function capitalize(s: string | null | undefined) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
-function previstas(h: number | null | undefined) {
-  const n = h ?? 1;
-  return `${n}h prevista${n === 1 ? '' : 's'}`;
+/** "2h previstas" — ou "Preço fechado" na demanda pelo serviço sem tempo informado */
+function previstas(j: Parameters<typeof hoursLabel>[0]) {
+  return hoursLabel(j) ?? 'Preço fechado';
 }
