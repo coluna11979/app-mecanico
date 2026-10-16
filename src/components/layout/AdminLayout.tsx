@@ -12,6 +12,15 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Captação',
+    items: [
+      { to: '/admin/leads',               icon: '🎯', label: 'Pipeline de Leads' },
+      { to: '/admin/leads/importar',      icon: '🔎', label: 'Importar do Google' },
+      { to: '/admin/leads/importar-csv',  icon: '📥', label: 'Importar CSV' },
+      { to: '/admin/leads/metricas',      icon: '📊', label: 'Métricas' },
+    ],
+  },
+  {
     label: 'Operações',
     items: [
       { to: '/admin/aprovacoes', icon: '✅', label: 'Aprovações' },

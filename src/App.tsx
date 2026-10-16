@@ -83,6 +83,9 @@ import AdminRepasses from './pages/admin/Repasses';
 import AdminUserDetail from './pages/admin/UserDetail';
 import AdminFinancial from './pages/admin/Financial';
 import AdminLeads from './pages/admin/Leads';
+import AdminLeadsImport from './pages/admin/LeadsImport';
+import AdminLeadsMetrics from './pages/admin/LeadsMetrics';
+import AdminLeadsImportCsv from './pages/admin/LeadsImportCsv';
 import AdminAvisos from './pages/admin/Avisos';
 import AdminEmbaixadores from './pages/admin/Embaixadores';
 import AdminModulos from './pages/admin/Modulos';
@@ -183,6 +186,10 @@ export default function App() {
 
       {/* Admin */}
       <Route path="/admin/dashboard" element={<ProtectedRoute allow={['admin']}><AdminDashboard /></ProtectedRoute>} />
+      <Route path="/admin/leads" element={<ProtectedRoute allow={['admin']}><AdminLeads /></ProtectedRoute>} />
+      <Route path="/admin/leads/importar" element={<ProtectedRoute allow={['admin']}><AdminLeadsImport /></ProtectedRoute>} />
+      <Route path="/admin/leads/metricas" element={<ProtectedRoute allow={['admin']}><AdminLeadsMetrics /></ProtectedRoute>} />
+      <Route path="/admin/leads/importar-csv" element={<ProtectedRoute allow={['admin']}><AdminLeadsImportCsv /></ProtectedRoute>} />
       <Route path="/admin/aprovacoes" element={<ProtectedRoute allow={['admin']}><AdminApprovals /></ProtectedRoute>} />
       <Route path="/admin/mecanicos" element={<ProtectedRoute allow={['admin']}><AdminMechanics /></ProtectedRoute>} />
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />
@@ -192,7 +199,6 @@ export default function App() {
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
       <Route path="/admin/financeiro"    element={<ProtectedRoute allow={['admin']}><AdminFinancial /></ProtectedRoute>} />
-      <Route path="/admin/leads"         element={<ProtectedRoute allow={['admin']}><AdminLeads /></ProtectedRoute>} />
       <Route path="/admin/avisos"        element={<ProtectedRoute allow={['admin']}><AdminAvisos /></ProtectedRoute>} />
       <Route path="/admin/embaixadores"  element={<ProtectedRoute allow={['admin']}><AdminEmbaixadores /></ProtectedRoute>} />
       <Route path="/admin/configuracoes" element={<ProtectedRoute allow={['admin']}><AdminSettings /></ProtectedRoute>} />

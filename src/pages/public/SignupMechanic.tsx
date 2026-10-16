@@ -5,6 +5,7 @@ import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
 import { isValidCpf, maskCep, maskCpf, maskPhone, onlyDigits } from '@/lib/customers';
 import { lookupCep } from '@/lib/cep';
+import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
 
 /** Lê (e consome) o pré-preenchimento de lead capturado na home. */
 function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
@@ -83,6 +84,8 @@ function composeReferences(refs: Ref[]) {
 
 export default function SignupMechanic() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const leadId = params.get('lead');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -110,6 +113,21 @@ export default function SignupMechanic() {
       phone:     prev.phone     || (lead.phone ? maskPhone(lead.phone) : ''),
     }));
   }, []);
+
+  // Link de convite admin (?lead=<uuid>): pré-preenche e marca início
+  useEffect(() => {
+    if (!leadId) return;
+    markLeadSignupStarted(leadId);
+    fetchLeadForInvite(leadId).then(lead => {
+      if (!lead) return;
+      setF(prev => ({
+        ...prev,
+        full_name: prev.full_name || lead.name  || '',
+        email:     prev.email     || lead.email || '',
+        phone:     prev.phone     || (lead.phone ? maskPhone(lead.phone) : ''),
+      }));
+    });
+  }, [leadId]);
 
   // Valida o código de indicação (silenciosamente — se der ruim, o cadastro segue igual)
   useEffect(() => {
@@ -280,6 +298,7 @@ export default function SignupMechanic() {
     // Registra aceite dos termos (não bloqueia o signup se falhar)
     if (data.user) {
       try { await recordConsent(data.user.id, 'mechanic'); } catch { /* ignora */ }
+      if (leadId) await convertLeadToProfile(leadId);
       // Email de boas-vindas (silencioso — se Resend não configurado ou der erro, ignora)
       void supabase.functions.invoke('send-welcome-email', {
         body: { profile_id: data.user.id },

@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
+import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
 
 function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
   try {
@@ -22,6 +23,8 @@ const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','P
 
 export default function SignupWorkshop() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const leadId = params.get('lead');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -44,6 +47,21 @@ export default function SignupWorkshop() {
       phone:     prev.phone     || lead.phone || '',
     }));
   }, []);
+
+  // Link de convite admin (?lead=<uuid>): pré-preenche e marca início
+  useEffect(() => {
+    if (!leadId) return;
+    markLeadSignupStarted(leadId);
+    fetchLeadForInvite(leadId).then(lead => {
+      if (!lead) return;
+      setF(prev => ({
+        ...prev,
+        full_name: prev.full_name || lead.name  || '',
+        email:     prev.email     || lead.email || '',
+        phone:     prev.phone     || lead.phone || '',
+      }));
+    });
+  }, [leadId]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -79,6 +97,7 @@ export default function SignupWorkshop() {
     // Registra aceite (não bloqueia signup se falhar)
     if (data.user) {
       try { await recordConsent(data.user.id, 'workshop'); } catch { /* ignora */ }
+      if (leadId) await convertLeadToProfile(leadId);
       // Email de boas-vindas (silencioso — se Resend não configurado ou der erro, ignora)
       void supabase.functions.invoke('send-welcome-email', {
         body: { profile_id: data.user.id },

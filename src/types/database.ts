@@ -3,6 +3,59 @@ export type ProfileStatus = 'pending' | 'under_review' | 'approved' | 'rejected'
 export type JobStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'disputed' | 'cancelled';
 export type TxStatus = 'held' | 'released' | 'refunded';
 
+export type LeadStatus =
+  | 'lead_novo'
+  | 'contato_feito'
+  | 'interessado'
+  | 'cadastro_iniciado'
+  | 'convertido'
+  | 'perdido';
+
+export type LeadOrigem =
+  | 'formulario_site'
+  | 'indicacao'
+  | 'instagram'
+  | 'facebook'
+  | 'google_ads'
+  | 'google_maps'
+  | 'whatsapp'
+  | 'importado_csv'
+  | 'link_convite'
+  | 'evento'
+  | 'outro';
+
+export type LeadIntent = 'mechanic' | 'workshop';
+
+export interface Lead {
+  id: string;
+  // Colunas originais do formulário público
+  name: string;
+  email: string;
+  phone: string;
+  intent: LeadIntent;
+  consent: boolean;
+  user_agent: string | null;
+  referrer: string | null;
+  // Pipeline
+  cidade: string | null;
+  estado: string | null;
+  status: LeadStatus;
+  origem: LeadOrigem;
+  responsavel_id: string | null;
+  proxima_acao: string | null;
+  data_proxima_acao: string | null;
+  notas: string | null;
+  tags: string[];
+  converted_profile_id: string | null;
+  converted_at: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  last_contact_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Profile {
   id: string;
   role: Role;
