@@ -1,9 +1,9 @@
 // Recebe os avisos da NextPay (charge.*). Confere a assinatura x-webhook-signature
-// (HMAC-SHA256 do corpo bruto com NEXTPAY_WEBHOOK_SECRET), grava em nextpay_webhook_events e,
+// (HMAC-SHA256 do corpo bruto com o segredo de Admin → Configurações → NextPay), grava em nextpay_webhook_events e,
 // em charge.paid de uma demanda (externalRef job:<id>:<método>:…), marca a demanda como paga —
 // mesmo campo do stripe-webhook (jobs.pix_paid_at), então o resto do fluxo não muda.
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { nextpay, parseJobRef, type NextpayCharge } from '../_shared/nextpay.ts';
+import { nextpay, nextpayConfig, parseJobRef, type NextpayCharge } from '../_shared/nextpay.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -30,7 +30,7 @@ async function markJobPaid(admin: SupabaseClient, data: NextpayCharge) {
   const ref = parseJobRef(data.externalRef) ?? parseJobRef(`job:${meta.job_id ?? ''}:${meta.method ?? ''}:`);
   if (!ref || !data.id) return;
   // Confirma na própria API antes de liberar o serviço
-  const charge = await nextpay<NextpayCharge | null>('GET', `/charges/${data.id}`);
+  const charge = await nextpay<NextpayCharge | null>(admin, 'GET', `/charges/${data.id}`);
   if (!charge || charge.status !== 'paid') return;
 
   const { data: job } = await admin.from('jobs').select('id, price_per_hour, max_hours').eq('id', ref.jobId).maybeSingle();
@@ -50,7 +50,8 @@ async function markJobPaid(admin: SupabaseClient, data: NextpayCharge) {
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: true });
   const raw = await req.text();
-  const secret = Deno.env.get('NEXTPAY_WEBHOOK_SECRET') ?? '';
+  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const secret = (await nextpayConfig(admin)).webhookSecret;
   const got = (req.headers.get('x-webhook-signature') ?? '').toLowerCase();
   const signatureOk = !!secret && !!got && sameHex(await hmacHex(secret, raw), got);
 
@@ -58,7 +59,6 @@ Deno.serve(async (req) => {
   try { payload = JSON.parse(raw); } catch { /* corpo inválido: registra assim mesmo */ }
   const d = payload.data;
 
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const { error } = await admin.from('nextpay_webhook_events').insert({
     event: payload.event ?? null,
     charge_id: d?.id ?? null,
