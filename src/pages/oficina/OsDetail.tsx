@@ -16,6 +16,7 @@ import OsEditModal from '@/components/os/OsEditModal';
 import ScheduleOsModal from '@/components/os/ScheduleOsModal';
 import ResponsibleTimers from '@/components/os/ResponsibleTimers';
 import ServiceAssign from '@/components/os/ServiceAssign';
+import ResponsiblesModal from '@/components/os/ResponsiblesModal';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
 import PaymentsList from '@/components/cash/PaymentsList';
@@ -70,6 +71,7 @@ export default function OsDetail() {
   /* false = fechado · 'edit' = escolher · 'platform' = já abre com a plataforma marcada */
   const [scheduling, setScheduling] = useState(false);
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
+  const [splitting, setSplitting]     = useState(false);
   /** Publicar demanda no MecânicoApp (OS já marcada como da plataforma, sem demanda ligada) */
   const [publishing, setPublishing] = useState(false);
   /** Aviso ao iniciar sem responsável (não bloqueia) */
@@ -492,7 +494,7 @@ export default function OsDetail() {
           {startWarn && (
             <div className="mt-3 bg-pending-50 border border-pending-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-pending-800 mr-1">Esta OS ainda está sem responsável.</span>
-              <button onClick={() => { setStartWarn(false); setSettingResp('edit'); }}
+              <button onClick={() => { setStartWarn(false); (team.length > 0 ? setSplitting(true) : setSettingResp('edit')); }}
                 className="text-sm px-3 py-1.5 rounded-lg bg-white border border-pending-300 hover:bg-pending-100 font-medium">Definir responsável</button>
               {canOpen('/oficina/dashboard') && (
                 <button onClick={() => { setStartWarn(false); setSettingResp('platform'); }}
@@ -601,7 +603,7 @@ export default function OsDetail() {
               split={perService ? <ServiceSplit items={items} team={team} osMechanic={os.mechanic?.name ?? null} /> : undefined}
               canTrack={canOpen('/oficina/job')}
               canPublish={canOpen('/oficina/dashboard')}
-              onDefine={() => setSettingResp('edit')}
+              onDefine={() => (team.length > 0 && !closed ? setSplitting(true) : setSettingResp('edit'))}
               onCallPlatform={() => setSettingResp('platform')}
               onPublish={() => setPublishing(true)} />}
 
@@ -864,6 +866,11 @@ export default function OsDetail() {
           os={{ id: os.id, workshop_id: os.workshop_id, title: os.title, scheduled_at: os.scheduled_at ?? null,
                 customer: os.customer ?? null, vehicle: os.vehicle ?? null }}
           onClose={() => setScheduling(false)} onSaved={load} />
+      )}
+
+      {splitting && (
+        <ResponsiblesModal osId={os.id} osNumber={os.number ?? null} items={items} team={team} osMechanicId={os.workshop_mechanic_id}
+          onPlatform={() => setSettingResp('platform')} onClose={() => setSplitting(false)} onSaved={load} />
       )}
 
       {settingResp && (
