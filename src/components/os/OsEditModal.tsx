@@ -35,6 +35,9 @@ export default function OsEditModal({ os, workshopId, onClose, onSaved }: Props)
   const [vehicles, setVehicles]   = useState<Vehicle[]>([]);
   const [mechs, setMechs]         = useState<WorkshopMechanic[]>([]);
   const [saving, setSaving]       = useState(false);
+  /** Cadastrar um carro novo para o cliente, sem sair da OS */
+  const [newCar, setNewCar]     = useState(false);
+  const [car, setCar]           = useState({ plate: '', make: '', model: '', year: '' });
 
   useEffect(() => {
     supabase.from('customers').select('*').eq('workshop_id', workshopId).order('full_name')
@@ -59,14 +62,32 @@ export default function OsEditModal({ os, workshopId, onClose, onSaved }: Props)
     const hours = form.estimated_hours ? Number(form.estimated_hours.replace(',', '.')) : null;
     if (hours != null && (!Number.isFinite(hours) || hours < 0)) { toast.error('Tempo estimado inválido'); return; }
 
+    const wantsCar = newCar && !!form.customer_id && !!(car.plate.trim() || car.make.trim() || car.model.trim());
+    if (wantsCar && (!car.make.trim() || !car.model.trim())) { toast.error('Informe a marca e o modelo do carro'); return; }
+
     setSaving(true);
+    let vehicleId = form.vehicle_id;
+    if (wantsCar) {
+      const { data, error: vErr } = await supabase.from('vehicles').insert({
+        workshop_id: workshopId, customer_id: form.customer_id,
+        plate: car.plate.toUpperCase().replace(/[^A-Z0-9]/g, '') || 'S/P',
+        make: car.make.trim(), model: car.model.trim(),
+        year: car.year ? parseInt(car.year, 10) || null : null,
+      }).select('id').single();
+      if (vErr || !data) {
+        setSaving(false);
+        toast.error('Não foi possível cadastrar o carro: ' + (vErr?.message ?? 'erro'));
+        return;
+      }
+      vehicleId = data.id;
+    }
     const { error } = await supabase.from('service_orders').update({
       title:                form.title.trim(),
       description:          form.description.trim() || null,
       category:             form.category || null,
       notes:                form.notes.trim() || null,
       customer_id:          form.customer_id || null,
-      vehicle_id:           form.customer_id ? (form.vehicle_id || null) : null,
+      vehicle_id:           form.customer_id ? (vehicleId || null) : null,
       workshop_mechanic_id: form.workshop_mechanic_id || null,
       km_reading:           km,
       estimated_hours:      hours,
@@ -129,7 +150,7 @@ export default function OsEditModal({ os, workshopId, onClose, onSaved }: Props)
               <div>
                 <label className="label">Cliente</label>
                 <select className="input" value={form.customer_id}
-                  onChange={e => setForm(f => ({ ...f, customer_id: e.target.value, vehicle_id: '' }))}>
+                  onChange={e => { setForm(f => ({ ...f, customer_id: e.target.value, vehicle_id: '' })); setNewCar(false); }}>
                   <option value="">— Sem cliente —</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}{c.phone ? ` · ${c.phone}` : ''}</option>)}
                 </select>
@@ -140,8 +161,33 @@ export default function OsEditModal({ os, workshopId, onClose, onSaved }: Props)
                   <option value="">{form.customer_id ? (vehicles.length ? '— Selecionar —' : 'Cliente sem veículo') : 'Escolha o cliente'}</option>
                   {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate} · {v.make} {v.model}</option>)}
                 </select>
+                {form.customer_id && !newCar && (
+                  <button type="button" onClick={() => setNewCar(true)} className="mt-1.5 text-sm font-semibold text-brand-600 hover:underline">
+                    ➕ Cadastrar carro novo
+                  </button>
+                )}
               </div>
             </div>
+            {newCar && form.customer_id && (
+              <div className="rounded-xl bg-steel-50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">🚗 Carro novo deste cliente</div>
+                  <button type="button" onClick={() => { setNewCar(false); setCar({ plate: '', make: '', model: '', year: '' }); }}
+                    className="text-xs text-steel-500 hover:text-steel-800 underline">cancelar</button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="input !py-2 uppercase font-mono" placeholder="Placa" value={car.plate}
+                    onChange={e => setCar(c => ({ ...c, plate: e.target.value.toUpperCase() }))} />
+                  <input className="input !py-2" placeholder="Ano" inputMode="numeric" value={car.year}
+                    onChange={e => setCar(c => ({ ...c, year: e.target.value }))} />
+                  <input className="input !py-2" placeholder="Marca (ex.: Chevrolet)" value={car.make}
+                    onChange={e => setCar(c => ({ ...c, make: e.target.value }))} />
+                  <input className="input !py-2" placeholder="Modelo (ex.: Onix)" value={car.model}
+                    onChange={e => setCar(c => ({ ...c, model: e.target.value }))} />
+                </div>
+                <p className="text-[11px] text-steel-500">Salva junto com a OS e já fica vinculado a ela.</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">KM atual</label>
