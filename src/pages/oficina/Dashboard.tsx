@@ -10,7 +10,8 @@ import { formatScheduled } from '@/lib/scheduling';
 import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 import type { Job } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
-import { jobDraftKey, jobDraftOriginKey } from '@/lib/callMechanic';
+import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
+import StackBoard from '@/components/marketplace/StackBoard';
 import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
 
 type NewJob = {
@@ -20,6 +21,8 @@ type NewJob = {
   service_order_id?: string;
   /** Itens da OS que esse mecânico vai fazer (passam a "mecânico da plataforma") */
   service_order_item_ids?: string[];
+  /** Demanda com serviços de várias OS (vindo dos empilhados) */
+  service_order_ids?: string[];
 };
 type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
 type JobMode = 'open' | 'favorites' | 'direct';
@@ -47,6 +50,7 @@ export default function WorkshopDashboard() {
   const [pendingRate, setPendingRate] = useState<Job[]>([]);
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [modal, setModal]       = useState(false);
+  const [stackVer, setStackVer] = useState(0);
   const [form, setForm]         = useState<NewJob>(EMPTY);
   const [draftRestored, setDraftRestored] = useState(false);
   /* Rascunho montado no Caixa ("Chamar mecânico"): de qual OS veio */
@@ -288,7 +292,7 @@ export default function WorkshopDashboard() {
     };
     if (form.service_order_id) payload.service_order_id = form.service_order_id;
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
-    const { error: insErr } = await supabase.from('jobs').insert(payload);
+    const { data: ins, error: insErr } = await supabase.from('jobs').insert(payload).select('id').single();
     setSaving(false);
     if (insErr) {
       console.error('[createJob] erro:', insErr);
@@ -297,21 +301,14 @@ export default function WorkshopDashboard() {
     }
     localStorage.removeItem(draftKey(currentShop.id));
     localStorage.removeItem(jobDraftOriginKey(currentShop.id));
-    // Serviços escolhidos passam a "mecânico da plataforma" (sem comissão da equipe).
-    // A OS só vira "plataforma" inteira se todos os serviços dela forem da plataforma.
+    // Serviços escolhidos passam a "mecânico da plataforma" (sem comissão da equipe) e ficam ligados
+    // a esta demanda — assim se sabe qual mecânico fez cada serviço. A OS só vira "plataforma"
+    // inteira se todos os serviços dela forem da plataforma.
     if (form.service_order_id) {
-      const ids = form.service_order_item_ids ?? [];
-      if (ids.length) {
-        await supabase.from('service_order_items').update({ executor: 'platform', workshop_mechanic_id: null })
-          .in('id', ids).eq('service_order_id', form.service_order_id);
-      }
-      const { count } = await supabase.from('service_order_items').select('id', { count: 'exact', head: true })
-        .eq('service_order_id', form.service_order_id).eq('kind', 'labor').or('executor.is.null,executor.neq.platform');
-      if (count === 0) {
-        await supabase.from('service_orders').update({ executor: 'platform', workshop_mechanic_id: null })
-          .eq('id', form.service_order_id).eq('workshop_id', currentShop.id);
-      }
+      const osIds = form.service_order_ids?.length ? form.service_order_ids : [form.service_order_id];
+      await markPlatformItems(currentShop.id, osIds, form.service_order_item_ids ?? [], { jobId: ins?.id });
     }
+    setStackVer(v => v + 1);
     resetModal();
     await fetchJobs(currentShop.id);
   }
@@ -390,6 +387,9 @@ export default function WorkshopDashboard() {
 
       {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
+
+      {/* Serviços empilhados: esperando mecânico da plataforma (a gestão junta e gera a demanda) */}
+      {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={openCreateModal} />}
 
       {/* Números rápidos: uma faixa só, cabe em qualquer celular */}
       <dl className="grid grid-cols-3 divide-x divide-steel-100 rounded-2xl bg-white ring-1 ring-steel-200/70 mb-5">
