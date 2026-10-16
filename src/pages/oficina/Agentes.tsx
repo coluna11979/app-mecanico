@@ -35,6 +35,7 @@ export default function Agentes() {
   /** Conversa real (salva) ou Playground (testa o rascunho, nada é salvo) */
   const [mode, setMode] = useState<'chat' | 'playground'>('chat');
   const [pgMessages, setPgMessages] = useState<AgentMessage[]>([]);
+  const [publishedAt, setPublishedAt] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
@@ -111,6 +112,7 @@ export default function Agentes() {
     setAgent(a);
     if (a) {
       setDraft(a.draft ?? { name: a.name, system_prompt: a.system_prompt, tools: a.tools });
+      loadPublishedAt(a.id, a.version);
       const { data: msgs } = await supabase.from('ai_agent_messages').select('id, role, content, created_at')
         .eq('agent_id', a.id).order('created_at', { ascending: false }).limit(50);
       setMessages(((msgs ?? []) as AgentMessage[]).reverse());
@@ -163,6 +165,7 @@ export default function Agentes() {
     setNote('');
     toast.success(`Versão ${data} publicada ✓`);
     if (showHistory) loadVersions();
+    loadPublishedAt(agent.id, Number(data));
   }
 
   /** Joga fora as edições e volta ao que está publicado */
@@ -175,6 +178,17 @@ export default function Agentes() {
       setAgent({ ...agent, draft: null });
     }
     setDraft(published);
+  }
+
+  async function loadPublishedAt(agentId: string, version: number) {
+    const { data } = await supabase.from('ai_agent_versions').select('created_at').eq('agent_id', agentId).eq('version', version).maybeSingle();
+    setPublishedAt((data as { created_at: string } | null)?.created_at ?? null);
+  }
+
+  /** Abre o editor já no histórico de versões */
+  function openVersions() {
+    setShowConfig(true);
+    if (!showHistory) { setShowHistory(true); loadVersions(); }
   }
 
   async function loadVersions() {
@@ -308,8 +322,12 @@ export default function Agentes() {
                     <span className="text-xs rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 shrink-0">Rascunho não publicado</span>
                   )}
                 </div>
-                <div className="text-xs text-steel-500">{agent.tools.length} consultas liberadas</div>
+                <div className="text-xs text-steel-500">
+                  {agent.tools.length} consultas liberadas · Publicada: <strong>v{agent.version}</strong>
+                  {publishedAt ? ` em ${fmtDate(publishedAt)}` : ''}
+                </div>
               </div>
+              <button className="btn-ghost text-sm" onClick={openVersions}>🕘 Versões</button>
               <button className="btn-ghost text-sm" onClick={() => setShowConfig((v) => !v)}>⚙️ Configurar</button>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="checkbox" checked={agent.enabled} onChange={toggleEnabled} />
