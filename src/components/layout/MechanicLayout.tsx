@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import { IconBell, IconCalendar, IconDollar, IconUser, IconWrench } from '@/components/mecanico/icons';
+import { useGeoBroadcast } from '@/hooks/useGeoBroadcast';
+import { GeoProblemBanner, GeoSharingBar } from '@/components/mecanico/GeoStatus';
 
 const LS_KEY_MEC = 'mecanico_msgs_last_seen';
 
@@ -14,6 +16,8 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
   const [unread, setUnread] = useState(0);
   const [agendaCount, setAgendaCount] = useState(0);
   const unreadNotif = useUnreadNotifications();
+  // Viagem em andamento (a caminho ou em serviço): a posição segue para a oficina em qualquer tela do app
+  const [trip, setTrip] = useState<{ jobId: string; mechanicId: string } | null>(null);
 
   /* ── Conta agendamentos aceitos aguardando deslocamento ── */
   useEffect(() => {
@@ -30,6 +34,14 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
         .eq('status', 'assigned')
         .is('en_route_at', null);
       if (alive) setAgendaCount(count ?? 0);
+      const { data: active } = await supabase
+        .from('jobs').select('id')
+        .eq('mechanic_id', meRow.id)
+        .in('status', ['assigned', 'in_progress'])
+        .not('en_route_at', 'is', null)
+        .order('en_route_at', { ascending: false })
+        .limit(1).maybeSingle();
+      if (alive) setTrip(active ? { jobId: active.id, mechanicId: meRow.id } : null);
     }
     countAgenda();
     const ch = supabase.channel('mec-layout:agenda')
@@ -38,6 +50,8 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
       .subscribe();
     return () => { alive = false; supabase.removeChannel(ch); };
   }, [user, location.pathname]);
+
+  const geo = useGeoBroadcast({ enabled: !!trip, jobId: trip?.jobId ?? null, mechanicId: trip?.mechanicId ?? null });
 
   /* ── Conta mensagens não lidas para os jobs ativos deste mecânico ── */
   useEffect(() => {
@@ -106,6 +120,10 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
           </Link>
         </div>
       </header>
+
+      {/* Viagem em andamento: confirma que a oficina está vendo, ou avisa o que fazer */}
+      {trip && geo.state === 'sharing' && <GeoSharingBar jobId={trip.jobId} />}
+      {trip && <GeoProblemBanner state={geo.state} className="mx-4 mt-3" />}
 
       {/* ── Page content ── */}
       <main className="flex-1 pb-28">{children}</main>

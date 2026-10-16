@@ -549,6 +549,34 @@ export default function WorkshopTracking() {
         )}
       </div>
 
+      {/* ── Sem posição do mecânico (ou posição velha): explica em vez de mostrar o mapa vazio ── */}
+      {job?.status === 'assigned' && job.en_route_at && !job.arrived_at && (() => {
+        const ageMin = live ? Math.floor((Date.now() - new Date(live.at).getTime()) / 60000) : null;
+        if (ageMin !== null && ageMin < 3) return null;
+        return (
+          <div className="absolute top-16 left-3 right-3 z-10 flex justify-center pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-md bg-white/95 backdrop-blur rounded-2xl shadow-xl ring-1 ring-steel-200 px-4 py-3 flex items-center gap-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-pending-500 animate-pulse-soft shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold text-steel-900">
+                  {ageMin === null ? 'Aguardando a localização do mecânico' : `Última posição de ${ageMin} min atrás`}
+                </div>
+                <div className="text-xs text-steel-500 leading-snug">
+                  {ageMin === null
+                    ? 'Ela aparece aqui quando ele abre o app com o GPS ligado.'
+                    : 'O app dele pode estar fechado ou sem sinal.'}
+                </div>
+              </div>
+              {mech?.profile.phone && (
+                <a href={`tel:${mech.profile.phone}`} className="shrink-0 h-9 px-3 rounded-lg bg-steel-900 text-white text-xs font-semibold grid place-items-center">
+                  Ligar
+                </a>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Mapa ── */}
       <div className="flex-1">
         <MapView

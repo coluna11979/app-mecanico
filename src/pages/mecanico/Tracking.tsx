@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGeoBroadcast } from '@/hooks/useGeoBroadcast';
+import { GeoPill, GeoProblemBanner } from '@/components/mecanico/GeoStatus';
 import { getSetting } from '@/lib/settings';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
@@ -156,7 +157,7 @@ export default function MechanicTracking() {
     setTimeout(() => setToast(null), 5000);
   }
 
-  useGeoBroadcast({
+  const geo = useGeoBroadcast({
     enabled: !!job && (job.status === 'assigned' || job.status === 'in_progress'),
     jobId: job?.id ?? null,
     mechanicId,
@@ -303,12 +304,16 @@ export default function MechanicTracking() {
               </span>
             )}
           </button>
-          <div className="bg-brand-500 text-white text-xs font-semibold rounded-full px-3 py-2 flex items-center gap-2 shadow-brand">
-            <span className="h-2 w-2 rounded-full bg-white animate-pulse-soft" />
-            📍 Ao vivo
-          </div>
+          <GeoPill state={geo.state} />
         </div>
       </div>
+
+      {/* GPS com problema: a oficina não está vendo o mecânico no mapa */}
+      {(geo.state === 'denied' || geo.state === 'unavailable' || geo.state === 'unsupported') && (
+        <div className="absolute top-16 left-3 right-3 z-10">
+          <GeoProblemBanner state={geo.state} className="bg-steel-900/95 backdrop-blur" />
+        </div>
+      )}
 
       {/* Mapa */}
       <div className="flex-1">
