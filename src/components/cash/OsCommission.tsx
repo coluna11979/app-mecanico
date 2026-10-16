@@ -112,6 +112,23 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   };
   const baseOf = (r: Row) => baseFor(r.mechanic_id);
 
+  // OS com comissão manual já salva: assim que os serviços carregam, acerta o modo (%) de cada pessoa
+  // e recoloca o mecânico da plataforma (ele não tem valor salvo, só serviço atribuído)
+  const [seeded, setSeeded] = useState(false);
+  useEffect(() => {
+    if (seeded || !loaded || a.items === null) return;
+    setSeeded(true);
+    if (!wasManual) return;
+    setRows(rs => {
+      const next = rs.map(r => ({ ...r, mode: modeOf(r2(parseMoney(r.amount)), baseFor(r.mechanic_id)) }));
+      if (a.labor.some(l => a.who[l.id] === PLATFORM) && !next.some(r => r.mechanic_id === PLATFORM)) {
+        next.push({ key: ++seq, mechanic_id: PLATFORM, mode: 'fixo', amount: '' });
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, a.items]);
+
   function startEdit() {
     const base: Row[] = auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, baseFor(x.mechanic_id)), amount: moneyStr(x.value) }));
     // Serviço já entregue ao mecânico da plataforma aparece como pessoa (sem comissão da equipe)
@@ -323,12 +340,16 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
  * Mesmo quadro na página da OS (inclusive OS já paga ou importada), com botão de salvar.
  * Usa os responsáveis já salvos nos itens; trocou "Quem fez" → a página remonta o quadro (key).
  */
-export function OsCommissionCard({ os, team, wid, sid }: { os: ReceiveOs; team: Team; wid: string; sid: string | null }) {
+export function OsCommissionCard({ os, team, wid, sid, onSaved }: {
+  os: ReceiveOs; team: Team; wid: string; sid: string | null;
+  /** callPlatform = algum serviço passou para o mecânico da plataforma (falta publicar a demanda) */
+  onSaved?: (callPlatform: boolean) => void;
+}) {
   const [ver, setVer] = useState(0);
-  return <CardInner key={ver} os={os} team={team} wid={wid} sid={sid} onSaved={() => setVer(v => v + 1)} />;
+  return <CardInner key={ver} os={os} team={team} wid={wid} sid={sid} onSaved={(call) => { setVer(v => v + 1); onSaved?.(call); }} />;
 }
 
-function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team; wid: string; sid: string | null; onSaved: () => void }) {
+function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team; wid: string; sid: string | null; onSaved: (callPlatform: boolean) => void }) {
   const a = useReceiveAssignments(os, team);
   const c = useOsCommission(os.id, a, team);
   const [busy, setBusy] = useState(false);
@@ -336,6 +357,7 @@ function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team;
 
   async function save() {
     if (!c.valid) return toast.error('Escolha quem recebe cada comissão');
+    const callPlatform = c.editing && a.callPlatform; // calculado antes de gravar: só o que é novo para a plataforma
     setBusy(true);
     // Primeiro quem faz cada serviço (itens da OS), depois as comissões
     const r1 = c.editing && !a.noItems ? await a.save() : { error: null };
@@ -343,7 +365,7 @@ function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team;
     setBusy(false);
     if (error) return toast.error('Não consegui salvar as comissões: ' + error.message);
     toast.success(c.editing ? 'Comissões desta OS salvas ✓' : 'Comissão voltou para a regra ✓');
-    onSaved();
+    onSaved(callPlatform);
   }
 
   if (a.items === null || !c.loaded) return null;

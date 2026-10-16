@@ -699,7 +699,8 @@ export default function OsDetail() {
               <OsCommissionCard
                 key={items.map(i => `${i.id}:${i.kind}:${i.executor ?? ''}:${i.workshop_mechanic_id ?? ''}:${i.quantity}:${i.unit_price}`).join('|') + `|${os.workshop_mechanic_id ?? ''}`}
                 os={{ id: os.id, executor: os.executor ?? null, workshop_mechanic_id: os.workshop_mechanic_id ?? null }}
-                team={team} wid={os.workshop_id} sid={balcao ? session?.session_id ?? null : null} />
+                team={team} wid={os.workshop_id} sid={balcao ? session?.session_id ?? null : null}
+                onSaved={call => { load(); if (call && canOpen('/oficina/dashboard')) setPublishing(true); }} />
             )}
 
             {(os.description || os.notes) && (
