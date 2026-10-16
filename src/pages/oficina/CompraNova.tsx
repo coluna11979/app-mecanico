@@ -14,15 +14,21 @@ import { Restricted, SupplierForm } from './Fornecedores';
 import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '@/lib/invoiceImport';
 import { BUCKET, mergePages, type PurchaseImport } from '@/lib/purchaseImports';
 
-type Row = { key: string; part_id: string | null; name: string; unit: string; quantity: string; unit_cost: string };
+/** code: código do produto do fornecedor (vem da nota; vai para a peça) */
+type Row = { key: string; part_id: string | null; code: string; name: string; unit: string; quantity: string; unit_cost: string };
 type Inst = { due_date: string; amount: string };
 
 let seq = 0;
-const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, name: '', unit: 'un', quantity: '1', unit_cost: '' });
+const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, code: '', name: '', unit: 'un', quantity: '1', unit_cost: '' });
 const num = (s: string) => { const n = parseMoney(s); return Number.isFinite(n) ? n : 0; };
 /** Custo unitário com até 4 casas (nota de autopeças costuma ter centavos quebrados) */
 const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
+/** "10190 SILENCIOSO INT." com código 10190 → "SILENCIOSO INT." (a leitura às vezes repete o código no nome) */
+const stripCode = (name: string, code: string) => {
+  const c = code.trim();
+  return c && name.trim().startsWith(`${c} `) ? name.trim().slice(c.length).trim() : name.trim();
+};
 
 export default function CompraNova() {
   const { currentWorkshop } = useAuth();
@@ -191,9 +197,9 @@ export default function CompraNova() {
     // Peças: pelo código do fornecedor; senão pelo nome; senão peça nova
     const byCode = new Map(parts.filter(p => p.code).map(p => [p.code!.trim().toLowerCase(), p]));
     setRows(d.items.length ? d.items.map(it => {
-      const p = (it.code && byCode.get(it.code.toLowerCase())) || byName.get(it.name.toLowerCase());
+      const p = (it.code && byCode.get(it.code.trim().toLowerCase())) || byName.get(stripCode(it.name, it.code).toLowerCase()) || byName.get(it.name.toLowerCase());
       return {
-        key: `r${++seq}`, part_id: p?.id ?? null, name: p ? p.name : it.name, unit: p ? p.unit : it.unit,
+        key: `r${++seq}`, part_id: p?.id ?? null, code: it.code || p?.code || '', name: p ? p.name : stripCode(it.name, it.code), unit: p ? p.unit : it.unit,
         quantity: String(it.qty).replace('.', ','), unit_cost: costInput(it.unitCost),
       };
     }) : [newRow()]);
@@ -314,7 +320,7 @@ export default function CompraNova() {
     const { data, error } = await supabase.rpc('purchase_post', {
       p_workshop: wid, p_supplier: supplierId, p_number: number, p_issue_date: date,
       p_freight: num(freight), p_discount: num(discount),
-      p_items: items.map(r => ({ part_id: r.part_id, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: num(r.unit_cost) })),
+      p_items: items.map(r => ({ part_id: r.part_id, code: r.code.trim() || null, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: num(r.unit_cost) })),
       p_installments: insts.map(i => ({ due_date: i.due_date, amount: num(i.amount) })),
       p_notes: addStock ? notes : [notes.trim(), NO_STOCK_NOTE].filter(Boolean).join(' · '),
     });
@@ -455,6 +461,7 @@ export default function CompraNova() {
                   <div className="col-span-12 md:col-span-5">
                     <input className="input !py-2 text-sm" list="compra-pecas" placeholder="Nome da peça (do cadastro ou uma nova)"
                       value={r.name} onChange={e => update(r.key, { name: e.target.value })} />
+                    {r.code && <div className="text-[11px] text-steel-400 mt-0.5 pl-1">Cód. fornecedor: {r.code}</div>}
                   </div>
                   <div className="col-span-4 md:col-span-2 flex gap-1">
                     <input className="input !py-2 text-sm text-right" inputMode="decimal" value={r.quantity}
