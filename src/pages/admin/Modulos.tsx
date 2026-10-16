@@ -3,7 +3,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, isOptIn, type ModuleKey } from '@/lib/modules';
+import { DEPENDS_ON, FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, STAGES, isOptIn, stageOf, stageOff, type ModuleKey } from '@/lib/modules';
 import { inboxCall } from '@/lib/inbox';
 import { fmtPhone } from '@/components/os/osHelpers';
 
@@ -116,6 +116,15 @@ export default function AdminModulos() {
     });
   }
 
+  /** Coloca a oficina na etapa `n` da trilha: módulos da etapa e das anteriores liberados (com todas as ferramentas,
+   *  também no celular); os seguintes desligados. Os opcionais continuam como estavam. */
+  async function applyStage(n: number) {
+    if (!selected) return;
+    const liberated = new Set<string>(STAGES.slice(0, n + 1).flatMap(s => [...s.keys, ...s.keys.flatMap(featKeys)]));
+    if (await save(selected, { off: stageOff(n), mobileOff: cfg.mobileOff.filter(k => !liberated.has(k)), on: cfg.on }))
+      toast.success(`Etapa ${n + 1} · ${STAGES[n].label}`);
+  }
+
   async function copyFrom(sourceId: string) {
     if (!selected || !sourceId) return;
     const src = shops.find(s => s.id === sourceId);
@@ -134,6 +143,7 @@ export default function AdminModulos() {
           Início, Perfil e Avisos ficam sempre liberados. Desmarque 📱 para liberar o módulo só no computador (fica bloqueado no celular e no tablet).
           Em “Ferramentas” você escolhe o que fica liberado dentro de cada módulo.
           Módulos “opcionais” nascem desligados e só ligam clicando neles (o “Liberar tudo” não liga).
+          Na “Trilha de liberação” cada etapa soma as anteriores: comece em “Só mecânicos” (oficina que já tem sistema próprio entra direto nas Demandas) e vá subindo.
         </p>
       </div>
 
@@ -187,6 +197,8 @@ export default function AdminModulos() {
               </div>
             </div>
 
+            <StageTrail current={stageOf(off)} onPick={applyStage} />
+
             <div className="space-y-5">
               {MODULE_GROUPS.map(g => {
                 const allOn = g.keys.filter(k => !isOptIn(k)).every(k => moduleOn(cfg, k));
@@ -206,6 +218,8 @@ export default function AdminModulos() {
                         const feats = FEATURES[k] ?? [];
                         const featsOn = feats.filter(f => !off.includes(f.key)).length;
                         const isOpen = on && expanded.has(k);
+                        // Ligado sem a base: a tela abre vazia (ex.: Caixa sem OS)
+                        const missing = on ? (DEPENDS_ON[k] ?? []).filter(d => !moduleOn(cfg, d)) : [];
                         return (
                           <div
                             key={k}
@@ -225,6 +239,12 @@ export default function AdminModulos() {
                               </label>
                               {on && <MobileChip on={mobileOn} onClick={() => toggleMobile(k)} />}
                             </div>
+
+                            {missing.length > 0 && (
+                              <p className="mt-2 ml-7 text-[11px] font-semibold text-amber-700">
+                                ⚠️ Depende de {missing.map(d => MODULES[d].label).join(' e ')}: sem isso a tela fica vazia
+                              </p>
+                            )}
 
                             {on && k === 'inbox' && <InboxInstance workshopId={shop.id} />}
 
@@ -276,6 +296,43 @@ export default function AdminModulos() {
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+/** Trilha de liberação: etapas acumulativas, da contratação de mecânicos até a gestão completa */
+function StageTrail({ current, onPick }: { current: number | null; onPick: (n: number) => void }) {
+  return (
+    <div className="mb-6 rounded-xl border border-steel-200 p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-steel-500">Trilha de liberação</p>
+        <span className={`text-xs font-semibold ${current === null ? 'text-amber-600' : 'text-emerald-600'}`}>
+          {current === null ? 'Configuração própria (fora da trilha)' : `Etapa ${current + 1} de ${STAGES.length}`}
+        </span>
+      </div>
+      <ol className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+        {STAGES.map((s, n) => {
+          const done = current !== null && n <= current;
+          return (
+            <li key={s.label}>
+              <button
+                type="button"
+                onClick={() => onPick(n)}
+                title={`Liberar até aqui: ${s.desc}`}
+                className={`w-full h-full text-left rounded-lg border px-2.5 py-2 transition ${n === current
+                  ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300'
+                  : done ? 'border-emerald-200 bg-emerald-50/50' : 'border-steel-200 hover:bg-steel-50'}`}
+              >
+                <span className={`block text-[10px] font-bold ${done ? 'text-emerald-600' : 'text-steel-400'}`}>
+                  {done ? '✓ ' : ''}ETAPA {n + 1}
+                </span>
+                <span className="block text-sm font-semibold leading-tight">{s.label}</span>
+                <span className="block text-[11px] text-steel-500 leading-snug mt-0.5">{s.desc}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
