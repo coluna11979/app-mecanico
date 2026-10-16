@@ -1,13 +1,16 @@
-import { FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { FormEvent, useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
+import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
 
 const SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
 
 export default function SignupMechanic() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const leadId = params.get('lead');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -16,6 +19,21 @@ export default function SignupMechanic() {
     full_name: '', email: '', password: '', phone: '', cpf: '', cnh: '',
     experience_years: 1, hourly_rate: 80, pix_key: '', skills: [] as string[],
   });
+
+  // Lead vindo de link de convite — pré-preenche e marca início
+  useEffect(() => {
+    if (!leadId) return;
+    markLeadSignupStarted(leadId);
+    fetchLeadForInvite(leadId).then(lead => {
+      if (!lead) return;
+      setF(prev => ({
+        ...prev,
+        full_name: prev.full_name || lead.name || '',
+        email:     prev.email     || lead.email || '',
+        phone:     prev.phone     || lead.phone || '',
+      }));
+    });
+  }, [leadId]);
 
   function update<K extends keyof typeof f>(k: K, v: typeof f[K]) {
     setF(prev => ({ ...prev, [k]: v }));
@@ -55,6 +73,7 @@ export default function SignupMechanic() {
     // Registra aceite dos termos (não bloqueia o signup se falhar)
     if (data.user) {
       try { await recordConsent(data.user.id, 'mechanic'); } catch { /* ignora */ }
+      if (leadId) await convertLeadToProfile(leadId);
     }
 
     setLoading(false);

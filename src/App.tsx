@@ -39,6 +39,10 @@ import AdminSettings from './pages/admin/Settings';
 import AdminRepasses from './pages/admin/Repasses';
 import AdminUserDetail from './pages/admin/UserDetail';
 import AdminFinancial from './pages/admin/Financial';
+import AdminLeads from './pages/admin/Leads';
+import AdminLeadsImport from './pages/admin/LeadsImport';
+import AdminLeadsMetrics from './pages/admin/LeadsMetrics';
+import AdminLeadsImportCsv from './pages/admin/LeadsImportCsv';
 
 export default function App() {
   return (
@@ -78,6 +82,10 @@ export default function App() {
 
       {/* Admin */}
       <Route path="/admin/dashboard" element={<ProtectedRoute allow={['admin']}><AdminDashboard /></ProtectedRoute>} />
+      <Route path="/admin/leads" element={<ProtectedRoute allow={['admin']}><AdminLeads /></ProtectedRoute>} />
+      <Route path="/admin/leads/importar" element={<ProtectedRoute allow={['admin']}><AdminLeadsImport /></ProtectedRoute>} />
+      <Route path="/admin/leads/metricas" element={<ProtectedRoute allow={['admin']}><AdminLeadsMetrics /></ProtectedRoute>} />
+      <Route path="/admin/leads/importar-csv" element={<ProtectedRoute allow={['admin']}><AdminLeadsImportCsv /></ProtectedRoute>} />
       <Route path="/admin/aprovacoes" element={<ProtectedRoute allow={['admin']}><AdminApprovals /></ProtectedRoute>} />
       <Route path="/admin/mecanicos" element={<ProtectedRoute allow={['admin']}><AdminMechanics /></ProtectedRoute>} />
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />

@@ -1,13 +1,16 @@
-import { FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { FormEvent, useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
+import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
 
 const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
 export default function SignupWorkshop() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const leadId = params.get('lead');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -16,6 +19,20 @@ export default function SignupWorkshop() {
     business_name: '', cnpj: '', address: '', city: '', state: 'SP', description: '',
   });
   function up<K extends keyof typeof f>(k: K, v: typeof f[K]) { setF(p => ({ ...p, [k]: v })); }
+
+  useEffect(() => {
+    if (!leadId) return;
+    markLeadSignupStarted(leadId);
+    fetchLeadForInvite(leadId).then(lead => {
+      if (!lead) return;
+      setF(prev => ({
+        ...prev,
+        full_name: prev.full_name || lead.name || '',
+        email:     prev.email     || lead.email || '',
+        phone:     prev.phone     || lead.phone || '',
+      }));
+    });
+  }, [leadId]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -48,6 +65,7 @@ export default function SignupWorkshop() {
     // Registra aceite (não bloqueia signup se falhar)
     if (data.user) {
       try { await recordConsent(data.user.id, 'workshop'); } catch { /* ignora */ }
+      if (leadId) await convertLeadToProfile(leadId);
     }
 
     setLoading(false);

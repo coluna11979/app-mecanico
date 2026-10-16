@@ -24,6 +24,7 @@ const FIELDS: FieldDef[] = [
   { key: 'mapbox_token',           label: 'Token público',             description: 'Usado nos mapas de rastreamento.',         type: 'key',      section: 'Mapas' },
   { key: 'resend_api_key',         label: 'API Key (re_...)',          description: 'Crie em resend.com/api-keys (free tier 3000 emails/mês).', type: 'password', section: 'Email (Resend)' },
   { key: 'resend_from_email',      label: 'Email remetente',           description: 'Precisa ter o domínio verificado no Resend (ex: noreply@mecanicoapp.com.br).', section: 'Email (Resend)' },
+  { key: 'google_places_api_key',  label: 'API Key do Google Places',  description: 'Usada na busca ativa de oficinas (admin → Importar do Google). Restrinja a key por domínio no GCP.', type: 'password', section: 'Captação (Google Places)' },
 ];
 
 type Section = { label: string; icon: string; color: string; bg: string };
@@ -34,6 +35,7 @@ const SECTIONS: Record<string, Section> = {
   'Stripe — Teste':       { label: 'Stripe — Teste',       icon: '🧪',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
   Mapas:                  { label: 'Mapas',                icon: '🗺️',  color: 'text-steel-600',  bg: 'bg-steel-100'  },
   'Email (Resend)':       { label: 'Email (Resend)',       icon: '📧',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
+  'Captação (Google Places)': { label: 'Captação (Google Places)', icon: '🎯', color: 'text-brand-700', bg: 'bg-brand-50' },
 };
 
 export default function AdminSettings() {
