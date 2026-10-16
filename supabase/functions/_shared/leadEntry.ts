@@ -1,6 +1,6 @@
 // Por onde o lead entrou: lê a 1ª mensagem (as prontas do site começam com "Vim pelo site")
 // e diz à Recepção o que o cliente JÁ contou e o que ainda falta perguntar.
-// Sem dependências: usado pela edge function agent-reception e testado em scripts/test-lead-entry.ts.
+// Sem dependências: usado pela edge function agent-reception.
 
 export type EntryKind = 'oferta' | 'luz' | 'triagem' | 'servico' | 'pergunta_servico' | 'sinal' | 'geral' | 'direto';
 
