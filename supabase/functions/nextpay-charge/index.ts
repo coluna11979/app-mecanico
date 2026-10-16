@@ -55,14 +55,14 @@ Deno.serve(async (req) => {
 
     /* Cliente = a oficina (upsert pelo e-mail de quem está pagando) */
     const { data: shop } = await admin.from('workshops').select('id, business_name').eq('id', job.workshop_id).maybeSingle();
-    const customer = await nextpay<{ id: string }>('POST', '/customers', {
+    const customer = await nextpay<{ id: string }>(admin, 'POST', '/customers', {
       name: shop?.business_name ?? 'Oficina',
       email: user.email,
       externalRef: `workshop:${job.workshop_id}`,
     });
 
     const cents = Math.round(total * 100);
-    const charge = await nextpay<NextpayCharge>('POST', '/charges', {
+    const charge = await nextpay<NextpayCharge>(admin, 'POST', '/charges', {
       customerId: customer.id,
       amount: cents,
       paymentMethod: method === 'pix' ? 'pix' : 'credit_card',

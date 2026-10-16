@@ -26,6 +26,10 @@ const FIELDS: FieldDef[] = [
   { key: 'stripe_publishable_key_test', label: 'Chave pública TEST (pk_test_…)', description: 'Usada no frontend em modo teste.',  type: 'key',      section: 'Stripe — Teste' },
   { key: 'stripe_secret_key_test',      label: 'Chave secreta TEST (sk_test_…)', description: 'Usada nas Edge Functions em modo teste.', type: 'password', section: 'Stripe — Teste' },
   { key: 'stripe_webhook_secret_test',  label: 'Webhook secret TEST (whsec_…)',  description: 'Valida eventos do webhook TEST.',  type: 'password', section: 'Stripe — Teste' },
+  { key: 'nextpay_api_key',        label: 'API Key (npk_…)',          description: 'Gerada pela NextGo. Usada para criar as cobranças (PIX e cartão).', type: 'key', section: 'NextPay' },
+  { key: 'nextpay_api_secret',     label: 'API Secret (nps_…)',       description: 'Mostrado uma vez só pela NextGo. Se perder, peça outro a eles e cole aqui.', type: 'password', section: 'NextPay' },
+  { key: 'nextpay_webhook_secret', label: 'Segredo do webhook',       description: 'Confere que os avisos de pagamento vieram da NextGo. Tem que ser igual ao cabeçalho x-webhook-secret cadastrado no webhook deles — se trocar aqui, troque lá também.', type: 'password', section: 'NextPay' },
+  { key: 'nextpay_api_url',        label: 'Endereço da API',          description: 'Produção: https://api.nextgopay.com · Teste: https://api.stg.nextgopay.com (cada ambiente tem chaves próprias).', section: 'NextPay' },
   { key: 'mapbox_token',           label: 'Token público',             description: 'Usado nos mapas de rastreamento.',         type: 'key',      section: 'Mapas' },
   { key: 'resend_api_key',         label: 'API Key (re_...)',          description: 'Crie em resend.com/api-keys (free tier 3000 emails/mês).', type: 'password', section: 'Email (Resend)' },
   { key: 'resend_from_email',      label: 'Email remetente',           description: 'Precisa ter o domínio verificado no Resend (ex: noreply@mecanicoapp.com.br).', section: 'Email (Resend)' },
@@ -52,6 +56,7 @@ const SECTIONS: Record<string, Section> = {
   'Inteligência Artificial': { label: 'Inteligência Artificial', icon: '🤖', color: 'text-brand-700', bg: 'bg-brand-50' },
   'WhatsApp (UAZAPI)':    { label: 'WhatsApp (UAZAPI)',    icon: '💬',  color: 'text-signal-700', bg: 'bg-signal-50'  },
   'Verificação de cadastro (Infosimples)': { label: 'Verificação de cadastro (Infosimples)', icon: '🛡️', color: 'text-steel-600', bg: 'bg-steel-100' },
+  NextPay:                { label: 'NextPay',              icon: '🟠',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
   Pagamentos:             { label: 'Pagamentos',           icon: '💳',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
 };
 
