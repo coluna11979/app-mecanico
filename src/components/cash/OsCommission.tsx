@@ -357,7 +357,8 @@ function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team;
 
   async function save() {
     if (!c.valid) return toast.error('Escolha quem recebe cada comissão');
-    const callPlatform = c.editing && a.callPlatform; // calculado antes de gravar: só o que é novo para a plataforma
+    // Há serviço para o mecânico da plataforma (salvo agora ou antes)?
+    const hasPlatform = c.editing && a.labor.some(l => a.who[l.id] === PLATFORM);
     setBusy(true);
     // Primeiro quem faz cada serviço (itens da OS), depois as comissões
     const r1 = c.editing && !a.noItems ? await a.save() : { error: null };
@@ -365,6 +366,13 @@ function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team;
     setBusy(false);
     if (error) return toast.error('Não consegui salvar as comissões: ' + error.message);
     toast.success(c.editing ? 'Comissões desta OS salvas ✓' : 'Comissão voltou para a regra ✓');
+    // Falta publicar a demanda? Só abre se ainda não existe demanda ativa para esta OS
+    let callPlatform = false;
+    if (hasPlatform) {
+      const { data } = await supabase.from('jobs').select('id').eq('service_order_id', os.id).neq('status', 'cancelled').limit(1);
+      callPlatform = !(data && data.length);
+      if (!callPlatform) toast.info('Este serviço já tem demanda publicada para a plataforma');
+    }
     onSaved(callPlatform);
   }
 
