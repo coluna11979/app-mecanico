@@ -57,18 +57,24 @@ export function useMessages(jobId: string | undefined, myId?: string): Message[]
           lastEventAt.current = Date.now();
         },
       )
-      .subscribe();
+      .subscribe(status => {
+        // (Re)conectou: busca o que pode ter chegado enquanto estava fora
+        if (status === 'SUBSCRIBED' && initialLoadDone.current) fetchAll();
+      });
 
-    // 3. Polling fallback — fires every 4 s but only re-fetches if realtime
-    //    hasn't delivered anything in the last 3.5 s (handles WS drop / cold start)
+    // 3. Polling de segurança (igual antes: a cada 15 s se o realtime não entregou nada),
+    //    só com a aba visível; ao voltar para a aba, atualiza na hora
     const poll = setInterval(() => {
-      if (Date.now() - lastEventAt.current > 3500) {
+      if (!document.hidden && Date.now() - lastEventAt.current > 14000) {
         fetchAll();
       }
-    }, 4000);
+    }, 15000);
+    const onVisible = () => { if (!document.hidden) fetchAll(); };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisible);
       supabase.removeChannel(channel);
     };
   }, [jobId, fetchAll]);

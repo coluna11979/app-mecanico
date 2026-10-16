@@ -1,20 +1,49 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
+import { MechanicReviews } from '@/components/MechanicReviews';
+import { formatScheduled } from '@/lib/scheduling';
+import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 import type { Job } from '@/types/database';
+import { formatBRL, pricingLabel } from '@/lib/payment';
+import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
+import StackBoard from '@/components/marketplace/StackBoard';
+import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
 
 type NewJob = {
   title: string; description: string;
   price_per_hour: string; max_hours: string; scheduled_at: string;
+  /** fixed = preço pelo serviço (total); hour = valor/hora × horas. Em "fixed", max_hours é o tempo previsto (opcional) */
+  pricing?: 'hour' | 'fixed';
+  total?: string;
+  /** Veio do Caixa ("Chamar mecânico"): a demanda fica ligada a essa OS */
+  service_order_id?: string;
+  /** Itens da OS que esse mecânico vai fazer (passam a "mecânico da plataforma") */
+  service_order_item_ids?: string[];
+  /** Demanda com serviços de várias OS (vindo dos empilhados) */
+  service_order_ids?: string[];
 };
 type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
-type JobMode = 'open' | 'direct';
+type JobMode = 'open' | 'favorites' | 'direct';
 
-const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '' };
+const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '' };
+
+const draftKey = jobDraftKey;
+function loadDraft(workshopId: string): NewJob | null {
+  try {
+    const raw = localStorage.getItem(draftKey(workshopId));
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Partial<NewJob>;
+    const hasContent = !!(d.title?.trim() || d.description?.trim() || d.price_per_hour || d.total || d.scheduled_at);
+    if (!hasContent) return null;
+    // Rascunho antigo (antes do "pelo serviço") era sempre por hora
+    return { ...EMPTY, ...d, pricing: d.pricing ?? 'hour' };
+  } catch { return null; }
+}
 
 export default function WorkshopDashboard() {
   const { user, currentWorkshop } = useAuth();
@@ -25,10 +54,18 @@ export default function WorkshopDashboard() {
   const [pendingRate, setPendingRate] = useState<Job[]>([]);
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [modal, setModal]       = useState(false);
+  const [stackVer, setStackVer] = useState(0);
   const [form, setForm]         = useState<NewJob>(EMPTY);
+  const [draftRestored, setDraftRestored] = useState(false);
+  /* Rascunho montado no Caixa ("Chamar mecânico"): de qual OS veio */
+  const [draftOrigin, setDraftOrigin] = useState<string | null>(null);
+  const [marketRate, setMarketRate] = useState<{ low: number; high: number; count: number } | null>(null);
   const [mode, setMode]         = useState<JobMode>('open');
   const [pickedMechanic, setPickedMechanic] = useState<string>('');
   const [mechSearch, setMechSearch] = useState('');
+  const [reviewsOpen, setReviewsOpen] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
@@ -39,7 +76,37 @@ export default function WorkshopDashboard() {
     if (!user || !currentWorkshop) return;
     fetchJobs(currentWorkshop.id);
     fetchMechanics();
+    fetchFavorites(currentWorkshop.id);
   }, [user, currentWorkshop?.id]);
+
+  async function fetchFavorites(workshopId: string) {
+    const { data } = await supabase
+      .from('workshop_favorite_mechanics')
+      .select('mechanic_id')
+      .eq('workshop_id', workshopId);
+    setFavorites(new Set((data ?? []).map(d => d.mechanic_id)));
+  }
+
+  async function toggleFavorite(mechanicId: string) {
+    if (!currentWorkshop?.id) return;
+    const isFav = favorites.has(mechanicId);
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(mechanicId); else next.add(mechanicId);
+      return next;
+    });
+    if (isFav) {
+      const { error } = await supabase
+        .from('workshop_favorite_mechanics').delete()
+        .eq('workshop_id', currentWorkshop.id).eq('mechanic_id', mechanicId);
+      if (error) fetchFavorites(currentWorkshop.id);
+    } else {
+      const { error } = await supabase
+        .from('workshop_favorite_mechanics')
+        .insert({ workshop_id: currentWorkshop.id, mechanic_id: mechanicId });
+      if (error) fetchFavorites(currentWorkshop.id);
+    }
+  }
 
   /* ── Realtime — atualiza listas em tempo real (status, chegada, etc) ── */
   useEffect(() => {
@@ -54,12 +121,15 @@ export default function WorkshopDashboard() {
     return () => { supabase.removeChannel(ch); };
   }, [currentWorkshop?.id]);
 
-  /* Polling fallback (8s) — caso realtime caia */
+  /* Polling de segurança (30s) caso o realtime caia. Pausa com a aba em segundo plano
+     e atualiza na hora quando a oficina volta pra aba — economiza consultas no Supabase. */
   useEffect(() => {
     if (!currentWorkshop?.id) return;
     const wid = currentWorkshop.id;
-    const t = setInterval(() => fetchJobs(wid), 8000);
-    return () => clearInterval(t);
+    const t = setInterval(() => { if (!document.hidden) fetchJobs(wid); }, 30000);
+    const onVisible = () => { if (!document.hidden) fetchJobs(wid); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
   }, [currentWorkshop?.id]);
 
   async function fetchJobs(workshopId: string) {
@@ -69,7 +139,7 @@ export default function WorkshopDashboard() {
         .in('status', ['open', 'assigned', 'in_progress']).order('created_at', { ascending: false }),
       // Histórico
       supabase.from('jobs').select('*').eq('workshop_id', workshopId)
-        .in('status', ['completed', 'disputed', 'cancelled']).order('created_at', { ascending: false }).limit(10),
+        .in('status', ['completed', 'disputed', 'cancelled']).order('created_at', { ascending: false }).limit(100),
       // Aguardando CONFIRMAÇÃO (mecânico finalizou, oficina ainda não confirmou)
       supabase.from('jobs').select('*').eq('workshop_id', workshopId)
         .eq('status', 'completed').is('workshop_confirmed_at', null)
@@ -105,6 +175,61 @@ export default function WorkshopDashboard() {
   function resetModal() {
     setModal(false); setForm(EMPTY);
     setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
+    setDraftRestored(false);
+    setEditingId(null);
+  }
+
+  function openCreateModal() {
+    setEditingId(null);
+    if (currentWorkshop?.id) {
+      const draft = loadDraft(currentWorkshop.id);
+      if (draft) { setForm(draft); setDraftRestored(true); }
+      else { setForm(EMPTY); setDraftRestored(false); }
+      setDraftOrigin(draft ? localStorage.getItem(jobDraftOriginKey(currentWorkshop.id)) : null);
+    }
+    setMode('open'); setPickedMechanic(''); setMechSearch('');
+    setModal(true);
+  }
+
+  // Link "Chamar mecânico da plataforma" (vindo da Nova OS): /oficina/dashboard?nova=1
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('nova') !== '1' || !currentWorkshop?.id) return;
+    setSearchParams(p => { p.delete('nova'); return p; }, { replace: true });
+    if (!hasPendingFees) openCreateModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, currentWorkshop?.id]);
+
+  function openEditModal(j: Job) {
+    setEditingId(j.id);
+    setDraftRestored(false);
+    setForm({
+      title: j.title,
+      description: j.description,
+      ...(j.pricing === 'fixed'
+        ? { pricing: 'fixed' as const, total: String(j.price_per_hour ?? ''), price_per_hour: '', max_hours: j.estimated_hours != null ? String(j.estimated_hours) : '' }
+        : { pricing: 'hour' as const, total: '', price_per_hour: String(j.price_per_hour ?? ''), max_hours: String(j.max_hours ?? '1') }),
+      scheduled_at: j.scheduled_at ? new Date(j.scheduled_at).toISOString().slice(0, 16) : '',
+    });
+    setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
+    setModal(true);
+  }
+
+  function persistDraft(next: NewJob) {
+    if (!currentWorkshop?.id) return;
+    const hasContent = !!(next.title.trim() || next.description.trim() || next.price_per_hour || next.total || next.scheduled_at);
+    if (hasContent) localStorage.setItem(draftKey(currentWorkshop.id), JSON.stringify(next));
+    else localStorage.removeItem(draftKey(currentWorkshop.id));
+  }
+
+  function discardDraft() {
+    if (currentWorkshop?.id) {
+      localStorage.removeItem(draftKey(currentWorkshop.id));
+      localStorage.removeItem(jobDraftOriginKey(currentWorkshop.id));
+    }
+    setForm(EMPTY);
+    setDraftRestored(false);
+    setDraftOrigin(null);
   }
 
   async function createJob(e: FormEvent) {
@@ -120,17 +245,55 @@ export default function WorkshopDashboard() {
     // Validação explícita (mobile não mostra o tooltip do browser)
     if (!form.title.trim()) return setFormError('Informe o título do serviço.');
     if (!form.description.trim()) return setFormError('Informe a descrição do serviço.');
-    const pph = Number(form.price_per_hour);
-    const mh  = Number(form.max_hours);
-    if (!pph || pph < 1) return setFormError('Informe o valor por hora (mínimo R$ 1).');
-    if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
+    // Preço pelo serviço: grava valor × 1h (as contas de cobrança não mudam) e o tempo previsto à parte
+    const fixed = form.pricing === 'fixed';
+    const pph = fixed ? Number(form.total) : Number(form.price_per_hour);
+    const mh  = fixed ? 1 : Number(form.max_hours);
+    const est = fixed && form.max_hours ? Number(form.max_hours) : null;
+    if (fixed) {
+      if (!pph || pph < 1) return setFormError('Informe o valor do serviço (mínimo R$ 1).');
+      if (est != null && !(est > 0 && est <= 99)) return setFormError('Tempo previsto inválido.');
+    } else {
+      if (!pph || pph < 1) return setFormError('Informe o valor por hora (mínimo R$ 1).');
+      if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
+    }
+    const pricingFields = { pricing: fixed ? 'fixed' : 'hour', estimated_hours: est };
     if (mode === 'direct' && !pickedMechanic) return setFormError('Selecione o mecânico para contratação direta.');
 
     if (!shop) return setFormError('Oficina não encontrada. Verifique seu cadastro ou recarregue a página.');
     const currentShop = shop;
 
     setSaving(true);
-    const isDirect = mode === 'direct' && !!pickedMechanic;
+
+    if (editingId) {
+      // Edição: só campos editáveis. Status, workshop_id e mechanic_id ficam intocados.
+      const updatePayload: Record<string, unknown> = {
+        title:          form.title.trim(),
+        description:    form.description.trim(),
+        price_per_hour: pph,
+        max_hours:      mh,
+        price:          pph * mh,
+        ...pricingFields,
+        scheduled_at:   form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null,
+      };
+      const { error: upErr } = await supabase
+        .from('jobs')
+        .update(updatePayload)
+        .eq('id', editingId)
+        .eq('status', 'open'); // guarda dura: nunca edita job já aceito
+      setSaving(false);
+      if (upErr) { setFormError('Erro ao salvar alterações: ' + upErr.message); return; }
+      resetModal();
+      await fetchJobs(currentShop.id);
+      return;
+    }
+
+    const isDirect    = mode === 'direct' && !!pickedMechanic;
+    const isFavorites = mode === 'favorites' && favorites.size > 0;
+    if (mode === 'favorites' && favorites.size === 0) {
+      setSaving(false);
+      return setFormError('Você ainda não tem mecânicos preferidos. Adicione pelo menos um antes de usar esse modo.');
+    }
     const payload: Record<string, unknown> = {
       workshop_id:    currentShop.id,
       title:          form.title.trim(),
@@ -138,61 +301,122 @@ export default function WorkshopDashboard() {
       price_per_hour: pph,
       max_hours:      mh,
       price:          pph * mh,
+      ...pricingFields,
       status:         isDirect ? 'assigned' : 'open',
       mechanic_id:    isDirect ? pickedMechanic : null,
+      audience:       isFavorites ? 'favorites' : 'public',
     };
+    if (form.service_order_id) payload.service_order_id = form.service_order_id;
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
-    await supabase.from('jobs').insert(payload);
+    const { data: ins, error: insErr } = await supabase.from('jobs').insert(payload).select('id').single();
     setSaving(false);
+    if (insErr) {
+      console.error('[createJob] erro:', insErr);
+      setFormError('Erro ao publicar demanda: ' + insErr.message);
+      return; // mantém o modal aberto e o rascunho salvo
+    }
+    localStorage.removeItem(draftKey(currentShop.id));
+    localStorage.removeItem(jobDraftOriginKey(currentShop.id));
+    // Serviços escolhidos passam a "mecânico da plataforma" (sem comissão da equipe) e ficam ligados
+    // a esta demanda — assim se sabe qual mecânico fez cada serviço. A OS só vira "plataforma"
+    // inteira se todos os serviços dela forem da plataforma.
+    if (form.service_order_id) {
+      const osIds = form.service_order_ids?.length ? form.service_order_ids : [form.service_order_id];
+      await markPlatformItems(currentShop.id, osIds, form.service_order_item_ids ?? [], { jobId: ins?.id });
+    }
+    setStackVer(v => v + 1);
     resetModal();
     await fetchJobs(currentShop.id);
   }
 
   function set(k: keyof NewJob) {
     return (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      setForm(f => ({ ...f, [k]: e.target.value }));
+      setForm(f => {
+        const next = { ...f, [k]: e.target.value };
+        persistDraft(next);
+        return next;
+      });
   }
 
-  const estimated = Number(form.price_per_hour) * Number(form.max_hours);
-  const filteredMechanics = mechanics.filter(m =>
-    m.name.toLowerCase().includes(mechSearch.toLowerCase())
-  );
+  /* ── Sugestão de preço de mercado baseada no título + estado ── */
+  useEffect(() => {
+    if (!modal) return;
+    const state = currentWorkshop?.state;
+    const title = form.title.trim();
+    if (!state || title.length < 4) { setMarketRate(null); return; }
+
+    const keyword = title.split(/\s+/)[0].toLowerCase();
+    if (keyword.length < 3) { setMarketRate(null); return; }
+
+    let alive = true;
+    const handle = window.setTimeout(async () => {
+      const { data } = await supabase
+        .from('jobs')
+        .select('price_per_hour, workshop:workshops!inner(state)')
+        .ilike('title', `%${keyword}%`)
+        .in('status', ['assigned', 'in_progress', 'completed'])
+        .eq('workshop.state', state)
+        .gt('price_per_hour', 0)
+        .eq('pricing', 'hour') // preço pelo serviço não é valor/hora
+        .limit(200);
+      if (!alive) return;
+      const prices = (data ?? []).map((d: any) => Number(d.price_per_hour)).filter(n => n > 0).sort((a, b) => a - b);
+      if (prices.length < 3) { setMarketRate(null); return; }
+      const p25 = prices[Math.floor(prices.length * 0.25)];
+      const p75 = prices[Math.floor(prices.length * 0.75)];
+      setMarketRate({ low: p25, high: p75, count: prices.length });
+    }, 450);
+
+    return () => { alive = false; clearTimeout(handle); };
+  }, [form.title, modal, currentWorkshop?.state]);
+
+  // Formulário aberto: o fundo não rola junto (no celular a tela "andava" atrás do formulário)
+  useEffect(() => {
+    if (!modal) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [modal]);
+
+  const estimated = form.pricing === 'fixed' ? Number(form.total) : Number(form.price_per_hour) * Number(form.max_hours);
+  // Preferidos no topo; dentro de cada grupo mantém a ordem por nota do fetch
+  const filteredMechanics = mechanics
+    .filter(m => m.name.toLowerCase().includes(mechSearch.toLowerCase()))
+    .sort((a, b) => Number(favorites.has(b.id)) - Number(favorites.has(a.id)));
 
   return (
     <WorkshopLayout>
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6 gap-3">
+      {/* Cabeçalho: no celular o botão de chamar ocupa a largura toda (é o que se faz aqui) */}
+      <div className="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm text-steel-500">Olá,</div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight truncate">{shop?.business_name ?? '...'}</h1>
+          <div className="text-xs font-medium text-steel-500">Plataforma · mecânicos sob demanda</div>
+          <h1 className="font-display text-[26px] lg:text-3xl font-bold tracking-tight text-steel-900 leading-tight truncate">{shop?.business_name ?? '…'}</h1>
         </div>
         <button
-          onClick={() => setModal(true)}
+          onClick={openCreateModal}
           disabled={shopLoading || hasPendingFees}
           title={hasPendingFees ? 'Quite a multa pendente para publicar nova demanda' : undefined}
-          className="btn-primary shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="shrink-0 inline-flex items-center justify-center gap-2 h-12 sm:h-11 px-5 rounded-xl bg-brand-500 text-white font-bold shadow-brand active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {shopLoading ? '…' : hasPendingFees ? (
-            <>🔒 Multa pendente</>
-          ) : (
-            <>
-              <span className="hidden sm:inline">+ Nova demanda</span>
-              <span className="sm:hidden">+ Nova</span>
-            </>
-          )}
+          {shopLoading ? '…' : hasPendingFees ? <>🔒 Multa pendente</> : <><span className="text-lg leading-none">⚡</span> Chamar mecânico</>}
         </button>
       </div>
 
       {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
 
+      {/* Serviços empilhados: esperando mecânico da plataforma (a gestão junta e gera a demanda) */}
+      {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={openCreateModal} />}
 
-      {/* KPIs */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <KPI label="Jobs ativos" value={active.length} />
-        <KPI label="Concluídos"  value={shop?.total_jobs ?? 0} />
-        <KPI label="Avaliação"   value={`★ ${(shop?.rating ?? 0).toFixed(1)}`} />
-      </div>
+      {/* Números rápidos: uma faixa só, cabe em qualquer celular */}
+      <dl className="grid grid-cols-3 divide-x divide-steel-100 rounded-2xl bg-white ring-1 ring-steel-200/70 mb-5">
+        <KPI label="Ativas" value={active.length} />
+        <KPI label="Concluídas" value={shop?.total_jobs ?? 0} />
+        <KPI label="Avaliação" value={shop?.rating ? `★ ${shop.rating.toFixed(1)}` : '—'} />
+      </dl>
+
+      {/* Resumo do período: gasto, tempos de aceite/chegada, mecânicos mais contratados */}
+      {currentWorkshop?.id && <MarketplaceSummary workshopId={currentWorkshop.id} />}
 
       {/* 🔔 Confirmações pendentes — ação prioritária */}
       {pendingConfirm.length > 0 && (
@@ -221,7 +445,7 @@ export default function WorkshopDashboard() {
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-steel-900 truncate">{j.title}</div>
                     <div className="text-xs text-steel-500 mt-0.5">
-                      R$ {j.price?.toFixed(2)} fechado
+                      R$ {formatBRL(j.price ?? 0)} fechado
                       {j.actual_hours != null && ` · ⏱ ${j.actual_hours}h reais`}
                       {j.completed_at && ` · finalizado ${new Date(j.completed_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
                     </div>
@@ -284,83 +508,91 @@ export default function WorkshopDashboard() {
         </section>
       )}
 
-      {/* Jobs em andamento */}
-      <section className="mb-8">
-        <h2 className="text-lg font-bold mb-3">Em andamento</h2>
-        {active.length === 0 ? (
-          <div className="card text-center text-steel-500 py-10">
-            Nenhum job ativo.{' '}
-            <button onClick={() => setModal(true)} className="text-brand-500 font-semibold">
-              Criar uma demanda →
-            </button>
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-2 gap-3">
-            {active.map(j => (
-              <div key={j.id} className="card">
-                <div className="flex justify-between items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold truncate">{j.title}</div>
-                    <div className="text-sm text-steel-500 mt-0.5">{statusLabel(j)}</div>
-                    <div className="text-xs text-steel-400 mt-1">
-                      {j.max_hours ?? '—'}h × R$ {j.price_per_hour?.toFixed(0) ?? '—'}/h
-                    </div>
-                    {j.scheduled_at && (
-                      <div className="text-xs text-steel-400 mt-0.5">
-                        📅 {new Date(j.scheduled_at).toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs text-steel-400">valor</div>
-                    <div className="text-lg font-bold font-display">R$ {j.price.toFixed(0)}</div>
-                    {j.mechanic_id ? (
-                      <Link to={`/oficina/job/${j.id}/tracking`} className="btn-primary text-xs mt-1 inline-block">
-                        Ver no mapa
-                      </Link>
-                    ) : (
-                      <div className="mt-1 text-xs text-pending-600 font-semibold">Aguardando mecânico…</div>
-                    )}
-                  </div>
-                </div>
-                {/* Botão de cancelar — disponível em qualquer estado pré-execução */}
-                <div className="mt-3 pt-2 border-t border-steel-100 flex justify-end">
-                  <CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Demandas ativas — agrupadas pela etapa em que estão */}
+      {(() => {
+        const buckets = groupActive(active);
 
-      {/* Histórico */}
-      <section>
-        <h2 className="text-lg font-bold mb-3">Histórico</h2>
-        {history.length === 0 ? (
-          <div className="card text-center text-steel-500 py-6">Sem histórico ainda.</div>
-        ) : (
-          <div className="card divide-y divide-steel-100">
-            {history.map(j => (
-              <div key={j.id} className="py-3 flex justify-between items-center">
-                <div>
-                  <div className="font-semibold">{j.title}</div>
-                  <div className="text-xs text-steel-500">
-                    {statusLabel(j)} · {j.completed_at ? new Date(j.completed_at).toLocaleDateString('pt-BR') : '—'}
-                  </div>
-                  <div className="text-xs text-steel-400">
-                    Pacote: {j.max_hours}h × R$ {j.price_per_hour}/h
-                    {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold font-display">R$ {j.price.toFixed(2)}</div>
-                  <div className="text-xs text-steel-500">fechado</div>
+        const renderCard = (j: Job) => (
+          <div key={j.id} className="rounded-2xl bg-white ring-1 ring-steel-200/70 p-4 min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-steel-900 leading-snug line-clamp-2 break-words">{j.title}</div>
+                <div className="text-[13px] text-steel-500 mt-0.5">{statusLabel(j)}</div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="font-display text-lg font-bold tabular-nums leading-tight">R$ {formatBRL(j.price, { decimals: 0 })}</div>
+                <div className="text-[11px] text-steel-400 tabular-nums">
+                  {pricingLabel(j)}
                 </div>
               </div>
-            ))}
+            </div>
+            <ArrivalInfo j={j} />
+            {j.scheduled_at && (
+              <div className="text-xs text-steel-500 mt-1.5">📅 {formatScheduled(j.scheduled_at)}</div>
+            )}
+
+            {/* Ações: a principal ocupa o espaço; editar só enquanto ninguém aceitou; cancelar sempre */}
+            <div className="mt-3 pt-3 border-t border-steel-100 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                {j.mechanic_id && j.en_route_at ? (
+                  <Link to={`/oficina/job/${j.id}/tracking`}
+                    className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto h-10 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">
+                    🗺️ Ver no mapa
+                  </Link>
+                ) : j.mechanic_id ? (
+                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-signal-50 text-signal-700 text-xs font-bold">✓ Aceito</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-pending-50 text-pending-700 text-xs font-bold">
+                    <span className="h-1.5 w-1.5 rounded-full bg-pending-500 animate-pulse-soft" /> Aguardando aceite
+                  </span>
+                )}
+              </div>
+              {j.status === 'open' && !j.mechanic_id && (
+                <button type="button" onClick={() => openEditModal(j)}
+                  className="shrink-0 h-10 px-2 text-xs font-semibold text-brand-600 active:text-brand-700">
+                  ✏️ Editar
+                </button>
+              )}
+              <span className="shrink-0"><CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} /></span>
+            </div>
           </div>
-        )}
-      </section>
+        );
+
+        if (active.length === 0) {
+          return (
+            <section className="mb-8">
+              <h2 className="text-lg font-bold mb-3">Demandas ativas</h2>
+              <div className="card text-center text-steel-500 py-10">
+                Nenhuma demanda ativa.{' '}
+                <button onClick={openCreateModal} className="text-brand-500 font-semibold">
+                  Criar uma demanda →
+                </button>
+              </div>
+            </section>
+          );
+        }
+
+        return (
+          <div className="mb-8">
+            {ACTIVE_GROUPS.map(g => {
+              const jobs = buckets[g.key];
+              if (jobs.length === 0) return null;
+              return (
+                <section key={g.key} className="mb-6">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <h2 className="text-[15px] lg:text-lg font-bold">{g.title}</h2>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{jobs.length}</span>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3">{jobs.map(renderCard)}</div>
+                </section>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* Histórico — fechado por padrão; a oficina escolhe abrir */}
+      <HistorySection history={history} workshopId={currentWorkshop?.id ?? null} />
 
       {/* ── Modal nova demanda ── */}
       {modal && (
@@ -378,9 +610,24 @@ export default function WorkshopDashboard() {
             {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto px-5 pb-2 pt-4 space-y-4">
               <div>
-                <h2 className="text-xl font-bold tracking-tight">Nova demanda</h2>
-                <p className="text-sm text-steel-500 mt-0.5">Descreva o serviço e escolha como publicar.</p>
+                <h2 className="text-xl font-bold tracking-tight">{editingId ? 'Editar demanda' : 'Nova demanda'}</h2>
+                <p className="text-sm text-steel-500 mt-0.5">
+                  {editingId
+                    ? 'Ajuste o que precisar enquanto nenhum mecânico aceitou.'
+                    : 'Descreva o serviço e escolha como publicar.'}
+                </p>
               </div>
+
+              {draftRestored && !editingId && (
+                <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                  <span className="text-amber-800">
+                    {draftOrigin ? `🔧 Preenchido com os serviços da ${draftOrigin} — revise e publique.` : '📝 Rascunho restaurado do último acesso.'}
+                  </span>
+                  <button type="button" onClick={discardDraft} className="text-amber-700 underline font-semibold whitespace-nowrap">
+                    Descartar
+                  </button>
+                </div>
+              )}
 
               {/* Título */}
               <div>
@@ -399,7 +646,37 @@ export default function WorkshopDashboard() {
 
               {/* Precificação */}
               <div>
-                <label className="label">Precificação fechada</label>
+                <label className="label">Como cobrar</label>
+                <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-3">
+                  {([['fixed', 'Pelo serviço'], ['hour', 'Por hora']] as const).map(([k, l]) => (
+                    <button key={k} type="button"
+                      onClick={() => setForm(f => { const next = { ...f, pricing: k }; persistDraft(next); return next; })}
+                      className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+                        (form.pricing ?? 'hour') === k ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                {form.pricing === 'fixed' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                      <input className="input !pl-9" type="number" min={1} step={0.01} required
+                        placeholder="150" value={form.total ?? ''} onChange={set('total')} />
+                    </div>
+                    <div className="text-xs text-steel-400 mt-1">Valor do serviço</div>
+                  </div>
+                  <div>
+                    <div className="relative">
+                      <input className="input !pr-9" type="number" min={0.5} max={99} step={0.5}
+                        placeholder="opcional" value={form.max_hours} onChange={set('max_hours')} />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
+                    </div>
+                    <div className="text-xs text-steel-400 mt-1">Tempo previsto (opcional)</div>
+                  </div>
+                </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="relative">
@@ -418,35 +695,66 @@ export default function WorkshopDashboard() {
                     <div className="text-xs text-steel-400 mt-1">Tempo previsto</div>
                   </div>
                 </div>
+                )}
+                {marketRate && form.pricing !== 'fixed' && (
+                  <div className="mt-2 bg-signal-50 border border-signal-200 rounded-xl px-3 py-2 text-xs text-signal-800 flex items-start gap-2">
+                    <span className="text-sm shrink-0">📊</span>
+                    <div className="flex-1">
+                      <strong>Faixa de mercado em {currentWorkshop?.state}:</strong>{' '}
+                      R$ {Math.round(marketRate.low)}–{Math.round(marketRate.high)}/h
+                      <span className="text-signal-700/70 ml-1">({marketRate.count} {marketRate.count === 1 ? 'referência' : 'referências'})</span>
+                      <div className="text-[10px] text-signal-700/80 mt-0.5">
+                        Preços dentro dessa faixa costumam ser aceitos mais rápido.
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <p className="text-[11px] text-steel-500 mt-2 leading-relaxed">
-                  💡 <strong>Valor fechado:</strong> a oficina paga o pacote (hora × tempo previsto) e o mecânico recebe esse valor mesmo se terminar antes ou levar mais tempo. O tempo real é registrado para análise.
+                  💡 <strong>Valor fechado:</strong> {form.pricing === 'fixed'
+                    ? 'a oficina paga o valor do serviço e o mecânico recebe esse valor, não importa quanto tempo leve.'
+                    : 'a oficina paga o pacote (hora × tempo previsto) e o mecânico recebe esse valor mesmo se terminar antes ou levar mais tempo.'} O tempo real é registrado para análise.
                 </p>
                 {estimated > 0 && (
                   <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
                     <span className="text-sm text-brand-700">Valor fechado da demanda</span>
-                    <span className="font-bold text-brand-700 font-display">R$ {estimated.toFixed(2)}</span>
+                    <span className="font-bold text-brand-700 font-display">R$ {formatBRL(estimated)}</span>
                   </div>
                 )}
               </div>
 
-              {/* Modo de publicação */}
-              <div>
-                <label className="label">Como publicar</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
-                    className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                    <div className="text-lg mb-1">📢</div>
-                    <div className="font-semibold text-sm">Para todos</div>
-                    <div className="text-xs text-steel-500 mt-0.5">Mecânicos disponíveis verão e poderão aceitar</div>
-                  </button>
-                  <button type="button" onClick={() => setMode('direct')}
-                    className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                    <div className="text-lg mb-1">🎯</div>
-                    <div className="font-semibold text-sm">Mecânico específico</div>
-                    <div className="text-xs text-steel-500 mt-0.5">Convide diretamente e inicie o chat</div>
-                  </button>
+              {/* Modo de publicação — só na criação */}
+              {!editingId && (
+                <div>
+                  <label className="label">Como publicar</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
+                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg mb-1">📢</div>
+                      <div className="font-semibold text-sm">Para todos</div>
+                      <div className="text-xs text-steel-500 mt-0.5">Todos os mecânicos disponíveis verão</div>
+                    </button>
+                    <button type="button"
+                      onClick={() => { setMode('favorites'); setPickedMechanic(''); }}
+                      disabled={favorites.size === 0}
+                      title={favorites.size === 0 ? 'Adicione preferidos em "Buscar mecânicos" ou no picker abaixo' : undefined}
+                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${mode === 'favorites' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg mb-1">⭐</div>
+                      <div className="font-semibold text-sm">Meus preferidos</div>
+                      <div className="text-xs text-steel-500 mt-0.5">
+                        {favorites.size === 0
+                          ? 'Sem preferidos ainda'
+                          : `${favorites.size} ${favorites.size === 1 ? 'mecânico' : 'mecânicos'} na sua lista`}
+                      </div>
+                    </button>
+                    <button type="button" onClick={() => setMode('direct')}
+                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg mb-1">🎯</div>
+                      <div className="font-semibold text-sm">Mecânico específico</div>
+                      <div className="text-xs text-steel-500 mt-0.5">Convide diretamente e inicie o chat</div>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Picker de mecânico */}
               {mode === 'direct' && (
@@ -460,22 +768,50 @@ export default function WorkshopDashboard() {
                         Nenhum mecânico disponível no momento
                       </div>
                     ) : filteredMechanics.map(m => (
-                      <button key={m.id} type="button"
-                        onClick={() => setPickedMechanic(m.id)}
-                        className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition active:scale-95 ${
-                          pickedMechanic === m.id ? 'border-brand-500 bg-brand-50' : 'border-steel-100'
-                        }`}>
-                        <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
-                          {m.name.charAt(0).toUpperCase()}
+                      <div key={m.id} className={`rounded-xl border-2 transition ${
+                        pickedMechanic === m.id ? 'border-brand-500 bg-brand-50' : 'border-steel-100'
+                      }`}>
+                        <div className="w-full flex items-center gap-2 p-3">
+                          <button type="button"
+                            onClick={() => setPickedMechanic(m.id)}
+                            className="flex-1 flex items-center gap-3 text-left active:scale-95">
+                            <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
+                              {m.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold truncate">{m.name}</div>
+                              <div className="text-xs text-steel-500">
+                                ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                              </div>
+                            </div>
+                            {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
+                            title={favorites.has(m.id) ? 'Remover dos preferidos' : 'Adicionar aos preferidos'}
+                            className={`h-9 w-9 rounded-full grid place-items-center shrink-0 transition active:scale-90 ${
+                              favorites.has(m.id)
+                                ? 'bg-brand-500/15 text-brand-600 hover:bg-brand-500/25'
+                                : 'bg-steel-100 text-steel-400 hover:text-brand-500 hover:bg-brand-50'
+                            }`}
+                          >
+                            {favorites.has(m.id) ? '★' : '☆'}
+                          </button>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold truncate">{m.name}</div>
-                          <div className="text-xs text-steel-500">
-                            ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                        <button type="button"
+                          onClick={() => setReviewsOpen(reviewsOpen === m.id ? null : m.id)}
+                          className="w-full text-[11px] text-brand-600 hover:text-brand-700 font-semibold border-t border-steel-100 py-1.5">
+                          {reviewsOpen === m.id ? '▲ Ocultar avaliações' : '▼ Ver avaliações'}
+                        </button>
+                        {reviewsOpen === m.id && (
+                          <div className="px-3 pb-3 bg-steel-50 border-t border-steel-100">
+                            <div className="pt-2">
+                              <MechanicReviews mechanicId={m.id} />
+                            </div>
                           </div>
-                        </div>
-                        {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
-                      </button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -499,7 +835,11 @@ export default function WorkshopDashboard() {
               <div className="flex gap-3">
                 <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>
                 <button type="submit" className="btn-primary flex-1" disabled={saving}>
-                  {saving ? 'Publicando…' : mode === 'direct' ? 'Convidar mecânico' : 'Publicar demanda'}
+                  {saving
+                    ? (editingId ? 'Salvando…' : 'Publicando…')
+                    : editingId ? 'Salvar alterações'
+                    : mode === 'direct' ? 'Convidar mecânico'
+                    : 'Publicar demanda'}
                 </button>
               </div>
             </div>
@@ -510,11 +850,194 @@ export default function WorkshopDashboard() {
   );
 }
 
+/* ── Demandas ativas: em que etapa cada uma está ── */
+type ActiveGroup = 'service' | 'enroute' | 'scheduled' | 'waiting';
+
+const ACTIVE_GROUPS: { key: ActiveGroup; title: string; badge: string }[] = [
+  { key: 'service',   title: '🔧 Em serviço',         badge: 'bg-signal-500/15 text-signal-700'   },
+  { key: 'enroute',   title: '🚗 Mecânico a caminho', badge: 'bg-brand-500/15 text-brand-700'     },
+  { key: 'scheduled', title: '📅 Agendados',          badge: 'bg-pending-500/15 text-pending-700' },
+  { key: 'waiting',   title: '📢 Aguardando aceite',  badge: 'bg-steel-200 text-steel-700'        },
+];
+
+function groupOf(j: Job): ActiveGroup {
+  if (j.status === 'in_progress' || j.arrived_at) return 'service';  // mecânico já está na oficina
+  if (!j.mechanic_id) return 'waiting';                              // ninguém aceitou ainda
+  if (j.en_route_at) return 'enroute';                               // aceitou e saiu
+  if (j.scheduled_at) return 'scheduled';                            // aceitou, data marcada, ainda não saiu
+  return 'enroute';                                                  // aceitou demanda imediata
+}
+
+function groupActive(jobs: Job[]): Record<ActiveGroup, Job[]> {
+  const out: Record<ActiveGroup, Job[]> = { service: [], enroute: [], scheduled: [], waiting: [] };
+  jobs.forEach(j => out[groupOf(j)].push(j));
+  // Agendados em ordem de data (o mais próximo primeiro)
+  out.scheduled.sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
+  return out;
+}
+
+/** Prazo de chegada do mecânico — passou do prazo, a oficina cancela sem multa */
+function ArrivalInfo({ j }: { j: Job }) {
+  if (j.status !== 'assigned') return null;
+  const deadline = arrivalDeadline(j);
+  if (!deadline) return null;
+
+  if (isArrivalLate(j)) {
+    return (
+      <div className="mt-1.5 text-[11px] font-semibold text-alert-700 bg-alert-500/10 border border-alert-200 px-2 py-1 rounded-lg">
+        ⏰ Atrasado — o prazo era {formatDeadline(deadline)}. Você pode cancelar sem multa.
+      </div>
+    );
+  }
+  // Agendado para daqui a mais de 1 dia: o prazo ainda não é relevante
+  if (deadline.getTime() - Date.now() > 24 * 60 * 60 * 1000) return null;
+  return (
+    <div className="mt-1 text-[11px] text-steel-500">
+      ⏱ Prazo de chegada: <strong className="text-steel-700">{formatDeadline(deadline)}</strong>
+    </div>
+  );
+}
+
+/* ── Histórico: recolhido por padrão, separado em Concluídos / Cancelados ── */
+type HistTab = 'completed' | 'cancelled';
+const HIST_PAGE = 10;
+
+function HistorySection({ history, workshopId }: { history: Job[]; workshopId: string | null }) {
+  const openKey = workshopId ? `oficina_hist_open:${workshopId}` : null;
+  const [open, setOpen] = useState(false);
+  const [tab, setTab]   = useState<HistTab>('completed');
+  const [shown, setShown] = useState(HIST_PAGE);
+
+  // Lembra se a oficina deixou o histórico aberto (só neste navegador)
+  useEffect(() => {
+    if (!openKey) return;
+    try { setOpen(localStorage.getItem(openKey) === '1'); } catch { /* ignore */ }
+  }, [openKey]);
+
+  function toggle() {
+    setOpen(o => {
+      const next = !o;
+      if (openKey) { try { localStorage.setItem(openKey, next ? '1' : '0'); } catch { /* ignore */ } }
+      return next;
+    });
+  }
+
+  // Disputa não é usada no fluxo atual; se aparecer, entra junto com os concluídos
+  const completed = history.filter(j => j.status !== 'cancelled');
+  const cancelled = history.filter(j => j.status === 'cancelled');
+  const list    = tab === 'completed' ? completed : cancelled;
+  const visible = list.slice(0, shown);
+
+  const TABS: { key: HistTab; label: string; count: number }[] = [
+    { key: 'completed', label: '✅ Concluídos', count: completed.length },
+    { key: 'cancelled', label: '✕ Cancelados',  count: cancelled.length },
+  ];
+
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-full card !py-4 flex items-center gap-3 text-left hover:bg-steel-50 transition"
+        aria-expanded={open}
+      >
+        <span className="text-xl shrink-0">🗂️</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-steel-900">Histórico</div>
+          <div className="text-xs text-steel-500 mt-0.5">
+            {history.length === 0
+              ? 'Sem histórico ainda'
+              : `${completed.length} concluído${completed.length !== 1 ? 's' : ''} · ${cancelled.length} cancelado${cancelled.length !== 1 ? 's' : ''}`}
+          </div>
+        </div>
+        <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Ocultar' : 'Ver histórico'}</span>
+        <span className={`text-steel-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {open && history.length > 0 && (
+        <div className="card mt-2">
+          <div className="flex gap-2 mb-2">
+            {TABS.map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => { setTab(t.key); setShown(HIST_PAGE); }}
+                className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${
+                  tab === t.key
+                    ? 'bg-brand-500 text-white border-brand-500'
+                    : 'bg-white text-steel-600 border-steel-200 hover:border-brand-300'
+                }`}
+              >
+                {t.label} <span className="opacity-80">({t.count})</span>
+              </button>
+            ))}
+          </div>
+
+          {list.length === 0 ? (
+            <div className="text-center text-steel-500 text-sm py-6">
+              {tab === 'completed' ? 'Nenhum serviço concluído ainda.' : 'Nenhum cancelamento. 👏'}
+            </div>
+          ) : (
+            <div className="divide-y divide-steel-100">
+              {visible.map(j => <HistoryRow key={j.id} j={j} />)}
+            </div>
+          )}
+
+          {list.length > shown && (
+            <button
+              type="button"
+              onClick={() => setShown(s => s + HIST_PAGE)}
+              className="w-full mt-2 pt-3 border-t border-steel-100 text-sm font-semibold text-brand-600 hover:text-brand-700"
+            >
+              Mostrar mais ({list.length - shown} restantes)
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HistoryRow({ j }: { j: Job }) {
+  const isCancelled = j.status === 'cancelled';
+  const fee  = Number(j.cancellation_fee ?? 0);
+  const date = isCancelled ? (j.cancelled_at ?? j.created_at) : j.completed_at;
+  return (
+    <div className="py-3 flex justify-between items-center gap-3">
+      <div className="min-w-0">
+        <div className={`font-semibold truncate ${isCancelled ? 'text-steel-500' : ''}`}>{j.title}</div>
+        <div className="text-xs text-steel-500">
+          {date ? new Date(date).toLocaleDateString('pt-BR') : '—'}
+        </div>
+        <div className="text-xs text-steel-400">
+          Pacote: {pricingLabel(j)}
+          {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        {isCancelled ? (
+          <>
+            <div className="font-display text-steel-400 line-through">R$ {formatBRL(j.price)}</div>
+            <div className={`text-xs ${fee > 0 ? 'text-alert-600 font-semibold' : 'text-steel-500'}`}>
+              {fee > 0 ? `multa R$ ${formatBRL(fee)}` : 'sem cobrança'}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="font-bold font-display">R$ {formatBRL(j.price)}</div>
+            <div className="text-xs text-steel-500">fechado</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function KPI({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="card">
-      <div className="text-xs text-steel-500 uppercase tracking-wider">{label}</div>
-      <div className="text-3xl font-bold font-display mt-1">{value}</div>
+    <div className="min-w-0 px-3 py-3 text-center flex flex-col-reverse">
+      <dt className="text-[11px] font-medium text-steel-500 truncate">{label}</dt>
+      <dd className="font-display text-xl lg:text-2xl font-bold tabular-nums text-steel-900 truncate">{value}</dd>
     </div>
   );
 }
@@ -524,9 +1047,13 @@ function statusLabel(j: Job): string {
   if (j.status === 'completed')   return 'Concluído';
   if (j.status === 'disputed')    return 'Em disputa';
   if (j.status === 'cancelled')   return 'Cancelado';
-  if (j.status === 'open')        return 'Aguardando mecânico';
+  if (j.status === 'open')        return 'Aguardando aceite de um mecânico';
   if (j.status === 'in_progress') return '🔧 Em serviço';
   // status === 'assigned'
+  // Agendado aceito mas mecânico ainda não saiu (en_route_at null)
+  if (!j.en_route_at && j.scheduled_at) {
+    return `📅 Agendado · ${formatScheduled(j.scheduled_at)}`;
+  }
   if (!j.arrived_at)              return 'Mecânico a caminho';
   if (!j.pix_paid_at)             return 'Mecânico chegou — aguarda pagamento';
   if (!j.started_at)              return '✅ Pago — aguardando início do serviço';

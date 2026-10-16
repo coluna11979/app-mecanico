@@ -1,366 +1,615 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Customer, Vehicle, ServiceOrder } from '@/types/database';
+import { fetchAll } from '@/lib/fetchAll';
+import { toast } from '@/components/ui/Toast';
+import { fmtBRL, fmtPhone, waNumber } from '@/components/os/osHelpers';
+import CustomerForm from '@/components/customers/CustomerForm';
+import CallToday, { callMessage, type CallItem } from '@/components/customers/CallToday';
+import NewOsModal, { type NewOsPreset } from '@/components/os/NewOsModal';
+import { Icon } from '@/components/home/ui';
+import { onlyDigits, plateNorm, timeAgo } from '@/lib/customers';
+import {
+  SEGMENTS, baseInsights, callReason, reasonLabel, serviceDueDays, serviceDueSoon, staleQuote,
+  type CallReason, type CustomerInsight, type InsOs, type InsRec,
+} from '@/lib/customerInsights';
+import { PRESETS, rangeOf, type Preset } from '@/components/PeriodPicker';
+import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 
-type CustomerFull = Customer & { vehicles: (Vehicle & { service_orders: ServiceOrder[] })[] };
+type Base = {
+  id: string; full_name: string; phone: string | null; cpf: string | null; created_at: string;
+  contact_opt_out: boolean | null; last_contacted_at: string | null;
+};
+type Veh = { id: string; customer_id: string; plate: string; make: string | null; model: string | null };
+type Sale = { d: string; price: number };
+type Row = Base & {
+  plates: string[]; car: string | null; vehicleId: string | null; lastService: string | null;
+  ins: CustomerInsight; sales: Sale[]; reason: CallReason | null; quoteStale: boolean; serviceSoon: boolean;
+};
+type PeriodKey = 'all' | Preset;
+type DateMode = 'served' | 'registered' | 'lastvisit';
+const DATE_MODES: { key: DateMode; label: string }[] = [
+  { key: 'served', label: 'Atendidos no período' },
+  { key: 'registered', label: 'Cadastrados no período' },
+  { key: 'lastvisit', label: 'Última visita no período' },
+];
+const toInput = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+type Filter = 'all' | 'vip' | 'risk' | 'gone' | 'due' | 'new' | 'quote' | 'service' | 'nophone' | 'money';
+type Sort = 'money' | 'spent' | 'lastvisit' | 'action' | 'visits' | 'recent' | 'gone';
 
-const EMPTY_C = { full_name: '', phone: '', email: '', cpf: '', address: '', city: '', birth_date: '', veh_make: '', veh_model: '', veh_plate: '', veh_year: '' };
-const EMPTY_V = { plate: '', make: '', model: '', year: '', color: '', notes: '' };
+/** 4 filtros à vista (+ Todos); o resto em "Mais filtros" */
+const MAIN_FILTERS: { key: Filter; label: string }[] = [
+  { key: 'all', label: 'Todos' },
+  { key: 'vip', label: 'VIP' },
+  { key: 'risk', label: 'Em risco' },
+  { key: 'gone', label: 'Sumidos' },
+  { key: 'due', label: 'Retornam este mês' },
+];
+const MORE_FILTERS: { key: Filter; label: string }[] = [
+  { key: 'new', label: 'Novos' },
+  { key: 'quote', label: 'Orçamento parado' },
+  { key: 'service', label: 'Revisão próxima' },
+  { key: 'nophone', label: 'Sem telefone' },
+  { key: 'money', label: 'Oportunidade estimada' },
+];
+const SORTS: { key: Sort; label: string }[] = [
+  { key: 'spent', label: 'Maior gasto' }, { key: 'lastvisit', label: 'Última visita' },
+  { key: 'action', label: 'Próxima ação' }, { key: 'visits', label: 'Mais visitas' },
+  { key: 'money', label: 'Oportunidade estimada' }, { key: 'recent', label: 'Cadastrados recentemente' },
+  { key: 'gone', label: 'Sumidos há mais tempo' },
+];
+/** Períodos do "Mais filtros" (sem período = todo o histórico) */
+const PERIOD_OPTS: { key: Preset; label: string }[] = [
+  { key: 'today', label: 'Hoje' }, { key: '7d', label: '7 dias' }, { key: 'month', label: 'Este mês' },
+  { key: 'lastMonth', label: 'Mês passado' }, { key: 'custom', label: 'Personalizado' },
+];
+const ACTION_RANK: Record<CallReason['kind'], number> = { quote: 0, service: 1, risk: 2, gone: 3 };
+const PAGE = 50;
+const DAY = 86400000;
+const CONTACT_PAUSE_DAYS = 30;
+
+const hasPhone = (p: string | null) => onlyDigits(p).length >= 10;
+const contactedRecently = (iso: string | null, now = Date.now()) => !!iso && now - new Date(iso).getTime() < CONTACT_PAUSE_DAYS * DAY;
 
 export default function Customers() {
-  const { user, currentWorkshop } = useAuth();
+  const { currentWorkshop } = useAuth();
   const shop = currentWorkshop;
-  const [list, setList]         = useState<CustomerFull[]>([]);
-  const [search, setSearch]     = useState('');
-  const [selected, setSelected] = useState<CustomerFull | null>(null);
-  const [modalC, setModalC]     = useState(false);
-  const [modalV, setModalV]     = useState(false);
-  const [formC, setFormC]       = useState(EMPTY_C);
-  const [formV, setFormV]       = useState(EMPTY_V);
-  const [saving, setSaving]     = useState(false);
+  const nav = useNavigate();
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [sort, setSort] = useState<Sort>('spent');
+  const [shown, setShown] = useState(PAGE);
+  // ?novo=1 (atalho do Início) abre o cadastro direto
+  const [creating, setCreating] = useState(() => new URLSearchParams(window.location.search).get('novo') === '1');
+  const [newOs, setNewOs] = useState<NewOsPreset | null>(null);
+  const [period, setPeriod] = useState<PeriodKey>('all');
+  const [dateMode, setDateMode] = useState<DateMode>('served');
+  const [custom, setCustom] = useState(() => {
+    const t = new Date(); const f = new Date(); f.setDate(f.getDate() - 29);
+    return { from: toInput(f), to: toInput(t) };
+  });
+  const range = useMemo(() => (period === 'all' ? null : rangeOf(period, custom)), [period, custom]);
 
   useEffect(() => {
-    if (!user || !currentWorkshop) return;
-    fetchCustomers(currentWorkshop.id);
-  }, [user, currentWorkshop?.id]);
-
-  async function fetchCustomers(wid: string) {
-    const { data } = await supabase
-      .from('customers')
-      .select('*, vehicles(*, service_orders(*))')
-      .eq('workshop_id', wid)
-      .order('created_at', { ascending: false });
-    setList((data as CustomerFull[]) ?? []);
-  }
-
-  async function saveCustomer(e: FormEvent) {
-    e.preventDefault();
     if (!shop) return;
-    setSaving(true);
-    const payload = {
-      workshop_id: shop.id,
-      full_name:   formC.full_name.trim(),
-      phone:       formC.phone.trim()      || null,
-      email:       formC.email.trim()      || null,
-      cpf:         formC.cpf.trim()        || null,
-      address:     formC.address.trim()    || null,
-      city:        formC.city.trim()       || null,
-      birth_date:  formC.birth_date        || null,
-    };
-    const { data: custData } = await supabase.from('customers').insert(payload).select('*').single();
-    if (custData && formC.veh_make.trim() && formC.veh_model.trim()) {
-      await supabase.from('vehicles').insert({
-        customer_id: custData.id,
-        workshop_id: shop.id,
-        plate: formC.veh_plate.toUpperCase().trim() || 'S/P',
-        make:  formC.veh_make.trim(),
-        model: formC.veh_model.trim(),
-        year:  formC.veh_year ? parseInt(formC.veh_year) : null,
-      });
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      const [c, v, o, r] = await Promise.all([
+        fetchAll<Base>((a, b) => supabase.from('customers')
+          .select('id, full_name, phone, cpf, created_at, contact_opt_out, last_contacted_at').eq('workshop_id', shop.id).order('id').range(a, b)),
+        fetchAll<Veh>((a, b) => supabase.from('vehicles')
+          .select('id, customer_id, plate, make, model').eq('workshop_id', shop.id).order('id').range(a, b)),
+        fetchAll<InsOs>((a, b) => supabase.from('service_orders')
+          .select('id, customer_id, vehicle_id, category, status, quote_status, price, created_at, completed_at, rework_of_id, approval_requested_at, title')
+          .eq('workshop_id', shop.id).order('id').range(a, b)),
+        fetchAll<InsRec>((a, b) => supabase.from('service_recommendations')
+          .select('id, customer_id, vehicle_id, description, recommended_at').eq('workshop_id', shop.id).eq('status', 'pending').order('id').range(a, b)),
+      ]);
+      if (!alive) return;
+      const vehBy = new Map<string, Veh[]>();
+      const vehById = new Map<string, Veh>();
+      for (const x of v.data) { vehBy.set(x.customer_id, [...(vehBy.get(x.customer_id) ?? []), x]); vehById.set(x.id, x); }
+      const osBy = new Map<string, InsOs[]>();
+      for (const x of o.data) if (x.customer_id) osBy.set(x.customer_id, [...(osBy.get(x.customer_id) ?? []), x]);
+      const ins = baseInsights(c.data.map(x => x.id), o.data, r.data);
+      const now = Date.now();
+      const carLabel = (x: Veh | undefined) => (x ? [[x.make, x.model].filter(Boolean).join(' '), x.plate?.toUpperCase()].filter(Boolean).join(' · ') : null);
+
+      setRows(c.data.map(x => {
+        const list = (osBy.get(x.id) ?? []).sort((a, b) => b.created_at.localeCompare(a.created_at));
+        const sales = list.filter(s => s.status === 'completed' && !s.quote_status && !s.rework_of_id)
+          .map(s => ({ d: s.completed_at ?? s.created_at, price: Number(s.price) }));
+        // Veículo principal: o da OS mais recente; senão o primeiro cadastrado
+        const lastWithCar = list.find(s => s.vehicle_id && vehById.has(s.vehicle_id));
+        const veh = lastWithCar ? vehById.get(lastWithCar.vehicle_id!) : vehBy.get(x.id)?.[0];
+        const lastSale = list.find(s => s.status === 'completed' && !s.quote_status && !s.rework_of_id);
+        const i = ins.map.get(x.id)!;
+        return {
+          ...x, plates: (vehBy.get(x.id) ?? []).map(p => p.plate), car: carLabel(veh), vehicleId: veh?.id ?? null,
+          lastService: lastSale?.title ?? null, ins: i, sales,
+          reason: callReason(i, list, now),
+          quoteStale: !!staleQuote(list, now),
+          serviceSoon: serviceDueSoon(serviceDueDays(i, now)),
+        };
+      }));
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [shop?.id]);
+
+  // Quem devo chamar hoje: motivo claro, com telefone, aceita mensagens e não foi chamado nos últimos 30 dias
+  const callList = useMemo<CallItem[]>(() => {
+    return rows
+      .filter(r => r.reason && hasPhone(r.phone) && !r.contact_opt_out && !contactedRecently(r.last_contacted_at))
+      .sort((a, b) => ACTION_RANK[a.reason!.kind] - ACTION_RANK[b.reason!.kind] || b.ins.spent - a.ins.spent)
+      .map(r => ({ id: r.id, name: r.full_name, phone: r.phone, car: r.car, lastService: r.lastService, spent: r.ins.spent, reason: r.reason! }));
+  }, [rows]);
+
+  // Gasto/visitas de cada cliente dentro do período escolhido
+  const inRange = (iso: string | null | undefined) => {
+    if (!range || !iso) return false;
+    const t = new Date(iso).getTime();
+    return t >= range.from.getTime() && t < range.to.getTime();
+  };
+  const periodOf = (r: Row) => {
+    const s = r.sales.filter(x => inRange(x.d));
+    return { visits: s.length, spent: s.reduce((a, x) => a + x.price, 0) };
+  };
+
+  const matches = (r: Row, f: Filter) => {
+    const s = r.ins.segment;
+    const now = new Date();
+    const mStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const mEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+    switch (f) {
+      case 'all': return true;
+      case 'vip': return r.ins.vip;
+      case 'risk': return s === 'risk';
+      case 'gone': return s === 'gone';
+      case 'new': return s === 'new';
+      case 'due': {
+        const t = r.ins.nextExpected ? new Date(r.ins.nextExpected).getTime() : 0;
+        return t >= mStart && t < mEnd && s !== 'risk' && s !== 'gone';
+      }
+      case 'quote': return r.quoteStale;
+      case 'service': return r.serviceSoon;
+      case 'nophone': return !hasPhone(r.phone);
+      case 'money': return r.ins.opportunity.total > 0;
     }
-    await fetchCustomers(shop.id);
-    setModalC(false); setFormC(EMPTY_C);
-    setSaving(false);
-  }
+  };
+  const counts = useMemo(() => {
+    const out = {} as Record<Filter, number>;
+    for (const f of [...MAIN_FILTERS, ...MORE_FILTERS]) out[f.key] = rows.filter(r => matches(r, f.key)).length;
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
 
-  async function saveVehicle(e: FormEvent) {
-    e.preventDefault();
-    if (!shop || !selected) return;
-    setSaving(true);
-    await supabase.from('vehicles').insert({
-      ...formV, year: formV.year ? Number(formV.year) : null,
-      customer_id: selected.id, workshop_id: shop.id
+  const list = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const qd = onlyDigits(q);
+    const qp = plateNorm(q);
+    let out = rows.filter(r => {
+      if (!matches(r, filter)) return false;
+      if (range) {
+        if (dateMode === 'served' && !r.sales.some(x => inRange(x.d))) return false;
+        if (dateMode === 'registered' && !inRange(r.created_at)) return false;
+        if (dateMode === 'lastvisit' && !inRange(r.ins.lastVisit)) return false;
+      }
+      if (!q) return true;
+      return r.full_name.toLowerCase().includes(q)
+        || (qd.length >= 3 && (onlyDigits(r.phone).includes(qd) || onlyDigits(r.cpf).includes(qd)))
+        || (qp.length >= 3 && r.plates.some(p => plateNorm(p).includes(qp)));
     });
-    await fetchCustomers(shop.id);
-    const updated = list.find(c => c.id === selected.id);
-    if (updated) setSelected(updated);
-    setModalV(false); setFormV(EMPTY_V);
-    setSaving(false);
-  }
+    out = [...out].sort((a, b) => {
+      switch (sort) {
+        case 'money': return b.ins.opportunity.total - a.ins.opportunity.total || b.ins.spent - a.ins.spent;
+        case 'spent': return range && dateMode === 'served' ? periodOf(b).spent - periodOf(a).spent : b.ins.spent - a.ins.spent;
+        case 'visits': return b.ins.visits - a.ins.visits || b.ins.spent - a.ins.spent;
+        case 'lastvisit': return (b.ins.lastVisit ?? '').localeCompare(a.ins.lastVisit ?? '');
+        case 'action': return (a.reason ? ACTION_RANK[a.reason.kind] : 9) - (b.reason ? ACTION_RANK[b.reason.kind] : 9) || b.ins.spent - a.ins.spent;
+        case 'gone': return (a.ins.lastVisit ?? '9999').localeCompare(b.ins.lastVisit ?? '9999');
+        default: return b.created_at.localeCompare(a.created_at);
+      }
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, search, filter, sort, range, dateMode]);
 
-  const filtered = list.filter(c =>
-    c.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone?.includes(search) ||
-    c.vehicles.some(v => v.plate.toLowerCase().includes(search.toLowerCase()))
-  );
+  // Resumo do período (quem entrou na lista)
+  const periodSummary = useMemo(() => {
+    if (!range) return null;
+    if (dateMode !== 'served') return { count: list.length, spent: null as number | null, visits: null as number | null };
+    let spent = 0, visits = 0;
+    for (const r of list) { const p = periodOf(r); spent += p.spent; visits += p.visits; }
+    return { count: list.length, spent, visits };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, range, dateMode]);
+
+  const go = (f: Filter) => { setFilter(f); setShown(PAGE); };
+  const moreActive = MORE_FILTERS.some(f => f.key === filter) || period !== 'all' || sort !== 'spent';
+
+  async function optOut(r: Row) {
+    if (!confirm(`${r.full_name} não quer mais receber mensagens? Ele não vai mais aparecer em "Quem devo chamar hoje".`)) return;
+    const { error } = await supabase.from('customers').update({ contact_opt_out: true }).eq('id', r.id);
+    if (error) return toast.error('Erro: ' + error.message);
+    setRows(rs => rs.map(x => (x.id === r.id ? { ...x, contact_opt_out: true } : x)));
+    toast.success('Anotado — não vamos sugerir contato com este cliente');
+  }
+  const markContacted = (id: string) =>
+    setRows(rs => rs.map(x => (x.id === id ? { ...x, last_contacted_at: new Date().toISOString() } : x)));
+  const openNewOs = (customerId: string, schedule = false) => {
+    const r = rows.find(x => x.id === customerId);
+    setNewOs({ customerId, vehicleId: r?.vehicleId ?? null, schedule });
+  };
+
+  const noPhone = counts.nophone ?? 0;
 
   return (
     <WorkshopLayout>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
-          <p className="text-sm text-steel-500 mt-1">{list.length} cliente{list.length !== 1 ? 's' : ''} cadastrado{list.length !== 1 ? 's' : ''}</p>
-        </div>
-        <button onClick={() => setModalC(true)} className="btn-primary btn-lg">+ Novo cliente</button>
+      <div className="max-w-6xl mx-auto space-y-4">
+        <header className="flex flex-wrap justify-between items-center gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl lg:text-[28px] font-bold tracking-tight text-steel-900 leading-tight">Clientes</h1>
+            {!loading && (
+              <div className="flex flex-col">
+                <span className="text-sm text-steel-600">{rows.length.toLocaleString('pt-BR')} clientes</span>
+                {noPhone > 0 && (
+                  <button onClick={() => go('nophone')} className="self-start text-xs text-steel-400 hover:text-brand-600 hover:underline transition">
+                    {noPhone.toLocaleString('pt-BR')} precisam de telefone
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <button onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 text-white px-3.5 h-10 lg:h-9 text-sm font-semibold hover:bg-brand-600 transition">
+            <Icon name="plus" size={16} />Novo cliente
+          </button>
+        </header>
+
+        {loading ? (
+          <div className="space-y-4">
+            <div className="h-40 rounded-xl bg-white ring-1 ring-steel-200/70 animate-pulse" />
+            <div className="h-72 rounded-xl bg-white ring-1 ring-steel-200/70 animate-pulse" />
+          </div>
+        ) : (
+          <>
+            {shop && (
+              <CallToday items={callList} workshopId={shop.id} shopName={shop.business_name}
+                onContacted={markContacted} onSchedule={id => openNewOs(id, true)} />
+            )}
+
+            {/* Busca + filtros principais */}
+            <section className="space-y-3">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                <div className="relative lg:w-80 shrink-0">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400"><Icon name="search" size={16} /></span>
+                  <input className="input pl-9 text-sm lg:!py-1.5" placeholder="Nome, telefone, placa ou CPF"
+                    value={search} onChange={e => { setSearch(e.target.value); setShown(PAGE); }} />
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto lg:overflow-visible -mx-4 px-4 lg:mx-0 lg:px-0 pb-1 lg:pb-0">
+                  {MAIN_FILTERS.map(f => (
+                    <Chip key={f.key} active={filter === f.key} onClick={() => go(f.key)}
+                      label={f.label} count={f.key === 'all' ? undefined : counts[f.key]} />
+                  ))}
+                  <MoreFilters
+                    active={moreActive}
+                    counts={counts}
+                    value={{ filter, period, custom, dateMode, sort }}
+                    onApply={x => {
+                      setFilter(x.filter); setPeriod(x.period); setCustom(x.custom); setDateMode(x.dateMode); setSort(x.sort); setShown(PAGE);
+                    }}
+                    onClear={() => { setFilter('all'); setPeriod('all'); setDateMode('served'); setSort('spent'); setShown(PAGE); }} />
+                </div>
+              </div>
+              {/* Segmento escolhido em "Mais filtros" aparece como etiqueta removível */}
+              {MORE_FILTERS.some(f => f.key === filter) && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-steel-900 text-white px-3 h-7 font-semibold">
+                    {MORE_FILTERS.find(f => f.key === filter)!.label}
+                    <button onClick={() => go('all')} aria-label="Tirar filtro" className="text-steel-300 hover:text-white">✕</button>
+                  </span>
+                </div>
+              )}
+
+              {range && periodSummary && (
+                <p className="text-sm text-steel-600">
+                  <strong className="text-steel-900">{periodSummary.count.toLocaleString('pt-BR')}</strong> cliente{periodSummary.count === 1 ? '' : 's'}{' '}
+                  {dateMode === 'served' ? 'atendidos' : dateMode === 'registered' ? 'cadastrados' : 'com a última visita'} de{' '}
+                  {range.from.toLocaleDateString('pt-BR')} a {new Date(range.to.getTime() - DAY).toLocaleDateString('pt-BR')}
+                  {periodSummary.spent != null && <> · <strong className="text-steel-900">{fmtBRL(periodSummary.spent)}</strong> em {periodSummary.visits} visita{periodSummary.visits === 1 ? '' : 's'}</>}
+                </p>
+              )}
+            </section>
+
+            {/* Lista */}
+            {list.length === 0 ? (
+              <div className="rounded-xl bg-white ring-1 ring-steel-200/70 text-center text-steel-500 py-12 px-4">
+                {rows.length === 0
+                  ? <><p className="font-semibold text-steel-800">Nenhum cliente ainda</p><p className="text-sm mt-1">Cadastre seu primeiro cliente e comece a construir o histórico.</p></>
+                  : <p className="text-sm">Nenhum cliente com esse filtro ou busca.</p>}
+              </div>
+            ) : (
+              <div className="md:rounded-xl md:bg-white md:ring-1 md:ring-steel-200/70">
+                <div className="hidden md:grid sticky top-0 z-10 bg-white/95 backdrop-blur rounded-t-xl grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_110px_120px_minmax(0,1.5fr)_72px] gap-3 pl-4 pr-2 py-2.5 border-b border-steel-100 text-[11px] font-semibold uppercase tracking-wide text-steel-400">
+                  <span>Cliente</span><span>Veículo</span><span>Última visita</span><span className="text-right">Total gasto</span><span>Próxima ação</span><span />
+                </div>
+                <ul className="space-y-2 md:space-y-0 md:divide-y md:divide-steel-100">
+                  {list.slice(0, shown).map(r => (
+                    <CustomerRow key={r.id} r={r} shopId={shop?.id ?? ''} shopName={shop?.business_name ?? ''}
+                      onOpen={() => nav(`/oficina/clientes/${r.id}`)}
+                      onNewOs={() => openNewOs(r.id)} onSchedule={() => openNewOs(r.id, true)} onOptOut={() => optOut(r)}
+                      periodSpent={range && dateMode === 'served' ? periodOf(r).spent : null} />
+                  ))}
+                </ul>
+                {list.length > shown && (
+                  <button onClick={() => setShown(s => s + PAGE)} className="w-full mt-2 md:mt-0 py-3 text-sm font-semibold text-brand-600 hover:bg-steel-50 rounded-xl md:rounded-none md:rounded-b-xl bg-white md:bg-transparent ring-1 ring-steel-200/70 md:ring-0 md:border-t md:border-steel-100">
+                    Mostrar mais ({(list.length - shown).toLocaleString('pt-BR')} restantes)
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* Busca */}
-      <input className="input mb-6 max-w-sm" placeholder="Buscar por nome, telefone ou placa…"
-        value={search} onChange={e => setSearch(e.target.value)} />
-
-      {/* Lista */}
-      {filtered.length === 0 ? (
-        <div className="card text-center text-steel-500 py-16">
-          {list.length === 0
-            ? <><p className="text-lg font-semibold">Nenhum cliente ainda</p><p className="text-sm mt-1">Cadastre seu primeiro cliente e comece a construir o histórico.</p></>
-            : 'Nenhum resultado para essa busca.'}
-        </div>
-      ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(c => (
-            <button key={c.id} onClick={() => setSelected(c)}
-              className="card text-left hover:shadow-lg transition hover:-translate-y-0.5 group">
-              <div className="flex items-center gap-3">
-                <div className="h-11 w-11 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold text-lg shrink-0">
-                  {c.full_name.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold truncate">{c.full_name}</div>
-                  <div className="text-xs text-steel-500">{c.phone ?? '—'}</div>
-                </div>
-                <div className="text-xs text-steel-400 shrink-0">
-                  {c.vehicles.length} veículo{c.vehicles.length !== 1 ? 's' : ''}
-                </div>
-              </div>
-              {c.vehicles.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {c.vehicles.slice(0, 3).map(v => (
-                    <span key={v.id} className="badge bg-steel-100 text-steel-700 uppercase">{v.plate}</span>
-                  ))}
-                  {c.vehicles.length > 3 && <span className="badge bg-steel-100 text-steel-500">+{c.vehicles.length - 3}</span>}
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
+      {creating && shop && (
+        <CustomerForm workshopId={shop.id} onClose={() => setCreating(false)}
+          onSaved={id => { setCreating(false); nav(`/oficina/clientes/${id}`); }} />
       )}
 
-      {/* Drawer do cliente */}
-      {selected && (
-        <div className="fixed inset-0 z-40 flex" onClick={() => setSelected(null)}>
-          <div className="flex-1 bg-steel-900/50" />
-          <div className="w-full max-w-lg bg-white h-full overflow-y-auto shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-steel-100 flex items-start justify-between">
-              <div>
-                <div className="h-14 w-14 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-2xl mb-3">
-                  {selected.full_name.charAt(0).toUpperCase()}
-                </div>
-                <h2 className="text-2xl font-bold">{selected.full_name}</h2>
-                <div className="text-sm text-steel-500 mt-1 space-y-0.5">
-                  {selected.phone      && <div>📞 {selected.phone}</div>}
-                  {selected.email      && <div>✉️ {selected.email}</div>}
-                  {selected.cpf        && <div>🪪 {selected.cpf}</div>}
-                  {selected.birth_date && <div>🎂 {new Date(selected.birth_date + 'T00:00:00').toLocaleDateString('pt-BR')}</div>}
-                  {(selected.address || selected.city) && (
-                    <div>📍 {[selected.address, selected.city].filter(Boolean).join(' · ')}</div>
-                  )}
-                </div>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-steel-400 hover:text-steel-700 text-2xl leading-none">✕</button>
-            </div>
-
-            <div className="p-6 flex-1">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg">Veículos</h3>
-                <button onClick={() => setModalV(true)} className="btn-primary !py-1.5 !px-3 text-sm">+ Veículo</button>
-              </div>
-
-              {selected.vehicles.length === 0 ? (
-                <p className="text-sm text-steel-400">Nenhum veículo cadastrado ainda.</p>
-              ) : (
-                <div className="space-y-4">
-                  {selected.vehicles.map(v => (
-                    <div key={v.id} className="card !p-4 border border-steel-100">
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="text-2xl">🚗</span>
-                        <div>
-                          <div className="font-bold uppercase tracking-wide">{v.plate}</div>
-                          <div className="text-sm text-steel-500">{v.make} {v.model} {v.year ? `(${v.year})` : ''} {v.color ? `· ${v.color}` : ''}</div>
-                        </div>
-                      </div>
-                      {v.notes && <p className="text-xs text-steel-500 mb-3 italic">{v.notes}</p>}
-
-                      <div className="text-xs font-semibold text-steel-400 uppercase tracking-wider mb-2">
-                        Histórico de OS ({v.service_orders.length})
-                      </div>
-                      {v.service_orders.length === 0 ? (
-                        <p className="text-xs text-steel-400">Nenhuma OS neste veículo.</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {v.service_orders.slice(0, 5).map(os => (
-                            <div key={os.id} className="flex justify-between items-center py-1 border-b border-steel-50 last:border-0">
-                              <div>
-                                <div className="text-sm font-semibold">{os.title}</div>
-                                <div className="text-xs text-steel-400">{new Date(os.created_at).toLocaleDateString('pt-BR')}</div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-sm font-bold">R$ {os.price.toFixed(0)}</div>
-                                <span className={`badge text-[10px] ${osColor(os.status)}`}>{osLabel(os.status)}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal novo cliente */}
-      {modalC && (
-        <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setModalC(false)}>
-          <form onSubmit={saveCustomer} onClick={e => e.stopPropagation()} className="card max-w-md w-full space-y-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold">Novo cliente</h2>
-
-            {/* Identificação */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Identificação</div>
-              <div>
-                <label className="label">Nome completo *</label>
-                <input className="input" required value={formC.full_name}
-                  onChange={e => setFormC(f => ({ ...f, full_name: e.target.value }))}
-                  placeholder="Maria da Silva" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">CPF</label>
-                  <input className="input" value={formC.cpf}
-                    onChange={e => setFormC(f => ({ ...f, cpf: e.target.value }))}
-                    placeholder="000.000.000-00" />
-                </div>
-                <div>
-                  <label className="label">Data de nascimento</label>
-                  <input className="input" type="date" value={formC.birth_date}
-                    onChange={e => setFormC(f => ({ ...f, birth_date: e.target.value }))} />
-                </div>
-              </div>
-            </div>
-
-            {/* Contato */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Contato</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Telefone / WhatsApp</label>
-                  <input className="input" value={formC.phone}
-                    onChange={e => setFormC(f => ({ ...f, phone: e.target.value }))}
-                    placeholder="(11) 9 9999-9999" />
-                </div>
-                <div>
-                  <label className="label">E-mail</label>
-                  <input className="input" type="email" value={formC.email}
-                    onChange={e => setFormC(f => ({ ...f, email: e.target.value }))}
-                    placeholder="maria@email.com" />
-                </div>
-              </div>
-            </div>
-
-            {/* Endereço */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Endereço (opcional)</div>
-              <div>
-                <label className="label">Rua, número, bairro</label>
-                <input className="input" value={formC.address}
-                  onChange={e => setFormC(f => ({ ...f, address: e.target.value }))}
-                  placeholder="Rua das Flores, 123 — Centro" />
-              </div>
-              <div>
-                <label className="label">Cidade</label>
-                <input className="input" value={formC.city}
-                  onChange={e => setFormC(f => ({ ...f, city: e.target.value }))}
-                  placeholder="São Paulo" />
-              </div>
-            </div>
-
-            {/* Veículo */}
-            <div className="bg-steel-50 rounded-xl p-4 space-y-3">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">🚗 Veículo (opcional — cadastra junto)</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Marca</label>
-                  <input className="input" value={formC.veh_make}
-                    onChange={e => setFormC(f => ({ ...f, veh_make: e.target.value }))}
-                    placeholder="Honda" />
-                </div>
-                <div>
-                  <label className="label">Modelo</label>
-                  <input className="input" value={formC.veh_model}
-                    onChange={e => setFormC(f => ({ ...f, veh_model: e.target.value }))}
-                    placeholder="Civic" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Placa</label>
-                  <input className="input uppercase" value={formC.veh_plate}
-                    onChange={e => setFormC(f => ({ ...f, veh_plate: e.target.value.toUpperCase() }))}
-                    placeholder="ABC1D23" />
-                </div>
-                <div>
-                  <label className="label">Ano</label>
-                  <input className="input" type="number" min={1950} max={2030} value={formC.veh_year}
-                    onChange={e => setFormC(f => ({ ...f, veh_year: e.target.value }))}
-                    placeholder="2020" />
-                </div>
-              </div>
-              {formC.veh_make && formC.veh_model && (
-                <p className="text-xs text-signal-600 font-semibold">✓ O veículo será cadastrado junto com o cliente</p>
-              )}
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button type="button" onClick={() => setModalC(false)} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={saving}>
-                {saving ? '…' : formC.veh_make && formC.veh_model ? 'Salvar cliente + veículo' : 'Salvar cliente'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Modal novo veículo */}
-      {modalV && selected && (
-        <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setModalV(false)}>
-          <form onSubmit={saveVehicle} onClick={e => e.stopPropagation()} className="card max-w-md w-full space-y-4">
-            <h2 className="text-xl font-bold">Novo veículo — {selected.full_name}</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Placa *</label>
-                <input className="input uppercase" required value={formV.plate} onChange={e => setFormV(f => ({ ...f, plate: e.target.value.toUpperCase() }))} placeholder="ABC1D23" /></div>
-              <div><label className="label">Ano</label>
-                <input className="input" type="number" min={1950} max={2030} value={formV.year} onChange={e => setFormV(f => ({ ...f, year: e.target.value }))} placeholder="2020" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Marca *</label>
-                <input className="input" required value={formV.make} onChange={e => setFormV(f => ({ ...f, make: e.target.value }))} placeholder="Honda" /></div>
-              <div><label className="label">Modelo *</label>
-                <input className="input" required value={formV.model} onChange={e => setFormV(f => ({ ...f, model: e.target.value }))} placeholder="Civic" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Cor</label>
-                <input className="input" value={formV.color} onChange={e => setFormV(f => ({ ...f, color: e.target.value }))} placeholder="Prata" /></div>
-              <div><label className="label">Obs. técnicas</label>
-                <input className="input" value={formV.notes} onChange={e => setFormV(f => ({ ...f, notes: e.target.value }))} placeholder="Ex.: troca óleo 10k km" /></div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button type="button" onClick={() => setModalV(false)} className="btn-ghost flex-1">Cancelar</button>
-              <button className="btn-primary flex-1" disabled={saving}>{saving ? '…' : 'Salvar'}</button>
-            </div>
-          </form>
-        </div>
+      {/* Mesma abertura de OS da tela de OS, já com o cliente */}
+      {newOs && shop && (
+        <NewOsModal
+          workshopId={shop.id}
+          preset={newOs}
+          onClose={() => setNewOs(null)}
+          onManageTeam={() => { setNewOs(null); nav('/oficina/equipe'); }}
+          onCreated={(id, number, isCheckup) => {
+            setNewOs(null);
+            const n = String(number ?? '').padStart(4, '0');
+            if (isCheckup) {
+              toast.success(`OS nº ${n} aberta ✓ — faça o check-up`);
+              nav(`/oficina/checkup?os=${id}`);
+            } else {
+              toast.success(`OS nº ${n} aberta ✓ — lance as peças e serviços`);
+              nav(`/oficina/os/${id}`);
+            }
+          }}
+        />
       )}
     </WorkshopLayout>
   );
 }
 
-function osLabel(s: string) {
-  return ({ open: 'Aberta', in_progress: 'Em andamento', completed: 'Concluída', cancelled: 'Cancelada' } as Record<string, string>)[s] ?? s;
+function Chip({ label, count, active, onClick }: { label: string; count?: number; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className={`shrink-0 inline-flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-semibold ring-1 transition ${
+        active ? 'bg-steel-900 text-white ring-steel-900' : 'bg-white text-steel-600 ring-steel-200 hover:ring-steel-300'}`}>
+      {label}
+      {count != null && <span className={`tabular-nums ${active ? 'text-steel-300' : 'text-steel-400'}`}>{count.toLocaleString('pt-BR')}</span>}
+    </button>
+  );
 }
-function osColor(s: string) {
-  return ({ open: 'badge-pending', in_progress: 'badge-brand', completed: 'badge-success', cancelled: 'badge-alert' } as Record<string, string>)[s] ?? '';
+
+const initials = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
+};
+
+/** Uma linha da lista: nome, telefone, veículo, última visita, total gasto e próxima ação */
+function CustomerRow({ r, shopId, shopName, onOpen, onNewOs, onSchedule, onOptOut, periodSpent }: {
+  r: Row; shopId: string; shopName: string; onOpen: () => void; onNewOs: () => void; onSchedule: () => void; onOptOut: () => void;
+  periodSpent: number | null;
+}) {
+  const seg = SEGMENTS[r.ins.segment];
+  const wa = !r.contact_opt_out ? waNumber(r.phone) : null;
+  const contacted = contactedRecently(r.last_contacted_at);
+  const action = r.reason
+    ? (contacted ? `Chamado ${timeAgo(r.last_contacted_at)}` : reasonLabel(r.reason))
+    : r.ins.openOs > 0 ? `${r.ins.openOs} OS em aberto` : null;
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  return (
+    <li onClick={onOpen} className="cursor-pointer transition pl-4 pr-2 py-3 md:py-2.5 min-h-[56px]
+      rounded-xl md:rounded-none bg-white md:bg-transparent ring-1 ring-steel-200/70 md:ring-0 hover:bg-steel-50
+      grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_110px_120px_minmax(0,1.5fr)_72px] gap-x-3 gap-y-1 items-center">
+      {/* Cliente */}
+      <div className="min-w-0 flex items-center gap-3">
+        <span className={`h-9 w-9 rounded-full grid place-items-center shrink-0 text-xs font-bold ${r.ins.vip ? 'bg-amber-100 text-amber-800 ring-2 ring-amber-300' : 'bg-steel-100 text-steel-600'}`}>
+          {initials(r.full_name)}
+        </span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-semibold text-steel-900 truncate">{r.full_name}</span>
+            {r.ins.vip && (
+              <span title="VIP: entre os 20% que mais gastam" className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">⭐ VIP</span>
+            )}
+            {r.ins.segment !== 'regular' && (
+              <span title={seg.hint} className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${seg.cls}`}>{seg.label}</span>
+            )}
+          </div>
+          <div className="text-xs text-steel-500 truncate">
+            {r.phone ? fmtPhone(r.phone) : 'sem telefone'}{r.contact_opt_out ? ' · não quer mensagens' : ''}
+            <span className="md:hidden">{r.car ? ` · ${r.car}` : ''}</span>
+          </div>
+        </div>
+      </div>
+      {/* Veículo */}
+      <div className="hidden md:block text-sm text-steel-700 truncate">{r.car ?? ''}</div>
+      {/* Última visita */}
+      <div className="hidden md:block text-sm text-steel-600">{r.ins.lastVisit ? timeAgo(r.ins.lastVisit) : <span className="text-xs text-steel-400">sem serviço</span>}</div>
+      {/* Total gasto */}
+      <div className="hidden md:block text-right text-sm font-semibold text-steel-900 tabular-nums">
+        {fmtBRL(r.ins.spent)}
+        {periodSpent != null && <div className="text-[11px] font-normal text-steel-500">no período: {fmtBRL(periodSpent)}</div>}
+      </div>
+      {/* Próxima ação */}
+      <div className="hidden md:block min-w-0">
+        {action && (
+          <span title={action} className={`inline-flex max-w-full items-center gap-1 truncate rounded-md px-2 py-1 text-xs font-semibold ${
+            contacted ? 'bg-steel-50 text-steel-400' : r.reason?.kind === 'quote' ? 'bg-brand-50 text-brand-700'
+              : r.reason ? 'bg-pending-500/10 text-pending-700' : 'bg-sky-50 text-sky-700'}`}>
+            <span className="shrink-0">{contacted ? '✓' : r.reason?.kind === 'quote' ? '📋' : r.reason?.kind === 'service' ? '📅' : r.reason ? '📞' : '🔧'}</span>
+            <span className="truncate">{action}</span>
+          </span>
+        )}
+      </div>
+
+      {/* Ações (no celular: valor + ações na direita) */}
+      <div className="flex items-center justify-end gap-0.5" onClick={stop}>
+        <div className="md:hidden text-right mr-1">
+          <div className="text-sm font-semibold text-steel-900 tabular-nums">{fmtBRL(r.ins.spent)}</div>
+          <div className="text-[11px] text-steel-500">{r.ins.lastVisit ? timeAgo(r.ins.lastVisit) : '—'}</div>
+        </div>
+        {wa ? (
+          <WhatsAppButton phone={wa} text={callMessage(shopId, shopName, { name: r.full_name, car: r.car, lastService: r.lastService }, r.reason)}
+            customerId={r.id} customerName={r.full_name}
+            className="h-10 w-10 md:h-9 md:w-9 grid place-items-center rounded-lg text-steel-400 hover:text-emerald-600 hover:bg-emerald-50 transition">
+            <Icon name="chat" size={17} />
+          </WhatsAppButton>
+        ) : <span className="h-10 w-10 md:h-9 md:w-9" />}
+        <RowMenu items={[
+          { label: 'Criar OS / orçamento', onClick: onNewOs },
+          { label: 'Agendar', onClick: onSchedule },
+          { label: 'Ver histórico', onClick: onOpen },
+          ...(!r.contact_opt_out ? [{ label: 'Não quer receber mensagens', onClick: onOptOut, muted: true }] : []),
+        ]} />
+      </div>
+      {/* Próxima ação no celular */}
+      {r.reason && !contacted && <div className="md:hidden col-span-2 text-xs font-medium text-steel-700 pt-1 border-t border-steel-100 mt-1">{action}</div>}
+    </li>
+  );
+}
+
+/** Menu "⋯" da linha: no computador abre ao lado; no celular sobe por baixo */
+function RowMenu({ items }: { items: { label: string; onClick: () => void; muted?: boolean }[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(o => !o)} aria-label="Mais ações" aria-expanded={open}
+        className="h-10 w-10 md:h-9 md:w-9 grid place-items-center rounded-lg text-steel-400 hover:text-steel-700 hover:bg-steel-100 transition">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40 bg-steel-900/40 md:hidden" onClick={() => setOpen(false)} />
+          <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl pb-[env(safe-area-inset-bottom)] md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-full md:mt-1 md:w-60 md:rounded-xl bg-white shadow-2xl ring-1 ring-steel-200 py-1">
+            {items.map(i => (
+              <button key={i.label} onClick={() => { setOpen(false); i.onClick(); }}
+                className={`w-full text-left px-4 py-3 md:py-2.5 text-sm hover:bg-steel-50 ${i.muted ? 'text-steel-500 border-t border-steel-100' : 'text-steel-700'}`}>
+                {i.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+type MoreValue = { filter: Filter; period: PeriodKey; custom: { from: string; to: string }; dateMode: DateMode; sort: Sort };
+
+/** "Mais filtros": no computador abre embaixo do botão; no celular sobe por baixo. Nada muda até "Aplicar filtros". */
+function MoreFilters({ value, counts, active, onApply, onClear }: {
+  value: MoreValue; counts: Record<Filter, number>; active: boolean;
+  onApply: (v: MoreValue) => void; onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<MoreValue>(value);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) setDraft(value); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  const set = (p: Partial<MoreValue>) => setDraft(d => ({ ...d, ...p }));
+  const segment = MORE_FILTERS.some(f => f.key === draft.filter) ? draft.filter : null;
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className={`inline-flex items-center gap-1 px-3 h-8 rounded-full text-xs font-semibold ring-1 transition ${
+          active ? 'bg-steel-900 text-white ring-steel-900' : 'bg-white text-steel-600 ring-steel-200 hover:ring-steel-300'}`}>
+        <Icon name="sliders" size={14} />
+        Mais filtros{active ? ' •' : ''}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40 bg-steel-900/40 lg:hidden" onClick={() => setOpen(false)} />
+          <div className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl pb-[env(safe-area-inset-bottom)]
+            lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-full lg:mt-2 lg:w-[380px] lg:max-h-none lg:rounded-xl
+            bg-white shadow-2xl ring-1 ring-steel-200">
+            <div className="p-4 space-y-4">
+              <Group title="Segmento">
+                {MORE_FILTERS.map(f => (
+                  <Chip key={f.key} active={segment === f.key} label={f.label} count={counts[f.key]}
+                    onClick={() => set({ filter: segment === f.key ? 'all' : f.key })} />
+                ))}
+              </Group>
+              <Group title="Período">
+                {PERIOD_OPTS.map(p => (
+                  <Chip key={p.key} active={draft.period === p.key} label={p.label}
+                    onClick={() => set({ period: draft.period === p.key ? 'all' : p.key })} />
+                ))}
+                {draft.period === 'custom' && (
+                  <span className="flex items-center gap-1.5 w-full">
+                    <input type="date" className="input !py-1 text-sm" value={draft.custom.from} onChange={e => set({ custom: { ...draft.custom, from: e.target.value } })} />
+                    <span className="text-steel-400 text-sm">a</span>
+                    <input type="date" className="input !py-1 text-sm" value={draft.custom.to} onChange={e => set({ custom: { ...draft.custom, to: e.target.value } })} />
+                  </span>
+                )}
+              </Group>
+              {draft.period !== 'all' && (
+                <Group title="Data considerada">
+                  {DATE_MODES.map(m => (
+                    <Chip key={m.key} active={draft.dateMode === m.key} label={m.label.replace(' no período', '')} onClick={() => set({ dateMode: m.key })} />
+                  ))}
+                </Group>
+              )}
+              <Group title="Ordenar por">
+                <select className="input text-sm" value={draft.sort} onChange={e => set({ sort: e.target.value as Sort })}>
+                  {SORTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+              </Group>
+            </div>
+            <div className="flex gap-2 px-4 py-3 border-t border-steel-100 bg-steel-50/60 lg:rounded-b-xl">
+              <button onClick={() => { onClear(); setOpen(false); }}
+                className="flex-1 inline-flex items-center justify-center rounded-lg bg-white text-steel-700 ring-1 ring-steel-200 h-10 lg:h-9 text-sm font-semibold hover:bg-steel-50">
+                Limpar
+              </button>
+              <button onClick={() => { onApply(draft); setOpen(false); }}
+                className="flex-[2] inline-flex items-center justify-center rounded-lg bg-brand-500 text-white h-10 lg:h-9 text-sm font-semibold hover:bg-brand-600">
+                Aplicar filtros
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-steel-400 mb-2">{title}</div>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </div>
+  );
 }

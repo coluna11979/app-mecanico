@@ -87,3 +87,38 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
+
+/* Slider da home: trilho grosso e polegar grande, fácil de tocar no celular */
+.range-touch {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 44px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.range-touch::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, #FF5C0A var(--fill, 0%), #E8ECF1 var(--fill, 0%));
+}
+.range-touch::-moz-range-track { height: 8px; border-radius: 9999px; background: #E8ECF1; }
+.range-touch::-moz-range-progress { height: 8px; border-radius: 9999px; background: #FF5C0A; }
+.range-touch::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px; height: 28px; margin-top: -10px;
+  border-radius: 9999px; background: #fff;
+  border: 3px solid #FF5C0A;
+  box-shadow: 0 2px 8px rgba(11, 17, 23, 0.18);
+  transition: transform 150ms;
+}
+.range-touch::-moz-range-thumb {
+  width: 22px; height: 22px;
+  border-radius: 9999px; background: #fff;
+  border: 3px solid #FF5C0A;
+  box-shadow: 0 2px 8px rgba(11, 17, 23, 0.18);
+}
+.range-touch:active::-webkit-slider-thumb { transform: scale(1.12); }
+.range-touch:focus-visible { outline: none; }
+.range-touch:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(255, 92, 10, 0.3); }
+.range-touch:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 4px rgba(255, 92, 10, 0.3); }

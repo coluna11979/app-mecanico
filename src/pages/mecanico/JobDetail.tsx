@@ -3,6 +3,10 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatBRL, mechanicNet, hoursLabel } from '@/lib/payment';
+import { isScheduled, formatScheduled } from '@/lib/scheduling';
+import { WorkshopReviews } from '@/components/WorkshopReviews';
+import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
 
 export default function MechanicJobDetail() {
@@ -12,16 +16,49 @@ export default function MechanicJobDetail() {
   const [job, setJob] = useState<Job | null>(null);
   const [shop, setShop] = useState<Workshop | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showReviews, setShowReviews] = useState(false);
+  const [myMechanicId, setMyMechanicId] = useState<string | null>(null);
 
   useEffect(() => { if (id) load(); }, [id]);
 
   async function load() {
     const { data: j } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
     setJob(j as Job);
+    if (user) {
+      const { data: m } = await supabase.from('mechanics').select('id').eq('profile_id', user.id).maybeSingle();
+      setMyMechanicId(m?.id ?? null);
+    }
     if (j) {
       const { data: w } = await supabase.from('workshops').select('*').eq('id', j.workshop_id).maybeSingle();
       setShop(w as Workshop);
     }
+  }
+
+  // Já aceitei esse job? (agendamento aceito aguardando o dia)
+  const isMine = !!job?.mechanic_id && job.mechanic_id === myMechanicId;
+
+  async function startDeparture() {
+    if (!job) return;
+    setBusy(true);
+    await supabase.from('jobs').update({ en_route_at: new Date().toISOString() }).eq('id', job.id);
+    setBusy(false);
+    nav(`/mecanico/job/${job.id}/tracking`);
+  }
+
+  async function dropJob() {
+    if (!job) return;
+    const reason = prompt('Por que você quer desistir desse agendamento?\n(Desistências repetidas afetam sua reputação)');
+    if (!reason || !reason.trim()) return;
+    setBusy(true);
+    const { data, error } = await supabase.functions.invoke('cancel-job', {
+      body: { job_id: job.id, reason: reason.trim(), cancelled_by: 'mechanic' },
+    });
+    setBusy(false);
+    if (error || (data as any)?.error) {
+      alert('Erro ao desistir: ' + ((data as any)?.error ?? error?.message ?? 'tente novamente'));
+      return;
+    }
+    nav('/mecanico/agenda');
   }
 
   async function accept() {
@@ -29,8 +66,22 @@ export default function MechanicJobDetail() {
     setBusy(true);
     const { data: m } = await supabase.from('mechanics').select('id').eq('profile_id', user.id).maybeSingle();
     if (!m) { setBusy(false); return; }
-    await supabase.from('jobs').update({ status: 'assigned', mechanic_id: m.id }).eq('id', job.id);
-    nav(`/mecanico/job/${job.id}/tracking`);
+    const scheduled = isScheduled(job);
+    const { data: updated, error } = await supabase.from('jobs').update({
+      status: 'assigned',
+      mechanic_id: m.id,
+      // Imediato já sai a caminho; agendado fica na Agenda (en_route_at null)
+      en_route_at: scheduled ? null : new Date().toISOString(),
+    }).eq('id', job.id).eq('status', 'open') // outro mecânico pode ter aceitado antes
+      .select('id');
+    if (error || !updated?.length) {
+      setBusy(false);
+      alert(error ? 'Erro ao aceitar: ' + error.message : 'Esse job já foi aceito por outro mecânico.');
+      nav('/mecanico/dashboard');
+      return;
+    }
+    // Agendado: vai pra Agenda. Imediato: abre o tracking direto.
+    nav(scheduled ? '/mecanico/agenda' : `/mecanico/job/${job.id}/tracking`);
   }
 
   if (!job) return <MechanicLayout><div className="p-6 text-steel-400">Carregando…</div></MechanicLayout>;
@@ -42,39 +93,35 @@ export default function MechanicJobDetail() {
 
         {/* Job header */}
         <div className="card !bg-steel-800">
-          <div className="text-xs text-brand-400 uppercase tracking-wider font-bold">Job disponível</div>
+          <div className="text-xs text-brand-400 uppercase tracking-wider font-bold">
+            {isMine ? (job.en_route_at ? 'Job em andamento' : 'Agendamento aceito') : 'Job disponível'}
+          </div>
           <h1 className="text-2xl font-bold mt-1">{job.title}</h1>
           <p className="mt-3 text-steel-300 leading-relaxed">{job.description}</p>
           {job.scheduled_at && (
-            <div className="mt-3 flex items-center gap-2 text-sm text-steel-400">
-              <span>📅</span>
-              <span>{new Date(job.scheduled_at).toLocaleString('pt-BR', { weekday:'short', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</span>
-            </div>
+            isScheduled(job) ? (
+              <div className="mt-3 bg-pending-500/15 border border-pending-500/40 rounded-xl px-3 py-2 flex items-center gap-2 text-sm">
+                <span className="text-lg">📅</span>
+                <div>
+                  <div className="text-pending-300 font-bold">Serviço agendado</div>
+                  <div className="text-xs text-steel-400">{formatScheduled(job.scheduled_at)} · não é pra agora</div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 flex items-center gap-2 text-sm text-steel-400">
+                <span>📅</span>
+                <span>{formatScheduled(job.scheduled_at)}</span>
+              </div>
+            )
           )}
         </div>
 
-        {/* Pricing breakdown */}
-        {(() => {
-          const pph = job.price_per_hour ?? 0;
-          const mh  = job.max_hours ?? 1;
-          const cap = pph * mh;
-          return (
-            <div className="card !bg-steel-800 grid grid-cols-3 divide-x divide-steel-700 text-center">
-              <div className="px-2 py-1">
-                <div className="text-[10px] text-steel-500 uppercase tracking-wider">R$/hora</div>
-                <div className="text-xl font-bold text-brand-400 font-display mt-1">R$ {pph.toFixed(0)}</div>
-              </div>
-              <div className="px-2 py-1">
-                <div className="text-[10px] text-steel-500 uppercase tracking-wider">Tempo previsto</div>
-                <div className="text-xl font-bold text-white font-display mt-1">{mh}h</div>
-              </div>
-              <div className="px-2 py-1">
-                <div className="text-[10px] text-signal-400 uppercase tracking-wider font-bold">Valor fechado</div>
-                <div className="text-xl font-bold text-signal-400 font-display mt-1">R$ {cap.toFixed(0)}</div>
-              </div>
-            </div>
-          );
-        })()}
+        {/* Pacote (sem expor R$/h ou bruto — só horas previstas) */}
+        <div className="card !bg-steel-800 text-center">
+          <div className="text-[10px] text-steel-500 uppercase tracking-wider">Pacote</div>
+          <div className="text-xl font-bold text-white font-display mt-1">{hoursLabel(job) ?? 'Preço fechado'}</div>
+          <div className="text-xs text-steel-500 mt-1">valor fechado · não muda com o tempo real</div>
+        </div>
 
         {/* Workshop info */}
         {shop && (
@@ -88,31 +135,73 @@ export default function MechanicJobDetail() {
                 <div className="text-xs text-steel-500 mt-0.5">★ {shop.rating.toFixed(1)} · {shop.total_jobs} jobs concluídos</div>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowReviews(v => !v)}
+              className="mt-3 w-full text-xs text-brand-400 hover:text-brand-300 font-semibold border-t border-steel-700 pt-2 transition"
+            >
+              {showReviews ? '▲ Ocultar avaliações' : '▼ Ver o que outros mecânicos falaram dessa oficina'}
+            </button>
+            {showReviews && (
+              <div className="mt-2 pt-2 border-t border-steel-700">
+                <WorkshopReviews workshopId={shop.id} />
+              </div>
+            )}
           </div>
         )}
 
-        {/* Your cut */}
+        {/* Você recebe */}
         {(() => {
-          const cap = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
+          const gross = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
+          const net = mechanicNet(gross);
           return (
             <div className="card !bg-steel-800 border border-signal-500/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs text-steel-500 uppercase tracking-wider">Seu repasse (82%)</div>
-                  <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {(cap * 0.82).toFixed(2)}</div>
-                  <div className="text-xs text-steel-500 mt-0.5">valor fechado · não muda com o tempo real</div>
+                  <div className="text-xs text-steel-500 uppercase tracking-wider">Você recebe</div>
+                  <div className="text-3xl font-bold text-signal-400 font-display mt-1">R$ {formatBRL(net)}</div>
+                  <div className="text-xs text-steel-500 mt-1">no seu PIX</div>
                 </div>
                 <div className="h-12 w-12 rounded-full bg-signal-500/10 grid place-items-center text-2xl">💸</div>
               </div>
-              <div className="text-xs text-steel-600 mt-3">Liberado via PIX em até 24h após confirmação da oficina</div>
+              <div className="text-xs text-steel-600 mt-3">Liberado depois que a oficina confirma a conclusão.</div>
             </div>
           );
         })()}
 
-        <div className="grid grid-cols-2 gap-2">
-          <Link to="/mecanico/dashboard" className="btn-ghost btn-lg">Recusar</Link>
-          <button onClick={accept} disabled={busy} className="btn-primary btn-lg">{busy ? '…' : 'Aceitar job'}</button>
-        </div>
+        {/* Prazo de chegada — o mecânico precisa saber antes e depois do aceite */}
+        {isMine
+          ? <ArrivalCountdown job={job} />
+          : job.status === 'open' && <AcceptDeadlineHint job={job} />}
+
+        {isMine ? (
+          // Já aceitei. Se ainda não saí (agendado), posso ir agora ou desistir.
+          job.en_route_at ? (
+            <Link to={`/mecanico/job/${job.id}/tracking`} className="btn-primary btn-lg w-full text-center">
+              Abrir acompanhamento →
+            </Link>
+          ) : (
+            <div className="space-y-2">
+              <button onClick={startDeparture} disabled={busy} className="btn-primary btn-lg w-full !bg-signal-500 disabled:opacity-50">
+                {busy ? '…' : '🚗 Estou indo agora'}
+              </button>
+              <button
+                onClick={dropJob}
+                disabled={busy}
+                className="btn-ghost btn-lg w-full !border-alert-500/40 !text-alert-400 disabled:opacity-50"
+              >
+                {busy ? '…' : 'Desistir do agendamento'}
+              </button>
+            </div>
+          )
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/mecanico/dashboard" className="btn-ghost btn-lg">Recusar</Link>
+            <button onClick={accept} disabled={busy} className="btn-primary btn-lg">
+              {busy ? '…' : isScheduled(job) ? 'Aceitar agendamento' : 'Aceitar job'}
+            </button>
+          </div>
+        )}
       </div>
     </MechanicLayout>
   );

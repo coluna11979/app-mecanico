@@ -3,34 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGeoBroadcast } from '@/hooks/useGeoBroadcast';
+import { GeoPill, GeoProblemBanner } from '@/components/mecanico/GeoStatus';
 import { getSetting } from '@/lib/settings';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import { useMessages } from '@/hooks/useMessages';
-import { attachAutoUnlock } from '@/lib/alertSound';
+import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
+import { distKm, etaLabel } from '@/lib/geo';
+import { formatBRL, mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
+import { ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
-
-/* ── Haversine distance in km ── */
-function distKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLng = (lng2 - lng1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * (Math.PI / 180)) *
-    Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function etaLabel(km: number): string {
-  const mins = Math.round((km / 30) * 60);
-  if (mins < 1)  return 'Chegando!';
-  if (mins < 60) return `~${mins} min`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `~${h}h${m > 0 ? ` ${m}min` : ''}`;
-}
 
 export default function MechanicTracking() {
   const { id } = useParams();
@@ -55,6 +37,8 @@ export default function MechanicTracking() {
   const [toast, setToast]           = useState<string | null>(null);
   const prevStatusRef               = useRef<string | null>(null);
   const prevPixPaidRef              = useRef<boolean>(false);
+  const prevConfirmedRef            = useRef<boolean>(false);
+  const [waitSecs, setWaitSecs]     = useState(0);
 
   /* ── Posição GPS do mecânico ── */
   const [mechPos, setMechPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -111,11 +95,15 @@ export default function MechanicTracking() {
   /* ── Polling fallback: garante atualização mesmo se realtime cair ── */
   useEffect(() => {
     if (!id) return;
-    const poll = setInterval(async () => {
+    // A cada 5 s com a aba visível (pausa em segundo plano) e atualiza na hora ao voltar
+    const refresh = async () => {
       const { data } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
       if (data) setJob(data as Job);
-    }, 5000);
-    return () => clearInterval(poll);
+    };
+    const poll = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
   }, [id]);
 
   /* ── Detecta mudanças de status e dispara toast ── */
@@ -141,12 +129,35 @@ export default function MechanicTracking() {
     }
   }, [job?.status, job?.pix_paid_at]);
 
+  /* ── Detecta confirmação da oficina (workshop_confirmed_at) e toca som ── */
+  useEffect(() => {
+    const wasConfirmed = prevConfirmedRef.current;
+    const isConfirmed  = !!job?.workshop_confirmed_at;
+    prevConfirmedRef.current = isConfirmed;
+    if (!wasConfirmed && isConfirmed && job?.status === 'completed') {
+      playJobAlert();
+    }
+  }, [job?.workshop_confirmed_at, job?.status]);
+
+  /* ── Cronômetro da espera pós-finalização ── */
+  useEffect(() => {
+    if (job?.status !== 'completed' || job.workshop_confirmed_at) {
+      setWaitSecs(0);
+      return;
+    }
+    const start = job.completed_at ? new Date(job.completed_at).getTime() : Date.now();
+    const tick = () => setWaitSecs(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [job?.status, job?.completed_at, job?.workshop_confirmed_at]);
+
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 5000);
   }
 
-  useGeoBroadcast({
+  const geo = useGeoBroadcast({
     enabled: !!job && (job.status === 'assigned' || job.status === 'in_progress'),
     jobId: job?.id ?? null,
     mechanicId,
@@ -218,12 +229,22 @@ export default function MechanicTracking() {
       actual_hours: actualHours,
     }).eq('id', job.id);
     setBusy(false);
-    nav('/mecanico/dashboard');
+    // NÃO navega — fica na tela de espera até a oficina confirmar (realtime atualiza job)
+  }
+
+  function goBackToDashboard() {
+    if (!job) { nav('/mecanico/dashboard'); return; }
+    const net = mechanicNet((job.price_per_hour ?? 0) * (job.max_hours ?? 1));
+    const state = job.workshop_confirmed_at
+      ? { justEarned: { net, jobTitle: job.title } }
+      : undefined;
+    nav('/mecanico/dashboard', state ? { state } : undefined);
   }
 
   const arrived = !!job?.arrived_at;
   const pixPaid = !!job?.pix_paid_at;
-  const cap     = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
+  const grossCap = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
+  const netCap   = mechanicNet(grossCap);
 
   const km = mechPos && shop?.lat && shop?.lng
     ? distKm(mechPos.lat, mechPos.lng, shop.lat, shop.lng)
@@ -283,12 +304,16 @@ export default function MechanicTracking() {
               </span>
             )}
           </button>
-          <div className="bg-brand-500 text-white text-xs font-semibold rounded-full px-3 py-2 flex items-center gap-2 shadow-brand">
-            <span className="h-2 w-2 rounded-full bg-white animate-pulse-soft" />
-            📍 Ao vivo
-          </div>
+          <GeoPill state={geo.state} />
         </div>
       </div>
+
+      {/* GPS com problema: a oficina não está vendo o mecânico no mapa */}
+      {(geo.state === 'denied' || geo.state === 'unavailable' || geo.state === 'unsupported') && (
+        <div className="absolute top-16 left-3 right-3 z-10">
+          <GeoProblemBanner state={geo.state} className="bg-steel-900/95 backdrop-blur" />
+        </div>
+      )}
 
       {/* Mapa */}
       <div className="flex-1">
@@ -310,7 +335,9 @@ export default function MechanicTracking() {
         {shop && (
           <div>
             <div className="text-xs text-brand-400 uppercase tracking-wider font-bold mb-1">
-              {job?.status === 'in_progress'
+              {job?.status === 'completed'
+                ? (job.workshop_confirmed_at ? '✅ Serviço concluído' : '⏳ Aguardando a oficina confirmar')
+                : job?.status === 'in_progress'
                 ? '🔧 Em serviço'
                 : arrived && !pixPaid
                   ? '⏳ Aguardando pagamento'
@@ -331,7 +358,7 @@ export default function MechanicTracking() {
               )}
             </div>
             <div className="text-xs text-steel-500 mt-1">
-              Pacote: {job?.max_hours ?? '—'}h × R$ {job?.price_per_hour?.toFixed(0) ?? '—'}/h · <span className="text-signal-400 font-bold">R$ {cap.toFixed(0)} fechado</span>
+              {job && hoursLabel(job) ? `Pacote: ${hoursLabel(job)} · ` : 'Preço fechado · '}<span className="text-signal-400 font-bold">você recebe R$ {formatMoney(netCap)}</span>
             </div>
           </div>
         )}
@@ -339,6 +366,7 @@ export default function MechanicTracking() {
         {/* Ações por estado */}
         {job?.status === 'assigned' && !arrived && (
           <div className="space-y-2">
+            <ArrivalCountdown job={job} className="!text-sm" />
             <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full">
               {busy ? '…' : '📍 Confirmar chegada'}
             </button>
@@ -396,6 +424,54 @@ export default function MechanicTracking() {
           <button onClick={completeJob} disabled={busy} className="btn-primary btn-lg w-full !bg-signal-500">
             {busy ? '…' : '✅ Finalizar serviço'}
           </button>
+        )}
+
+        {/* Estado: finalizado, aguardando confirmação da oficina */}
+        {job?.status === 'completed' && !job.workshop_confirmed_at && (
+          <div className="bg-pending-500/10 border border-pending-500/40 rounded-2xl p-4 space-y-3">
+            <div className="text-center">
+              <div className="text-3xl mb-1">⏳</div>
+              <div className="text-pending-300 font-bold text-base">Aguardando confirmação da oficina</div>
+              <div className="text-xs text-steel-400 mt-1">
+                Notificação enviada — assim que confirmarem, seu PIX de <strong>R$ {formatBRL(netCap)}</strong> é liberado.
+              </div>
+            </div>
+            <div className="bg-steel-900/60 rounded-xl py-2 text-center">
+              <div className="text-[10px] uppercase tracking-wider text-steel-500 font-bold">aguardando há</div>
+              <div className="font-display text-2xl text-pending-300 font-bold">
+                {Math.floor(waitSecs / 60)}:{String(waitSecs % 60).padStart(2, '0')}
+              </div>
+            </div>
+            <p className="text-[11px] text-steel-500 text-center px-2">
+              💡 Aguarde aqui antes de sair da oficina — assim você confirma o pagamento na hora.
+            </p>
+            <button
+              onClick={goBackToDashboard}
+              className="btn-ghost w-full text-xs !text-steel-400 !border-steel-700"
+            >
+              Voltar ao dashboard mesmo assim
+            </button>
+          </div>
+        )}
+
+        {/* Estado: confirmado — repasse liberado */}
+        {job?.status === 'completed' && job.workshop_confirmed_at && (
+          <div className="bg-gradient-to-b from-signal-500/20 to-signal-500/5 border-2 border-signal-500/50 rounded-2xl p-5 space-y-3 animate-fade-in">
+            <div className="text-center space-y-1">
+              <div className="text-5xl">✅</div>
+              <div className="text-signal-400 font-bold text-lg">Confirmado! Pode ir embora.</div>
+              <div className="text-xs text-steel-300">Seu repasse foi liberado no PIX cadastrado.</div>
+            </div>
+            <div className="bg-steel-900/70 rounded-xl py-3 text-center border border-signal-500/30">
+              <div className="text-[10px] uppercase tracking-wider text-steel-500 font-bold">Liberado</div>
+              <div className="font-display text-3xl text-signal-400 font-bold">
+                + R$ {netCap.toFixed(2).replace('.', ',')}
+              </div>
+            </div>
+            <button onClick={goBackToDashboard} className="btn-primary btn-lg w-full !bg-signal-500">
+              Voltar ao dashboard
+            </button>
+          </div>
         )}
       </div>
 

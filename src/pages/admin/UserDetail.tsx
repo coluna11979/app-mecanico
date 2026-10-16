@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
+import { sendApprovalEmail } from '@/lib/approvalEmail';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 const STATUS_LABEL: Record<ProfileStatus, string> = {
@@ -28,16 +29,27 @@ export default function AdminUserDetail() {
   const [loading, setLoading]   = useState(true);
   const [busy, setBusy]         = useState(false);
   const [saved, setSaved]       = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
   const [emailDraft, setEmailDraft] = useState('');
   const [emailEditing, setEmailEditing] = useState(false);
   const [emailMsg, setEmailMsg]   = useState<{ text: string; ok: boolean } | null>(null);
+  const [ambBusy, setAmbBusy]     = useState(false);
+  const [copied, setCopied]       = useState(false);
 
   // Form state
   const [edit, setEdit] = useState({
     full_name: '', phone: '',
     cpf: '', cnh: '', experience_years: 0, hourly_rate: 0, pix_key: '',
-    business_name: '', cnpj: '', address: '', city: '', state: '', description: '',
+    // Localização do mecânico + referência opcional
+    mech_cep: '', mech_neighborhood: '', mech_city: '', mech_state: '', mech_work_reference: '',
+    mech_address: '', mech_address_number: '', mech_address_complement: '',
+    mech_birth_date: '', mech_mother_name: '',
+    business_name: '', cnpj: '',
+    address: '', number: '', neighborhood: '', cep: '',
+    city: '', state: '', description: '',
     lat: null as number | null, lng: null as number | null,
     admin_notes: '',
   });
@@ -72,6 +84,16 @@ export default function AdminUserDetail() {
         experience_years: m?.experience_years ?? 0,
         hourly_rate: m?.hourly_rate ?? 0,
         pix_key: (m as any)?.pix_key ?? '',
+        mech_cep: m?.cep ?? '',
+        mech_address: m?.address ?? '',
+        mech_address_number: m?.address_number ?? '',
+        mech_address_complement: m?.address_complement ?? '',
+        mech_birth_date: m?.birth_date ?? '',
+        mech_mother_name: m?.mother_name ?? '',
+        mech_neighborhood: m?.neighborhood ?? '',
+        mech_city: m?.city ?? '',
+        mech_state: m?.state ?? '',
+        mech_work_reference: m?.work_reference ?? '',
         admin_notes: p.admin_notes ?? '',
       }));
     } else if (p.role === 'workshop') {
@@ -81,7 +103,11 @@ export default function AdminUserDetail() {
         ...e,
         full_name: p.full_name, phone: p.phone ?? '',
         business_name: w?.business_name ?? '', cnpj: w?.cnpj ?? '',
-        address: w?.address ?? '', city: w?.city ?? '', state: w?.state ?? '',
+        address: w?.address ?? '',
+        number: w?.number ?? '',
+        neighborhood: w?.neighborhood ?? '',
+        cep: w?.cep ?? '',
+        city: w?.city ?? '', state: w?.state ?? '',
         description: w?.description ?? '',
         lat: w?.lat ?? null, lng: w?.lng ?? null,
         admin_notes: p.admin_notes ?? '',
@@ -115,6 +141,16 @@ export default function AdminUserDetail() {
         experience_years: Number(edit.experience_years) || 0,
         hourly_rate: Number(edit.hourly_rate) || 0,
         pix_key: edit.pix_key.trim() || null,
+        cep: edit.mech_cep.trim() || null,
+        address: edit.mech_address.trim() || null,
+        address_number: edit.mech_address_number.trim() || null,
+        address_complement: edit.mech_address_complement.trim() || null,
+        birth_date: edit.mech_birth_date || null,
+        mother_name: edit.mech_mother_name.trim() || null,
+        neighborhood: edit.mech_neighborhood.trim() || null,
+        city: edit.mech_city.trim() || null,
+        state: edit.mech_state.trim().toUpperCase() || null,
+        work_reference: edit.mech_work_reference.trim() || null,
       }).eq('id', mechanic.id);
     }
 
@@ -123,6 +159,9 @@ export default function AdminUserDetail() {
         business_name: edit.business_name.trim(),
         cnpj:    edit.cnpj.trim(),
         address: edit.address.trim(),
+        number:  edit.number.trim() || null,
+        neighborhood: edit.neighborhood.trim() || null,
+        cep:     edit.cep.trim() || null,
         city:    edit.city.trim(),
         state:   edit.state.trim().toUpperCase(),
         description: edit.description.trim() || null,
@@ -183,10 +222,69 @@ export default function AdminUserDetail() {
 
   async function changeStatus(status: ProfileStatus) {
     if (!profile) return;
+    const previous = profile.status;
     setBusy(true);
     await supabase.from('profiles').update({ status }).eq('id', profile.id);
+
+    // Decisão final: registra no histórico e avisa por email, igual à tela de Aprovações
+    if ((status === 'approved' || status === 'rejected') && status !== previous) {
+      const { data: { user } } = await supabase.auth.getUser();
+      const content = status === 'approved' ? 'cadastro aprovado' : 'cadastro rejeitado';
+      await supabase.from('approval_messages').insert({
+        profile_id: profile.id, sender_id: user?.id, sender_role: 'admin', kind: 'status_change', content,
+      });
+      void sendApprovalEmail(profile.id, content, 'status_change', status);
+    }
+
     setBusy(false);
     load();
+  }
+
+  async function tornarEmbaixador() {
+    if (!mechanic) return;
+    setAmbBusy(true);
+    const { error } = await supabase.rpc('tornar_embaixador', { p_mechanic_id: mechanic.id });
+    setAmbBusy(false);
+    if (error) { alert('Erro ao tornar embaixador: ' + error.message); return; }
+    load();
+  }
+
+  async function revogarEmbaixador() {
+    if (!mechanic) return;
+    if (!confirm('Revogar o status de embaixador? Comissões já registradas continuam valendo.')) return;
+    setAmbBusy(true);
+    const { error } = await supabase.rpc('revogar_embaixador', { p_mechanic_id: mechanic.id });
+    setAmbBusy(false);
+    if (error) { alert('Erro: ' + error.message); return; }
+    load();
+  }
+
+  async function copiarLink() {
+    if (!(mechanic as any)?.codigo_indicacao) return;
+    const url = `${window.location.origin}/cadastro/mecanico?ref=${(mechanic as any).codigo_indicacao}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      prompt('Copie o link:', url);
+    }
+  }
+
+  async function deleteUser() {
+    if (!profile) return;
+    setBusy(true);
+    setDeleteErr(null);
+    const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+      body: { profile_id: profile.id },
+    });
+    setBusy(false);
+    if (error || data?.error) {
+      setDeleteErr(data?.error ?? error?.message ?? 'Erro ao excluir cadastro');
+      return;
+    }
+    // Volta pra listagem — o cadastro deixou de existir
+    nav('/admin/aprovacoes', { replace: true });
   }
 
   if (loading) {
@@ -326,6 +424,16 @@ export default function AdminUserDetail() {
                 <Field label="CPF">
                   <input className="input" value={edit.cpf} onChange={e => setEdit(s => ({ ...s, cpf: e.target.value }))} />
                 </Field>
+                <Field label="Data de nascimento">
+                  <input className="input" type="date" value={edit.mech_birth_date}
+                    onChange={e => setEdit(s => ({ ...s, mech_birth_date: e.target.value }))} />
+                </Field>
+                <div className="col-span-2">
+                  <Field label="Nome da mãe">
+                    <input className="input" value={edit.mech_mother_name}
+                      onChange={e => setEdit(s => ({ ...s, mech_mother_name: e.target.value }))} />
+                  </Field>
+                </div>
                 <Field label="CNH (opcional)">
                   <input className="input" value={edit.cnh} onChange={e => setEdit(s => ({ ...s, cnh: e.target.value }))} />
                 </Field>
@@ -360,17 +468,89 @@ export default function AdminUserDetail() {
             </div>
           )}
 
+          {isMechanic && (
+            <div className="card space-y-4">
+              <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">📍 Localização e referência</h3>
+              <Field label="CEP">
+                <input className="input" value={edit.mech_cep}
+                  placeholder="00000-000"
+                  onChange={e => setEdit(s => ({ ...s, mech_cep: e.target.value }))} />
+              </Field>
+              <Field label="Rua">
+                <input className="input" value={edit.mech_address}
+                  onChange={e => setEdit(s => ({ ...s, mech_address: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-[120px_1fr] gap-3">
+                <Field label="Número">
+                  <input className="input" value={edit.mech_address_number}
+                    onChange={e => setEdit(s => ({ ...s, mech_address_number: e.target.value }))} />
+                </Field>
+                <Field label="Complemento">
+                  <input className="input" value={edit.mech_address_complement}
+                    onChange={e => setEdit(s => ({ ...s, mech_address_complement: e.target.value }))} />
+                </Field>
+              </div>
+              <Field label="Bairro">
+                <input className="input" value={edit.mech_neighborhood}
+                  onChange={e => setEdit(s => ({ ...s, mech_neighborhood: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <Field label="Cidade">
+                    <input className="input" value={edit.mech_city}
+                      onChange={e => setEdit(s => ({ ...s, mech_city: e.target.value }))} />
+                  </Field>
+                </div>
+                <Field label="UF">
+                  <input className="input uppercase" maxLength={2} value={edit.mech_state}
+                    onChange={e => setEdit(s => ({ ...s, mech_state: e.target.value.toUpperCase() }))} />
+                </Field>
+              </div>
+              <Field label="Referência de trabalho (opcional)">
+                <textarea className="input" rows={3} value={edit.mech_work_reference}
+                  placeholder="Ex.: Oficina do Zé (11) 99999-9999 · trabalhei 3 anos com injeção eletrônica"
+                  onChange={e => setEdit(s => ({ ...s, mech_work_reference: e.target.value }))} />
+              </Field>
+            </div>
+          )}
+
+          {isMechanic && mechanic && (
+            <EmbaixadorCard
+              mechanic={mechanic as any}
+              busy={ambBusy}
+              copied={copied}
+              onTornar={tornarEmbaixador}
+              onRevogar={revogarEmbaixador}
+              onCopiar={copiarLink}
+            />
+          )}
+
           {!isMechanic && (
             <div className="card space-y-4">
               <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">Dados da oficina</h3>
               <Field label="Razão social">
                 <input className="input" value={edit.business_name} onChange={e => setEdit(s => ({ ...s, business_name: e.target.value }))} />
               </Field>
-              <Field label="CNPJ">
-                <input className="input" value={edit.cnpj} onChange={e => setEdit(s => ({ ...s, cnpj: e.target.value }))} />
-              </Field>
-              <Field label="Endereço">
-                <input className="input" value={edit.address} onChange={e => setEdit(s => ({ ...s, address: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="CNPJ">
+                  <input className="input" value={edit.cnpj} onChange={e => setEdit(s => ({ ...s, cnpj: e.target.value }))} />
+                </Field>
+                <Field label="CEP">
+                  <input className="input" value={edit.cep}
+                    placeholder="00000-000"
+                    onChange={e => setEdit(s => ({ ...s, cep: e.target.value }))} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-[1fr_120px] gap-3">
+                <Field label="Rua / Avenida">
+                  <input className="input" value={edit.address} onChange={e => setEdit(s => ({ ...s, address: e.target.value }))} />
+                </Field>
+                <Field label="Número">
+                  <input className="input" value={edit.number} onChange={e => setEdit(s => ({ ...s, number: e.target.value }))} />
+                </Field>
+              </div>
+              <Field label="Bairro">
+                <input className="input" value={edit.neighborhood} onChange={e => setEdit(s => ({ ...s, neighborhood: e.target.value }))} />
               </Field>
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
@@ -467,6 +647,25 @@ export default function AdminUserDetail() {
           {saved && (
             <p className="text-center text-signal-600 text-sm font-semibold">✓ Alterações salvas com sucesso</p>
           )}
+
+          {/* Zona de perigo */}
+          <div className="card border-2 border-alert-200 space-y-3 mt-6">
+            <div>
+              <h3 className="text-sm font-bold text-alert-700 uppercase tracking-wider">⚠️ Zona de perigo</h3>
+              <p className="text-xs text-steel-500 mt-1">
+                Excluir apaga o cadastro para sempre — sem opção de restaurar.
+                Só use se for realmente pra sumir com essa conta.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setDeleteOpen(true); setDeleteConfirm(''); setDeleteErr(null); }}
+              disabled={busy}
+              className="btn-ghost w-full border border-alert-300 text-alert-700 hover:bg-alert-500/10 disabled:opacity-50"
+            >
+              🗑️ Excluir cadastro definitivamente
+            </button>
+          </div>
         </div>
 
         {/* ── Coluna 2: histórico ── */}
@@ -506,6 +705,45 @@ export default function AdminUserDetail() {
           </div>
         </div>
       </div>
+
+      {/* Modal de confirmação de exclusão */}
+      {deleteOpen && profile && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setDeleteOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-alert-700">🗑️ Excluir cadastro definitivamente</h3>
+              <p className="text-sm text-steel-600 mt-2 leading-relaxed">
+                Você vai apagar o cadastro de <strong>{profile.full_name}</strong> pra sempre.
+                Isso remove login, dados, histórico de mensagens e tudo o mais.
+                <strong className="text-alert-700"> Não tem como restaurar depois.</strong>
+              </p>
+            </div>
+            <div>
+              <label className="label">Pra confirmar, digite <span className="font-mono bg-alert-500/10 text-alert-700 px-1.5 py-0.5 rounded">EXCLUIR</span> abaixo:</label>
+              <input
+                className="input"
+                value={deleteConfirm}
+                onChange={e => setDeleteConfirm(e.target.value)}
+                placeholder="EXCLUIR"
+                autoFocus
+              />
+            </div>
+            {deleteErr && <div className="text-sm text-alert-600 bg-alert-500/10 px-3 py-2 rounded-lg">{deleteErr}</div>}
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteOpen(false)} disabled={busy} className="btn-ghost flex-1">
+                Cancelar
+              </button>
+              <button
+                onClick={deleteUser}
+                disabled={busy || deleteConfirm !== 'EXCLUIR'}
+                className="btn-ghost flex-1 border border-alert-500 text-alert-700 hover:bg-alert-500/10 disabled:opacity-40"
+              >
+                {busy ? 'Excluindo…' : 'Excluir pra sempre'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }
@@ -515,6 +753,107 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label className="text-xs font-semibold text-steel-500 uppercase tracking-wider mb-1 block">{label}</label>
       {children}
+    </div>
+  );
+}
+
+/* ──────────────── Card de Embaixador ──────────────── */
+
+function EmbaixadorCard({
+  mechanic, busy, copied, onTornar, onRevogar, onCopiar,
+}: {
+  mechanic: Mechanic & { is_embaixador?: boolean; codigo_indicacao?: string | null; embaixador_desde?: string | null; embaixador_ate?: string | null };
+  busy: boolean;
+  copied: boolean;
+  onTornar: () => void;
+  onRevogar: () => void;
+  onCopiar: () => void;
+}) {
+  const isEmb = !!mechanic.is_embaixador;
+  const link  = mechanic.codigo_indicacao
+    ? `${window.location.origin}/cadastro/mecanico?ref=${mechanic.codigo_indicacao}`
+    : '';
+
+  if (!isEmb) {
+    return (
+      <div className="card space-y-3">
+        <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">🌟 Programa de Embaixador</h3>
+        <p className="text-sm text-steel-600 leading-relaxed">
+          Ele ganha <strong>20% da NOSSA comissão</strong> (não do valor do serviço) sobre cada job dos mecânicos que indicar.
+        </p>
+        <div className="bg-steel-50 border border-steel-200 rounded-xl p-3 text-xs text-steel-700 font-mono leading-relaxed">
+          <div className="text-[10px] uppercase tracking-widest text-steel-500 font-sans font-bold mb-1">Exemplo</div>
+          Serviço <strong>R$ 500</strong> → nossa comissão (20%) <strong>R$ 100</strong> → embaixador (20% dos 100) = <strong className="text-brand-700">R$ 20</strong>
+        </div>
+        <p className="text-xs text-steel-500 leading-relaxed">
+          Programa dura 12 meses. Ele precisa fazer ≥1 serviço a cada 30 dias pra continuar recebendo. O indicado <strong>nunca</strong> sabe que existe comissão.
+        </p>
+        <button
+          onClick={onTornar}
+          disabled={busy}
+          className="btn-primary w-full disabled:opacity-50"
+        >
+          {busy ? 'Gerando…' : '🌟 Tornar embaixador'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card space-y-4 border-2 border-brand-500/40 bg-brand-50/40">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-brand-700 uppercase tracking-wider">🌟 Embaixador ativo</h3>
+        <span className="badge badge-brand text-[10px]">Programa de indicação</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <div className="text-[11px] text-steel-500 uppercase tracking-wider mb-0.5">Código</div>
+          <div className="font-mono font-bold text-brand-700">{mechanic.codigo_indicacao}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-steel-500 uppercase tracking-wider mb-0.5">Programa até</div>
+          <div className="font-semibold">
+            {mechanic.embaixador_ate
+              ? new Date(mechanic.embaixador_ate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+              : '—'}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="text-[11px] text-steel-500 uppercase tracking-wider mb-1">Link de indicação</div>
+        <div className="flex gap-2">
+          <input
+            className="input text-xs font-mono flex-1"
+            readOnly
+            value={link}
+            onFocus={e => e.currentTarget.select()}
+          />
+          <button
+            onClick={onCopiar}
+            className="btn-primary text-xs !py-2 !px-3 shrink-0"
+          >
+            {copied ? '✓ Copiado' : 'Copiar'}
+          </button>
+        </div>
+        <p className="text-[11px] text-steel-500 mt-1.5">
+          Mande esse link no WhatsApp dele. Todo mecânico que se cadastrar por aqui fica amarrado a ele.
+        </p>
+      </div>
+
+      <div className="flex gap-2 pt-2 border-t border-brand-500/20">
+        <Link to="/admin/embaixadores" className="btn-ghost text-xs flex-1 border border-brand-300 text-brand-700">
+          📊 Ver painel completo
+        </Link>
+        <button
+          onClick={onRevogar}
+          disabled={busy}
+          className="btn-ghost text-xs border border-alert-300 text-alert-700 disabled:opacity-50"
+        >
+          Revogar
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,337 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import WorkshopLayout from '@/components/layout/WorkshopLayout';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { fmtBRL, osNumber } from '@/components/os/osHelpers';
+import {
+  approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf,
+  type PanelItem, type PanelOs,
+} from '@/lib/workshopMetrics';
+import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/serviceCatalog';
+import PartsLaborBar from '@/components/finance/PartsLaborBar';
+import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
+import { fetchAll } from '@/lib/fetchAll';
+import PeriodPicker, { PREV_LABEL, addDays, startOfDay, usePeriod } from '@/components/PeriodPicker';
+
+/**
+ * Painel de vendas: tudo que é venda (faturamento, ticket, orçamentos, mais vendidos, clientes).
+ * Produtividade e comissões ficam em Equipe → Desempenho; mecânicos da plataforma em Demandas.
+ */
+export default function Painel() {
+  const { currentWorkshop } = useAuth();
+  const wid = currentWorkshop?.id ?? null;
+  const period = usePeriod('painel-periodo', 'month');
+  const { preset, range } = period;
+  const [os, setOs]         = useState<PanelOs[]>([]);
+  const [items, setItems]   = useState<PanelItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const prev = useMemo(() => previousRange(range), [range]);
+  /** Primeira compra de cada cliente (só 2 campos do histórico todo) — para "novos × voltaram" */
+  const [firstBuys, setFirstBuys] = useState<PanelOs[]>([]);
+  const fromIso = prev.from.toISOString();
+  const toIso = range.to.toISOString();
+
+  useEffect(() => {
+    if (!wid) return;
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      const today = startOfDay(new Date()).toISOString();
+      const inWin = (c: string) => `and(${c}.gte.${fromIso},${c}.lt.${toIso})`;
+      // Só o que o painel usa: OS em andamento + as que mexeram no período (e no anterior) + as de hoje
+      const [o, it, h] = await Promise.all([
+        fetchAll((a, b) => supabase.from('service_orders')
+          .select('id, number, title, status, quote_status, price, parts_cost, labor_cost, created_at, started_at, completed_at, approval_requested_at, approved_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, created_at), vehicle:vehicles(make, model, plate)')
+          .eq('workshop_id', wid)
+          .or(`status.in.(open,awaiting_approval,approved,in_progress),${inWin('created_at')},${inWin('completed_at')},${inWin('approval_requested_at')},completed_at.gte.${today}`)
+          .order('created_at', { ascending: false }).order('id').range(a, b)),
+        // Itens só das OS concluídas no período exibido (mais vendidos)
+        fetchAll((a, b) => supabase.from('service_order_items')
+          .select('service_order_id, kind, description, quantity, unit_price, so:service_orders!inner(completed_at)')
+          .eq('workshop_id', wid)
+          .gte('so.completed_at', range.from.toISOString()).lt('so.completed_at', toIso)
+          .order('id').range(a, b)),
+        fetchAll((a, b) => supabase.from('service_orders').select('id, status, quote_status, customer_id, completed_at')
+          .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null).not('customer_id', 'is', null)
+          .lt('completed_at', range.from.toISOString())
+          .order('id').range(a, b)),
+      ]);
+      if (!alive) return;
+      setOs(o.data as unknown as PanelOs[]);
+      setItems(it.data as unknown as PanelItem[]);
+      setFirstBuys((h.data as unknown as PanelOs[]) ?? []);
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wid, fromIso, toIso]);
+
+  const m = useMemo(() => {
+    const cur = salesOf(os, range);
+    const before = salesOf(os, prev);
+    const today = startOfDay(new Date());
+    return {
+      cur, before,
+      revChange: change(cur.revenue, before.revenue),
+      countChange: change(cur.count, before.count),
+      ticketChange: change(cur.ticket, before.ticket),
+      series: revenueSeries(os, range),
+      todaySales: salesOf(os, { from: today, to: addDays(today, 1) }),
+      funnel: funnel(os),
+      approval: approvalRate(os, range),
+      services: servicesExecuted(os, items, range, 100),
+      customers: customerMix([...firstBuys, ...os], range),
+    };
+  }, [os, items, firstBuys, range, prev]);
+
+  const maxBar = Math.max(1, ...m.series.map(s => s.value));
+  const revenueRows = useMemo(() => revenueByService(m.services.rows), [m.services]);
+  const partsShare = partsSharePct(m.services.rows);
+
+  return (
+    <WorkshopLayout>
+      <div className="max-w-6xl mx-auto space-y-5">
+        {/* Cabeçalho + período */}
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-sm text-steel-500">Painel de vendas</div>
+            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{currentWorkshop?.business_name ?? '…'}</h1>
+            <div className="text-xs text-steel-400 mt-0.5">{period.label}</div>
+          </div>
+          <PeriodPicker period={period} />
+        </div>
+
+        {wid && <ShowcaseReminder workshopId={wid} />}
+
+        {loading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => <div key={i} className="h-28 bg-white rounded-2xl animate-pulse" />)}
+          </div>
+        ) : os.length === 0 && firstBuys.length === 0 ? (
+          <div className="card text-center py-14">
+            <div className="text-4xl mb-2">📊</div>
+            <h2 className="text-lg font-bold">Suas vendas aparecem aqui</h2>
+            <p className="text-sm text-steel-500 mt-1 max-w-md mx-auto">
+              Assim que você abrir e concluir ordens de serviço, o painel mostra faturamento, ticket médio, orçamentos e o que mais vende.
+            </p>
+            <div className="flex gap-2 justify-center mt-5">
+              <Link to="/oficina/os" className="btn-primary">+ Abrir uma OS</Link>
+              <Link to="/oficina/importar" className="btn-ghost border border-steel-200">📷 Importar orçamentos antigos</Link>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* KPIs */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Kpi label="Faturamento" value={fmtBRL(m.cur.revenue)} delta={m.revChange} note={PREV_LABEL[preset]} highlight />
+              <Kpi label="OS concluídas" value={String(m.cur.count)} delta={m.countChange} note={PREV_LABEL[preset]} />
+              <Kpi label="Ticket médio" value={fmtBRL(m.cur.ticket)} delta={m.ticketChange} note={PREV_LABEL[preset]} />
+              <Kpi label="Orçamentos aprovados" value={m.approval.rate == null ? '—' : `${Math.round(m.approval.rate)}%`}
+                note={`${m.approval.approved} de ${m.approval.approved + m.approval.declined} decididos no período`} />
+            </div>
+
+            {/* Peças × mão de obra + gráfico */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="card">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">De onde veio o faturamento</div>
+                <p className="text-[11px] text-steel-400 mb-3">Por tipo de serviço executado (peças + mão de obra de cada serviço)</p>
+                {revenueRows.length === 0 ? (
+                  <p className="text-sm text-steel-400">Sem serviços no período.</p>
+                ) : revenueRows.map(r => (
+                  <Split key={r.name} label={r.name} value={r.revenue} total={m.services.total} color={r.identified ? 'bg-brand-500' : 'bg-steel-300'} />
+                ))}
+                {m.services.total > 0 && (
+                  <>
+                    <PartsLaborBar partsPct={partsShare} />
+                    <p className="text-[11px] text-steel-400 mt-3">Soma dos itens lançados nas OS; pode diferir do faturamento por descontos ou OS sem itens.</p>
+                  </>
+                )}
+              </div>
+              <div className="card lg:col-span-2">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">Faturamento por {m.series.length > 62 ? 'mês' : 'dia'}</div>
+                {m.series.length <= 1 ? (
+                  <div className="text-sm text-steel-500 py-6 text-center">Escolha um período maior para ver o gráfico.</div>
+                ) : (
+                  <div className="flex items-end gap-1 h-40">
+                    {m.series.map((s, i) => (
+                      <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group relative min-w-0">
+                        <div className="absolute -top-1 -translate-y-full hidden group-hover:block bg-steel-900 text-white text-[10px] rounded px-1.5 py-0.5 whitespace-nowrap z-10">
+                          {s.label}: {fmtBRL(s.value)}
+                        </div>
+                        <div className={`w-full rounded-t ${s.value ? 'bg-brand-500' : 'bg-steel-100'}`}
+                          style={{ height: `${Math.max(s.value ? 4 : 2, (s.value / maxBar) * 100)}%` }} />
+                        {(m.series.length <= 15 || i % Math.ceil(m.series.length / 10) === 0) && (
+                          <div className="text-[9px] text-steel-400 mt-1 truncate w-full text-center">{s.label}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Vendas de hoje + funil de orçamentos */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="card">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">💰 Vendas de hoje</div>
+                  <div className="text-sm font-bold">{fmtBRL(m.todaySales.revenue)}</div>
+                </div>
+                {m.todaySales.count === 0 ? (
+                  <p className="text-sm text-steel-400">Nenhuma OS concluída hoje ainda.</p>
+                ) : (
+                  <ul className="divide-y divide-steel-100">
+                    {m.todaySales.sales.map(o => (
+                      <li key={o.id}>
+                        <Link to={`/oficina/os/${o.id}`} className="flex items-center justify-between gap-3 py-2 hover:bg-steel-50 -mx-2 px-2 rounded-lg">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold truncate">OS {osNumber(o)} · {o.title}</div>
+                            <div className="text-xs text-steel-500 truncate">
+                              {o.customer?.full_name ?? 'Sem cliente'}{o.vehicle ? ` · ${o.vehicle.make} ${o.vehicle.model}` : ''}
+                            </div>
+                          </div>
+                          <div className="text-sm font-bold shrink-0">{fmtBRL(o.price)}</div>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="card">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">🧭 Funil de orçamentos agora</div>
+                <div className="space-y-2">
+                  {m.funnel.map(s => (
+                    <Link key={s.key} to="/oficina/os" className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 bg-steel-50 hover:bg-steel-100">
+                      <span className="text-sm text-steel-700">{s.label}</span>
+                      <span className="text-sm"><strong>{s.count}</strong> <span className="text-steel-500">· {fmtBRL(s.value)}</span></span>
+                    </Link>
+                  ))}
+                </div>
+                {m.funnel[1].value > 0 && (
+                  <p className="text-xs text-pending-800 bg-pending-50 rounded-lg px-3 py-2 mt-3">
+                    💡 {fmtBRL(m.funnel[1].value)} esperando o cliente aprovar. Vale um lembrete!
+                  </p>
+                )}
+                <div className="mt-3 pt-3 border-t border-steel-100 text-sm flex justify-between">
+                  <span className="text-steel-600">Orçamentos aprovados no período</span>
+                  <span className="font-bold">
+                    {m.approval.rate == null ? '—' : `${Math.round(m.approval.rate)}%`}
+                    <span className="text-xs font-normal text-steel-500"> ({m.approval.approved} de {m.approval.approved + m.approval.declined})</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Mais vendidos + clientes */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <ServiceRanking rows={m.services.rows.slice(0, 8)} />
+                <p className="text-[11px] text-steel-400 mt-2 px-1">
+                  Peças e mão de obra entram no serviço que executaram (ex.: disco + pastilha + mão de obra = 1 serviço de freios).
+                  {m.services.unmatchedItems > 0 && ` ${m.services.unmatchedItems} ${m.services.unmatchedItems === 1 ? 'item' : 'itens'} sem serviço identificado.`}
+                </p>
+              </div>
+              <div className="card">
+                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">👥 Clientes atendidos</div>
+                <div className="text-3xl font-bold font-display">{m.customers.served}</div>
+                <div className="mt-2 space-y-1 text-sm">
+                  <div className="flex justify-between"><span className="text-steel-600">🆕 Novos</span><strong>{m.customers.novos}</strong></div>
+                  <div className="flex justify-between"><span className="text-steel-600">🔁 Voltaram</span><strong>{m.customers.voltaram}</strong></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Onde foram parar as outras seções */}
+            <p className="text-[11px] text-steel-400">
+              Desempenho e comissões da equipe estão em <Link to="/oficina/desempenho" className="text-brand-600 hover:underline">Equipe → Desempenho</Link> e <Link to="/oficina/comissoes" className="text-brand-600 hover:underline">Comissões</Link>.
+              O resumo dos mecânicos da plataforma está em <Link to="/oficina/dashboard" className="text-brand-600 hover:underline">Demandas</Link>.
+            </p>
+          </>
+        )}
+      </div>
+    </WorkshopLayout>
+  );
+}
+
+function Kpi({ label, value, delta, note, highlight = false }: {
+  label: string; value: string; delta?: number | null; note?: string; highlight?: boolean;
+}) {
+  return (
+    <div className={`card ${highlight ? '!bg-steel-900 text-white' : ''}`}>
+      <div className={`text-[10px] font-bold uppercase tracking-widest ${highlight ? 'text-steel-400' : 'text-steel-500'}`}>{label}</div>
+      <div className="text-2xl lg:text-3xl font-bold font-display mt-1">{value}</div>
+      {delta !== undefined && (
+        <div className="text-xs mt-1">
+          {delta == null ? <span className="text-steel-400">sem base de comparação</span> : (
+            <span className={delta >= 0 ? 'text-signal-500 font-semibold' : 'text-alert-500 font-semibold'}>
+              {delta >= 0 ? '▲' : '▼'} {Math.abs(Math.round(delta))}%
+            </span>
+          )}
+          {note && delta != null && <span className="text-steel-400"> {note}</span>}
+        </div>
+      )}
+      {delta === undefined && note && <div className="text-xs mt-1 text-steel-400">{note}</div>}
+    </div>
+  );
+}
+
+function Split({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
+  const pct = total ? (value / total) * 100 : 0;
+  return (
+    <div className="mb-3.5 last:mb-0">
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-sm text-steel-700 leading-snug min-w-0 break-words">{label}</span>
+        <span className="text-sm font-bold shrink-0 tabular-nums">{fmtBRL(value)}</span>
+      </div>
+      <div className="flex items-center gap-2 mt-1.5">
+        <div className="h-2 rounded-full bg-steel-100 overflow-hidden flex-1">
+          <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-[11px] font-semibold text-steel-500 w-9 text-right tabular-nums">{Math.round(pct)}%</span>
+      </div>
+    </div>
+  );
+}
+
+function ServiceRanking({ rows }: { rows: { name: string; orders: number; revenue: number; parts: number; labor: number; identified: boolean }[] }) {
+  const max = Math.max(1, ...rows.map(r => r.orders));
+  return (
+    <div className="card">
+      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">🔧 Serviços mais executados</div>
+      <p className="text-[11px] text-steel-400 mb-4">Quantos serviços foram feitos no período, do que mais saiu para o que menos saiu</p>
+      {rows.length === 0 ? <p className="text-sm text-steel-400">Sem dados no período.</p> : (
+        <ol className="space-y-4">
+          {rows.map((t, i) => (
+            <li key={t.name} className="flex items-start gap-3">
+              <span className="shrink-0 w-6 h-6 rounded-full bg-steel-100 text-steel-600 text-xs font-bold grid place-items-center mt-0.5">{i + 1}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm font-semibold text-steel-800 leading-snug break-words">{t.name}</span>
+                  <span className="shrink-0 text-right leading-none">
+                    <span className="text-lg font-bold font-display tabular-nums">{t.orders}</span>
+                    <span className="block text-[10px] text-steel-400 mt-0.5">{t.orders === 1 ? 'serviço' : 'serviços'}</span>
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-steel-100 mt-2 overflow-hidden">
+                  <div className={`h-full rounded-full ${t.identified ? 'bg-brand-500' : 'bg-steel-300'}`} style={{ width: `${(t.orders / max) * 100}%` }} />
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
+                  <strong className="text-steel-700 tabular-nums">{fmtBRL(t.revenue)}</strong>
+                  {t.parts > 0 && t.labor > 0 && (
+                    <>
+                      <span className="text-steel-400 whitespace-nowrap">peças {fmtBRL(t.parts)}</span>
+                      <span className="text-steel-400 whitespace-nowrap">mão de obra {fmtBRL(t.labor)}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}

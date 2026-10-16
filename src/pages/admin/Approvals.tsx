@@ -3,6 +3,9 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
+import { NewUserModal } from '@/components/admin/NewUserModal';
+import { MechanicVerification } from '@/components/admin/MechanicVerification';
+import { sendApprovalEmail } from '@/lib/approvalEmail';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 type Row = Profile & { mechanic?: Mechanic; workshop?: Workshop };
@@ -22,6 +25,7 @@ export default function AdminApprovals() {
   const [tab, setTab] = useState<TabKey>('pending');
   const [loading, setLoading] = useState(true);
   const [opened, setOpened] = useState<Row | null>(null);
+  const [newUserOpen, setNewUserOpen] = useState(false);
 
   useEffect(() => { load(); }, [tab]);
 
@@ -64,7 +68,12 @@ export default function AdminApprovals() {
 
   return (
     <AdminLayout>
-      <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mb-2">Cadastros</h1>
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Cadastros</h1>
+        <button onClick={() => setNewUserOpen(true)} className="btn-primary text-sm whitespace-nowrap">
+          ➕ Novo cadastro
+        </button>
+      </div>
       <p className="text-steel-500 text-sm mb-6">Analise, solicite documentos e aprove os cadastros de mecânicos e oficinas.</p>
 
       {/* Tabs */}
@@ -114,6 +123,14 @@ export default function AdminApprovals() {
           adminId={user.id}
           onClose={() => setOpened(null)}
           onChanged={() => { setOpened(null); load(); }}
+        />
+      )}
+
+      {/* Modal de novo cadastro (trabalho de campo) */}
+      {newUserOpen && (
+        <NewUserModal
+          onClose={() => setNewUserOpen(false)}
+          onCreated={() => { setNewUserOpen(false); load(); }}
         />
       )}
     </AdminLayout>
@@ -233,8 +250,12 @@ function ApprovalDrawer({
       content,
     });
 
-    // Dispara email (silencioso — não bloqueia se falhar/skipped)
-    void sendApprovalEmail(row.id, content, kind);
+    // Só notifica o cadastrado quando a decisão é final (aprovado/rejeitado).
+    // "Em análise" e "reaberto" sao movimentos internos da fila do admin —
+    // enviar email nesses estados vira ruido e cria expectativa falsa de resposta.
+    if (status === 'approved' || status === 'rejected') {
+      void sendApprovalEmail(row.id, content, kind, status);
+    }
 
     setBusy(null);
     onChanged();
@@ -328,6 +349,12 @@ function ApprovalDrawer({
           {row.mechanic && (
             <Section title="Dados profissionais">
               <Field label="CPF">{row.mechanic.cpf}</Field>
+              <Field label="Nascimento">
+                {row.mechanic.birth_date
+                  ? new Date(row.mechanic.birth_date + 'T12:00:00').toLocaleDateString('pt-BR')
+                  : '—'}
+              </Field>
+              <Field label="Nome da mãe">{row.mechanic.mother_name || '—'}</Field>
               <Field label="CNH">{row.mechanic.cnh || '—'}</Field>
               <Field label="Anos de experiência">{row.mechanic.experience_years} anos</Field>
               <Field label="Valor/hora">R$ {row.mechanic.hourly_rate}/h</Field>
@@ -344,12 +371,48 @@ function ApprovalDrawer({
             </Section>
           )}
 
+          {row.mechanic && (row.mechanic.city || row.mechanic.neighborhood || row.mechanic.cep) && (
+            <Section title="📍 Localização (decide se atendemos a região)">
+              <Field label="CEP">{row.mechanic.cep || '—'}</Field>
+              <Field label="Rua / número">
+                {[row.mechanic.address, row.mechanic.address_number].filter(Boolean).join(', ') || '—'}
+                {row.mechanic.address_complement ? ` · ${row.mechanic.address_complement}` : ''}
+              </Field>
+              <Field label="Bairro">{row.mechanic.neighborhood || '—'}</Field>
+              <Field label="Cidade / UF">
+                {row.mechanic.city || '—'}{row.mechanic.state ? ` / ${row.mechanic.state}` : ''}
+              </Field>
+            </Section>
+          )}
+
+          {row.mechanic && (
+            <Section title="🛡️ Verificação de cadastro">
+              <MechanicVerification mechanicId={row.mechanic.id} />
+            </Section>
+          )}
+
+          {row.mechanic?.work_reference && (
+            <Section title="Referência de trabalho">
+              <p className="text-sm text-steel-700 whitespace-pre-wrap">{row.mechanic.work_reference}</p>
+            </Section>
+          )}
+
           {row.workshop && (
             <Section title="Dados da oficina">
               <Field label="Razão social">{row.workshop.business_name}</Field>
               <Field label="CNPJ">{row.workshop.cnpj}</Field>
-              <Field label="Endereço">{row.workshop.address}, {row.workshop.city}/{row.workshop.state}</Field>
               <Field label="Sobre">{row.workshop.description || '—'}</Field>
+            </Section>
+          )}
+
+          {row.workshop && (
+            <Section title="📍 Endereço da oficina (decide se atendemos a região)">
+              <Field label="CEP">{row.workshop.cep || '—'}</Field>
+              <Field label="Rua / Nº">
+                {row.workshop.address}{row.workshop.number ? `, ${row.workshop.number}` : ''}
+              </Field>
+              <Field label="Bairro">{row.workshop.neighborhood || '—'}</Field>
+              <Field label="Cidade / UF">{row.workshop.city} / {row.workshop.state}</Field>
             </Section>
           )}
 
@@ -504,22 +567,6 @@ function ApprovalDrawer({
 }
 
 /* ──────────────── Helpers ──────────────── */
-
-/**
- * Dispara o email de notificação via Edge Function send-approval-email.
- * Falha silenciosamente — se Resend não estiver configurado ou der erro,
- * o app continua funcionando (a mensagem fica no histórico de qualquer forma).
- */
-async function sendApprovalEmail(profileId: string, content: string, kind: ApprovalMessage['kind']) {
-  try {
-    const { error } = await supabase.functions.invoke('send-approval-email', {
-      body: { profile_id: profileId, content, kind },
-    });
-    if (error) console.warn('[send-approval-email] falhou:', error);
-  } catch (e) {
-    console.warn('[send-approval-email] erro:', e);
-  }
-}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

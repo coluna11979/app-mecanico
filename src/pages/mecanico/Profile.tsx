@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AvatarUpload } from '@/components/AvatarUpload';
+import { jobGross, mechanicNet, formatMoney } from '@/lib/payment';
+import { IconLogOut } from '@/components/mecanico/icons';
+import { lookupCep } from '@/lib/cep';
+import { maskCep, onlyDigits } from '@/lib/customers';
 import type { Mechanic, Job } from '@/types/database';
+
+const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
 const SKILL_SUGGESTIONS = [
   'Motor', 'Freios', 'Suspensão', 'Elétrica', 'Câmbio', 'Ar condicionado',
@@ -14,15 +21,35 @@ const SKILL_SUGGESTIONS = [
 type EditForm = {
   full_name: string; phone: string; pix_key: string;
   cpf: string; cnh: string; experience_years: string; skills: string[];
+  cep: string; address: string; address_number: string; address_complement: string;
+  neighborhood: string; city: string; state: string;
 };
 
+const EMPTY_FORM: EditForm = {
+  full_name: '', phone: '', pix_key: '', cpf: '', cnh: '', experience_years: '', skills: [],
+  cep: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '',
+};
+
+/** Rua, 123 · Apto 4 — Bairro, Cidade/UF */
+function formatAddress(m: Mechanic | null) {
+  if (!m) return '—';
+  const street = [m.address, m.address_number].filter(Boolean).join(', ');
+  const first = [street, m.address_complement].filter(Boolean).join(' · ');
+  const place = [m.neighborhood, [m.city, m.state].filter(Boolean).join('/')].filter(Boolean).join(', ');
+  return [first, place].filter(Boolean).join(' — ') || '—';
+}
+
 export default function MechanicProfile() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, signOut } = useAuth();
   const [me, setMe]             = useState<Mechanic | null>(null);
   const [history, setHistory]   = useState<Job[]>([]);
   const [loading, setLoading]   = useState(true);
   const [editing, setEditing]   = useState(false);
-  const [form, setForm]         = useState<EditForm>({ full_name: '', phone: '', pix_key: '', cpf: '', cnh: '', experience_years: '', skills: [] });
+  const [form, setForm]         = useState<EditForm>(EMPTY_FORM);
+  const [cepStatus, setCepStatus] = useState<'idle' | 'loading' | 'found' | 'notfound' | 'error'>('idle');
+  const [saveErr, setSaveErr]   = useState<string | null>(null);
+  // Depois da aprovação o CPF fica travado (a verificação de cadastro foi feita em cima dele)
+  const identityLocked = profile?.status === 'approved';
   const [newSkill, setNewSkill] = useState('');
   const [saving, setSaving]     = useState(false);
   const [msg, setMsg]           = useState<string | null>(null);
@@ -50,8 +77,40 @@ export default function MechanicProfile() {
       cnh:              me?.cnh ?? '',
       experience_years: String(me?.experience_years ?? 0),
       skills:           [...(me?.skills ?? [])],
+      cep:                me?.cep ?? '',
+      address:            me?.address ?? '',
+      address_number:     me?.address_number ?? '',
+      address_complement: me?.address_complement ?? '',
+      neighborhood:       me?.neighborhood ?? '',
+      city:               me?.city ?? '',
+      state:              me?.state ?? '',
     });
+    setCepStatus('idle');
+    setSaveErr(null);
     setEditing(true);
+  }
+
+  async function onCepChange(raw: string) {
+    const cep = maskCep(raw);
+    setForm(f => ({ ...f, cep }));
+    if (onlyDigits(cep).length < 8) { setCepStatus('idle'); return; }
+    setCepStatus('loading');
+    try {
+      const found = await lookupCep(cep);
+      if (!found) { setCepStatus('notfound'); return; }
+      // Mudou de CEP → endereço novo: número e complemento antigos não valem mais
+      setForm(f => ({
+        ...f,
+        address: found.street || f.address,
+        neighborhood: found.neighborhood || f.neighborhood,
+        city: found.city || f.city,
+        state: found.state || f.state,
+        address_number: '', address_complement: '',
+      }));
+      setCepStatus('found');
+    } catch {
+      setCepStatus('error');
+    }
   }
 
   function addSkill(s: string) {
@@ -62,17 +121,33 @@ export default function MechanicProfile() {
 
   async function save() {
     if (!me) return;
-    setSaving(true);
-    await Promise.all([
+    if (onlyDigits(form.cep).length !== 8 || !form.address.trim() || !form.address_number.trim() || !form.city.trim() || !form.state) {
+      setSaveErr('Preencha o endereço completo: CEP, rua, número, cidade e UF.');
+      return;
+    }
+    setSaving(true); setSaveErr(null);
+    const [{ error: e1 }, { error: e2 }] = await Promise.all([
       supabase.from('profiles').update({ full_name: form.full_name.trim(), phone: form.phone.trim() }).eq('id', user!.id),
       supabase.from('mechanics').update({
-        cpf:              form.cpf.trim(),
-        cnh:              form.cnh.trim() || null,
-        experience_years: Number(form.experience_years),
-        skills:           form.skills,
-        pix_key:          form.pix_key.trim() || null,
+        ...(identityLocked ? {} : { cpf: form.cpf.trim() }),
+        cnh:                form.cnh.trim() || null,
+        experience_years:   Number(form.experience_years),
+        skills:             form.skills,
+        pix_key:            form.pix_key.trim() || null,
+        cep:                form.cep,
+        address:            form.address.trim(),
+        address_number:     form.address_number.trim(),
+        address_complement: form.address_complement.trim() || null,
+        neighborhood:       form.neighborhood.trim() || null,
+        city:               form.city.trim(),
+        state:              form.state,
       }).eq('id', me.id),
     ]);
+    if (e1 || e2) {
+      setSaving(false);
+      setSaveErr((e1 || e2)!.message);
+      return;
+    }
     await Promise.all([load(), refreshProfile()]);
     setSaving(false);
     setEditing(false);
@@ -84,11 +159,10 @@ export default function MechanicProfile() {
     setTimeout(() => setMsg(null), 3000);
   }
 
-  const MECH_PCT = 0.82; // 100% - 18% taxa plataforma
-  const totalEarnings = history.reduce((a, j) => a + (j.price ?? 0) * MECH_PCT, 0);
+  const totalEarnings = history.reduce((a, j) => a + mechanicNet(jobGross(j)), 0);
   const monthEarnings = history
     .filter(j => new Date(j.completed_at!).getMonth() === new Date().getMonth())
-    .reduce((a, j) => a + (j.price ?? 0) * MECH_PCT, 0);
+    .reduce((a, j) => a + mechanicNet(jobGross(j)), 0);
   const initials = (profile?.full_name ?? 'M').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
   if (loading) return (
@@ -139,16 +213,36 @@ export default function MechanicProfile() {
           </div>
         </div>
 
-        {/* ── Ganhos ── */}
+        {/* ── Embaixador — só aparece se for embaixador ── */}
+        {(me as any)?.is_embaixador && (
+          <Link
+            to="/mecanico/embaixador"
+            className="block relative rounded-2xl overflow-hidden bg-gradient-to-r from-brand-600 to-brand-700 border border-brand-500/40 p-4 hover:from-brand-500 hover:to-brand-600 transition group"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-8 translate-x-8 pointer-events-none" />
+            <div className="relative flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-200 flex items-center gap-1.5">
+                  🌟 Programa embaixador
+                </div>
+                <div className="font-bold text-white text-lg leading-tight mt-1">Minhas Indicações</div>
+                <div className="text-xs text-brand-100 mt-0.5">Veja seus indicados e comissões</div>
+              </div>
+              <span className="text-white text-2xl shrink-0 group-hover:translate-x-1 transition">→</span>
+            </div>
+          </Link>
+        )}
+
+        {/* ── Ganhos — valores líquidos (PIX) ── */}
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
             <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Este mês</div>
-            <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {monthEarnings.toFixed(0)}</div>
-            <div className="text-[11px] text-steel-500 mt-0.5">seus 82%</div>
+            <div className="text-2xl font-bold text-signal-400 font-display mt-1">R$ {formatMoney(monthEarnings)}</div>
+            <div className="text-[11px] text-steel-500 mt-0.5">no seu PIX</div>
           </div>
           <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4">
-            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Total ganho</div>
-            <div className="text-2xl font-bold text-white font-display mt-1">R$ {totalEarnings.toFixed(0)}</div>
+            <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold">Total recebido</div>
+            <div className="text-2xl font-bold text-white font-display mt-1">R$ {formatMoney(totalEarnings)}</div>
             <div className="text-[11px] text-steel-500 mt-0.5">{history.length} jobs</div>
           </div>
         </div>
@@ -160,6 +254,7 @@ export default function MechanicProfile() {
           <Row label="CPF"         value={me?.cpf ?? '—'} />
           <Row label="CNH"         value={me?.cnh || '—'} />
           <Row label="Experiência" value={`${me?.experience_years ?? 0} anos`} />
+          <Row label="Endereço"    value={formatAddress(me)} />
         </div>
 
         {/* ── Habilidades (view) ── */}
@@ -195,15 +290,22 @@ export default function MechanicProfile() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-signal-400 font-bold font-display">
-                      {(j.price ?? 0) > 0 ? `R$ ${((j.price ?? 0) * MECH_PCT).toFixed(0)}` : '—'}
+                      {jobGross(j) > 0 ? `R$ ${formatMoney(mechanicNet(jobGross(j)))}` : '—'}
                     </div>
-                    <div className="text-[10px] text-steel-600">seus 82%</div>
+                    <div className="text-[10px] text-steel-600">no PIX</div>
                   </div>
                 </div>
               ))}
             </div>
           )}
         </div>
+
+        <button
+          onClick={signOut}
+          className="w-full h-12 rounded-2xl border border-steel-700 text-steel-300 font-semibold text-sm flex items-center justify-center gap-2 active:bg-steel-800 transition"
+        >
+          <IconLogOut className="w-4 h-4" /> Sair da conta
+        </button>
       </div>
 
       {/* ── Drawer de edição ── */}
@@ -235,9 +337,10 @@ export default function MechanicProfile() {
 
             <Section title="Documentos">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="CPF">
-                  <input className="input !bg-steel-900 !text-white !border-steel-700"
-                    value={form.cpf} onChange={e => setForm(f => ({ ...f, cpf: e.target.value }))}
+                <Field label={identityLocked ? 'CPF 🔒' : 'CPF'}>
+                  <input className="input !bg-steel-900 !text-white !border-steel-700 disabled:opacity-60"
+                    value={form.cpf} disabled={identityLocked}
+                    onChange={e => setForm(f => ({ ...f, cpf: e.target.value }))}
                     placeholder="000.000.000-00" />
                 </Field>
                 <Field label="CNH (opcional)">
@@ -249,6 +352,59 @@ export default function MechanicProfile() {
                 <input className="input !bg-steel-900 !text-white !border-steel-700" type="number" min={0} max={50}
                   value={form.experience_years} onChange={e => setForm(f => ({ ...f, experience_years: e.target.value }))} />
               </Field>
+            </Section>
+
+            {identityLocked && (
+              <p className="text-[11px] text-steel-500 -mt-3">
+                🔒 O CPF não pode ser alterado depois da aprovação. Se estiver errado, fale com o suporte.
+              </p>
+            )}
+
+            <Section title="Endereço">
+              <Field label="CEP">
+                <input className="input !bg-steel-900 !text-white !border-steel-700" inputMode="numeric"
+                  value={form.cep} onChange={e => onCepChange(e.target.value)} placeholder="00000-000" />
+                <p className={`text-[11px] mt-1 ${cepStatus === 'notfound' || cepStatus === 'error' ? 'text-red-400' : 'text-steel-500'}`}>
+                  {cepStatus === 'loading' && 'Buscando endereço…'}
+                  {cepStatus === 'found' && '✓ Endereço encontrado — confira e informe o número.'}
+                  {cepStatus === 'notfound' && 'CEP não encontrado. Preencha o endereço à mão.'}
+                  {cepStatus === 'error' && 'Não deu pra buscar o CEP. Preencha o endereço à mão.'}
+                  {cepStatus === 'idle' && 'Mudou de endereço? Digite o CEP novo que a gente preenche o resto.'}
+                </p>
+              </Field>
+              <Field label="Rua">
+                <input className="input !bg-steel-900 !text-white !border-steel-700"
+                  value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-[110px_1fr] gap-3">
+                <Field label="Número">
+                  <input className="input !bg-steel-900 !text-white !border-steel-700"
+                    value={form.address_number}
+                    onChange={e => setForm(f => ({ ...f, address_number: e.target.value.toUpperCase().slice(0, 10) }))} />
+                </Field>
+                <Field label="Complemento">
+                  <input className="input !bg-steel-900 !text-white !border-steel-700"
+                    value={form.address_complement} placeholder="Apto, bloco…"
+                    onChange={e => setForm(f => ({ ...f, address_complement: e.target.value }))} />
+                </Field>
+              </div>
+              <Field label="Bairro">
+                <input className="input !bg-steel-900 !text-white !border-steel-700"
+                  value={form.neighborhood} onChange={e => setForm(f => ({ ...f, neighborhood: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-[1fr_90px] gap-3">
+                <Field label="Cidade">
+                  <input className="input !bg-steel-900 !text-white !border-steel-700"
+                    value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} />
+                </Field>
+                <Field label="UF">
+                  <select className="input !bg-steel-900 !text-white !border-steel-700"
+                    value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value }))}>
+                    <option value="">—</option>
+                    {UFS.map(uf => <option key={uf}>{uf}</option>)}
+                  </select>
+                </Field>
+              </div>
             </Section>
 
             <Section title="Habilidades">
@@ -283,7 +439,8 @@ export default function MechanicProfile() {
             </Section>
           </div>
 
-          <div className="sticky bottom-0 px-4 py-4 border-t border-steel-800 bg-steel-900 flex gap-3">
+          <div className="sticky bottom-0 px-4 py-4 border-t border-steel-800 bg-steel-900 flex flex-wrap gap-3">
+            {saveErr && <div className="w-full text-sm text-red-300 bg-red-500/10 rounded-lg px-3 py-2">{saveErr}</div>}
             <button onClick={() => setEditing(false)} className="btn-ghost flex-1">Cancelar</button>
             <button onClick={save} disabled={saving} className="btn-primary flex-1 btn-lg">
               {saving ? 'Salvando…' : 'Salvar alterações'}

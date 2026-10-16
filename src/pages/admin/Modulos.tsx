@@ -1,0 +1,409 @@
+import { useEffect, useMemo, useState } from 'react';
+import AdminLayout from '@/components/layout/AdminLayout';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/Toast';
+import { DEPENDS_ON, FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, STAGES, isOptIn, stageOf, stageOff, type ModuleKey } from '@/lib/modules';
+import { inboxCall } from '@/lib/inbox';
+import { fmtPhone } from '@/components/os/osHelpers';
+
+type Shop = { id: string; business_name: string; city: string | null; owner: string | null };
+/** off = desligado em qualquer aparelho; mobileOff = liberado só no computador;
+ *  on = módulos opcionais ligados (nascem desligados, ex.: Inbox do WhatsApp).
+ *  off/mobileOff guardam módulos ('caixa') e ferramentas ('caixa.fechar') na mesma lista. */
+type Config = { off: string[]; mobileOff: string[]; on: string[] };
+const isModule = (k: string) => !k.includes('.');
+/** Chaves das ferramentas de um módulo */
+const featKeys = (m: ModuleKey) => (FEATURES[m] ?? []).map(f => f.key);
+const EMPTY: Config = { off: [], mobileOff: [], on: [] };
+/** Módulo liberado? Opcional só vale se foi ligado */
+const moduleOn = (c: Config, k: ModuleKey) => !c.off.includes(k) && (!isOptIn(k) || c.on.includes(k));
+const countOn = (c: Config) => MODULE_KEYS.filter(k => moduleOn(c, k)).length;
+
+/** Superadmin: quais módulos cada oficina pode usar (e se também no celular). Desligado some do menu e a tela fica bloqueada. */
+export default function AdminModulos() {
+  const { user } = useAuth();
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [configs, setConfigs] = useState<Record<string, Config>>({});
+  const [selected, setSelected] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  /** Módulos com a lista de ferramentas aberta */
+  const [expanded, setExpanded] = useState<Set<ModuleKey>>(new Set());
+  const toggleExpanded = (k: ModuleKey) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
+
+  useEffect(() => {
+    (async () => {
+      const [w, m] = await Promise.all([
+        supabase.from('workshops').select('id, business_name, city, profile:profiles!inner(full_name)').order('business_name'),
+        supabase.from('workshop_modules').select('workshop_id, disabled_modules, mobile_disabled_modules, enabled_modules'),
+      ]);
+      if (w.error) { toast.error('Erro ao carregar oficinas: ' + w.error.message); return; }
+      if (m.error) { toast.error('Erro ao carregar módulos: ' + m.error.message); return; }
+      const list = (w.data ?? []).map(r => {
+        const p = r.profile as unknown as { full_name: string | null } | null;
+        return { id: r.id, business_name: r.business_name.trim(), city: r.city, owner: p?.full_name?.trim() ?? null };
+      });
+      setShops(list);
+      setConfigs(Object.fromEntries((m.data ?? []).map(r => [r.workshop_id, {
+        off: r.disabled_modules as string[], mobileOff: (r.mobile_disabled_modules ?? []) as string[],
+        on: (r.enabled_modules ?? []) as string[],
+      }])));
+      setSelected(s => s ?? list[0]?.id ?? null);
+    })();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? shops.filter(s => `${s.business_name} ${s.owner ?? ''} ${s.city ?? ''}`.toLowerCase().includes(q)) : shops;
+  }, [shops, search]);
+
+  const shop = shops.find(s => s.id === selected) ?? null;
+  const cfg = selected ? configs[selected] ?? EMPTY : EMPTY;
+  const off = cfg.off;
+
+  async function save(workshopId: string, next: Config) {
+    const prev = configs[workshopId] ?? EMPTY;
+    // Desligado de vez não precisa constar como "só no computador"
+    const clean = { off: next.off, mobileOff: next.mobileOff.filter(k => !next.off.includes(k)), on: next.on };
+    setConfigs(c => ({ ...c, [workshopId]: clean }));
+    setSaving(true);
+    const { error } = await supabase.from('workshop_modules').upsert({
+      workshop_id: workshopId, disabled_modules: clean.off, mobile_disabled_modules: clean.mobileOff, enabled_modules: clean.on,
+      updated_at: new Date().toISOString(), updated_by: user?.id ?? null,
+    });
+    setSaving(false);
+    if (error) {
+      setConfigs(c => ({ ...c, [workshopId]: prev }));
+      toast.error('Não salvou: ' + error.message);
+      return false;
+    }
+    return true;
+  }
+
+  const flip = (list: string[], k: string) => (list.includes(k) ? list.filter(x => x !== k) : [...list, k]);
+
+  function toggle(k: string) {
+    if (!selected) return;
+    // Opcional: liga/desliga pela lista de ligados (e tira de "desligado" se estava lá)
+    if (isOptIn(k)) {
+      const on = moduleOn(cfg, k as ModuleKey);
+      save(selected, { ...cfg, on: on ? cfg.on.filter(x => x !== k) : [...cfg.on, k], off: cfg.off.filter(x => x !== k) });
+      return;
+    }
+    save(selected, { ...cfg, off: flip(cfg.off, k) });
+  }
+
+  function toggleMobile(k: string) {
+    if (!selected) return;
+    save(selected, { ...cfg, mobileOff: flip(cfg.mobileOff, k) });
+  }
+
+  function setGroup(keys: ModuleKey[], on: boolean) {
+    if (!selected) return;
+    // Liberar = o módulo e todas as ferramentas dele, em qualquer aparelho
+    const all = new Set<string>([...keys, ...keys.flatMap(featKeys)]);
+    // Opcional não entra no "liberar em massa" (só liga clicando nele); desligar em massa desliga também
+    const optIn = keys.filter(isOptIn);
+    save(selected, {
+      off: on ? off.filter(k => !all.has(k)) : [...new Set([...off, ...keys.filter(k => !isOptIn(k))])],
+      mobileOff: on ? cfg.mobileOff.filter(k => !all.has(k)) : cfg.mobileOff,
+      on: on ? cfg.on : cfg.on.filter(k => !optIn.includes(k as ModuleKey)),
+    });
+  }
+
+  /** Coloca a oficina na etapa `n` da trilha: módulos da etapa e das anteriores liberados (com todas as ferramentas,
+   *  também no celular); os seguintes desligados. Os opcionais continuam como estavam. */
+  async function applyStage(n: number) {
+    if (!selected) return;
+    const liberated = new Set<string>(STAGES.slice(0, n + 1).flatMap(s => [...s.keys, ...s.keys.flatMap(featKeys)]));
+    if (await save(selected, { off: stageOff(n), mobileOff: cfg.mobileOff.filter(k => !liberated.has(k)), on: cfg.on }))
+      toast.success(`Etapa ${n + 1} · ${STAGES[n].label}`);
+  }
+
+  async function copyFrom(sourceId: string) {
+    if (!selected || !sourceId) return;
+    const src = shops.find(s => s.id === sourceId);
+    const from = configs[sourceId] ?? EMPTY;
+    if (await save(selected, { off: [...from.off], mobileOff: [...from.mobileOff], on: [...from.on] })) toast.success(`Copiado de ${src?.business_name}`);
+  }
+
+  const total = MODULE_KEYS.length;
+
+  return (
+    <AdminLayout>
+      <div className="mb-6">
+        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Módulos por oficina</h1>
+        <p className="text-sm text-steel-500 mt-1">
+          Escolha o que cada oficina pode usar. Módulo desligado some do menu e a tela fica bloqueada para todos da oficina, inclusive o dono.
+          Início, Perfil e Avisos ficam sempre liberados. Desmarque 📱 para liberar o módulo só no computador (fica bloqueado no celular e no tablet).
+          Em “Ferramentas” você escolhe o que fica liberado dentro de cada módulo.
+          Módulos “opcionais” nascem desligados e só ligam clicando neles (o “Liberar tudo” não liga).
+          Na “Trilha de liberação” cada etapa soma as anteriores: comece em “Só mecânicos” (oficina que já tem sistema próprio entra direto nas Demandas) e vá subindo.
+        </p>
+      </div>
+
+      <div className="grid lg:grid-cols-[300px_1fr] gap-4 items-start">
+        {/* Lista de oficinas */}
+        <div className="card p-3">
+          <input className="input w-full mb-3" placeholder="Buscar oficina…" value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="space-y-1 max-h-[60vh] overflow-y-auto">
+            {filtered.map(s => {
+              const on = countOn(configs[s.id] ?? EMPTY);
+              const active = s.id === selected;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSelected(s.id)}
+                  className={`w-full text-left px-3 py-2 rounded-xl transition ${active ? 'bg-brand-50 ring-1 ring-brand-300' : 'hover:bg-steel-50'}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-sm truncate">{s.business_name}</span>
+                    <span className={`text-[11px] font-bold shrink-0 ${on === total ? 'text-emerald-600' : 'text-amber-600'}`}>{on}/{total}</span>
+                  </div>
+                  <div className="text-xs text-steel-500 truncate">{[s.owner, s.city].filter(Boolean).join(' · ')}</div>
+                </button>
+              );
+            })}
+            {!filtered.length && <p className="text-sm text-steel-500 px-3 py-2">Nenhuma oficina.</p>}
+          </div>
+        </div>
+
+        {/* Módulos da oficina selecionada */}
+        {shop ? (
+          <div className="card p-4 lg:p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-lg font-bold">{shop.business_name}</h2>
+                <p className="text-xs text-steel-500">
+                  {countOn(cfg)} de {total} módulos liberados
+                  {cfg.mobileOff.filter(isModule).length > 0 && ` · ${cfg.mobileOff.filter(isModule).length} só no computador`}
+                  {off.some(k => !isModule(k)) && ` · ${off.filter(k => !isModule(k)).length} ferramentas desligadas`}
+                  {saving && ' · salvando…'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select className="input text-sm" value="" onChange={e => copyFrom(e.target.value)}>
+                  <option value="">Copiar de outra oficina…</option>
+                  {shops.filter(s => s.id !== shop.id).map(s => <option key={s.id} value={s.id}>{s.business_name}</option>)}
+                </select>
+                <button type="button" className="btn-ghost text-sm" onClick={() => setGroup(MODULE_KEYS, true)}>Liberar tudo</button>
+                <button type="button" className="btn-ghost text-sm" onClick={() => setGroup(MODULE_KEYS, false)}>Desligar tudo</button>
+              </div>
+            </div>
+
+            <StageTrail current={stageOf(off)} onPick={applyStage} />
+
+            <div className="space-y-5">
+              {MODULE_GROUPS.map(g => {
+                const allOn = g.keys.filter(k => !isOptIn(k)).every(k => moduleOn(cfg, k));
+                return (
+                  <div key={g.label}>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-steel-500">{g.label}</p>
+                      <button type="button" className="text-xs font-semibold text-brand-600 hover:underline" onClick={() => setGroup(g.keys, !allOn)}>
+                        {allOn ? 'Desligar grupo' : 'Liberar grupo'}
+                      </button>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {g.keys.map(k => {
+                        const m = MODULES[k];
+                        const on = moduleOn(cfg, k);
+                        const mobileOn = on && !cfg.mobileOff.includes(k);
+                        const feats = FEATURES[k] ?? [];
+                        const featsOn = feats.filter(f => !off.includes(f.key)).length;
+                        const isOpen = on && expanded.has(k);
+                        // Ligado sem a base: a tela abre vazia (ex.: Caixa sem OS)
+                        const missing = on ? (DEPENDS_ON[k] ?? []).filter(d => !moduleOn(cfg, d)) : [];
+                        return (
+                          <div
+                            key={k}
+                            className={`p-3 rounded-xl border transition ${on ? 'border-emerald-200 bg-emerald-50/50' : 'border-steel-200 bg-steel-50 opacity-70'}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <label className="flex items-start gap-3 flex-1 min-w-0 cursor-pointer">
+                                <input type="checkbox" className="mt-1 accent-emerald-600" checked={on} onChange={() => toggle(k)} />
+                                <span className="text-lg leading-none mt-0.5">{m.icon}</span>
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-semibold">
+                                    {m.label}
+                                    {isOptIn(k) && <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-brand-600">opcional</span>}
+                                  </span>
+                                  <span className="block text-xs text-steel-500">{m.desc}</span>
+                                </span>
+                              </label>
+                              {on && <MobileChip on={mobileOn} onClick={() => toggleMobile(k)} />}
+                            </div>
+
+                            {missing.length > 0 && (
+                              <p className="mt-2 ml-7 text-[11px] font-semibold text-amber-700">
+                                ⚠️ Depende de {missing.map(d => MODULES[d].label).join(' e ')}: sem isso a tela fica vazia
+                              </p>
+                            )}
+
+                            {on && k === 'inbox' && <InboxInstance workshopId={shop.id} />}
+
+                            {/* Ferramentas dentro do módulo */}
+                            {on && feats.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => toggleExpanded(k)}
+                                aria-expanded={isOpen}
+                                className="mt-2 ml-7 text-xs font-semibold text-steel-600 hover:text-steel-900 inline-flex items-center gap-1"
+                              >
+                                <span className={`text-[9px] transition-transform ${isOpen ? '' : '-rotate-90'}`}>▼</span>
+                                Ferramentas
+                                <span className={featsOn === feats.length ? 'text-emerald-600' : 'text-amber-600'}>({featsOn}/{feats.length})</span>
+                              </button>
+                            )}
+                            {isOpen && (
+                              <div className="mt-2 ml-7 space-y-1">
+                                {feats.map(f => {
+                                  const fOn = !off.includes(f.key);
+                                  const fMobile = fOn && !cfg.mobileOff.includes(f.key);
+                                  return (
+                                    <div key={f.key} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${fOn ? 'bg-white' : 'bg-steel-100 opacity-70'}`}>
+                                      <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                                        <input type="checkbox" className="accent-emerald-600" checked={fOn} onChange={() => toggle(f.key)} />
+                                        <span className="min-w-0">
+                                          <span className="block text-xs font-semibold">{f.label}</span>
+                                          {f.desc && <span className="block text-[11px] text-steel-500">{f.desc}</span>}
+                                        </span>
+                                      </label>
+                                      {/* Módulo já só no PC: a ferramenta segue o módulo */}
+                                      {fOn && mobileOn && <MobileChip small on={fMobile} onClick={() => toggleMobile(f.key)} />}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="card p-6 text-sm text-steel-500">Selecione uma oficina.</div>
+        )}
+      </div>
+    </AdminLayout>
+  );
+}
+
+/** Trilha de liberação: etapas acumulativas, da contratação de mecânicos até a gestão completa */
+function StageTrail({ current, onPick }: { current: number | null; onPick: (n: number) => void }) {
+  return (
+    <div className="mb-6 rounded-xl border border-steel-200 p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-steel-500">Trilha de liberação</p>
+        <span className={`text-xs font-semibold ${current === null ? 'text-amber-600' : 'text-emerald-600'}`}>
+          {current === null ? 'Configuração própria (fora da trilha)' : `Etapa ${current + 1} de ${STAGES.length}`}
+        </span>
+      </div>
+      <ol className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+        {STAGES.map((s, n) => {
+          const done = current !== null && n <= current;
+          return (
+            <li key={s.label}>
+              <button
+                type="button"
+                onClick={() => onPick(n)}
+                title={`Liberar até aqui: ${s.desc}`}
+                className={`w-full h-full text-left rounded-lg border px-2.5 py-2 transition ${n === current
+                  ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300'
+                  : done ? 'border-emerald-200 bg-emerald-50/50' : 'border-steel-200 hover:bg-steel-50'}`}
+              >
+                <span className={`block text-[10px] font-bold ${done ? 'text-emerald-600' : 'text-steel-400'}`}>
+                  {done ? '✓ ' : ''}ETAPA {n + 1}
+                </span>
+                <span className="block text-sm font-semibold leading-tight">{s.label}</span>
+                <span className="block text-[11px] text-steel-500 leading-snug mt-0.5">{s.desc}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+/** Chave 📱 Celular / 🖥️ Só PC */
+function MobileChip({ on, onClick, small }: { on: boolean; onClick: () => void; small?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={on ? 'Liberado no celular/tablet — clique para liberar só no computador' : 'Só no computador — clique para liberar também no celular/tablet'}
+      className={`shrink-0 font-semibold rounded-lg border transition ${small ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-1'} ${on
+        ? 'border-emerald-300 bg-white text-emerald-700'
+        : 'border-amber-300 bg-amber-50 text-amber-700'}`}
+    >
+      {on ? '📱 Celular ✓' : '🖥️ Só PC'}
+    </button>
+  );
+}
+
+/** WhatsApp da oficina: status do número e ligar uma instância que já existe na UAZAPI (pelo token) */
+function InboxInstance({ workshopId }: { workshopId: string }) {
+  const [inst, setInst] = useState<{ status: string; phone_number: string | null; instance_name: string } | null>(null);
+  const [token, setToken] = useState('');
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    const { data } = await supabase.from('whatsapp_instances')
+      .select('status, phone_number, instance_name').eq('workshop_id', workshopId).maybeSingle();
+    setInst(data ?? null);
+  }
+  useEffect(() => { load(); setOpen(false); setToken(''); }, [workshopId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function link() {
+    if (!token.trim()) return;
+    setBusy(true);
+    try {
+      const r = await inboxCall<{ status: string }>('whatsapp-instance', { action: 'link', workshop_id: workshopId, token: token.trim() });
+      toast.success(r.status === 'connected' ? 'Instância ligada e conectada ✓' : 'Instância ligada — falta conectar o número pelo QR code no Inbox');
+      setToken('');
+      setOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível ligar');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const connected = inst?.status === 'connected';
+  return (
+    <div className="mt-2 ml-7 rounded-lg bg-white px-2.5 py-2 text-xs space-y-1.5">
+      <p className="text-steel-600">
+        <span className={`inline-block h-2 w-2 rounded-full mr-1.5 ${connected ? 'bg-emerald-500' : inst ? 'bg-alert-500' : 'bg-steel-300'}`} />
+        {!inst ? 'Nenhum número ligado ainda' : connected
+          ? `Conectado${inst.phone_number ? ` · ${fmtPhone(inst.phone_number)}` : ''} (${inst.instance_name})`
+          : `Desconectado (${inst.instance_name})`}
+      </p>
+      {open ? (
+        <div className="flex gap-1.5">
+          <input type="password" className="input !py-1.5 text-xs flex-1" placeholder="Token da instância" value={token}
+            onChange={e => setToken(e.target.value)} autoFocus />
+          <button type="button" className="btn-primary !py-1.5 !px-2.5 text-xs" disabled={busy || !token.trim()} onClick={link}>
+            {busy ? '…' : 'Ligar'}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => setOpen(true)}>
+          {inst ? 'Trocar por outra instância (token)' : 'Usar instância que já existe (token)'}
+        </button>
+      )}
+    </div>
+  );
+}

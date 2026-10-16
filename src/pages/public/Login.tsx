@@ -16,7 +16,8 @@ interface WelcomeData {
 function destino(role: string, status: string) {
   if (status !== 'approved' && role !== 'admin') return '/aguardando-aprovacao';
   if (role === 'mechanic') return '/mecanico/dashboard';
-  if (role === 'workshop') return '/oficina/dashboard';
+  // Gestor no celular cai direto no Resultado; no computador, no Painel de vendas
+  if (role === 'workshop') return window.matchMedia('(max-width: 1023px)').matches ? '/oficina/resultado' : '/oficina/painel';
   return '/admin/dashboard';
 }
 
@@ -173,7 +174,7 @@ export default function Login() {
         <div className="lg:hidden mb-8"><Logo /></div>
         <div className="max-w-sm w-full mx-auto">
           <h1 className="text-3xl font-bold tracking-tight">Entrar</h1>
-          <p className="text-steel-500 text-sm mt-1">Mecânico, oficina ou admin — tudo aqui.</p>
+          <p className="text-steel-500 text-sm mt-1">Acesse sua conta para continuar.</p>
 
           {fromEmail && (
             <div className="mt-5 bg-brand-50 border border-brand-200 rounded-xl px-4 py-3 flex items-start gap-2">
@@ -241,9 +242,20 @@ export default function Login() {
             </div>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-steel-100 text-sm text-steel-500 flex justify-between">
-            <Link to="/cadastro/mecanico" className="hover:text-brand-500">Sou mecânico</Link>
-            <Link to="/cadastro/oficina" className="hover:text-brand-500">Sou oficina</Link>
+          <div className="mt-6 pt-6 border-t border-steel-100 space-y-2">
+            <p className="text-sm text-steel-500 text-center">Ainda não tem conta?</p>
+            <Link
+              to="/cadastro/mecanico"
+              className="flex items-center justify-center gap-2 border border-steel-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-steel-700 hover:border-brand-300 hover:text-brand-600 transition"
+            >
+              🔧 Criar conta de mecânico
+            </Link>
+            <Link
+              to="/cadastro/oficina"
+              className="flex items-center justify-center gap-2 border border-steel-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-steel-700 hover:border-brand-300 hover:text-brand-600 transition"
+            >
+              🏪 Criar conta de oficina
+            </Link>
           </div>
         </div>
       </main>

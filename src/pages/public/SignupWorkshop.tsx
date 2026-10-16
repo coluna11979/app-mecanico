@@ -5,6 +5,20 @@ import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
 import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
 
+function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
+  try {
+    const raw = sessionStorage.getItem('lead_prefill');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    sessionStorage.removeItem('lead_prefill');
+    return {
+      name:  typeof parsed.name  === 'string' ? parsed.name  : undefined,
+      email: typeof parsed.email === 'string' ? parsed.email : undefined,
+      phone: typeof parsed.phone === 'string' ? parsed.phone : undefined,
+    };
+  } catch { return {}; }
+}
+
 const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
 export default function SignupWorkshop() {
@@ -16,10 +30,25 @@ export default function SignupWorkshop() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '',
-    business_name: '', cnpj: '', address: '', city: '', state: 'SP', description: '',
+    business_name: '', cnpj: '',
+    cep: '', address: '', number: '', neighborhood: '',
+    city: '', state: 'SP', description: '',
   });
   function up<K extends keyof typeof f>(k: K, v: typeof f[K]) { setF(p => ({ ...p, [k]: v })); }
 
+  // Pré-preenche com os dados capturados no gate da home (se houver)
+  useEffect(() => {
+    const lead = consumeLeadPrefill();
+    if (!lead.name && !lead.email && !lead.phone) return;
+    setF(prev => ({
+      ...prev,
+      full_name: prev.full_name || lead.name  || '',
+      email:     prev.email     || lead.email || '',
+      phone:     prev.phone     || lead.phone || '',
+    }));
+  }, []);
+
+  // Link de convite admin (?lead=<uuid>): pré-preenche e marca início
   useEffect(() => {
     if (!leadId) return;
     markLeadSignupStarted(leadId);
@@ -27,7 +56,7 @@ export default function SignupWorkshop() {
       if (!lead) return;
       setF(prev => ({
         ...prev,
-        full_name: prev.full_name || lead.name || '',
+        full_name: prev.full_name || lead.name  || '',
         email:     prev.email     || lead.email || '',
         phone:     prev.phone     || lead.phone || '',
       }));
@@ -53,6 +82,9 @@ export default function SignupWorkshop() {
           business_name: f.business_name,
           cnpj: f.cnpj,
           address: f.address,
+          number: f.number.trim(),
+          neighborhood: f.neighborhood.trim(),
+          cep: f.cep.trim(),
           city: f.city,
           state: f.state,
           description: f.description || '',
@@ -66,6 +98,10 @@ export default function SignupWorkshop() {
     if (data.user) {
       try { await recordConsent(data.user.id, 'workshop'); } catch { /* ignora */ }
       if (leadId) await convertLeadToProfile(leadId);
+      // Email de boas-vindas (silencioso — se Resend não configurado ou der erro, ignora)
+      void supabase.functions.invoke('send-welcome-email', {
+        body: { profile_id: data.user.id },
+      }).catch(() => { /* fire-and-forget */ });
     }
 
     setLoading(false);
@@ -103,14 +139,27 @@ export default function SignupWorkshop() {
                 <input className="input" required value={f.business_name} onChange={e => up('business_name', e.target.value)} /></div>
               <div><label className="label">CNPJ</label>
                 <input className="input" required value={f.cnpj} onChange={e => up('cnpj', e.target.value)} placeholder="00.000.000/0000-00" /></div>
+              <div><label className="label">CEP</label>
+                <input className="input" required value={f.cep} onChange={e => up('cep', e.target.value)} placeholder="00000-000" /></div>
+            </div>
+
+            <div className="grid grid-cols-[1fr_120px] gap-3">
+              <div><label className="label">Rua / Avenida</label>
+                <input className="input" required value={f.address} onChange={e => up('address', e.target.value)} placeholder="Ex.: Av. Paulista" /></div>
+              <div><label className="label">Número</label>
+                <input className="input" required value={f.number} onChange={e => up('number', e.target.value)} placeholder="123" /></div>
+            </div>
+
+            <div><label className="label">Bairro</label>
+              <input className="input" required value={f.neighborhood} onChange={e => up('neighborhood', e.target.value)} placeholder="Ex.: Bela Vista" /></div>
+
+            <div className="grid grid-cols-[1fr_100px] gap-3">
+              <div><label className="label">Cidade</label>
+                <input className="input" required value={f.city} onChange={e => up('city', e.target.value)} placeholder="Ex.: São Paulo" /></div>
               <div><label className="label">UF</label>
                 <select className="input" value={f.state} onChange={e => up('state', e.target.value)}>
                   {UFS.map(uf => <option key={uf}>{uf}</option>)}
                 </select></div>
-              <div className="sm:col-span-2"><label className="label">Endereço completo</label>
-                <input className="input" required value={f.address} onChange={e => up('address', e.target.value)} placeholder="Rua, número, bairro" /></div>
-              <div><label className="label">Cidade</label>
-                <input className="input" required value={f.city} onChange={e => up('city', e.target.value)} /></div>
             </div>
 
             <div><label className="label">Sobre a oficina (opcional)</label>

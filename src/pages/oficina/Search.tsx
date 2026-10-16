@@ -2,7 +2,11 @@ import { FormEvent, useEffect, useState } from 'react';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { MechanicReviews } from '@/components/MechanicReviews';
+import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
+import { toast } from '@/components/ui/Toast';
 import type { Mechanic, Profile } from '@/types/database';
+import { formatBRL } from '@/lib/payment';
 
 const ALL_SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
 
@@ -14,6 +18,52 @@ export default function WorkshopSearch() {
   const [filter, setFilter] = useState({ skill: '', minRating: 0, maxRate: 500 });
   const [list, setList] = useState<MechRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openReviews, setOpenReviews] = useState<Set<string>>(new Set());
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const hasPendingFees = usePendingFees(shop?.id ?? null);
+
+  function toggleReviews(id: string) {
+    setOpenReviews(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function loadFavorites() {
+    if (!shop) return;
+    const { data } = await supabase
+      .from('workshop_favorite_mechanics')
+      .select('mechanic_id')
+      .eq('workshop_id', shop.id);
+    setFavorites(new Set((data ?? []).map(d => d.mechanic_id)));
+  }
+
+  async function toggleFavorite(mechanicId: string) {
+    if (!shop) return;
+    const isFav = favorites.has(mechanicId);
+    // Atualização otimista
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(mechanicId); else next.add(mechanicId);
+      return next;
+    });
+    if (isFav) {
+      const { error } = await supabase
+        .from('workshop_favorite_mechanics')
+        .delete()
+        .eq('workshop_id', shop.id)
+        .eq('mechanic_id', mechanicId);
+      if (error) loadFavorites(); // reverte em caso de erro
+    } else {
+      const { error } = await supabase
+        .from('workshop_favorite_mechanics')
+        .insert({ workshop_id: shop.id, mechanic_id: mechanicId });
+      if (error) loadFavorites();
+    }
+  }
+
+  useEffect(() => { loadFavorites(); }, [shop?.id]);
 
   // hire modal
   const [target, setTarget] = useState<MechRow | null>(null);
@@ -35,10 +85,14 @@ export default function WorkshopSearch() {
   async function hire(e: FormEvent) {
     e.preventDefault();
     if (!shop || !target) return;
+    if (hasPendingFees) {
+      toast.error('Você tem multa de cancelamento pendente. Quite no painel de Demandas antes de contratar.');
+      return;
+    }
     setHiring(true);
     const pph = Number(job.price_per_hour) || target.hourly_rate;
     const mh  = Number(job.max_hours) || 1;
-    await supabase.from('jobs').insert({
+    const { error } = await supabase.from('jobs').insert({
       workshop_id:    shop.id,
       mechanic_id:    target.id,
       title:          job.title,
@@ -48,13 +102,22 @@ export default function WorkshopSearch() {
       price:          pph * mh,
       status:         'assigned',
     });
-    setHiring(false); setTarget(null);
-    alert('Mecânico contratado! Acompanhe pelo dashboard.');
+    setHiring(false);
+    if (error) {
+      console.error('[hire] erro:', error);
+      toast.error('Não foi possível contratar: ' + error.message);
+      return; // mantém o modal aberto com os dados
+    }
+    setTarget(null);
+    toast.success('Mecânico contratado! Acompanhe pelo painel de Demandas.');
   }
 
   return (
     <WorkshopLayout>
       <h1 className="text-3xl font-bold tracking-tight mb-6">Buscar mecânicos disponíveis</h1>
+
+      {/* Multa pendente bloqueia contratação (mesma regra do painel de Demandas) */}
+      <PendingFeesBanner workshopId={shop?.id ?? null} />
 
       <div className="card mb-6 grid md:grid-cols-3 gap-4">
         <div>
@@ -89,15 +152,45 @@ export default function WorkshopSearch() {
                   <div className="font-bold">{m.profile.full_name}</div>
                   <div className="text-xs text-steel-500">★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · {m.experience_years}a</div>
                 </div>
-                <span className="badge-success">●</span>
+                <button
+                  type="button"
+                  onClick={() => toggleFavorite(m.id)}
+                  title={favorites.has(m.id) ? 'Remover dos preferidos' : 'Adicionar aos preferidos'}
+                  className={`h-9 w-9 rounded-full grid place-items-center transition active:scale-90 ${
+                    favorites.has(m.id)
+                      ? 'bg-brand-500/10 text-brand-600 hover:bg-brand-500/20'
+                      : 'bg-steel-100 text-steel-400 hover:text-brand-500 hover:bg-brand-50'
+                  }`}
+                >
+                  {favorites.has(m.id) ? '★' : '☆'}
+                </button>
               </div>
               <div className="mt-3 flex flex-wrap gap-1">
                 {m.skills.slice(0, 4).map(s => <span key={s} className="badge bg-steel-100 text-steel-700">{s}</span>)}
               </div>
               <div className="mt-3 flex justify-between items-center">
-                <div><span className="text-2xl font-bold font-display">R$ {m.hourly_rate.toFixed(0)}</span><span className="text-xs text-steel-500">/h</span></div>
-                <button onClick={() => { setTarget(m); setJob({ title: '', description: '', price_per_hour: m.hourly_rate, max_hours: 1 }); }} className="btn-primary">Contratar</button>
+                <div><span className="text-2xl font-bold font-display">R$ {formatBRL(m.hourly_rate, { decimals: 0 })}</span><span className="text-xs text-steel-500">/h</span></div>
+                <button
+                  onClick={() => { setTarget(m); setJob({ title: '', description: '', price_per_hour: m.hourly_rate, max_hours: 1 }); }}
+                  disabled={hasPendingFees}
+                  title={hasPendingFees ? 'Quite a multa pendente para contratar' : undefined}
+                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {hasPendingFees ? '🔒 Multa pendente' : 'Contratar'}
+                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => toggleReviews(m.id)}
+                className="mt-3 text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center justify-center gap-1 border-t border-steel-100 pt-2"
+              >
+                {openReviews.has(m.id) ? '▲ Ocultar avaliações' : '▼ Ver avaliações de outras oficinas'}
+              </button>
+              {openReviews.has(m.id) && (
+                <div className="mt-2 bg-steel-50 rounded-lg p-2 border border-steel-100">
+                  <MechanicReviews mechanicId={m.id} />
+                </div>
+              )}
             </div>
           ))}
         </div>}
@@ -111,7 +204,7 @@ export default function WorkshopSearch() {
             <form onClick={e => e.stopPropagation()} onSubmit={hire} className="card max-w-md w-full space-y-4">
               <div>
                 <h3 className="text-xl font-bold">Contratar {target.profile.full_name}</h3>
-                <p className="text-sm text-steel-500 mt-1">Taxa de referência: R$ {target.hourly_rate.toFixed(0)}/h · ★ {target.rating.toFixed(1)}</p>
+                <p className="text-sm text-steel-500 mt-1">Taxa de referência: R$ {formatBRL(target.hourly_rate, { decimals: 0 })}/h · ★ {target.rating.toFixed(1)}</p>
               </div>
 
               <div>
@@ -153,7 +246,7 @@ export default function WorkshopSearch() {
               {est > 0 && (
                 <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
                   <span className="text-sm text-brand-700">Teto do orçamento</span>
-                  <span className="font-bold text-brand-700 font-display">R$ {est.toFixed(2)}</span>
+                  <span className="font-bold text-brand-700 font-display">R$ {formatBRL(est)}</span>
                 </div>
               )}
 

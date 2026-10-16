@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { getSetting } from '@/lib/settings';
 
 export interface Marker { id: string; lat: number; lng: number; color?: string; label?: string }
@@ -196,6 +197,48 @@ export default function MapView({
     m.easeTo({ center: [center[1], center[0]], duration: 600 });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center]);
+
+  /* ── Fix: mapa some quando celular volta do background.
+   *    No mobile (especialmente iOS) o navegador pausa o canvas WebGL
+   *    quando a tela apaga; ao voltar, o canvas fica em branco até alguém
+   *    forçar redraw. visibilitychange cobre o caso geral, pageshow cobre
+   *    o caso do back-forward cache do iOS. webglcontextrestored é a rede
+   *    de segurança caso o contexto seja perdido de verdade. ── */
+  useEffect(() => {
+    function forceRedraw() {
+      const m = mapRef.current;
+      if (!m) return;
+      // Dois frames pra dar tempo do container recuperar dimensões corretas
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try { m.resize(); m.triggerRepaint(); } catch { /* ignore */ }
+        });
+      });
+    }
+    function onVisibility() {
+      if (document.visibilityState === 'visible') forceRedraw();
+    }
+    function onPageShow() { forceRedraw(); }
+    function attachWebglRecovery() {
+      const m = mapRef.current;
+      if (!m) return;
+      m.on('webglcontextrestored', forceRedraw);
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', onPageShow);
+    // tenta anexar agora (mapa pode não estar pronto ainda) e de novo após delay
+    attachWebglRecovery();
+    const t = window.setTimeout(attachWebglRecovery, 1500);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', onPageShow);
+      clearTimeout(t);
+      const m = mapRef.current;
+      if (m) {
+        try { m.off('webglcontextrestored', forceRedraw); } catch { /* ignore */ }
+      }
+    };
+  }, []);
 
   return <div ref={containerRef} className={className ?? 'w-full h-full'} />;
 }

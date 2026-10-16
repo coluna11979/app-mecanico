@@ -1,6 +1,7 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 
 const NAV_GROUPS = [
@@ -35,10 +36,26 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Superadmin',
+    items: [
+      { to: '/admin/modulos', icon: '🧩', label: 'Módulos por oficina' },
+      { to: '/admin/agentes', icon: '🤖', label: 'Agentes de IA' },
+    ],
+  },
+  {
     label: 'Financeiro',
     items: [
       { to: '/admin/repasses',   icon: '💸', label: 'Repasses'   },
       { to: '/admin/financeiro', icon: '📈', label: 'Financeiro' },
+    ],
+  },
+  {
+    label: 'Marketing',
+    items: [
+      { to: '/admin/vip',          icon: '⭐', label: 'Plano VIP'    },
+      { to: '/admin/leads',        icon: '🎯', label: 'Leads'        },
+      { to: '/admin/embaixadores', icon: '🌟', label: 'Embaixadores' },
+      { to: '/admin/avisos',       icon: '📢', label: 'Avisos'       },
     ],
   },
   {
@@ -53,6 +70,13 @@ const NAV_GROUPS = [
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { signOut, profile } = useAuth();
   const [open, setOpen] = useState(false);
+  const [vipPending, setVipPending] = useState(0);
+
+  // Solicitações de VIP aguardando contato
+  useEffect(() => {
+    supabase.from('vip_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+      .then(({ count }) => setVipPending(count ?? 0));
+  }, []);
 
   const initials = (profile?.full_name ?? 'A')
     .split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
@@ -102,7 +126,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     `}
                   >
                     <span className="text-base w-5 text-center">{item.icon}</span>
-                    <span>{item.label}</span>
+                    <span className="flex-1">{item.label}</span>
+                    {item.to === '/admin/vip' && vipPending > 0 && (
+                      <span className="h-5 min-w-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center">
+                        {vipPending > 9 ? '9+' : vipPending}
+                      </span>
+                    )}
                   </NavLink>
                 ))}
               </div>
