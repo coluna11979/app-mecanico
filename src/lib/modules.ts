@@ -58,6 +58,57 @@ export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
 export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox', 'avaliacoes', 'agentes', 'site'];
 export const isOptIn = (k: string) => (OPT_IN_MODULES as readonly string[]).includes(k);
 
+
+/** Liberação aos poucos: cada etapa soma as anteriores e só depende do que já veio antes
+ *  (Caixa recebe OS, comissão sai da OS, estoque baixa peça na OS…). Os opcionais ficam fora: ligam um a um. */
+export const STAGES: { label: string; desc: string; keys: ModuleKey[] }[] = [
+  { label: 'Só mecânicos',    desc: 'Contratar mecânicos da plataforma',               keys: ['plataforma'] },
+  { label: 'Oficina básica',  desc: 'OS, agenda, clientes e tabela de serviços',       keys: ['clientes', 'servicos', 'os', 'agenda', 'vip'] },
+  { label: 'Vendas',          desc: 'Check-up e mesa comercial (orçamento pelo link)', keys: ['checkup', 'comercial'] },
+  { label: 'Financeiro',      desc: 'Caixa, contas a pagar e painel de vendas',        keys: ['caixa', 'contas_pagar', 'financeiro', 'painel'] },
+  { label: 'Estoque',         desc: 'Peças, compras, fornecedores e notas antigas',    keys: ['pecas', 'compras', 'importar'] },
+  { label: 'Equipe',          desc: 'Equipe, comissões, folha e modo balcão',          keys: ['equipe', 'fechamentos', 'acessos'] },
+];
+
+/** De quem cada módulo depende para não abrir vazio (só aviso no superadmin, não bloqueia) */
+export const DEPENDS_ON: Partial<Record<ModuleKey, ModuleKey[]>> = {
+  os:          ['clientes'],
+  agenda:      ['os'],
+  checkup:     ['os'],
+  comercial:   ['os'],
+  caixa:       ['os'],
+  financeiro:  ['caixa'],
+  painel:      ['caixa'],
+  pecas:       ['os'],
+  compras:     ['pecas'],
+  importar:    ['pecas', 'compras'],
+  equipe:      ['os'],
+  fechamentos: ['equipe', 'os'],
+  acessos:     ['equipe'],
+  inbox:       ['clientes', 'comercial'],
+  avaliacoes:  ['os'],
+  site:        ['comercial'],
+  agentes:     ['caixa'],
+};
+
+/** Módulos desligados para a oficina ficar exatamente na etapa `n` (0 = primeira) */
+export const stageOff = (n: number): ModuleKey[] => {
+  const on = new Set(STAGES.slice(0, n + 1).flatMap(s => s.keys));
+  return MODULE_KEYS.filter(k => !isOptIn(k) && !on.has(k));
+};
+
+/** Em que etapa a oficina está (pelos módulos ligados); null = configuração própria, fora da trilha */
+export const stageOf = (off: readonly string[]): number | null => {
+  const offMods = MODULE_KEYS.filter(k => !isOptIn(k) && off.includes(k)).sort().join();
+  const i = STAGES.findIndex((_, n) => stageOff(n).sort().join() === offMods);
+  return i < 0 ? null : i;
+};
+
+/** Sem OS mas com a Plataforma → a oficina usa o app só para contratar mecânicos
+ *  (o Início, que é todo de OS, dá lugar às Demandas) */
+export const isPlatformOnly = (disabled: readonly string[]) =>
+  disabled.includes('os') && !disabled.includes('plataforma') && !disabled.includes('plataforma.demandas');
+
 /* ── Ferramentas dentro de cada módulo ────────────────────────────────────────
    Chave `modulo.ferramenta`, guardada nas mesmas listas dos módulos (desligado
    em tudo / só no celular). Ferramenta com `routes` é bloqueada pelo endereço
