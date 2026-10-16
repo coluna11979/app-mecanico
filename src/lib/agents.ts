@@ -86,11 +86,12 @@ Regras:
    Rodam no servidor (edge function agent-reception, disparada pelo whatsapp-webhook).
    O dono edita o jeito de falar; as regras de segurança, preço e horário são fixas no servidor. */
 
-export type ReceptionScope = 'site' | 'novos';
+export type ReceptionScope = 'site' | 'novos' | 'todos';
+export type ReceptionHours = 'sempre' | 'fora';
 
 export type ReceptionAgent = {
   id: string; workshop_id: string; name: string; system_prompt: string; enabled: boolean;
-  settings: { scope?: ReceptionScope };
+  settings: { scope?: ReceptionScope; return_days?: number; hours?: ReceptionHours };
 };
 
 export const RECEPTION_TEMPLATE = {
@@ -107,5 +108,10 @@ Jeito de falar:
   scopes: {
     site: 'Só quem vem pelo site da oficina ("Vim pelo site…")',
     novos: 'Toda conversa nova no WhatsApp',
+    todos: 'Toda conversa nova e cliente que volta a chamar',
   } as Record<ReceptionScope, string>,
+  hours: {
+    sempre: 'O dia todo',
+    fora: 'Só fora do expediente',
+  } as Record<ReceptionHours, string>,
 };

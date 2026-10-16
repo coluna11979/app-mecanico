@@ -10,6 +10,7 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { adminClient, json, rawMessageId, uaz, uazConfig } from '../_shared/uazapi.ts';
 import { describeEntry, leadEntry } from '../_shared/leadEntry.ts';
+import { workshopHours } from '../_shared/workshopHours.ts';
 
 /** Espera depois da última mensagem do cliente antes de responder */
 const DEBOUNCE_MS = 12_000;
@@ -43,20 +44,25 @@ Deno.serve(async (req) => {
 
 type Chat = {
   id: string; workshop_id: string; phone: string; name: string | null; customer_id: string | null;
-  agent_state: string | null; agent_replies: number; lead_at: string | null; lead_note: string | null;
+  agent_state: string | null; agent_replies: number; agent_started_at: string | null;
+  lead_at: string | null; lead_note: string | null;
 };
 type Msg = { id: string; message_id: string | null; from_me: boolean; by_agent: boolean; content: string | null; message_type: string; sent_at: string };
 
 async function handle(admin: SupabaseClient, chatId: string, triggerId: string | null) {
   const { data: chat } = await admin.from('whatsapp_chats')
-    .select('id, workshop_id, phone, name, customer_id, agent_state, agent_replies, lead_at, lead_note')
+    .select('id, workshop_id, phone, name, customer_id, agent_state, agent_replies, agent_started_at, lead_at, lead_note')
     .eq('id', chatId).maybeSingle<Chat>();
   if (!chat || chat.agent_state !== 'active') return { skipped: 'not_active' };
   const wid = chat.workshop_id;
 
+  // Só o atendimento atual: cliente que volta depois de dias não traz a conversa antiga junto
+  // (10 min de folga: a 1ª mensagem chega um pouco antes de agent_started_at)
+  const since = new Date(new Date(chat.agent_started_at ?? 0).getTime() - 10 * 60_000).toISOString();
   const { data: rows } = await admin.from('whatsapp_messages')
     .select('id, message_id, from_me, by_agent, content, message_type, sent_at')
-    .eq('chat_id', chat.id).eq('is_deleted', false).order('sent_at', { ascending: false }).limit(HISTORY);
+    .eq('chat_id', chat.id).eq('is_deleted', false).gte('sent_at', since)
+    .order('sent_at', { ascending: false }).limit(HISTORY);
   const msgs = ((rows ?? []) as Msg[]).reverse();
   const last = msgs[msgs.length - 1];
   // Cliente ainda digitando: a mensagem mais nova dispara a resposta
@@ -99,7 +105,7 @@ async function handle(admin: SupabaseClient, chatId: string, triggerId: string |
     RULES,
     await workshopContext(admin, wid, now),
     `## Este cliente\n${describeEntry(leadEntry(firstInbound))}`,
-    `Nome no WhatsApp: ${chat.name || 'não informado'}.${chat.customer_id ? ' Já é cliente cadastrado da oficina.' : ''}`,
+    chat.customer_id ? await customerContext(admin, chat.customer_id) : `Nome no WhatsApp: ${chat.name || 'não informado'}. Ainda não é cliente cadastrado.`,
     `Respostas que você já mandou nesta conversa: ${chat.agent_replies} de no máximo ${MAX_REPLIES}.`,
   ].join('\n\n');
 
@@ -199,35 +205,54 @@ const TOOLS = [
   },
 ];
 
-const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
-const hhmm = (t: string | null) => (t ?? '').slice(0, 5).replace(/^0/, '').replace(':00', 'h').replace(':', 'h');
-
 async function workshopContext(admin: SupabaseClient, wid: string, now: Date) {
-  const [{ data: w }, { data: s }] = await Promise.all([
+  const [{ data: w }, hours] = await Promise.all([
     admin.from('workshops').select('business_name, address, number, neighborhood, city').eq('id', wid).maybeSingle(),
-    admin.from('workshop_schedule').select('weekdays, open_time, close_time, saturday_close').eq('workshop_id', wid).maybeSingle(),
+    workshopHours(admin, wid, now),
   ]);
-  const days: number[] = s?.weekdays ?? [1, 2, 3, 4, 5, 6];
-  const open = s?.open_time ?? '08:00', close = s?.close_time ?? '18:00';
-  const satClose = s?.saturday_close ?? (s ? close : '12:00');
-  const week = days.filter((d) => d >= 1 && d <= 5).length === 5 ? 'segunda a sexta' : days.filter((d) => d >= 1 && d <= 5).map((d) => DIAS[d]).join(', ');
-  const hours = `${week}, ${hhmm(open)} às ${hhmm(close)}${days.includes(6) ? `; sábado, ${hhmm(open)} às ${hhmm(satClose)}` : '; sábado fechado'}${days.includes(0) ? '' : '; domingo fechado'}`;
-
-  // Agora em Brasília
-  const sp = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-  const dow = sp.getDay();
-  const minutes = sp.getHours() * 60 + sp.getMinutes();
-  const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-  const closeToday = dow === 6 ? satClose : close;
-  const isOpen = days.includes(dow) && minutes >= toMin(open) && minutes < toMin(closeToday);
-
   const addr = [w?.address, w?.number].filter(Boolean).join(', ');
   return [
     '## A oficina',
     `Nome: ${w?.business_name?.trim() ?? 'a oficina'}.`,
     addr && `Endereço: ${addr}${w?.neighborhood ? ` (${w.neighborhood})` : ''}${w?.city ? `, ${w.city}` : ''}.`,
-    `Horário: ${hours}.`,
-    `Agora: ${DIAS[dow]}, ${String(sp.getHours()).padStart(2, '0')}h${String(sp.getMinutes()).padStart(2, '0')} — a oficina está ${isOpen ? 'ABERTA (a equipe responde em seguida)' : 'FECHADA (a equipe responde quando abrir)'}.`,
+    `Horário: ${hours.text}.`,
+    `Agora: ${hours.nowLabel} — a oficina está ${hours.isOpen ? 'ABERTA (a equipe responde em seguida)' : 'FECHADA (a equipe responde quando abrir)'}.`,
+  ].filter(Boolean).join('\n');
+}
+
+const OS_STATUS: Record<string, string> = {
+  open: 'aberta', awaiting_approval: 'aguardando aprovação do orçamento', approved: 'aprovada, aguardando execução',
+  in_progress: 'em execução', completed: 'concluída', cancelled: 'cancelada',
+};
+const dia = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '');
+
+/** Cliente da casa: nome, carros e OS, para receber pelo nome e citar o carro */
+async function customerContext(admin: SupabaseClient, customerId: string) {
+  const [{ data: c }, { data: cars }, { data: oss }] = await Promise.all([
+    admin.from('customers').select('full_name').eq('id', customerId).maybeSingle(),
+    admin.from('vehicles').select('id, make, model, year, plate').eq('customer_id', customerId).order('created_at'),
+    admin.from('service_orders').select('number, title, status, created_at, completed_at, vehicle_id')
+      .eq('customer_id', customerId).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(5),
+  ]);
+  const name = (c?.full_name ?? '').trim();
+  const carName = (v: { make?: string | null; model?: string | null; year?: number | string | null }) =>
+    [v.model || v.make, v.year].filter(Boolean).join(' ');
+  const carById = new Map((cars ?? []).map((v) => [v.id, carName(v)]));
+  const open = (oss ?? []).filter((o) => o.status !== 'completed');
+  const last = (oss ?? []).find((o) => o.status === 'completed');
+  const osLine = (o: { number: number | string; title: string | null; status: string; vehicle_id: string | null }) =>
+    `OS ${o.number} ${o.title ?? ''} (${OS_STATUS[o.status] ?? o.status}${o.vehicle_id && carById.get(o.vehicle_id) ? `, ${carById.get(o.vehicle_id)}` : ''})`;
+  return [
+    '## Cliente da casa (já cadastrado na oficina)',
+    `Nome: ${name || 'não informado'}. Chame pelo primeiro nome${name ? ` (${name.split(/\s+/)[0]})` : ''}, como quem já conhece.`,
+    cars?.length
+      ? `Carros: ${cars.map((v) => carName(v) + (v.plate ? ` (${v.plate})` : '')).join('; ')}.${cars.length === 1 ? ' Cite o carro pelo nome na saudação.' : ' Se não ficar claro de qual carro ele fala, pergunte.'}`
+      : 'Nenhum carro cadastrado.',
+    open.length
+      ? `OS em andamento: ${open.map(osLine).join('; ')}. Se ele perguntar se o carro está pronto, do orçamento ou do valor: você NÃO sabe o andamento. Diga que vai chamar o responsável e passe para a equipe na hora.`
+      : 'Nenhuma OS em andamento.',
+    last && `Último serviço: ${last.title ?? 'serviço'} em ${dia(last.completed_at ?? last.created_at)}.`,
+    'Cliente da casa prefere falar com a equipe: faça no máximo UMA pergunta para entender o que ele precisa e passe para a equipe. Só use registrar_dados se for um serviço novo.',
   ].filter(Boolean).join('\n');
 }
 

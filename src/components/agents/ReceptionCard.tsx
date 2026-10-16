@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
-import { RECEPTION_TEMPLATE, type ReceptionAgent, type ReceptionScope } from '@/lib/agents';
+import { RECEPTION_TEMPLATE, type ReceptionAgent, type ReceptionScope, type ReceptionHours } from '@/lib/agents';
 
 const COLS = 'id, workshop_id, name, system_prompt, enabled, settings';
 const tpl = RECEPTION_TEMPLATE;
@@ -82,6 +82,8 @@ export default function ReceptionCard({ workshopId }: { workshopId: string }) {
   }
 
   const scope: ReceptionScope = agent.settings?.scope ?? 'site';
+  const hours: ReceptionHours = agent.settings?.hours ?? 'sempre';
+  const returnDays = agent.settings?.return_days ?? 7;
   return (
     <div className="card space-y-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -110,10 +112,32 @@ export default function ReceptionCard({ workshopId }: { workshopId: string }) {
             </button>
           ))}
         </div>
+        {scope === 'todos' && (
+          <div className="flex flex-wrap items-center gap-2 mt-3 text-sm">
+            <span>Cliente que volta a chamar depois de</span>
+            <select className="input !w-auto !py-1.5" value={returnDays}
+              onChange={(e) => patch({ settings: { ...agent.settings, return_days: Number(e.target.value) } })}>
+              {[3, 7, 15, 30].map((d) => <option key={d} value={d}>{d} dias</option>)}
+            </select>
+            <span>sem conversa</span>
+          </div>
+        )}
         <p className="text-xs text-steel-500 mt-2">
-          Ela só entra na primeira mensagem de uma conversa nova e sai assim que alguém da equipe responder (pelo sistema ou pelo celular).
-          Não passa preço, não confirma horário e, em caso de risco, manda parar o carro e marca urgente.
+          Ela só entra no começo de um atendimento e sai assim que alguém da equipe responder (pelo sistema ou pelo celular).
+          Cliente cadastrado é recebido pelo nome. Não passa preço, não confirma horário e, em caso de risco, manda parar o carro e marca urgente.
         </p>
+      </div>
+
+      <div>
+        <label className="label">Quando ela atende</label>
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(tpl.hours) as ReceptionHours[]).map((h) => (
+            <button key={h} type="button" onClick={() => patch({ settings: { ...agent.settings, hours: h } })}
+              className={`rounded-xl border px-3 py-2 text-sm text-left ${hours === h ? 'border-brand-500 bg-brand-50 dark:bg-steel-800 font-medium' : 'border-steel-200 dark:border-steel-700'}`}>
+              {tpl.hours[h]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {open && (

@@ -4,6 +4,7 @@
 // Grupos, status e canais ficam de fora: o Inbox é para conversar com clientes.
 import { adminClient, json, mapInstanceStatus, rawMessageId, uaz, uazConfig, type UazConfig } from '../_shared/uazapi.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { workshopHours } from '../_shared/workshopHours.ts';
 
 const ok = () => json({ received: true });
 const stripJid = (j: unknown) => String(j ?? '').replace(/@.*$/, '').replace(/:\d+$/, '').replace(/\D/g, '');
@@ -307,28 +308,41 @@ async function handleMessage(admin: SupabaseClient, cfg: UazConfig, wid: string,
 }
 
 /* ── Recepção (módulo `agentes`, agente 'recepcao') ─────────────────────────────
-   Entra só na PRIMEIRA mensagem de uma conversa nova (site ou todas, conforme o ajuste do agente)
-   e segue enquanto agent_state = 'active'. A resposta sai pela edge function agent-reception,
+   Começa um atendimento quando chega a 1ª mensagem de uma conversa nova (site ou todas, conforme o
+   ajuste do agente) ou, no modo "todos", quando um cliente volta a chamar depois de X dias sem conversa.
+   Segue enquanto agent_state = 'active'. A resposta sai pela edge function agent-reception,
    que espera o cliente terminar de digitar. */
 
 type ReceptionChat = { id: string; agent_state?: string | null };
+type ReceptionSettings = { scope?: 'site' | 'novos' | 'todos'; return_days?: number; hours?: 'sempre' | 'fora' };
 
 async function maybeReception(admin: SupabaseClient, wid: string, chat: ReceptionChat, messageRowId: string, text: string) {
-  if (chat.agent_state && chat.agent_state !== 'active') return;
-  if (!chat.agent_state) {
-    // Conversa nova: só a mensagem que acabou de chegar
-    const { count } = await admin.from('whatsapp_messages').select('id', { count: 'exact', head: true }).eq('chat_id', chat.id);
-    if ((count ?? 0) > 1) return;
+  if (chat.agent_state !== 'active') {
     const { data: agent } = await admin.from('ai_agents').select('enabled, settings')
       .eq('workshop_id', wid).eq('template', 'recepcao').maybeSingle();
     if (!agent?.enabled) return;
+    const st = (agent.settings ?? {}) as ReceptionSettings;
+    const scope = st.scope ?? 'site';
+    const returnDays = Math.max(1, Number(st.return_days) || 7);
+
+    // Mensagem anterior a esta: nenhuma = conversa nova; antiga = cliente voltando
+    const { data: prev } = await admin.from('whatsapp_messages').select('sent_at')
+      .eq('chat_id', chat.id).neq('id', messageRowId).order('sent_at', { ascending: false }).limit(1).maybeSingle();
+    const gapDays = prev ? (Date.now() - new Date(prev.sent_at).getTime()) / 86_400_000 : Infinity;
+    const fromSite = /vim pelo site/i.test(text);
+    const fresh = gapDays >= returnDays;   // conversa nova (Infinity) ou parada há X dias
+    const start =
+      (!prev && (scope !== 'site' || fromSite)) ||   // conversa nova
+      (prev && fresh && (scope === 'todos' || fromSite));  // cliente voltando (ou voltando pelo site)
+    if (!start) return;
+
     const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: wid, _module: 'agentes' });
     if (!modOn) return;
-    const scope = (agent.settings as { scope?: string } | null)?.scope ?? 'site';
-    if (scope === 'site' && !/vim pelo site/i.test(text)) return;
+    if (st.hours === 'fora' && (await workshopHours(admin, wid)).isOpen) return;
+
     const { data: started } = await admin.from('whatsapp_chats')
       .update({ agent_state: 'active', agent_template: 'recepcao', agent_started_at: new Date().toISOString(), agent_replies: 0 })
-      .eq('id', chat.id).is('agent_state', null).select('id').maybeSingle();
+      .eq('id', chat.id).or('agent_state.is.null,agent_state.neq.active').select('id').maybeSingle();
     if (!started) return;
   }
   const call = fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/agent-reception`, {
