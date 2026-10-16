@@ -306,7 +306,7 @@ export default function MechanicMapa() {
               <div className="text-right">
                 <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Você recebe</div>
                 <div className="text-2xl font-bold text-signal-400 font-display leading-none mt-0.5">R$ {formatMoney(selectedNet)}</div>
-                <div className="text-xs text-steel-600 mt-1">no PIX em até 24h</div>
+                <div className="text-xs text-steel-600 mt-1">no seu PIX</div>
               </div>
             </div>
 

@@ -164,7 +164,7 @@ export default function MechanicJobDetail() {
                 </div>
                 <div className="h-12 w-12 rounded-full bg-signal-500/10 grid place-items-center text-2xl">💸</div>
               </div>
-              <div className="text-xs text-steel-600 mt-3">Liberado em até 24h após confirmação da oficina.</div>
+              <div className="text-xs text-steel-600 mt-3">Liberado depois que a oficina confirma a conclusão.</div>
             </div>
           );
         })()}

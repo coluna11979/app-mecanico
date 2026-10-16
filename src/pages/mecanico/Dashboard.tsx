@@ -359,7 +359,7 @@ export default function MechanicDashboard() {
               <div className="font-semibold text-white mt-3">Nenhum job aberto agora</div>
               <div className="text-sm text-steel-300 mt-1">
                 {online
-                  ? 'Fique com o app aberto — avisamos com som quando chegar um novo.'
+                  ? 'Quando chegar um novo, avisamos aqui e no seu celular, mesmo com o app fechado.'
                   : 'Fique online para ser avisado quando chegar um novo.'}
               </div>
             </div>
@@ -467,15 +467,15 @@ export default function MechanicDashboard() {
               </span>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm text-white">Como você recebe</div>
-                <div className="text-xs text-steel-300">PIX em até 24h após a oficina confirmar</div>
+                <div className="text-xs text-steel-300">No seu PIX, depois que a oficina confirma</div>
               </div>
               <IconChevronDown className="w-5 h-5 text-steel-400 shrink-0 transition-transform group-open:rotate-180" />
             </summary>
             <ol className="px-4 pb-4 space-y-3">
               {[
                 ['Aceita o job', 'O valor mostrado é o que cai no seu PIX — sem letra miúda.'],
-                ['Faz o serviço', 'A oficina paga antes de começar; o dinheiro fica garantido.'],
-                ['Recebe no PIX', 'Quando a oficina confirma a conclusão, em até 24h.'],
+                ['Faz o serviço', 'O pagamento da oficina passa pela plataforma — você não precisa cobrar ninguém.'],
+                ['Recebe no PIX', 'Depois que a oficina confirma a conclusão, o valor vai para a sua chave PIX.'],
               ].map(([t, d], i) => (
                 <li key={t} className="flex gap-3">
                   <span className="h-6 w-6 rounded-full bg-steel-700 text-white text-xs font-bold grid place-items-center shrink-0">{i + 1}</span>
