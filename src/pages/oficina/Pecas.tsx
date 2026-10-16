@@ -48,6 +48,16 @@ export default function Pecas() {
   const [moving, setMoving]     = useState<{ part: WorkshopPart; mode: MoveMode } | null>(null);
   const [history, setHistory]   = useState<WorkshopPart | null>(null);
   const [menu, setMenu]         = useState<string | null>(null);
+  /** Custo sendo editado na própria linha (checagem rápida) */
+  const [costEdit, setCostEdit] = useState<string | null>(null);
+
+  async function saveCost(p: WorkshopPart, value: number) {
+    if (Math.abs(value - Number(p.cost)) < 0.00005) return true;
+    const { error } = await supabase.from('workshop_parts').update({ cost: value }).eq('id', p.id);
+    if (error) { toast.error('Não foi possível salvar o custo: ' + error.message); return false; }
+    setData(d => d && { ...d, parts: d.parts.map(x => (x.id === p.id ? { ...x, cost: value } : x)) });
+    return true;
+  }
   const [vehicles, setVehicles] = useState<Map<string, PartVehicle[]>>(new Map());
   const [vBrand, setVBrand]     = useState('');
   const [vModel, setVModel]     = useState('');
@@ -298,7 +308,14 @@ export default function Pecas() {
                     </button>
                     <div className="text-xs text-steel-600 truncate">{p.code || <span className="text-steel-300">—</span>}</div>
                     <div className="text-right"><StockQty p={p} /></div>
-                    <div className="text-right text-sm">{fmtBRL(p.cost)}</div>
+                    <div className="text-right text-sm">
+                      <CostCell p={p} editing={costEdit === p.id} onStart={() => setCostEdit(p.id)} onCancel={() => setCostEdit(null)}
+                        onSave={async (v, next) => {
+                          if (!(await saveCost(p, v))) return;
+                          const i = list.findIndex(x => x.id === p.id);
+                          setCostEdit(next && i >= 0 && i + 1 < Math.min(list.length, limit) ? list[i + 1].id : null);
+                        }} />
+                    </div>
                     <div className="text-right text-sm font-bold">{fmtBRL(salePriceOf(p, margin))}</div>
                     <div className="text-xs text-steel-600 truncate">{(p.supplier_id && supplierName.get(p.supplier_id)) || <span className="text-steel-300">—</span>}</div>
                     <div className="text-xs text-steel-500" title={data.lastMove.get(p.id) ? fmtDate(data.lastMove.get(p.id)!) : undefined}>{ago(data.lastMove.get(p.id))}</div>
@@ -340,7 +357,11 @@ export default function Pecas() {
                       {menu === p.id && <ActionsMenu items={actions(p).slice(2)} buy={access.compras ? buyLink(p) : null} onClose={() => setMenu(null)} />}
                     </div>
                   </div>
-                  <div className="text-[11px] text-steel-400 mt-2">Custo {fmtBRL(p.cost)} · última movimentação {ago(data.lastMove.get(p.id))}</div>
+                  <div className="text-[11px] text-steel-400 mt-2 flex items-center gap-1 flex-wrap">
+                    Custo <CostCell p={p} small editing={costEdit === p.id} onStart={() => setCostEdit(p.id)} onCancel={() => setCostEdit(null)}
+                      onSave={async v => { if (await saveCost(p, v)) setCostEdit(null); }} />
+                    · última movimentação {ago(data.lastMove.get(p.id))}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -377,6 +398,41 @@ export default function Pecas() {
       )}
       {history && <StockHistoryModal part={history} onClose={() => setHistory(null)} />}
     </WorkshopLayout>
+  );
+}
+
+/** Custo clicável: vira um campo; Enter salva e vai para a próxima peça, Esc cancela */
+function CostCell({ p, editing, small, onStart, onCancel, onSave }: {
+  p: WorkshopPart; editing: boolean; small?: boolean; onStart: () => void; onCancel: () => void; onSave: (v: number, next: boolean) => void;
+}) {
+  const [v, setV] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (editing) setV(moneyInput(Number(p.cost))); }, [editing, p.cost]);
+  if (!editing) {
+    return (
+      <button type="button" onClick={onStart} title="Clique para mudar o custo"
+        className={`rounded px-1 -mx-1 border-b border-dashed border-steel-300 hover:bg-brand-50 hover:border-brand-400 ${small ? 'text-[11px] text-steel-600' : ''}`}>
+        {fmtBRL(p.cost)}
+      </button>
+    );
+  }
+  const commit = async (next: boolean) => {
+    const n = parseMoney(v || '0');
+    if (!Number.isFinite(n) || n < 0) { toast.error('Custo inválido'); return; }
+    setBusy(true);
+    await onSave(Math.round(n * 10000) / 10000, next);
+    setBusy(false);
+  };
+  return (
+    <input autoFocus inputMode="decimal" value={v} disabled={busy}
+      onChange={e => setV(e.target.value)}
+      onFocus={e => e.target.select()}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commit(true); }
+        if (e.key === 'Escape') onCancel();
+      }}
+      onBlur={() => { if (!busy) commit(false); }}
+      className={`input !py-1 !px-2 text-right ${small ? '!w-24 !text-xs' : '!w-[84px] text-sm'}`} />
   );
 }
 
