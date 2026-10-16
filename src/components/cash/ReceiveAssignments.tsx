@@ -65,6 +65,7 @@ export function useReceiveAssignments(os: ReceiveOs, team: Team) {
     if (noItems) return legacy !== responsibleOf(os) ? saveResponsible(os.id, legacy) : { error: null };
     for (const i of labor) {
       const v = who[i.id];
+      if (!v) continue; // serviço ainda sem dono: não mexe
       const cur = i.executor === 'platform' ? PLATFORM : i.workshop_mechanic_id ?? '';
       if (v === cur && i.executor) continue;
       const patch = v === PLATFORM ? { executor: 'platform', workshop_mechanic_id: null } : { executor: 'workshop', workshop_mechanic_id: v };
