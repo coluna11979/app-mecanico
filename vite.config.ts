@@ -42,6 +42,7 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,      // novo SW assume controle imediatamente
         clientsClaim: true,     // SW toma controle de todas as abas abertas
+        importScripts: ['push-sw.js'], // notificação push de nova demanda (public/push-sw.js)
         globPatterns: ['**/*.{js,css,html,ico,svg,woff2}'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/sites\//],

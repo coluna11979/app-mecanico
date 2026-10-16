@@ -9,6 +9,7 @@ import { distKm, formatDistance } from '@/lib/geo';
 import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
+import { PushAlertCard } from '@/components/mecanico/PushAlertCard';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 import {
   IconAlert, IconBuilding, IconCalendar, IconChevronDown, IconChevronRight, IconClock, IconDollar,
@@ -253,6 +254,9 @@ export default function MechanicDashboard() {
             <span className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${online ? 'translate-x-6' : ''}`} />
           </button>
         </div>
+
+        {/* ── Alerta no celular (push) ── */}
+        <PushAlertCard />
 
         {/* ── Bloqueador: sem PIX não recebe ── */}
         {missingPix && (
