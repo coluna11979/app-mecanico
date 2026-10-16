@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOperator } from '@/lib/operators';
 import { AGENT_TEMPLATES, AGENT_TOOLS, type Agent, type AgentMessage, type AgentQuestion } from '@/lib/agents';
+import ReceptionCard from '@/components/agents/ReceptionCard';
 
 const COLS = 'id, workshop_id, template, name, system_prompt, tools, enabled, questions_seeded';
 
@@ -192,9 +193,18 @@ export default function Agentes() {
         <div>
           <h1 className="text-2xl font-bold">🤖 Agentes de IA</h1>
           <p className="text-sm text-steel-500 mt-1">
-            Converse com a IA sobre os números da {currentWorkshop?.business_name ?? 'oficina'}. Ela só consulta os dados, não altera nada.
+            Agentes que atendem os clientes no WhatsApp e um sócio virtual para os números da {currentWorkshop?.business_name ?? 'oficina'}.
           </p>
         </div>
+
+        {wid && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-steel-500 uppercase tracking-wide">Atendimento no WhatsApp</h2>
+            <ReceptionCard workshopId={wid} />
+          </section>
+        )}
+
+        <h2 className="text-sm font-semibold text-steel-500 uppercase tracking-wide pt-2">Sócio operacional · só consulta os dados, não altera nada</h2>
 
         {loading ? (
           <div className="card text-sm text-steel-500">Carregando…</div>
