@@ -4,10 +4,14 @@ import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOperator } from '@/lib/operators';
-import { AGENT_TEMPLATES, AGENT_TOOLS, type Agent, type AgentMessage, type AgentQuestion } from '@/lib/agents';
+import { AGENT_TEMPLATES, AGENT_TOOLS, type Agent, type AgentDraft, type AgentMessage, type AgentQuestion, type AgentVersion } from '@/lib/agents';
 import ReceptionCard from '@/components/agents/ReceptionCard';
 
-const COLS = 'id, workshop_id, template, name, system_prompt, tools, enabled, questions_seeded';
+const COLS = 'id, workshop_id, template, name, system_prompt, tools, enabled, questions_seeded, draft, version';
+
+/** Compara configurações ignorando a ordem das consultas */
+const norm = (d: AgentDraft) => JSON.stringify({ n: d.name.trim(), p: d.system_prompt.trim(), t: [...d.tools].sort() });
+const fmtDate = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 export default function Agentes() {
   const { currentWorkshop } = useAuth();
@@ -21,8 +25,16 @@ export default function Agentes() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
-  const [draft, setDraft] = useState<Pick<Agent, 'name' | 'system_prompt' | 'tools'>>({ name: '', system_prompt: '', tools: [] });
+  /** Conteúdo do editor: começa no rascunho salvo (ou na versão publicada, se não houver rascunho) */
+  const [draft, setDraft] = useState<AgentDraft>({ name: '', system_prompt: '', tools: [] });
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [note, setNote] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+  const [versions, setVersions] = useState<AgentVersion[]>([]);
+  /** Conversa real (salva) ou Playground (testa o rascunho, nada é salvo) */
+  const [mode, setMode] = useState<'chat' | 'playground'>('chat');
+  const [pgMessages, setPgMessages] = useState<AgentMessage[]>([]);
   const bottom = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
@@ -38,6 +50,12 @@ export default function Agentes() {
     try { setDismissed(JSON.parse(localStorage.getItem(`agent-dismissed:${agent.id}`) ?? '[]')); } catch { setDismissed([]); }
   }, [agent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const newTools = agent ? tpl.tools.filter((k) => !agent.tools.includes(k) && !dismissed.includes(k)) : [];
+  const published: AgentDraft | null = agent ? { name: agent.name, system_prompt: agent.system_prompt, tools: agent.tools } : null;
+  const baseline = agent?.draft ?? published;
+  /** Há edição no editor que ainda não foi salva como rascunho? */
+  const dirty = !!baseline && norm(draft) !== norm(baseline);
+  /** O editor é diferente da versão publicada? (só então há o que publicar) */
+  const differs = !!published && norm(draft) !== norm(published);
 
   /** Perguntas salvas; na primeira abertura entram as do template (e não voltam se o dono apagar) */
   async function loadQuestions(a: Agent) {
@@ -92,7 +110,7 @@ export default function Agentes() {
     const a = data as Agent | null;
     setAgent(a);
     if (a) {
-      setDraft({ name: a.name, system_prompt: a.system_prompt, tools: a.tools });
+      setDraft(a.draft ?? { name: a.name, system_prompt: a.system_prompt, tools: a.tools });
       const { data: msgs } = await supabase.from('ai_agent_messages').select('id, role, content, created_at')
         .eq('agent_id', a.id).order('created_at', { ascending: false }).limit(50);
       setMessages(((msgs ?? []) as AgentMessage[]).reverse());
@@ -114,27 +132,78 @@ export default function Agentes() {
     await loadQuestions(data as Agent);
   }
 
-  async function saveConfig() {
-    if (!agent) return;
-    if (!draft.name.trim() || !draft.system_prompt.trim()) return toast.error('Nome e instruções são obrigatórios');
+  /** Grava o editor como rascunho (sem mexer no que está publicado). Igual ao publicado → sem rascunho. */
+  async function saveDraft(silent = false): Promise<boolean> {
+    if (!agent || !published) return false;
+    const clean: AgentDraft = { name: draft.name.trim(), system_prompt: draft.system_prompt.trim(), tools: draft.tools };
+    if (!clean.name || !clean.system_prompt) { toast.error('Nome e instruções são obrigatórios'); return false; }
+    const same = norm(clean) === norm(published);
+    const value = same ? null : clean;
+    if (norm(clean) === norm(baseline!)) return true;   // nada mudou desde o último salvamento
     setSaving(true);
-    const { error } = await supabase.from('ai_agents').update({
-      name: draft.name.trim(), system_prompt: draft.system_prompt.trim(), tools: draft.tools,
-    }).eq('id', agent.id);
+    const { error } = await supabase.from('ai_agents').update({ draft: value }).eq('id', agent.id);
     setSaving(false);
-    if (error) return toast.error(error.message);
-    setAgent({ ...agent, ...draft });
-    setShowConfig(false);
-    toast.success('Agente atualizado ✓');
+    if (error) { toast.error(error.message); return false; }
+    setAgent((a) => (a ? { ...a, draft: value } : a));
+    setDraft(clean);
+    if (!silent) toast.success(same ? 'Igual à versão publicada, sem rascunho' : 'Rascunho salvo ✓ (o agente continua usando a versão publicada)');
+    return true;
+  }
+
+  /** Publica: o rascunho vira a versão ativa do agente e entra no histórico */
+  async function publish() {
+    if (!agent || !differs) return toast.error('Não há alterações para publicar');
+    setPublishing(true);
+    if (!(await saveDraft(true))) { setPublishing(false); return; }
+    const { data, error } = await supabase.rpc('ai_agent_publish', { p_agent: agent.id, p_note: note.trim() || null });
+    if (error) { setPublishing(false); return toast.error(error.message); }
+    const { data: fresh } = await supabase.from('ai_agents').select(COLS).eq('id', agent.id).single();
+    setPublishing(false);
+    if (fresh) { setAgent(fresh as Agent); setDraft({ name: fresh.name, system_prompt: fresh.system_prompt, tools: fresh.tools }); }
+    setNote('');
+    toast.success(`Versão ${data} publicada ✓`);
+    if (showHistory) loadVersions();
+  }
+
+  /** Joga fora as edições e volta ao que está publicado */
+  async function discardDraft() {
+    if (!agent || !published) return;
+    if ((dirty || agent.draft) && !window.confirm('Descartar as alterações não publicadas?')) return;
+    if (agent.draft) {
+      const { error } = await supabase.from('ai_agents').update({ draft: null }).eq('id', agent.id);
+      if (error) return toast.error(error.message);
+      setAgent({ ...agent, draft: null });
+    }
+    setDraft(published);
+  }
+
+  async function loadVersions() {
+    if (!agent) return;
+    const { data } = await supabase.from('ai_agent_versions')
+      .select('id, version, name, system_prompt, tools, note, created_at').eq('agent_id', agent.id).order('version', { ascending: false });
+    setVersions((data ?? []) as AgentVersion[]);
+  }
+
+  function toggleHistory() {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (next) loadVersions();
+  }
+
+  /** Traz uma versão antiga para o editor; vira rascunho quando salvar e só vale depois de publicar */
+  function restoreVersion(v: AgentVersion) {
+    setDraft({ name: v.name, system_prompt: v.system_prompt, tools: v.tools });
+    toast.success(`Versão ${v.version} carregada no editor. Revise e publique para valer.`);
   }
 
   async function acceptNewTools() {
     if (!agent) return;
     const tools = [...agent.tools, ...newTools];
-    const { error } = await supabase.from('ai_agents').update({ tools }).eq('id', agent.id);
+    const nextDraft = agent.draft ? { ...agent.draft, tools: [...new Set([...agent.draft.tools, ...newTools])] } : null;
+    const { error } = await supabase.from('ai_agents').update({ tools, ...(nextDraft ? { draft: nextDraft } : {}) }).eq('id', agent.id);
     if (error) return toast.error(error.message);
-    setAgent({ ...agent, tools });
-    setDraft((d) => ({ ...d, tools }));
+    setAgent({ ...agent, tools, draft: nextDraft });
+    setDraft((d) => ({ ...d, tools: [...new Set([...d.tools, ...newTools])] }));
     toast.success('Novas consultas liberadas ✓');
   }
 
@@ -154,6 +223,7 @@ export default function Agentes() {
   }
 
   async function clearHistory() {
+    if (mode === 'playground') { setPgMessages([]); return; }
     if (!agent || !window.confirm('Apagar toda a conversa com o agente?')) return;
     const { error } = await supabase.from('ai_agent_messages').delete().eq('agent_id', agent.id);
     if (error) return toast.error(error.message);
@@ -163,21 +233,30 @@ export default function Agentes() {
   async function send(question?: string) {
     const q = (question ?? text).trim();
     if (!agent || !q || sending) return;
+    const pg = mode === 'playground';
+    // Playground testa o rascunho salvo: grava o que está no editor antes de perguntar
+    if (pg && !(await saveDraft(true))) return;
+    const setList = pg ? setPgMessages : setMessages;
+    const history = pg ? pgMessages.map(({ role, content }) => ({ role, content })) : undefined;
     setText('');
     setSending(true);
-    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: q, created_at: new Date().toISOString() }]);
-    const { data, error } = await supabase.functions.invoke('agent-chat', { body: { agent_id: agent.id, message: q } });
+    setList((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: q, created_at: new Date().toISOString() }]);
+    const { data, error } = await supabase.functions.invoke('agent-chat', {
+      body: { agent_id: agent.id, message: q, ...(pg ? { playground: true, history } : {}) },
+    });
     setSending(false);
     if (error || !data?.ok) {
       // O corpo do erro da edge function vem em error.context (Response)
       let msg = data?.error as string | undefined;
       try { msg ??= (await (error as { context?: Response })?.context?.json())?.error; } catch { /* sem corpo */ }
-      setMessages((m) => m.slice(0, -1));
+      setList((m) => m.slice(0, -1));
       setText(q);
       return toast.error(msg ?? 'Não consegui falar com o agente agora');
     }
-    setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: data.answer as string, created_at: new Date().toISOString() }]);
+    setList((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: data.answer as string, created_at: new Date().toISOString() }]);
   }
+
+  const shown = mode === 'playground' ? pgMessages : messages;
 
   if (balcao) {
     return (
@@ -222,7 +301,13 @@ export default function Agentes() {
             <div className="card flex items-center gap-3">
               <div className="text-3xl">{tpl.icon}</div>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold truncate">{agent.name}</div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="font-semibold truncate">{agent.name}</div>
+                  <span className="text-xs rounded-full bg-steel-100 dark:bg-steel-700 px-2 py-0.5 shrink-0">v{agent.version}</span>
+                  {(agent.draft || dirty) && (
+                    <span className="text-xs rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 shrink-0">Rascunho não publicado</span>
+                  )}
+                </div>
                 <div className="text-xs text-steel-500">{agent.tools.length} consultas liberadas</div>
               </div>
               <button className="btn-ghost text-sm" onClick={() => setShowConfig((v) => !v)}>⚙️ Configurar</button>
@@ -269,19 +354,66 @@ export default function Agentes() {
                     ))}
                   </div>
                 </div>
-                <div className="flex gap-2 justify-end">
-                  <button className="btn-ghost" onClick={() => setShowConfig(false)}>Cancelar</button>
-                  <button className="btn-primary" disabled={saving} onClick={saveConfig}>{saving ? 'Salvando…' : 'Salvar'}</button>
+                <div className="rounded-xl bg-steel-50 dark:bg-steel-900 p-3 text-xs text-steel-500">
+                  O agente só usa o que está <strong>publicado</strong> (v{agent.version}). Edite à vontade, teste no 🧪 Playground
+                  e publique quando estiver bom. Cada publicação fica guardada no histórico.
                 </div>
+                {differs && (
+                  <input className="input" maxLength={200} placeholder="O que mudou nesta versão? (opcional)"
+                    value={note} onChange={(e) => setNote(e.target.value)} />
+                )}
+                <div className="flex flex-wrap items-center gap-2 justify-between">
+                  <button className="btn-ghost text-sm" onClick={toggleHistory}>🕘 Histórico de versões {showHistory ? '▾' : '▸'}</button>
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    <button className="btn-ghost text-sm" onClick={() => setShowConfig(false)}>Fechar</button>
+                    <button className="btn-ghost text-sm" disabled={!agent.draft && !dirty} onClick={discardDraft}>Descartar alterações</button>
+                    <button className="btn-secondary text-sm" disabled={saving || !dirty} onClick={() => saveDraft()}>{saving ? 'Salvando…' : 'Salvar rascunho'}</button>
+                    <button className="btn-primary text-sm" disabled={publishing || !differs} onClick={publish}>{publishing ? 'Publicando…' : 'Publicar versão'}</button>
+                  </div>
+                </div>
+
+                {showHistory && (
+                  <div className="space-y-2 border-t border-steel-200 dark:border-steel-700 pt-3">
+                    {versions.length === 0 && <div className="text-xs text-steel-500">Carregando…</div>}
+                    {versions.map((v) => (
+                      <div key={v.id} className="flex items-center gap-3 rounded-xl border border-steel-200 dark:border-steel-700 px-3 py-2 text-sm">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">
+                            v{v.version} {v.version === agent.version && <span className="text-xs text-green-600">· publicada agora</span>}
+                          </div>
+                          <div className="text-xs text-steel-500 truncate">{fmtDate(v.created_at)}{v.note ? ` · ${v.note}` : ''}</div>
+                        </div>
+                        {v.version !== agent.version && (
+                          <button className="btn-ghost text-xs !py-1.5" onClick={() => restoreVersion(v)}>Restaurar no editor</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             <div className="card p-0 overflow-hidden">
+              <div className="flex items-center gap-1 border-b border-steel-200 dark:border-steel-700 px-3 pt-2">
+                {([['chat', '💬 Conversa'], ['playground', '🧪 Playground']] as const).map(([k, label]) => (
+                  <button key={k} onClick={() => setMode(k)}
+                    className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${mode === k ? 'border-brand-500 text-brand-600' : 'border-transparent text-steel-500'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {mode === 'playground' && (
+                <div className="bg-amber-50 text-amber-900 text-xs px-4 py-2">
+                  🧪 {agent.draft || dirty
+                    ? 'Testando o seu RASCUNHO. Nada aqui é salvo no histórico da conversa nem muda o agente publicado.'
+                    : 'Sem rascunho: testando a versão publicada. Edite em ⚙️ Configurar para testar mudanças antes de publicar.'}
+                </div>
+              )}
               <div className="h-[55vh] overflow-y-auto p-4 space-y-3">
-                {messages.length === 0 && (
+                {shown.length === 0 && (
                   <p className="text-sm text-steel-500">Pergunte qualquer coisa sobre a oficina, ou escolha uma pergunta salva logo abaixo. 👇</p>
                 )}
-                {messages.map((m) => (
+                {shown.map((m) => (
                   <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                     <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
                       m.role === 'user' ? 'bg-brand-500 text-white' : 'bg-steel-100 dark:bg-steel-700'}`}>
@@ -349,15 +481,17 @@ export default function Agentes() {
                 )}
               </div>
               <div className="border-t border-steel-200 dark:border-steel-700 p-3 flex gap-2">
-                <input ref={inputRef} className="input" placeholder={agent.enabled ? 'Pergunte ao seu sócio…' : 'Agente desligado'}
+                <input ref={inputRef} className="input" placeholder={agent.enabled ? (mode === 'playground' ? 'Teste o rascunho…' : 'Pergunte ao seu sócio…') : 'Agente desligado'}
                   value={text} disabled={!agent.enabled || sending} maxLength={2000}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
                 <button className="btn-primary" disabled={!agent.enabled || sending || !text.trim()} onClick={() => send()}>Enviar</button>
               </div>
             </div>
-            {messages.length > 0 && (
-              <button className="text-xs text-steel-500 hover:text-alert-600" onClick={clearHistory}>Limpar conversa</button>
+            {shown.length > 0 && (
+              <button className="text-xs text-steel-500 hover:text-alert-600" onClick={clearHistory}>
+                {mode === 'playground' ? 'Limpar teste' : 'Limpar conversa'}
+              </button>
             )}
           </>
         )}
