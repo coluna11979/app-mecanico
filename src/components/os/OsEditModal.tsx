@@ -1,3 +1,4 @@
+import CarFields from './CarFields';
 import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
@@ -175,16 +176,9 @@ export default function OsEditModal({ os, workshopId, onClose, onSaved }: Props)
                   <button type="button" onClick={() => { setNewCar(false); setCar({ plate: '', make: '', model: '', year: '' }); }}
                     className="text-xs text-steel-500 hover:text-steel-800 underline">cancelar</button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input className="input !py-2 uppercase font-mono" placeholder="Placa" value={car.plate}
-                    onChange={e => setCar(c => ({ ...c, plate: e.target.value.toUpperCase() }))} />
-                  <input className="input !py-2" placeholder="Ano" inputMode="numeric" value={car.year}
-                    onChange={e => setCar(c => ({ ...c, year: e.target.value }))} />
-                  <input className="input !py-2" placeholder="Marca (ex.: Chevrolet)" value={car.make}
-                    onChange={e => setCar(c => ({ ...c, make: e.target.value }))} />
-                  <input className="input !py-2" placeholder="Modelo (ex.: Onix)" value={car.model}
-                    onChange={e => setCar(c => ({ ...c, model: e.target.value }))} />
-                </div>
+                <input className="input !py-2 uppercase font-mono" placeholder="Placa" value={car.plate}
+                  onChange={e => setCar(c => ({ ...c, plate: e.target.value.toUpperCase() }))} />
+                <CarFields value={car} onChange={v => setCar(c => ({ ...c, ...v }))} />
                 <p className="text-[11px] text-steel-500">Salva junto com a OS e já fica vinculado a ela.</p>
               </div>
             )}
