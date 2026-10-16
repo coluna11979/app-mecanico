@@ -50,6 +50,7 @@ export default function Pecas() {
   const [menu, setMenu]         = useState<string | null>(null);
   /** Custo sendo editado na própria linha (checagem rápida) */
   const [costEdit, setCostEdit] = useState<string | null>(null);
+  const [merging, setMerging] = useState<WorkshopPart | null>(null);
 
   async function saveCost(p: WorkshopPart, value: number) {
     if (Math.abs(value - Number(p.cost)) < 0.00005) return true;
@@ -168,6 +169,7 @@ export default function Pecas() {
     { label: '⚖️ Ajustar estoque', run: () => setMoving({ part: p, mode: 'ajuste' }) },
     { label: '🕘 Histórico', run: () => setHistory(p) },
     { label: '✏️ Editar peça', run: () => setEditing(p) },
+    { label: '🔗 Juntar com outra peça…', run: () => setMerging(p) },
   ];
 
   return (
@@ -397,7 +399,93 @@ export default function Pecas() {
           onClose={() => setMoving(null)} onSaved={() => { setMoving(null); load(); }} />
       )}
       {history && <StockHistoryModal part={history} onClose={() => setHistory(null)} />}
+      {merging && parts && (
+        <MergeModal part={merging} parts={parts} supplierName={supplierName}
+          onClose={() => setMerging(null)} onDone={() => { setMerging(null); load(); }} />
+      )}
     </WorkshopLayout>
+  );
+}
+
+const normName = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/** Juntar peça repetida: tudo que aponta para ela passa para a escolhida, o estoque soma e ela sai do cadastro */
+function MergeModal({ part, parts, supplierName, onClose, onDone }: {
+  part: WorkshopPart; parts: WorkshopPart[]; supplierName: Map<string, string>; onClose: () => void; onDone: () => void;
+}) {
+  const [q, setQ] = useState('');
+  const [keep, setKeep] = useState<WorkshopPart | null>(null);
+  const [busy, setBusy] = useState(false);
+  const me = normName(part.name);
+  const options = useMemo(() => {
+    const t = normName(q);
+    const scored = parts.filter(p => p.id !== part.id).map(p => {
+      const n = normName(p.name);
+      const score = (part.code && p.code && p.code.trim() === part.code.trim() ? 100 : 0)
+        + (n === me ? 80 : 0) + (me.length >= 8 && (n.includes(me.slice(0, 12)) || me.includes(n.slice(0, 12))) ? 30 : 0);
+      return { p, score, n };
+    });
+    return scored
+      .filter(x => (t ? x.n.includes(t) || (x.p.code ?? '').toLowerCase().includes(q.trim().toLowerCase()) : x.score > 0))
+      .sort((a, b) => b.score - a.score || a.p.name.localeCompare(b.p.name, 'pt-BR'))
+      .slice(0, 30);
+  }, [parts, part, q, me]);
+
+  async function confirmMerge() {
+    if (!keep) return;
+    setBusy(true);
+    const { error } = await supabase.rpc('part_merge', { p_keep: keep.id, p_remove: part.id });
+    setBusy(false);
+    if (error) return toast.error('Não foi possível juntar: ' + error.message);
+    toast.success('Peças juntadas ✓');
+    onDone();
+  }
+
+  const line = (p: WorkshopPart) => [p.code && `cód. ${p.code}`, `estoque ${fmtQty(p.stock_qty)}`, `custo ${fmtBRL(p.cost)}`, p.supplier_id && supplierName.get(p.supplier_id)].filter(Boolean).join(' · ');
+
+  return (
+    <div className="fixed inset-0 bg-steel-900/60 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl max-h-[94vh] flex flex-col shadow-2xl">
+        <div className="px-6 pt-5 pb-3 border-b border-steel-100 flex items-center justify-between">
+          <h2 className="text-lg font-bold">🔗 Juntar peça repetida</h2>
+          <button onClick={onClose} className="h-8 w-8 rounded-lg grid place-items-center text-steel-500 hover:bg-steel-100">✕</button>
+        </div>
+        <div className="px-6 py-4 space-y-4 overflow-y-auto">
+          <div className="rounded-xl bg-alert-50 border border-alert-100 px-3 py-2">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-alert-700">Esta sai do cadastro</div>
+            <div className="text-sm font-semibold">{part.name}</div>
+            <div className="text-xs text-steel-600">{line(part)}</div>
+          </div>
+          <div>
+            <label className="label">Juntar com qual peça (a que fica)?</label>
+            <input className="input" autoFocus placeholder="Buscar por nome ou código" value={q} onChange={e => { setQ(e.target.value); setKeep(null); }} />
+            {!q && options.length > 0 && <p className="text-[11px] text-steel-500 mt-1">Sugestões: mesmo código ou nome parecido.</p>}
+            <ul className="mt-2 divide-y divide-steel-100 border border-steel-100 rounded-xl max-h-60 overflow-y-auto">
+              {options.length === 0 ? (
+                <li className="px-3 py-3 text-sm text-steel-500">{q ? 'Nenhuma peça encontrada.' : 'Digite para buscar a peça que fica.'}</li>
+              ) : options.map(({ p }) => (
+                <li key={p.id}>
+                  <button onClick={() => setKeep(p)} className={`w-full text-left px-3 py-2 ${keep?.id === p.id ? 'bg-signal-50' : 'hover:bg-steel-50'}`}>
+                    <div className="text-sm font-semibold">{keep?.id === p.id && '✓ '}{p.name}</div>
+                    <div className="text-xs text-steel-500">{line(p)}</div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {keep && (
+            <div className="rounded-xl bg-signal-50 border border-signal-100 px-3 py-2 text-xs text-steel-700">
+              Fica <strong>{keep.name}</strong>. O histórico de OS, notas de compra e movimentos passa para ela,
+              o estoque soma ({fmtQty(Number(keep.stock_qty) + Number(part.stock_qty))}) e o custo continua o dela ({fmtBRL(keep.cost)}).
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-steel-100 flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn-primary" onClick={confirmMerge} disabled={!keep || busy}>{busy ? 'Juntando…' : 'Juntar peças'}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
