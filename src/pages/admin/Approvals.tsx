@@ -374,6 +374,10 @@ function ApprovalDrawer({
           {row.mechanic && (row.mechanic.city || row.mechanic.neighborhood || row.mechanic.cep) && (
             <Section title="📍 Localização (decide se atendemos a região)">
               <Field label="CEP">{row.mechanic.cep || '—'}</Field>
+              <Field label="Rua / número">
+                {[row.mechanic.address, row.mechanic.address_number].filter(Boolean).join(', ') || '—'}
+                {row.mechanic.address_complement ? ` · ${row.mechanic.address_complement}` : ''}
+              </Field>
               <Field label="Bairro">{row.mechanic.neighborhood || '—'}</Field>
               <Field label="Cidade / UF">
                 {row.mechanic.city || '—'}{row.mechanic.state ? ` / ${row.mechanic.state}` : ''}

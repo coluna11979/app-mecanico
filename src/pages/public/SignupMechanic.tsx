@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
 import { isValidCpf, maskCep, maskCpf, maskPhone, onlyDigits } from '@/lib/customers';
+import { lookupCep } from '@/lib/cep';
 
 /** Lê (e consome) o pré-preenchimento de lead capturado na home. */
 function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
@@ -24,7 +25,7 @@ const SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrô
 const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
 const TOTAL_STEPS = 5;
-const STEP_TITLES = ['Seus dados', 'Dados profissionais', 'Onde você atende', 'Referências', 'Especialidades'];
+const STEP_TITLES = ['Seus dados', 'Dados profissionais', 'Seu endereço', 'Referências', 'Especialidades'];
 
 type Ref = { name: string; phone: string; note: string };
 const EMPTY_REF: Ref = { name: '', phone: '', note: '' };
@@ -94,7 +95,7 @@ export default function SignupMechanic() {
     full_name: '', email: '', password: '', phone: '', cpf: '', cnh: '',
     birth_date: '', mother_name: '',
     experience_years: 1, hourly_rate: 80, pix_key: '', skills: [] as string[],
-    cep: '', neighborhood: '', city: '', state: '',
+    cep: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '',
   });
   const [refs, setRefs] = useState<Ref[]>([{ ...EMPTY_REF }, { ...EMPTY_REF }]);
 
@@ -143,24 +144,23 @@ export default function SignupMechanic() {
     setErrors(prev => { if (!prev.skills) return prev; const n = { ...prev }; delete n.skills; return n; });
   }
 
-  /* ── ViaCEP: preenche bairro, cidade e UF ── */
+  /* ── ViaCEP: preenche rua, bairro, cidade e UF ── */
   async function onCepChange(raw: string) {
     const masked = maskCep(raw);
     update('cep', masked);
-    const digits = onlyDigits(masked);
-    if (digits.length < 8) { setCepStatus('idle'); return; }
+    if (onlyDigits(masked).length < 8) { setCepStatus('idle'); return; }
     setCepStatus('loading');
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-      const data = await res.json();
-      if (data.erro) { setCepStatus('notfound'); return; }
+      const found = await lookupCep(masked);
+      if (!found) { setCepStatus('notfound'); return; }
       setF(prev => ({
         ...prev,
-        neighborhood: data.bairro     || prev.neighborhood,
-        city:         data.localidade || prev.city,
-        state:        (data.uf || prev.state).toUpperCase(),
+        address:      found.street       || prev.address,
+        neighborhood: found.neighborhood || prev.neighborhood,
+        city:         found.city         || prev.city,
+        state:        found.state        || prev.state,
       }));
-      setErrors(prev => { const n = { ...prev }; delete n.neighborhood; delete n.city; delete n.state; return n; });
+      setErrors(prev => { const n = { ...prev }; delete n.address; delete n.neighborhood; delete n.city; delete n.state; return n; });
       setCepStatus('found');
     } catch {
       setCepStatus('error');
@@ -189,6 +189,8 @@ export default function SignupMechanic() {
     }
     if (s === 3) {
       if (onlyDigits(f.cep).length !== 8) e.cep = 'CEP precisa ter 8 números.';
+      if (!f.address.trim()) e.address = 'Informe a rua.';
+      if (!f.address_number.trim()) e.address_number = 'Informe o número (ou S/N).';
       if (!f.neighborhood.trim()) e.neighborhood = 'Informe o bairro.';
       if (!f.city.trim()) e.city = 'Informe a cidade.';
       if (!f.state) e.state = 'Escolha a UF.';
@@ -250,6 +252,9 @@ export default function SignupMechanic() {
           hourly_rate: Number(f.hourly_rate),
           pix_key: f.pix_key.trim() || null,
           cep: f.cep.trim(),
+          address: f.address.trim(),
+          address_number: f.address_number.trim(),
+          address_complement: f.address_complement.trim(),
           neighborhood: f.neighborhood.trim(),
           city: f.city.trim(),
           state: f.state,
@@ -394,11 +399,27 @@ export default function SignupMechanic() {
                     <p className={`text-xs mt-1 ${cepStatus === 'notfound' || cepStatus === 'error' ? 'text-alert-600' : 'text-steel-500'}`}>
                       {cepStatus === 'loading' && 'Buscando endereço…'}
                       {cepStatus === 'found' && '✓ Endereço encontrado — confira abaixo.'}
-                      {cepStatus === 'notfound' && 'CEP não encontrado. Preencha bairro e cidade à mão.'}
-                      {cepStatus === 'error' && 'Não deu pra buscar o CEP. Preencha bairro e cidade à mão.'}
+                      {cepStatus === 'notfound' && 'CEP não encontrado. Preencha o endereço à mão.'}
+                      {cepStatus === 'error' && 'Não deu pra buscar o CEP. Preencha o endereço à mão.'}
                       {cepStatus === 'idle' && 'Digite o CEP que a gente preenche o resto.'}
                     </p>
                   )}
+                </div>
+                <div><label className="label">Rua</label>
+                  <input className={inputCls('address')} autoComplete="address-line1" value={f.address}
+                    onChange={e => update('address', e.target.value)}
+                    placeholder="Ex.: Rua das Flores" />
+                  <FieldError k="address" /></div>
+                <div className="grid grid-cols-[110px_1fr] gap-3">
+                  <div><label className="label">Número</label>
+                    <input className={inputCls('address_number')} value={f.address_number}
+                      onChange={e => update('address_number', e.target.value.toUpperCase().slice(0, 10))}
+                      placeholder="123" />
+                    <FieldError k="address_number" /></div>
+                  <div><label className="label">Complemento (opcional)</label>
+                    <input className="input" autoComplete="address-line2" value={f.address_complement}
+                      onChange={e => update('address_complement', e.target.value)}
+                      placeholder="Apto, bloco, casa 2…" /></div>
                 </div>
                 <div><label className="label">Bairro</label>
                   <input className={inputCls('neighborhood')} value={f.neighborhood}
