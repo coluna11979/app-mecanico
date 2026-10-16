@@ -104,8 +104,16 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
       .map(([id, e]) => ({ mechanic_id: id, value: r2(e.value), base: e.base.join(' + ') }));
   }, [a.labor, a.who, a.partsOf, brought, fixed, itemRules]);
 
+  /** Base das %: o que a pessoa faz (serviços dela + peças desses serviços). Sem divisão de serviços, o total da OS */
+  const baseFor = (id: string) => {
+    if (!a.labor.length) return osTotal;
+    return r2(a.labor.filter(l => a.who[l.id] === id)
+      .reduce((s, l) => s + amt(l) + (a.partsOf.get(l.id) ?? []).reduce((x, p) => x + amt(p), 0), 0));
+  };
+  const baseOf = (r: Row) => baseFor(r.mechanic_id);
+
   function startEdit() {
-    const base: Row[] = auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, osTotal), amount: moneyStr(x.value) }));
+    const base: Row[] = auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, baseFor(x.mechanic_id)), amount: moneyStr(x.value) }));
     // Serviço já entregue ao mecânico da plataforma aparece como pessoa (sem comissão da equipe)
     if (a.labor.some(l => a.who[l.id] === PLATFORM)) base.push({ key: ++seq, mechanic_id: PLATFORM, mode: 'fixo', amount: '' });
     setRows(base.length ? base : [{ key: ++seq, mechanic_id: '', mode: 'fixo', amount: '' }]);
@@ -119,7 +127,7 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   const valueOf = (r: Row) => {
     if (noComm(r)) return 0;
     const pct = MODES.find(m => m.key === r.mode)?.pct;
-    return pct != null ? r2(osTotal * pct / 100) : r2(parseMoney(r.amount));
+    return pct != null ? r2(baseOf(r) * pct / 100) : r2(parseMoney(r.amount));
   };
   const valid = !editing || rows.every(r => r.mechanic_id && valueOf(r) >= 0);
   const total = editing ? r2(rows.reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
@@ -133,12 +141,12 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     return { error };
   }
 
-  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf };
+  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf };
 }
 
 /** O que o quadro precisa (serve para a OS salva e para a conferência de nota, antes de a OS existir) */
 type CommissionCtl = Pick<ReturnType<typeof useOsCommission>,
-  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf'>;
+  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf' | 'baseOf'>;
 
 export type AutoCommission = { mechanic_id: string; value: number; base: string };
 
@@ -169,7 +177,7 @@ export function useDraftCommission(auto: AutoCommission[], osTotal: number, defa
     });
     return { error };
   }
-  return { loaded: true, editing, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf };
+  return { loaded: true, editing, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf: () => osTotal };
 }
 
 /** Serviços da OS e quem faz cada um (liga o quadro às atribuições dos itens) */
@@ -280,13 +288,13 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
                 )}
               </div>
               )}
-              {r.mode !== 'fixo' && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} do total da OS ({brl(c.osTotal)})</div>}
+              {r.mode !== 'fixo' && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} sobre {brl(c.baseOf(r))} ({c.baseOf(r) === c.osTotal ? 'total da OS' : 'os serviços dele'})</div>}
             </div>
           ))}
           {c.rows.length === 0 && (
             <p className="text-xs text-pending-800">Ninguém vai receber comissão nesta OS. Toque em “+ Incluir pessoa” para digitar um valor.</p>
           )}
-          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: 'fixo', amount: '' }])}
+          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: assign ? 'p4' : 'fixo', amount: '' }])}
             className="text-sm font-semibold text-brand-600">+ Incluir pessoa</button>
           <p className="text-[11px] text-steel-500">Valor fechado = o valor que você digitar, independente do cadastro. Substitui a regra só nesta OS.</p>
         </div>
