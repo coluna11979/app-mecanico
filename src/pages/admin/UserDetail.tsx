@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
+import { sendApprovalEmail } from '@/lib/approvalEmail';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 const STATUS_LABEL: Record<ProfileStatus, string> = {
@@ -209,8 +210,20 @@ export default function AdminUserDetail() {
 
   async function changeStatus(status: ProfileStatus) {
     if (!profile) return;
+    const previous = profile.status;
     setBusy(true);
     await supabase.from('profiles').update({ status }).eq('id', profile.id);
+
+    // Decisão final: registra no histórico e avisa por email, igual à tela de Aprovações
+    if ((status === 'approved' || status === 'rejected') && status !== previous) {
+      const { data: { user } } = await supabase.auth.getUser();
+      const content = status === 'approved' ? 'cadastro aprovado' : 'cadastro rejeitado';
+      await supabase.from('approval_messages').insert({
+        profile_id: profile.id, sender_id: user?.id, sender_role: 'admin', kind: 'status_change', content,
+      });
+      void sendApprovalEmail(profile.id, content, 'status_change', status);
+    }
+
     setBusy(false);
     load();
   }

@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
 import { NewUserModal } from '@/components/admin/NewUserModal';
 import { MechanicVerification } from '@/components/admin/MechanicVerification';
+import { sendApprovalEmail } from '@/lib/approvalEmail';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 type Row = Profile & { mechanic?: Mechanic; workshop?: Workshop };
@@ -253,7 +254,7 @@ function ApprovalDrawer({
     // "Em análise" e "reaberto" sao movimentos internos da fila do admin —
     // enviar email nesses estados vira ruido e cria expectativa falsa de resposta.
     if (status === 'approved' || status === 'rejected') {
-      void sendApprovalEmail(row.id, content, kind);
+      void sendApprovalEmail(row.id, content, kind, status);
     }
 
     setBusy(null);
@@ -562,22 +563,6 @@ function ApprovalDrawer({
 }
 
 /* ──────────────── Helpers ──────────────── */
-
-/**
- * Dispara o email de notificação via Edge Function send-approval-email.
- * Falha silenciosamente — se Resend não estiver configurado ou der erro,
- * o app continua funcionando (a mensagem fica no histórico de qualquer forma).
- */
-async function sendApprovalEmail(profileId: string, content: string, kind: ApprovalMessage['kind']) {
-  try {
-    const { error } = await supabase.functions.invoke('send-approval-email', {
-      body: { profile_id: profileId, content, kind },
-    });
-    if (error) console.warn('[send-approval-email] falhou:', error);
-  } catch (e) {
-    console.warn('[send-approval-email] erro:', e);
-  }
-}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
