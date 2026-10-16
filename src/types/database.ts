@@ -292,6 +292,10 @@ export interface ServiceOrderItem {
   service_type?: 'servico' | 'mao_de_obra' | null;
   /** Só serviços: comissão em R$ definida na OS para quem fez (substitui a regra deste serviço); null = regra */
   commission_amount?: number | null;
+  /** Demanda da plataforma em que este serviço foi publicado (o mecânico dela é quem fez) */
+  platform_job_id?: string | null;
+  /** Empilhado: marcado para o mecânico da plataforma, ainda sem demanda */
+  stacked_at?: string | null;
   position: number;
   created_at: string;
 }

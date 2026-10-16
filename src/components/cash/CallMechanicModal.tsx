@@ -5,7 +5,7 @@ import { toast } from '@/components/ui/Toast';
 import { brl, moneyStr, parseMoney } from '@/lib/cash';
 import { localInput } from '@/lib/agenda';
 import {
-  loadCallParams, saveCallParams, saveJobDraft, suggestPay, type CallMechanicParams,
+  loadCallParams, markPlatformItems, saveCallParams, saveJobDraft, suggestPay, type CallMechanicParams,
 } from '@/lib/callMechanic';
 import type { ServiceOrderItem } from '@/types/database';
 
@@ -85,6 +85,19 @@ export default function CallMechanicModal({ wid, os, onClose }: { wid: string; o
   };
 
   const car = [os.vehicle?.make, os.vehicle?.model].filter(Boolean).join(' ');
+  const [stacking, setStacking] = useState(false);
+  /** Guarda os serviços marcados na pilha da plataforma (a gestão gera a demanda depois, junto com outros) */
+  async function stack() {
+    const ids = picked.flatMap(r => (r.itemId ? [r.itemId] : []));
+    if (!ids.length) return toast.error('Marque pelo menos um serviço da OS para empilhar');
+    setStacking(true);
+    const { error } = await markPlatformItems(wid, [os.id], ids, { stack: true });
+    setStacking(false);
+    if (error) return toast.error('Não foi possível empilhar: ' + error.message);
+    toast.success(`${ids.length === 1 ? 'Serviço empilhado' : `${ids.length} serviços empilhados`} 📚 — veja em Demandas › Empilhados`);
+    onClose();
+  }
+
   function goPublish() {
     if (!picked.length) return toast.error('Marque pelo menos um serviço');
     if (finalTotal < 1) return toast.error('Informe quanto vai pagar ao mecânico');
@@ -210,6 +223,9 @@ export default function CallMechanicModal({ wid, os, onClose }: { wid: string; o
 
         <button onClick={goPublish} disabled={rows === null} className="btn-primary w-full mt-5">
           Continuar para publicar a demanda →
+        </button>
+        <button onClick={stack} disabled={rows === null || stacking} className="btn-secondary w-full mt-2">
+          {stacking ? 'Empilhando…' : '📚 Empilhar para depois (junto com outros serviços)'}
         </button>
         <p className="text-[11px] text-steel-400 text-center mt-2">
           Na próxima tela você escolhe: aberta para todos, só preferidos ou um mecânico direto. O nome do cliente não é enviado.

@@ -1,3 +1,4 @@
+import CarFields from './CarFields';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -438,16 +439,9 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
                   </>
                 )}
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest pt-1">🚗 Carro</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input className="input !py-2 uppercase font-mono" placeholder="Placa" value={car.plate}
-                    onChange={e => { setCar(c => ({ ...c, plate: e.target.value.toUpperCase() })); setDups([]); setIgnoreDups(false); }} />
-                  <input className="input !py-2" placeholder="Ano" inputMode="numeric" value={car.year}
-                    onChange={e => setCar(c => ({ ...c, year: e.target.value }))} />
-                  <input className="input !py-2" placeholder="Marca (ex.: Chevrolet)" value={car.make}
-                    onChange={e => setCar(c => ({ ...c, make: e.target.value }))} />
-                  <input className="input !py-2" placeholder="Modelo (ex.: Onix)" value={car.model}
-                    onChange={e => setCar(c => ({ ...c, model: e.target.value }))} />
-                </div>
+                <input className="input !py-2 uppercase font-mono" placeholder="Placa" value={car.plate}
+                  onChange={e => { setCar(c => ({ ...c, plate: e.target.value.toUpperCase() })); setDups([]); setIgnoreDups(false); }} />
+                <CarFields value={car} onChange={v => setCar(c => ({ ...c, ...v }))} />
                 {dups.length > 0 && !ignoreDups && (
                   <div className="bg-pending-50 border border-pending-200 rounded-xl p-3 text-sm space-y-2">
                     <div className="font-semibold text-pending-900">⚠️ Esse cliente parece já estar cadastrado:</div>
