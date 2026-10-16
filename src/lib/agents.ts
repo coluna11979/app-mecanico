@@ -4,9 +4,20 @@
 
 export type AgentTemplate = 'socio';
 
+/** Configuração editável do agente: o rascunho e cada versão publicada têm este formato */
+export type AgentDraft = { name: string; system_prompt: string; tools: string[] };
+
 export type Agent = {
   id: string; workshop_id: string; template: AgentTemplate; name: string;
   system_prompt: string; tools: string[]; enabled: boolean; questions_seeded: boolean;
+  /** Edições ainda não publicadas (null = nenhuma). name/system_prompt/tools acima são a versão publicada. */
+  draft: AgentDraft | null;
+  version: number;
+};
+
+export type AgentVersion = {
+  id: string; version: number; name: string; system_prompt: string; tools: string[];
+  note: string | null; created_at: string;
 };
 
 export type AgentQuestion = { id: string; category: string; question: string; position: number };

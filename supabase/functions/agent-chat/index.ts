@@ -355,10 +355,11 @@ Deno.serve(async (req) => {
   let userId: string | null = null;
   let model: string | null = null;
   let inTok = 0, outTok = 0;
+  let feature = 'agent_socio';
 
   const log = (row: Record<string, unknown>) =>
     admin.from('ai_usage_log').insert({
-      workshop_id: workshopId, feature: 'agent_socio', created_by: userId, model,
+      workshop_id: workshopId, feature, created_by: userId, model,
       input_tokens: inTok || null, output_tokens: outTok || null, ...row,
     });
 
@@ -373,11 +374,14 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const agentId: string | undefined = body.agent_id;
     const message = String(body.message ?? '').trim().slice(0, MAX_INPUT_CHARS);
+    // Playground: testa o RASCUNHO do agente; a conversa não é gravada e não vai para o histórico real
+    const playground = body.playground === true;
+    if (playground) feature = 'agent_playground';
     if (!agentId || !message) return json({ error: 'agent_id e message são obrigatórios' }, 400);
 
     // RLS de ai_agents: só o dono da oficina (ou superadmin) enxerga o agente
     const { data: agent } = await userClient.from('ai_agents')
-      .select('id, workshop_id, template, system_prompt, tools, enabled, model, max_tokens, history_window, max_tool_turns').eq('id', agentId).maybeSingle();
+      .select('id, workshop_id, template, system_prompt, tools, enabled, model, max_tokens, history_window, max_tool_turns, draft').eq('id', agentId).maybeSingle();
     if (!agent) return json({ error: 'Agente não encontrado' }, 404);
     workshopId = agent.workshop_id;
     if (!agent.enabled) return json({ error: 'Este agente está desligado' }, 403);
@@ -394,19 +398,32 @@ Deno.serve(async (req) => {
     if (!model) return json({ error: 'Modelo da IA não configurado no painel admin.' }, 503);
 
     // Só as tools que o dono marcou (e que existem no catálogo)
-    const enabledTools = (agent.tools as string[]).filter((k) => k in TOOLS);
+    // No playground vale o rascunho (se houver); fora dele, sempre a versão publicada
+    const draft = playground ? (agent.draft as { system_prompt?: string; tools?: string[] } | null) : null;
+    const agentPrompt = (draft?.system_prompt ?? '').trim() || agent.system_prompt;
+    const agentTools = Array.isArray(draft?.tools) ? (draft!.tools as string[]) : (agent.tools as string[]);
+    const enabledTools = agentTools.filter((k) => k in TOOLS);
     const toolDefs = enabledTools.map((k) => ({ name: k, ...TOOLS[k].def }));
 
     const maxTurns = clamp(agent.max_tool_turns, 1, 40, DEFAULT_TURNS);
     const maxTokens = clamp(agent.max_tokens, 500, 16000, DEFAULT_MAX_TOKENS);
     const history = clamp(agent.history_window, 2, 60, DEFAULT_HISTORY);
 
-    const { data: hist } = await admin.from('ai_agent_messages').select('role, content')
-      .eq('agent_id', agent.id).order('created_at', { ascending: false }).limit(history);
-    const messages: any[] = [...(hist ?? []).reverse(), { role: 'user', content: message }];
+    let prior: { role: string; content: string }[];
+    if (playground) {
+      // Histórico do próprio teste, mandado pela tela (nada do chat real)
+      prior = (Array.isArray(body.history) ? body.history : [])
+        .filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string')
+        .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) })).slice(-history);
+    } else {
+      const { data: hist } = await admin.from('ai_agent_messages').select('role, content')
+        .eq('agent_id', agent.id).order('created_at', { ascending: false }).limit(history);
+      prior = (hist ?? []).reverse();
+    }
+    const messages: any[] = [...prior, { role: 'user', content: message }];
 
     const client = new Anthropic({ apiKey: cfg.anthropic_api_key });
-    const system = `${agent.system_prompt}\n\nHoje é ${today()} (horário de Brasília).`;
+    const system = `${agentPrompt}\n\nHoje é ${today()} (horário de Brasília).`;
 
     let answer = '';
     for (let turn = 0; turn < maxTurns; turn++) {
@@ -439,10 +456,12 @@ Deno.serve(async (req) => {
     }
     if (!answer) answer = 'Não consegui fechar a análise a tempo. Tente uma pergunta mais específica.';
 
-    await admin.from('ai_agent_messages').insert([
-      { agent_id: agent.id, workshop_id: workshopId, role: 'user', content: message },
-      { agent_id: agent.id, workshop_id: workshopId, role: 'assistant', content: answer },
-    ]);
+    if (!playground) {
+      await admin.from('ai_agent_messages').insert([
+        { agent_id: agent.id, workshop_id: workshopId, role: 'user', content: message },
+        { agent_id: agent.id, workshop_id: workshopId, role: 'assistant', content: answer },
+      ]);
+    }
     await log({});
     return json({ ok: true, answer });
   } catch (e) {
