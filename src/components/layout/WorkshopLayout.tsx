@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
@@ -12,6 +12,7 @@ import { ROLES, sessionAllows, useOperator, type OperatorRole } from '@/lib/oper
 import OperatorLock from '@/components/operator/OperatorLock';
 import { moduleAllows, moduleEntry, useWorkshopModules } from '@/lib/modules';
 import { useInboxAlerts } from '@/hooks/useInboxAlerts';
+import { Icon, type IconName } from '@/components/home/ui';
 
 type ArrivalAlert = { jobId: string; title: string };
 type FinishedAlert = { jobId: string; title: string; price: number };
@@ -27,35 +28,38 @@ const isSub = (e: NavEntry): e is NavSub => 'children' in e;
 const leaves = (entries: NavEntry[]): NavItem[] => entries.flatMap(e => (isSub(e) ? e.children : [e]));
 const onRoute = (path: string, to: string) => path === to || path.startsWith(`${to}/`);
 
-/** Itens soltos no topo do menu (telas de entrada do gestor) */
+/** Itens soltos no topo do menu */
 const TOP_ITEMS: NavItem[] = [
-  { to: '/oficina/inicio', icon: '🏠', label: 'Início'           },
-  { to: '/oficina/resultado', icon: '📈', label: 'Resultado'      },
-  { to: '/oficina/painel', icon: '📊', label: 'Painel de vendas' },
+  { to: '/oficina/inicio', icon: '🏠', label: 'Início' },
 ];
 
-/** Menu por fluxo de trabalho. Só muda a organização: as rotas (e as permissões do modo balcão) são as mesmas. */
+/**
+ * Menu por fluxo de trabalho. Só muda a organização e os nomes: as rotas (e com elas as permissões
+ * do modo balcão e os módulos do superadmin) são as mesmas. `icon` (emoji) é usado só na gaveta do celular.
+ */
 const SECTIONS: NavGroup[] = [
   { key: 'atendimento', title: 'Atendimento', items: [
     { to: '/oficina/os',         icon: '📋', label: 'Ordens de serviço'    },
     { to: '/oficina/agenda',     icon: '📅', label: 'Agenda'               },
+    // Check-up é um dos diferenciais: fica junto do atendimento, com as telas dele num submenu
+    { icon: '🩺', label: 'Check-up', children: [
+      { to: '/oficina/checkup',            icon: '🩺', label: 'Painel do check-up' },
+      { to: '/oficina/checkup/inspecoes',  icon: '🔍', label: 'Inspeções'          },
+      { to: '/oficina/checkup/historico',  icon: '🗂️', label: 'Histórico'          },
+      { to: '/oficina/checkup/modelos',    icon: '🧩', label: 'Modelos'            },
+    ] },
     { to: '/oficina/clientes',   icon: '👥', label: 'Clientes'             },
     { to: '/oficina/comercial',  icon: '🤝', label: 'Comercial'            },
-    { to: '/oficina/inbox',      icon: '💬', label: 'WhatsApp'             },
+  ] },
+  { key: 'comunicacao', title: 'Comunicação', items: [
+    { to: '/oficina/inbox',      icon: '💬', label: 'WhatsApp dos clientes' },
     { to: '/oficina/avaliacoes', icon: '⭐', label: 'Avaliações Google'    },
     { to: '/oficina/agentes',    icon: '🤖', label: 'Agentes de IA'        },
   ] },
-  // Check-up é módulo próprio (um dos diferenciais do sistema)
-  { key: 'checkup', title: 'Check-up', items: [
-    { to: '/oficina/checkup',            icon: '🩺', label: 'Painel do check-up' },
-    { to: '/oficina/checkup/inspecoes',  icon: '🔍', label: 'Inspeções'          },
-    { to: '/oficina/checkup/historico',  icon: '🗂️', label: 'Histórico'          },
-    { to: '/oficina/checkup/modelos',    icon: '🧩', label: 'Modelos'            },
-  ] },
   { key: 'financeiro', title: 'Financeiro', items: [
     { to: '/oficina/caixa',      icon: '💰', label: 'Caixa'                },
-    { to: '/oficina/financeiro', icon: '💵', label: 'Visão financeira'     },
     { to: '/oficina/contas-a-pagar', icon: '📤', label: 'Contas a pagar'   },
+    { to: '/oficina/financeiro', icon: '💵', label: 'Visão financeira'     },
   ] },
   { key: 'estoque', title: 'Estoque e compras', items: [
     { to: '/oficina/pecas/painel', icon: '📦', label: 'Painel do estoque' },
@@ -68,16 +72,20 @@ const SECTIONS: NavGroup[] = [
     { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho'           },
     { to: '/oficina/comissoes',  icon: '🏅', label: 'Comissões'            },
     { to: '/oficina/folha',      icon: '💼', label: 'Folha'                },
-    { to: '/oficina/acessos',    icon: '🔐', label: 'Acessos e funções'    },
   ] },
-  { key: 'plataforma', title: 'Plataforma', items: [
+  { key: 'relatorios', title: 'Relatórios', items: [
+    { to: '/oficina/resultado',  icon: '📈', label: 'Resultado'            },
+    { to: '/oficina/painel',     icon: '📊', label: 'Painel de vendas'     },
+  ] },
+  { key: 'plataforma', title: 'MecânicoApp', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
-    { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar mecânicos'     },
-    { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens'            },
+    { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar profissionais' },
+    { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens da plataforma' },
   ] },
   { key: 'config', title: 'Configurações', items: [
     { to: '/oficina/perfil',     icon: '🏪', label: 'Perfil e vitrine'     },
     { to: '/oficina/servicos',   icon: '🛠️', label: 'Tabela de serviços'   },
+    { to: '/oficina/acessos',    icon: '🔐', label: 'Acessos e funções'    },
     { to: '/oficina/importar',   icon: '📷', label: 'Importar notas antigas' },
     { to: '/oficina/vip',        icon: '⭐', label: 'Plano VIP'            },
   ] },
@@ -85,24 +93,77 @@ const SECTIONS: NavGroup[] = [
 
 /** Ícone de cada bloco na gaveta "Mais" (celular) */
 const SECTION_ICON: Record<string, string> = {
-  top: '📊', atendimento: '📋', checkup: '🩺', financeiro: '💵', estoque: '📦',
-  equipe: '👷', plataforma: '⚡', config: '⚙️',
+  top: '📊', atendimento: '📋', comunicacao: '💬', financeiro: '💵', estoque: '📦',
+  equipe: '👷', relatorios: '📈', plataforma: '⚡', config: '⚙️',
 };
+
+/** Ícone de traço de cada grupo (menu do computador e busca rápida) */
+const GROUP_ICON: Record<string, IconName> = {
+  top: 'home', atendimento: 'clipboard', comunicacao: 'chat', financeiro: 'wallet', estoque: 'box',
+  equipe: 'users', relatorios: 'bars', plataforma: 'zap', config: 'gear',
+};
+
+/** Grupo de uma rota (para abrir sozinho o grupo da tela atual) */
+function groupOf(path: string): string | null {
+  for (const sec of SECTIONS) if (leaves(sec.items).some(i => onRoute(path, i.to))) return sec.key;
+  return null;
+}
 
 /** Telas do Check-up que são do gestor (o mecânico vê só a fila dele em /oficina/checkup) */
 const CHECKUP_MANAGER_ONLY = ['/oficina/checkup/inspecoes', '/oficina/checkup/historico', '/oficina/checkup/modelos'];
 
-/** Grupos que começam recolhidos (até a pessoa abrir) */
-const DEFAULT_COLLAPSED = ['config'];
-const LS_COLLAPSED = 'oficina_menu_collapsed';
+/* ── Tema do menu (claro/escuro) e menu recolhido: preferências deste aparelho ── */
+type SideTheme = 'dark' | 'light';
+const LS_THEME = 'oficina_menu_tema';
+const LS_RAIL = 'oficina_menu_recolhido';
+const readLS = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
+const writeLS = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* sem storage */ } };
 
-function loadCollapsed(): Set<string> {
-  try {
-    const raw = localStorage.getItem(LS_COLLAPSED);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch { /* localStorage indisponível */ }
-  return new Set(DEFAULT_COLLAPSED);
-}
+/** Cores do menu em cada tema: o laranja fica só no que está ativo */
+const SIDE: Record<SideTheme, {
+  aside: string; line: string; title: string; item: string; itemActive: string; bar: string;
+  group: string; groupOpen: string; icon: string; iconActive: string; tool: string; kbd: string;
+  guide: string; avatar: string; muted: string; strong: string;
+}> = {
+  dark: {
+    aside: 'bg-steel-900 text-steel-300',
+    line: 'border-white/[0.06]',
+    title: 'text-steel-500',
+    item: 'text-steel-400 hover:text-white hover:bg-white/[0.05]',
+    itemActive: 'text-white bg-white/[0.07]',
+    bar: 'bg-brand-500',
+    group: 'text-steel-300 hover:text-white hover:bg-white/[0.04]',
+    groupOpen: 'text-white hover:bg-white/[0.04]',
+    icon: 'text-steel-500',
+    iconActive: 'text-brand-400',
+    tool: 'text-steel-400 hover:text-white hover:bg-white/[0.06]',
+    kbd: 'bg-white/[0.06] text-steel-400 ring-1 ring-white/10',
+    guide: 'border-white/[0.08]',
+    avatar: 'bg-white/10 text-white',
+    muted: 'text-steel-500',
+    strong: 'text-white',
+  },
+  light: {
+    aside: 'bg-white text-steel-700 border-r border-steel-200/80',
+    line: 'border-steel-200/70',
+    title: 'text-steel-400',
+    item: 'text-steel-500 hover:text-steel-900 hover:bg-steel-100/70',
+    itemActive: 'text-steel-900 bg-brand-50/70',
+    bar: 'bg-brand-500',
+    group: 'text-steel-600 hover:text-steel-900 hover:bg-steel-100/60',
+    groupOpen: 'text-steel-900 hover:bg-steel-100/60',
+    icon: 'text-steel-400',
+    iconActive: 'text-brand-600',
+    tool: 'text-steel-400 hover:text-steel-800 hover:bg-steel-100',
+    kbd: 'bg-steel-100 text-steel-500 ring-1 ring-steel-200',
+    guide: 'border-steel-200',
+    avatar: 'bg-steel-900 text-white',
+    muted: 'text-steel-400',
+    strong: 'text-steel-900',
+  },
+};
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /**
  * Barra inferior (celular) por função; o resto fica no "Mais". Sem modo balcão = gestor.
@@ -140,16 +201,36 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const [sheetGroup, setSheetGroup] = useState<string | null>(null);   // bloco aberto na gaveta "Mais"
   const [unread, setUnread]     = useState(0);
   const unreadNotif = useUnreadNotifications();
-  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
-
-  function toggleGroup(key: string) {
-    setCollapsed(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      try { localStorage.setItem(LS_COLLAPSED, JSON.stringify([...next])); } catch { /* ignora */ }
-      return next;
-    });
-  }
+  // Sanfona: um grupo aberto por vez; abre sozinho o grupo da tela atual
+  const [openGroup, setOpenGroup] = useState<string | null>(() => groupOf(location.pathname));
+  useEffect(() => { const g = groupOf(location.pathname); if (g) setOpenGroup(g); }, [location.pathname]);
+  // Tema do menu e menu recolhido: preferência deste aparelho
+  const [sideTheme, setSideTheme] = useState<SideTheme>(() => (readLS(LS_THEME) === 'light' ? 'light' : 'dark'));
+  const toggleTheme = () => setSideTheme(t => { const n: SideTheme = t === 'dark' ? 'light' : 'dark'; writeLS(LS_THEME, n); return n; });
+  const [rail, setRail] = useState(() => readLS(LS_RAIL) === '1');
+  const [flyout, setFlyout] = useState<{ key: string; top: number } | null>(null);
+  const flyRef = useRef<HTMLDivElement>(null);
+  const toggleRail = (v: boolean) => { setRail(v); writeLS(LS_RAIL, v ? '1' : '0'); setFlyout(null); };
+  useEffect(() => { setFlyout(null); }, [location.pathname]);
+  useEffect(() => {
+    if (!flyout) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (flyRef.current?.contains(t) || t.closest?.('[data-rail]')) return;
+      setFlyout(null);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [flyout]);
+  // Busca rápida: Ctrl+K / ⌘K em qualquer tela
+  const [palette, setPalette] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => !p); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const shopId = currentWorkshop?.id ?? null;
 
@@ -468,10 +549,14 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   /** Grupos do menu com só o que a função pode abrir (submenu sem filho liberado some) */
   const navSections = SECTIONS.flatMap(sec => {
     const entries = sec.items
-      .map(e => (isSub(e) ? { ...e, children: e.children.map(fix).filter(c => allowed(c.to)) } : fix(e)))
+      .map(e => (isSub(e) ? {
+        ...e,
+        // Mecânico: no Check-up só a fila dele
+        children: e.children.map(fix).filter(c => allowed(c.to) && !(isMechanicSession && CHECKUP_MANAGER_ONLY.includes(c.to))),
+      } : fix(e)))
       .filter(e => (isSub(e) ? e.children.length > 0 : allowed(e.to)))
-      // Mecânico: no Check-up só a fila dele
-      .filter(e => !(isMechanicSession && !isSub(e) && CHECKUP_MANAGER_ONLY.includes(e.to)));
+      // Submenu com uma tela só vira item direto (com o nome do submenu)
+      .map(e => (isSub(e) && e.children.length === 1 ? { ...e.children[0], label: e.label } : e));
     return entries.length ? [{ ...sec, entries }] : [];
   });
   // Gaveta "Mais" (celular): grupos em atalhos, sem repetir o que já está na barra
@@ -480,6 +565,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     ...navSections.map(sec => ({ key: sec.key, title: sec.title, items: leaves(sec.entries).filter(i => !inBottom(i.to)) })),
   ].filter(g => g.items.length > 0);
   const moreActive = open || !bottomTabs.some(t => onRoute(path, t.to));
+  const T = SIDE[sideTheme];
 
   return (
     <div className="min-h-screen flex bg-steel-50">
@@ -580,146 +666,200 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {/* ── Sidebar (computador; no celular o menu é a gaveta do "Mais") ── */}
-      <aside className="hidden lg:flex flex-col sticky top-0 h-screen w-64 shrink-0 bg-steel-900 text-white">
+      {/* ── Menu lateral (computador; no celular o menu é a gaveta do "Mais") ── */}
+      <aside className={`hidden lg:flex flex-col sticky top-0 h-screen shrink-0 transition-[width] duration-200 ease-out ${T.aside} ${rail ? 'w-[68px]' : 'w-64'}`}>
 
+        {/* Logo + avisos */}
+        <div className={`h-16 shrink-0 flex items-center border-b ${T.line} ${rail ? 'justify-center px-2' : 'justify-between pl-5 pr-3'}`}>
+          {rail ? <Logo size={28} withText={false} /> : <Logo light={sideTheme === 'dark'} />}
+          {!rail && (
+            <button onClick={() => nav('/oficina/avisos')} aria-label="Avisos" title="Avisos"
+              className={`relative h-9 w-9 grid place-items-center rounded-lg transition ${onRoute(path, '/oficina/avisos') ? `${T.itemActive}` : T.tool}`}>
+              <Icon name="bell" size={18} />
+              {unreadNotif > 0 && <Badge n={unreadNotif} />}
+            </button>
+          )}
+        </div>
 
-        {/* Logo + sino de avisos */}
-        <div className="px-5 py-5 border-b border-steel-800 flex items-center justify-between gap-2">
-          <Logo light />
-          <button
-            onClick={() => { nav('/oficina/avisos'); setOpen(false); }}
-            aria-label="Avisos"
-            title="Avisos"
-            className={`relative shrink-0 h-9 w-9 grid place-items-center rounded-xl transition ${
-              onRoute(path, '/oficina/avisos') ? 'bg-brand-500 text-white' : 'text-steel-400 hover:bg-steel-800 hover:text-white'
-            }`}
-          >
-            <span className="text-lg">🔔</span>
-            {unreadNotif > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center">
-                {unreadNotif > 9 ? '9+' : unreadNotif}
-              </span>
+        {/* Loja + busca rápida */}
+        <div className={`shrink-0 pt-3 space-y-2 ${rail ? 'px-2.5' : 'px-3'}`}>
+          {currentWorkshop && canSwitchStore && (rail ? (
+            <button onClick={() => toggleRail(false)} title={`${currentWorkshop.business_name} — abrir o menu para trocar de loja`}
+              className={`w-full h-10 grid place-items-center rounded-lg transition ${T.tool}`}>
+              <Icon name="store" size={18} />
+            </button>
+          ) : (
+            <WorkshopSwitcher workshops={workshops} current={currentWorkshop} light={sideTheme === 'light'}
+              onSelect={(w) => setCurrentWorkshop(w)} onAddNew={() => nav('/oficina/nova')} />
+          ))}
+          <button onClick={() => setPalette(true)} title="Buscar tela (Ctrl+K)"
+            className={`w-full flex items-center rounded-lg transition ${T.tool} ${rail ? 'h-10 justify-center' : 'h-9 gap-2.5 px-3'}`}>
+            <Icon name="search" size={16} />
+            {!rail && (
+              <>
+                <span className="flex-1 text-left text-[13px]">Buscar tela…</span>
+                <kbd className={`font-mono text-[10px] leading-none rounded px-1.5 py-1 ${T.kbd}`}>{isMac ? '⌘K' : 'Ctrl K'}</kbd>
+              </>
             )}
           </button>
         </div>
 
-        {/* Seletor de oficina */}
-        {currentWorkshop && canSwitchStore && (
-          <div className="px-3 pt-3">
-            <WorkshopSwitcher
-              workshops={workshops}
-              current={currentWorkshop}
-              onSelect={(w) => { setCurrentWorkshop(w); setOpen(false); }}
-              onAddNew={() => { nav('/oficina/nova'); setOpen(false); }}
-            />
-          </div>
-        )}
+        {/* Navegação */}
+        <nav className={`flex-1 overflow-y-auto overflow-x-hidden py-3 ${rail ? 'px-2.5 space-y-1' : 'px-3 space-y-0.5'}`}>
+          {TOP_ITEMS.map(fix).filter(i => allowed(i.to)).map(i => (rail ? (
+            <RailButton key={i.to} T={T} icon="home" label={i.label} active={onRoute(path, i.to)} onClick={() => nav(i.to)} />
+          ) : (
+            <NavLink key={i.to} to={i.to}
+              className={({ isActive }) => `relative flex items-center gap-3 h-9 px-3 rounded-lg text-[13.5px] font-medium transition ${isActive ? T.itemActive : T.group}`}>
+              {({ isActive }) => (
+                <>
+                  {isActive && <span className={`absolute left-0 top-2 bottom-2 w-[2px] rounded-full ${T.bar}`} />}
+                  <Icon name="home" size={17} className={isActive ? T.iconActive : T.icon} />
+                  {i.label}
+                </>
+              )}
+            </NavLink>
+          )))}
 
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-3">
-          {TOP_ITEMS.map(fix).filter(i => allowed(i.to)).map(i => (
-            <SideItem key={i.to} {...i} badge={0} mobileHidden={inBottom(i.to)} onClick={() => setOpen(false)} />
-          ))}
+          {!rail && <div className={`my-2 border-t ${T.line}`} />}
 
           {navSections.map(({ entries, ...sec }) => {
             const items = leaves(entries);
             const hasActive = items.some(i => onRoute(path, i.to));
-            const isOpen = hasActive || !collapsed.has(sec.key);
+            const isOpen = openGroup === sec.key;
             const groupBadge = items.reduce((n, i) => n + badgeOf(i.to), 0);
+            const icon = GROUP_ICON[sec.key] ?? 'clipboard';
+
+            if (rail) return (
+              <RailButton key={sec.key} T={T} icon={icon} label={sec.title} active={hasActive} dot={groupBadge > 0}
+                pressed={flyout?.key === sec.key}
+                onClick={e => {
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setFlyout(f => (f?.key === sec.key ? null : { key: sec.key, top: r.top }));
+                }} />
+            );
+
             return (
               <div key={sec.key}>
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(sec.key)}
-                  disabled={hasActive}
-                  aria-expanded={isOpen}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold text-steel-500 uppercase tracking-widest hover:text-steel-300 disabled:hover:text-steel-500 transition"
-                >
-                  <span className="flex-1 text-left">{sec.title}</span>
-                  {!isOpen && groupBadge > 0 && (
-                    <span className="h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center normal-case tracking-normal">
-                      {groupBadge > 9 ? '9+' : groupBadge}
-                    </span>
-                  )}
-                  {!hasActive && <span className={`text-[9px] transition-transform ${isOpen ? '' : '-rotate-90'}`}>▼</span>}
+                <button type="button" onClick={() => setOpenGroup(g => (g === sec.key ? null : sec.key))} aria-expanded={isOpen}
+                  className={`w-full flex items-center gap-3 h-9 px-3 rounded-lg text-[13.5px] font-medium transition ${isOpen || hasActive ? T.groupOpen : T.group}`}>
+                  <Icon name={icon} size={17} className={hasActive ? T.iconActive : T.icon} />
+                  <span className="flex-1 text-left truncate">{sec.title}</span>
+                  {!isOpen && groupBadge > 0 && <Badge n={groupBadge} inline />}
+                  <Icon name="chevron" size={14} className={`${T.muted} transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
-                {isOpen && (
-                  <div className="space-y-0.5 mt-0.5">
-                    {entries.map(e => isSub(e) ? (
-                      <SideSub key={e.label} {...e} path={path} inBottom={inBottom} onClick={() => setOpen(false)} />
-                    ) : (
-                      <SideItem
-                        key={e.to}
-                        {...e}
-                        badge={badgeOf(e.to)}
-                        mobileHidden={inBottom(e.to)}
-                        onClick={() => setOpen(false)}
-                      />
-                    ))}
+                {/* Sanfona: só um grupo aberto por vez */}
+                <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                  <div className="overflow-hidden">
+                    <div className={`ml-[21px] pl-3 border-l ${T.guide} py-1 space-y-px`}>
+                      {entries.map(e => isSub(e) ? (
+                        <SideSub key={e.label} T={T} {...e} path={path} badgeOf={badgeOf} />
+                      ) : (
+                        <SideItem key={e.to} T={T} {...e} badge={badgeOf(e.to)} />
+                      ))}
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
             );
           })}
         </nav>
 
-        {/* Quem está operando (modo balcão) */}
-        {op.balcao && op.session ? (
-          <div className="border-t border-steel-800 p-4">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm shrink-0">
-                {op.session.name.charAt(0).toUpperCase()}
-              </div>
+        {/* Rodapé: quem está usando, modo balcão e preferências do menu */}
+        <div className={`shrink-0 border-t ${T.line} ${rail ? 'p-2.5 space-y-1' : 'p-3 space-y-2'}`}>
+          {!rail && (op.balcao && op.session ? (
+            <div className="flex items-center gap-2.5 px-1">
+              <div className={`h-8 w-8 rounded-full grid place-items-center text-xs font-bold shrink-0 ${T.avatar}`}>{op.session.name.charAt(0).toUpperCase()}</div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold truncate">{op.session.name}</div>
-                <div className="text-[11px] text-steel-400">{ROLES[op.session.role].icon} {ROLES[op.session.role].label}</div>
+                <div className={`text-[13px] font-semibold truncate ${T.strong}`}>{op.session.name}</div>
+                <div className={`text-[11px] truncate ${T.muted}`}>{ROLES[op.session.role].label}</div>
               </div>
-              <button
-                onClick={() => { op.switchUser(); setOpen(false); }}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-steel-800 text-steel-200 hover:bg-steel-700 hover:text-white transition"
-                title="Trocar operador ou função"
-              >
-                🔒 Trocar
+              <button onClick={() => op.switchUser()} title="Trocar operador ou função"
+                className={`h-8 px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold transition ${T.tool}`}>
+                <Icon name="lock" size={14} />Trocar
               </button>
             </div>
-            {op.session.role === 'gestor' && (
-              <button
-                onClick={() => { op.exitBalcao(); setOpen(false); }}
-                className="mt-3 w-full text-[11px] text-steel-500 hover:text-steel-300"
-              >
-                Desligar o modo balcão neste aparelho
+          ) : (
+            <div className="flex items-center gap-2.5 px-1">
+              <div className={`h-8 w-8 rounded-full grid place-items-center text-xs font-bold shrink-0 ${T.avatar}`}>{initials}</div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-[13px] font-semibold truncate ${T.strong}`}>{firstName}</div>
+                <div className={`text-[11px] truncate ${T.muted}`}>Oficina</div>
+              </div>
+              <button onClick={() => { signOut(); nav('/login'); }} title="Sair" aria-label="Sair"
+                className={`h-8 w-8 grid place-items-center rounded-lg transition ${T.tool}`}>
+                <Icon name="logout" size={16} />
               </button>
+            </div>
+          ))}
+
+          {/* Ações do rodapé: modo balcão, tema e recolher */}
+          <div className={rail ? 'space-y-1' : 'flex items-center gap-1'}>
+            {op.balcao && op.session?.role === 'gestor' ? (
+              rail ? <RailButton T={T} icon="lock" label="Trocar operador" onClick={() => op.switchUser()} /> : (
+                <button onClick={() => op.exitBalcao()} className={`flex-1 h-8 px-2 rounded-lg text-[11px] font-medium text-left transition ${T.tool}`}>
+                  Desligar modo balcão
+                </button>
+              )
+            ) : !op.balcao ? (
+              rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
+                <button onClick={enterBalcao} title="Cada colaborador entra com o próprio PIN e vê só as telas da função dele"
+                  className={`flex-1 h-8 px-2 inline-flex items-center gap-2 rounded-lg text-xs font-semibold transition ${T.tool}`}>
+                  <Icon name="lock" size={14} />Modo balcão
+                </button>
+              )
+            ) : rail ? <RailButton T={T} icon="lock" label="Trocar operador" onClick={() => op.switchUser()} /> : <span className="flex-1" />}
+            {rail ? (
+              <>
+                <RailButton T={T} icon={sideTheme === 'dark' ? 'sun' : 'moon'} label={sideTheme === 'dark' ? 'Menu claro' : 'Menu escuro'} onClick={toggleTheme} />
+                <RailButton T={T} icon="panel" label="Expandir menu" onClick={() => toggleRail(false)} />
+              </>
+            ) : (
+              <>
+                <button onClick={toggleTheme} title={sideTheme === 'dark' ? 'Deixar o menu claro' : 'Deixar o menu escuro'}
+                  aria-label={sideTheme === 'dark' ? 'Menu claro' : 'Menu escuro'}
+                  className={`h-8 w-8 grid place-items-center rounded-lg transition ${T.tool}`}>
+                  <Icon name={sideTheme === 'dark' ? 'sun' : 'moon'} size={16} />
+                </button>
+                <button onClick={() => toggleRail(true)} title="Recolher o menu" aria-label="Recolher o menu"
+                  className={`h-8 w-8 grid place-items-center rounded-lg transition ${T.tool}`}>
+                  <Icon name="panel" size={16} />
+                </button>
+              </>
             )}
           </div>
-        ) : (
-        <div className="border-t border-steel-800 p-4">
-          <button
-            onClick={enterBalcao}
-            className="w-full mb-3 text-xs font-semibold px-3 py-2 rounded-lg bg-steel-800 text-steel-300 hover:bg-steel-700 hover:text-white transition"
-            title="Cada colaborador entra com o próprio PIN e vê só as telas da função dele"
-          >
-            🔒 Ativar modo balcão
-          </button>
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-sm shrink-0">
-              {initials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold truncate">{firstName}</div>
-              <div className="text-[11px] text-steel-500">Oficina</div>
-            </div>
-            <button
-              onClick={() => { signOut(); nav('/login'); }}
-              className="text-steel-500 hover:text-white transition text-xs px-2 py-1 rounded-lg hover:bg-steel-800"
-              title="Sair"
-            >
-              Sair
-            </button>
-          </div>
         </div>
-        )}
       </aside>
+
+      {/* Menu recolhido: itens do grupo num painel ao lado do ícone */}
+      {rail && flyout && (() => {
+        const sec = navSections.find(s => s.key === flyout.key);
+        if (!sec) return null;
+        return (
+          <div ref={flyRef} className="hidden lg:block fixed z-50 left-[76px] w-60 rounded-xl bg-white shadow-2xl ring-1 ring-steel-200 py-2 animate-fade-in"
+            style={{ top: Math.min(flyout.top - 8, window.innerHeight - 40 - leaves(sec.entries).length * 36) }}>
+            <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-steel-400">{sec.title}</div>
+            {leaves(sec.entries).map(i => (
+              <NavLink key={i.to} to={i.to} end={i.to === '/oficina/pecas' || i.to === '/oficina/checkup'} onClick={() => setFlyout(null)}
+                className={({ isActive }) => `relative flex items-center gap-2 mx-1.5 px-2.5 h-9 rounded-lg text-[13.5px] transition ${
+                  isActive ? 'bg-brand-50 text-steel-900 font-semibold' : 'text-steel-600 hover:bg-steel-100 hover:text-steel-900'}`}>
+                <span className="flex-1 truncate">{i.label}</span>
+                {badgeOf(i.to) > 0 && <Badge n={badgeOf(i.to)} inline />}
+              </NavLink>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* Busca rápida (Ctrl+K / ⌘K): vai direto para qualquer tela liberada */}
+      {palette && (
+        <CommandPalette onClose={() => setPalette(false)} onGo={to => { setPalette(false); nav(to); }}
+          items={[
+            ...TOP_ITEMS.map(fix).filter(i => allowed(i.to)).map(i => ({ to: i.to, label: i.label, group: '', icon: 'home' as IconName })),
+            ...navSections.flatMap(s => leaves(s.entries).map(i => ({ to: i.to, label: i.label, group: s.title, icon: GROUP_ICON[s.key] ?? 'clipboard' }))),
+            ...(allowed('/oficina/avisos') ? [{ to: '/oficina/avisos', label: 'Avisos', group: '', icon: 'bell' as IconName }] : []),
+          ]} />
+      )}
 
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -922,13 +1062,15 @@ function Badge({ n, inline = false }: { n: number; inline?: boolean }) {
 
 /* ── Seletor de oficina (dropdown) ── */
 function WorkshopSwitcher({
-  workshops, current, onSelect, onAddNew, compact = false,
+  workshops, current, onSelect, onAddNew, compact = false, light = false,
 }: {
   workshops: Workshop[];
   current: Workshop;
   onSelect: (w: Workshop) => void;
   onAddNew: () => void;
   compact?: boolean;
+  /** Menu lateral no tema claro */
+  light?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -945,21 +1087,24 @@ function WorkshopSwitcher({
 
   const triggerCls = compact
     ? 'w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 transition'
-    : 'w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-steel-800/60 hover:bg-steel-800 border border-steel-700 transition';
-  const labelCls = compact ? 'text-xs font-bold text-steel-800' : 'text-sm font-bold text-white';
-  const subCls   = compact ? 'text-[9px] text-steel-500' : 'text-[10px] text-steel-400';
+    : light
+      ? 'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-steel-50 hover:bg-steel-100 ring-1 ring-steel-200 transition'
+      : 'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] ring-1 ring-white/[0.08] transition';
+  const labelCls = compact ? 'text-xs font-bold text-steel-800' : light ? 'text-[13px] font-semibold text-steel-900' : 'text-[13px] font-semibold text-white';
+  const subCls   = compact ? 'text-[9px] text-steel-500' : light ? 'text-[10.5px] text-steel-500' : 'text-[10.5px] text-steel-400';
+  const iconCls  = compact || light ? 'text-steel-500' : 'text-steel-400';
 
   return (
     <div className="relative" ref={ref}>
       <button type="button" onClick={() => setOpen(o => !o)} className={triggerCls}>
-        <span className="text-base shrink-0">🏪</span>
+        <Icon name="store" size={16} className={`shrink-0 ${iconCls}`} />
         <div className="flex-1 min-w-0 text-left">
           <div className={`${labelCls} truncate leading-tight`}>{current.business_name}</div>
           {workshops.length > 1 && (
             <div className={`${subCls} truncate leading-tight`}>{current.city}/{current.state}</div>
           )}
         </div>
-        <span className={`text-xs shrink-0 ${compact ? 'text-steel-500' : 'text-steel-400'} transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        <Icon name="chevron" size={14} className={`shrink-0 ${iconCls} transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
@@ -998,64 +1143,123 @@ function WorkshopSwitcher({
   );
 }
 
-function SideItem({ to, icon, label, badge, mobileHidden = false, nested = false, onClick }: NavItem & {
-  badge: number; mobileHidden?: boolean; nested?: boolean; onClick: () => void;
-}) {
+type SideTokens = (typeof SIDE)[SideTheme];
+
+/** Item do grupo: texto sobre a linha-guia; o ativo ganha o filete laranja em cima da linha */
+function SideItem({ T, to, label, badge }: { T: SideTokens; to: string; label: string; badge: number }) {
   return (
-    <NavLink
-      to={to}
+    <NavLink to={to}
       // Peças e Check-up têm sub-rotas com item próprio no menu
       end={to === '/oficina/pecas' || to === '/oficina/checkup'}
-      onClick={onClick}
-      className={({ isActive }) => `
-        ${mobileHidden ? 'hidden lg:flex' : 'flex'} items-center gap-3 px-3 ${nested ? 'py-2.5' : 'py-3'} rounded-xl text-sm font-medium transition-all
-        ${isActive
-          ? 'bg-brand-500 text-white shadow-brand'
-          : 'text-steel-400 hover:text-white hover:bg-steel-800'
-        }
-      `}
-    >
-      <span className="text-base w-5 text-center">{icon}</span>
-      <span className="flex-1">{label}</span>
-      {badge > 0 && (
-        <span className="h-5 min-w-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center">
-          {badge > 9 ? '9+' : badge}
-        </span>
+      className={({ isActive }) => `relative flex items-center gap-2 h-8 px-2.5 rounded-md text-[13px] transition ${
+        isActive ? `${T.itemActive} font-semibold` : T.item}`}>
+      {({ isActive }) => (
+        <>
+          {isActive && <span className={`absolute -left-[13px] top-1.5 bottom-1.5 w-[2px] rounded-full ${T.bar}`} />}
+          <span className="flex-1 truncate">{label}</span>
+          {badge > 0 && <Badge n={badge} inline />}
+        </>
       )}
     </NavLink>
   );
 }
 
-/* ── Submenu (ex.: Fechamentos → comissões / folha) — abre sozinho quando a tela atual é um dos filhos ── */
-function SideSub({ icon, label, children, path, inBottom, onClick }: NavSub & {
-  path: string; inBottom: (to: string) => boolean; onClick: () => void;
+/* ── Submenu (ex.: Check-up → painel / inspeções / histórico / modelos) — abre sozinho quando a tela atual é um dos filhos ── */
+function SideSub({ T, label, children, path, badgeOf }: NavSub & {
+  T: SideTokens; path: string; badgeOf: (to: string) => number;
 }) {
   const hasActive = children.some(c => onRoute(path, c.to));
   const [open, setOpen] = useState(hasActive);
   useEffect(() => { if (hasActive) setOpen(true); }, [hasActive]);
   const isOpen = open || hasActive;
-
   return (
-    <div className={children.every(c => inBottom(c.to)) ? 'hidden lg:block' : ''}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        aria-expanded={isOpen}
-        className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all ${
-          hasActive ? 'text-white' : 'text-steel-400 hover:text-white hover:bg-steel-800'
-        }`}
-      >
-        <span className="text-base w-5 text-center">{icon}</span>
-        <span className="flex-1 text-left">{label}</span>
-        <span className={`text-[9px] transition-transform ${isOpen ? '' : '-rotate-90'}`}>▼</span>
+    <div>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={isOpen}
+        className={`w-full flex items-center gap-2 h-8 px-2.5 rounded-md text-[13px] transition ${hasActive ? `${T.groupOpen} font-semibold` : T.item}`}>
+        <span className="flex-1 text-left truncate">{label}</span>
+        <Icon name="chevron" size={13} className={`${T.muted} transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       {isOpen && (
-        <div className="ml-5 pl-2 border-l border-steel-700 space-y-0.5">
-          {children.map(c => (
-            <SideItem key={c.to} {...c} badge={0} nested mobileHidden={inBottom(c.to)} onClick={onClick} />
-          ))}
+        <div className={`ml-2.5 pl-3 border-l ${T.guide} space-y-px`}>
+          {children.map(c => <SideItem key={c.to} T={T} to={c.to} label={c.label} badge={badgeOf(c.to)} />)}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Botão do menu recolhido (só ícone; o nome aparece ao passar o mouse) */
+function RailButton({ T, icon, label, active = false, pressed = false, dot = false, onClick }: {
+  T: SideTokens; icon: IconName; label: string; active?: boolean; pressed?: boolean; dot?: boolean;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <button type="button" data-rail onClick={onClick} title={label} aria-label={label}
+      className={`relative w-full h-10 grid place-items-center rounded-lg transition ${active || pressed ? T.itemActive : T.tool}`}>
+      {active && <span className={`absolute left-0 top-2.5 bottom-2.5 w-[2px] rounded-full ${T.bar}`} />}
+      <Icon name={icon} size={18} className={active ? T.iconActive : ''} />
+      {dot && <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-alert-500" />}
+    </button>
+  );
+}
+
+type PaletteItem = { to: string; label: string; group: string; icon: IconName };
+const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/** Busca rápida: digite parte do nome da tela; ↑ ↓ para escolher, Enter para abrir */
+function CommandPalette({ items, onGo, onClose }: { items: PaletteItem[]; onGo: (to: string) => void; onClose: () => void }) {
+  const [q, setQ] = useState('');
+  const [idx, setIdx] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const list = useMemo(() => {
+    const n = norm(q.trim());
+    if (!n) return items;
+    return items
+      .filter(i => norm(`${i.label} ${i.group}`).includes(n))
+      .sort((a, b) => Number(!norm(a.label).startsWith(n)) - Number(!norm(b.label).startsWith(n)));
+  }, [q, items]);
+  useEffect(() => { setIdx(0); }, [q]);
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>(`[data-idx="${idx}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [idx]);
+
+  function onKey(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => Math.min(i + 1, list.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (list[idx]) onGo(list[idx].to); }
+    else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[90] px-4" role="dialog" aria-modal="true" aria-label="Buscar tela">
+      <div className="absolute inset-0 bg-steel-900/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
+      <div className="relative mx-auto mt-[12vh] max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-steel-200 overflow-hidden animate-fade-in">
+        <div className="flex items-center gap-3 px-4 h-14 border-b border-steel-100">
+          <Icon name="search" size={18} className="text-steel-400 shrink-0" />
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
+            placeholder="Para onde você quer ir?"
+            className="flex-1 min-w-0 bg-transparent text-[15px] text-steel-900 placeholder:text-steel-400 outline-none" />
+          <kbd className="font-mono text-[10px] text-steel-500 bg-steel-100 ring-1 ring-steel-200 rounded px-1.5 py-1">Esc</kbd>
+        </div>
+        <div ref={listRef} className="max-h-[50vh] overflow-y-auto py-1.5">
+          {list.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-steel-500">Nenhuma tela com “{q}”.</div>
+          ) : list.map((i, n) => (
+            <button key={i.to} data-idx={n} onMouseEnter={() => setIdx(n)} onClick={() => onGo(i.to)}
+              className={`w-full flex items-center gap-3 px-3 mx-0 h-11 text-left transition ${n === idx ? 'bg-steel-50' : ''}`}>
+              <span className={`ml-1 h-7 w-7 rounded-md grid place-items-center shrink-0 ${n === idx ? 'bg-brand-50 text-brand-600' : 'bg-steel-100 text-steel-500'}`}>
+                <Icon name={i.icon} size={15} />
+              </span>
+              <span className="flex-1 min-w-0 truncate text-sm font-medium text-steel-900">{i.label}</span>
+              {i.group && <span className="text-xs text-steel-400 shrink-0">{i.group}</span>}
+              <span className={`font-mono text-[11px] w-4 text-steel-400 shrink-0 ${n === idx ? '' : 'invisible'}`}>↵</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-4 px-4 h-9 border-t border-steel-100 bg-steel-50/70 font-mono text-[10.5px] text-steel-400">
+          <span>↑ ↓ navegar</span><span>↵ abrir</span><span>esc fechar</span>
+        </div>
+      </div>
     </div>
   );
 }
