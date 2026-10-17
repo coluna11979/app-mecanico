@@ -174,57 +174,70 @@ export default function AdminLeads() {
 
       <LeadsTabs />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6 mb-6">
-        <StatCard label="Total" value={leads.length} />
-        <StatCard label="Em pipeline" value={stats.ativos} tone="pending" />
-        <StatCard label="Convertidos" value={stats.convertidos} tone="signal" />
-        <StatCard label="Taxa de conversão" value={`${stats.conversao}%`} tone="brand" />
-      </div>
+      {/* Stats line + filters — tudo em 1 bloco compacto */}
+      <div className="flex flex-col gap-2 mb-3">
+        {/* Linha fininha de métricas (quem quer análise, vai pra aba Métricas) */}
+        <div className="flex items-center gap-3 text-xs text-steel-500 flex-wrap">
+          <span><span className="admin-num font-bold text-steel-800">{leads.length}</span> leads</span>
+          <span className="text-steel-300">·</span>
+          <span><span className="admin-num font-bold text-steel-800">{stats.ativos}</span> em pipeline</span>
+          <span className="text-steel-300">·</span>
+          <span><span className="admin-num font-bold text-signal-700">{stats.convertidos}</span> convertido{stats.convertidos === 1 ? '' : 's'}</span>
+          <span className="text-steel-300">·</span>
+          <span>
+            <span className={`admin-num font-bold ${conversaoCls(stats.conversao)}`}>{stats.conversao}%</span>
+            <span className="text-steel-400 ml-1">conversão</span>
+          </span>
+          <span className="ml-auto text-steel-400">
+            {filtered.length === leads.length ? `${leads.length} itens` : `${filtered.length} de ${leads.length}`}
+          </span>
+        </div>
 
-      {/* Filtros */}
-      <div className="bg-white border border-steel-200 rounded-2xl p-4 mb-4 flex flex-wrap gap-3 items-end">
-        <Filter label="Busca">
-          <input
-            value={filtros.busca}
-            onChange={e => setFiltros(f => ({ ...f, busca: e.target.value }))}
-            placeholder="Nome, telefone, cidade…"
-            className="w-full px-3 py-2 border border-steel-200 rounded-lg text-sm"
-          />
-        </Filter>
-        <Filter label="Status">
+        {/* Barra de filtros compacta: 1 linha, inputs pequenos */}
+        <div className="flex items-center gap-2 bg-white border border-steel-200 rounded-lg px-2 py-1.5 flex-wrap">
+          <div className="relative flex-1 min-w-[180px]">
+            <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-steel-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input
+              value={filtros.busca}
+              onChange={e => setFiltros(f => ({ ...f, busca: e.target.value }))}
+              placeholder="Buscar nome, telefone, cidade…"
+              className="w-full pl-7 pr-2 py-1 text-sm bg-transparent outline-none"
+            />
+          </div>
+          <span className="w-px h-5 bg-steel-200" />
           <select
             value={filtros.status}
             onChange={e => setFiltros(f => ({ ...f, status: e.target.value as LeadStatus | 'all' }))}
-            className="px-3 py-2 border border-steel-200 rounded-lg text-sm bg-white"
+            className="text-xs font-medium bg-transparent border-0 outline-none cursor-pointer hover:text-brand-600 py-1"
           >
-            <option value="all">Todos</option>
-            {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_META[s].emoji} {STATUS_META[s].label}</option>)}
+            <option value="all">Status: todos</option>
+            {STATUS_ORDER.map(s => <option key={s} value={s}>Status: {STATUS_META[s].label}</option>)}
           </select>
-        </Filter>
-        <Filter label="Tipo">
+          <span className="w-px h-5 bg-steel-200" />
           <select
             value={filtros.intent}
             onChange={e => setFiltros(f => ({ ...f, intent: e.target.value as LeadIntent | 'all' }))}
-            className="px-3 py-2 border border-steel-200 rounded-lg text-sm bg-white"
+            className="text-xs font-medium bg-transparent border-0 outline-none cursor-pointer hover:text-brand-600 py-1"
           >
-            <option value="all">Todos</option>
-            <option value="mechanic">🔧 Mecânico</option>
-            <option value="workshop">🏭 Oficina</option>
+            <option value="all">Tipo: todos</option>
+            <option value="mechanic">Tipo: mecânico</option>
+            <option value="workshop">Tipo: oficina</option>
           </select>
-        </Filter>
-        <Filter label="Origem">
+          <span className="w-px h-5 bg-steel-200" />
           <select
             value={filtros.origem}
             onChange={e => setFiltros(f => ({ ...f, origem: e.target.value as LeadOrigem | 'all' }))}
-            className="px-3 py-2 border border-steel-200 rounded-lg text-sm bg-white"
+            className="text-xs font-medium bg-transparent border-0 outline-none cursor-pointer hover:text-brand-600 py-1"
           >
-            <option value="all">Todas</option>
-            {(Object.keys(ORIGEM_META) as LeadOrigem[]).map(o => <option key={o} value={o}>{ORIGEM_META[o]}</option>)}
+            <option value="all">Origem: todas</option>
+            {(Object.keys(ORIGEM_META) as LeadOrigem[]).map(o => <option key={o} value={o}>Origem: {ORIGEM_META[o]}</option>)}
           </select>
-        </Filter>
-        <div className="ml-auto text-xs text-steel-500 self-center">
-          Mostrando <b className="text-steel-800">{filtered.length}</b> de {leads.length}
+          {(filtros.busca || filtros.status !== 'all' || filtros.intent !== 'all' || filtros.origem !== 'all') && (
+            <button onClick={() => setFiltros({ status: 'all', intent: 'all', origem: 'all', busca: '' })}
+              className="text-xs text-steel-500 hover:text-alert-600 ml-auto px-1.5 py-0.5">
+              × limpar
+            </button>
+          )}
         </div>
       </div>
 
@@ -452,7 +465,7 @@ function KanbanBoard({
                     onDragStart={() => setDragId(l.id)}
                     onDragEnd={() => { setDragId(null); setDragOver(null); }}
                     onClick={() => bulkMode ? onToggleSel(l.id) : onOpen(l)}
-                    className={`bg-white rounded-lg px-2.5 py-1.5 border transition
+                    className={`bg-white rounded-md px-2 py-1 border transition leading-tight
                       ${bulkMode ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing hover:border-brand-300'}
                       ${isSel ? 'border-brand-500 ring-1 ring-brand-300' : 'border-steel-200'}
                       ${dragId === l.id ? 'opacity-40' : ''}`}
@@ -461,15 +474,16 @@ function KanbanBoard({
                       {bulkMode && (
                         <input type="checkbox" checked={isSel} onChange={() => onToggleSel(l.id)}
                           onClick={e => e.stopPropagation()}
-                          className="h-3.5 w-3.5 accent-brand-500 shrink-0" />
+                          className="h-3 w-3 accent-brand-500 shrink-0" />
                       )}
                       <span className={`admin-dot shrink-0 ${tMeta.dotCls}`} title={tMeta.label} />
                       <span className="text-xs font-semibold text-steel-800 truncate flex-1">{l.name}</span>
-                      <span className="text-[10px] text-steel-400 shrink-0" title={INTENT_META[l.intent].label}>
-                        {l.intent === 'mechanic' ? '🔧' : '🏭'}
+                      <span className={`text-[9px] font-bold rounded px-1 shrink-0 ${l.intent === 'mechanic' ? 'bg-brand-50 text-brand-700' : 'bg-steel-100 text-steel-600'}`}
+                        title={INTENT_META[l.intent].label}>
+                        {l.intent === 'mechanic' ? 'MEC' : 'OFI'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5 text-[11px] text-steel-500">
+                    <div className="flex items-center gap-1.5 text-[11px] text-steel-500 min-w-0">
                       {l.phone && l.phone !== '—' && (
                         <span className="admin-num truncate">{l.phone}</span>
                       )}
@@ -478,7 +492,7 @@ function KanbanBoard({
                       )}
                     </div>
                     {(l.proxima_acao || (l.tags && l.tags.length > 0)) && (
-                      <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-steel-100">
+                      <div className="flex items-center gap-1.5 mt-0.5 pt-0.5 border-t border-steel-100">
                         {l.proxima_acao && (
                           <span className="text-[10px] text-brand-700 truncate flex-1 font-medium">
                             {l.data_proxima_acao && <span className="admin-num">{fmtData(l.data_proxima_acao)} </span>}
@@ -581,26 +595,10 @@ function ListaView({
   );
 }
 
-function StatCard({ label, value, tone }: { label: string; value: string | number; tone?: 'brand' | 'signal' | 'pending' }) {
-  const cls = tone === 'brand'   ? 'text-brand-600'
-            : tone === 'signal'  ? 'text-signal-600'
-            : tone === 'pending' ? 'text-pending-700'
-            : 'text-steel-800';
-  return (
-    <div className="bg-white border border-steel-200 rounded-2xl px-5 py-4">
-      <div className="text-xs text-steel-500 font-semibold uppercase tracking-wider">{label}</div>
-      <div className={`text-3xl font-bold mt-1 ${cls}`}>{value}</div>
-    </div>
-  );
-}
-
-function Filter({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 min-w-[160px]">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-steel-500">{label}</span>
-      {children}
-    </label>
-  );
+function conversaoCls(pct: number): string {
+  if (pct >= 20) return 'text-signal-700';
+  if (pct >= 10) return 'text-pending-700';
+  return 'text-alert-700';
 }
 
 function fmtData(iso: string) {
