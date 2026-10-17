@@ -7,6 +7,8 @@
  * - Pago ao mecânico = preço fechado da demanda (o que a oficina paga; taxa de cartão não entra).
  * - Lucro por serviço (profitRows): o que o cliente pagou pelos serviços feitos pela plataforma
  *   (mão de obra + peças usadas neles) − custo dessas peças − pago ao mecânico.
+ *   Custo da peça = custo de compra lançado; sem custo, estimado em `estPct`% do preço de venda dela;
+ *   serviço "leva peça" sem peça lançada = `estPct`% do valor do serviço (estimado).
  *   OS inteira pela plataforma (executor 'platform') = a OS toda numa linha só.
  */
 import { marketplaceOf, type PanelJob, type Range } from '@/lib/workshopMetrics';
@@ -131,6 +133,8 @@ export type ProfitRow = {
   services: string[];
   labor: number; parts: number; charged: number;
   partsCost: number; paid: number; profit: number;
+  /** Parte do custo das peças que veio do custo lançado × a que é estimativa (estPct) */
+  costReal: number; costEst: number;
   /** Alguma peça sem custo de compra lançado (o lucro pode estar maior do que é) */
   missingCost: boolean;
   /** Serviço que leva peça sem nenhuma peça lançada nele (custo das peças desconhecido) */
@@ -146,7 +150,8 @@ const carOf = (v: PlatformOs['vehicle']) =>
  * - Só alguns itens: os serviços daquela demanda nessa OS + as peças usadas neles.
  *   Demanda com serviços de várias OS (empilhados) divide o valor pago pelo peso de cada OS.
  */
-export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: PlatformItem[], r: Range): ProfitRow[] {
+export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: PlatformItem[], r: Range, estPct = 50): ProfitRow[] {
+  const est = Math.min(100, Math.max(0, estPct)) / 100;
   const osById = new Map(osList.map(o => [o.id, o]));
   const itemsByOs = new Map<string, PlatformItem[]>();
   for (const i of items) itemsByOs.set(i.service_order_id, [...(itemsByOs.get(i.service_order_id) ?? []), i]);
@@ -161,16 +166,21 @@ export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: Pla
     return [...ids].filter(id => osById.has(id));
   };
 
-  const money = (labor: PlatformItem[], parts: PlatformItem[], all: PlatformItem[]) => ({
-    labor: labor.reduce((a, i) => a + itemTotal(i), 0),
-    parts: parts.reduce((a, i) => a + itemTotal(i), 0),
-    partsCost: parts.reduce((a, i) => a + Number(i.quantity) * Number(i.unit_cost ?? 0), 0),
-    missingCost: parts.some(i => i.unit_cost == null),
+  const money = (labor: PlatformItem[], parts: PlatformItem[], all: PlatformItem[]) => {
     // "Leva peça" sem peça ligada a ele (na OS inteira, sem peça nenhuma na OS)
-    noParts: labor.filter(l => l.service_type === 'servico'
-      && !all.some(p => p.kind === 'part' && (p.used_in_item_id === l.id || (!p.used_in_item_id && parts.includes(p)))))
-      .map(l => l.description),
-  });
+    const noPartItems = labor.filter(l => l.service_type === 'servico'
+      && !all.some(p => p.kind === 'part' && (p.used_in_item_id === l.id || (!p.used_in_item_id && parts.includes(p)))));
+    const costReal = parts.filter(i => i.unit_cost != null).reduce((a, i) => a + Number(i.quantity) * Number(i.unit_cost), 0);
+    const costEst = parts.filter(i => i.unit_cost == null).reduce((a, i) => a + itemTotal(i) * est, 0)
+      + noPartItems.reduce((a, i) => a + itemTotal(i) * est, 0);
+    return {
+      labor: labor.reduce((a, i) => a + itemTotal(i), 0),
+      parts: parts.reduce((a, i) => a + itemTotal(i), 0),
+      costReal, costEst, partsCost: costReal + costEst,
+      missingCost: parts.some(i => i.unit_cost == null),
+      noParts: noPartItems.map(l => l.description),
+    };
+  };
 
   /** Parte do valor pago de uma demanda que cabe a uma OS (várias OS = pelo peso dos serviços dela em cada uma) */
   const shareOf = (j: PlatformJob, osId: string) => {
@@ -229,10 +239,37 @@ export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: Pla
 
 /** Totais das linhas de lucro */
 export function profitTotals(rows: ProfitRow[]) {
-  const sum = (k: 'charged' | 'partsCost' | 'paid' | 'profit') => rows.reduce((a, r) => a + r[k], 0);
+  const sum = (k: 'charged' | 'partsCost' | 'costReal' | 'costEst' | 'paid' | 'profit') => rows.reduce((a, r) => a + r[k], 0);
   return {
     count: rows.length, charged: sum('charged'), partsCost: sum('partsCost'), paid: sum('paid'), profit: sum('profit'),
+    costReal: sum('costReal'), costEst: sum('costEst'),
     missingCost: rows.some(r => r.missingCost),
     noParts: rows.filter(r => r.noParts.length > 0).length,
   };
+}
+
+/** Peças mínimas com custo lançado para sugerir a média real da oficina */
+export const MIN_PARTS_FOR_RATIO = 5;
+
+/** Custo médio das peças com custo lançado, em % do preço de venda (null = poucas peças para dizer) */
+export function realCostPct(items: PlatformItem[]): { pct: number; count: number } | null {
+  const withCost = items.filter(i => i.kind === 'part' && i.unit_cost != null && Number(i.unit_cost) > 0 && Number(i.unit_price) > 0);
+  if (withCost.length < MIN_PARTS_FOR_RATIO) return null;
+  const cost = withCost.reduce((a, i) => a + Number(i.quantity) * Number(i.unit_cost), 0);
+  const price = withCost.reduce((a, i) => a + itemTotal(i), 0);
+  return price > 0 ? { pct: Math.round((cost / price) * 100), count: withCost.length } : null;
+}
+
+/* % estimado do custo das peças: por oficina, neste aparelho */
+export const DEFAULT_EST_PCT = 50;
+const estKey = (wid: string) => `plataforma_custo_pecas_pct_${wid}`;
+export function loadEstPct(wid: string | null): number {
+  if (!wid) return DEFAULT_EST_PCT;
+  try {
+    const n = Number(localStorage.getItem(estKey(wid)));
+    return Number.isFinite(n) && n > 0 && n <= 100 ? n : DEFAULT_EST_PCT;
+  } catch { return DEFAULT_EST_PCT; }
+}
+export function saveEstPct(wid: string, pct: number) {
+  try { localStorage.setItem(estKey(wid), String(pct)); } catch { /* sem storage: só não lembra */ }
 }

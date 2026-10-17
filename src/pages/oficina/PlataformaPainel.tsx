@@ -8,7 +8,7 @@ import { fmtBRL, fmtDur } from '@/components/os/osHelpers';
 import { arrivalDeadline } from '@/lib/arrivalDeadline';
 import PeriodPicker, { usePeriod } from '@/components/PeriodPicker';
 import {
-  platformPanel, platformSeries, profitRows, profitTotals,
+  DEFAULT_EST_PCT, loadEstPct, platformPanel, platformSeries, profitRows, profitTotals, realCostPct, saveEstPct,
   type PlatformItem, type PlatformJob, type PlatformOs, type ProfitRow,
 } from '@/lib/platformPanel';
 
@@ -42,6 +42,14 @@ export default function PlataformaPainel() {
   const [items, setItems] = useState<PlatformItem[]>([]);
   const [osList, setOsList] = useState<PlatformOs[]>([]);
   const [showAllRows, setShowAllRows] = useState(false);
+  /** % do preço usado como custo quando a peça não tem custo lançado (editável aqui) */
+  const [estPct, setEstPct] = useState(() => loadEstPct(wid));
+  useEffect(() => { setEstPct(loadEstPct(wid)); }, [wid]);
+  const changeEst = (pct: number) => {
+    const n = Math.min(100, Math.max(1, Math.round(pct)));
+    setEstPct(n);
+    if (wid) saveEstPct(wid, n);
+  };
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -77,7 +85,8 @@ export default function PlataformaPainel() {
   }, [wid]);
 
   const m = useMemo(() => platformPanel(jobs, period.range, j => arrivalDeadline(j)), [jobs, period.range]);
-  const rows = useMemo(() => profitRows(jobs, osList, items, period.range), [jobs, osList, items, period.range]);
+  const rows = useMemo(() => profitRows(jobs, osList, items, period.range, estPct), [jobs, osList, items, period.range, estPct]);
+  const real = useMemo(() => realCostPct(items), [items]);
   const tot = useMemo(() => profitTotals(rows), [rows]);
   const series = useMemo(() => platformSeries(jobs, period.range), [jobs, period.range]);
   const maxBar = Math.max(1, ...series.rows.map(s => s.spent));
@@ -133,7 +142,7 @@ export default function PlataformaPainel() {
                 <Kpi label="Lucro depois dos custos" value={tot.count ? fmtBRL(tot.profit) : '—'}
                   tone={tot.count ? (tot.profit >= 0 ? 'good' : 'bad') : undefined}
                   note={tot.count
-                    ? `cobrado − peças ${fmtBRL(tot.partsCost)} − mecânicos${tot.charged > 0 ? ` · ${Math.round((tot.profit / tot.charged) * 100)}%` : ''}`
+                    ? `cobrado − peças ${fmtBRL(tot.partsCost)}${tot.costEst > 0 ? ` (${fmtBRL(tot.costEst)} estimado)` : ''} − mecânicos${tot.charged > 0 ? ` · ${Math.round((tot.profit / tot.charged) * 100)}%` : ''}`
                     : 'aparece quando a demanda sai de uma OS'} />
                 <Kpi label="Multas de cancelamento" value={fmtBRL(m.feesPaid)}
                   note={m.pendingFees > 0 ? `${fmtBRL(m.pendingFees)} em aberto` : 'nada em aberto'} tone={m.pendingFees > 0 ? 'bad' : undefined} />
@@ -152,14 +161,8 @@ export default function PlataformaPainel() {
                 </div>
               ) : (
                 <>
-                  {(tot.noParts > 0 || tot.missingCost) && (
-                    <div className="text-[12px] text-pending-800 bg-pending-50 ring-1 ring-pending-200 rounded-xl px-3 py-2.5 mb-2 leading-snug">
-                      <strong>Para o lucro ser o real, lance as peças com custo na OS.</strong>{' '}
-                      {tot.noParts > 0 && `${plural(tot.noParts, 'serviço leva peça', 'serviços levam peça')} mas não tem peça lançada. `}
-                      {tot.missingCost && 'Tem peça sem custo de compra. '}
-                      Nesses casos o lucro aparece maior do que é. Toque no serviço para abrir a OS e usar “+ detalhar peça (estoque / custo)”.
-                    </div>
-                  )}
+                  <EstimateBar estPct={estPct} onChange={changeEst} real={real}
+                    costReal={tot.costReal} costEst={tot.costEst} noParts={tot.noParts} missingCost={tot.missingCost} />
                   <ul className="grid lg:grid-cols-2 gap-3">
                     {(showAllRows ? rows : rows.slice(0, 10)).map(r => <ProfitCard key={r.key} r={r} />)}
                   </ul>
@@ -304,7 +307,7 @@ function ProfitCard({ r }: { r: ProfitRow }) {
         <div className="text-[13px] text-steel-700 mt-1.5 line-clamp-2">{r.services.join(' + ')}</div>
         {r.noParts.length > 0 && (
           <div className="mt-2 text-[11px] font-semibold text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
-            ⚠️ {r.noParts.join(', ')}: leva peça, mas nenhuma peça foi lançada. Lance as peças com custo na OS.
+            ⚠️ {r.noParts.join(', ')}: leva peça, mas nenhuma peça foi lançada. Custo estimado; lance as peças com custo na OS.
           </div>
         )}
 
@@ -312,8 +315,10 @@ function ProfitCard({ r }: { r: ProfitRow }) {
           <Money label="Cobrado do cliente" value={r.charged}
             sub={r.parts > 0 ? `mão de obra ${fmtBRL(r.labor)} + peças ${fmtBRL(r.parts)}` : undefined} />
           {(r.parts > 0 || r.noParts.length > 0) && (
-            <Money label="Custo das peças" value={-r.partsCost} warn={r.missingCost || r.noParts.length > 0}
-              sub={r.noParts.length > 0 ? 'peças não lançadas' : r.missingCost ? 'peça sem custo lançado' : undefined} />
+            <Money label="Custo das peças" value={-r.partsCost} warn={r.costEst > 0}
+              sub={r.costEst === 0 ? 'custo lançado'
+                : r.costReal > 0 ? `${fmtBRL(r.costReal)} lançado + ${fmtBRL(r.costEst)} estimado`
+                : 'estimado'} />
           )}
           <Money label="Pago ao mecânico" value={-r.paid} />
           <div className="flex items-baseline justify-between gap-2 pt-1.5 border-t border-steel-100">
@@ -325,6 +330,73 @@ function ProfitCard({ r }: { r: ProfitRow }) {
         </dl>
       </Link>
     </li>
+  );
+}
+
+/** % estimado do custo das peças (editável) + quanto do custo é real e quanto é estimativa */
+function EstimateBar({ estPct, onChange, real, costReal, costEst, noParts, missingCost }: {
+  estPct: number; onChange: (n: number) => void; real: { pct: number; count: number } | null;
+  costReal: number; costEst: number; noParts: number; missingCost: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(estPct));
+  useEffect(() => { setDraft(String(estPct)); }, [estPct]);
+  const total = costReal + costEst;
+  const realShare = total > 0 ? Math.round((costReal / total) * 100) : null;
+  const save = () => { const n = Number(draft); if (n > 0 && n <= 100) onChange(n); setEditing(false); };
+
+  return (
+    <div className="card !p-3.5 mb-3 space-y-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex-1 min-w-[180px] text-sm text-steel-700">
+          Peça sem custo lançado entra como <strong>{estPct}% do preço</strong>
+          {estPct === DEFAULT_EST_PCT && <span className="text-steel-400"> (padrão)</span>}
+        </div>
+        {editing ? (
+          <div className="flex items-center gap-1.5">
+            <div className="relative">
+              <input type="number" inputMode="numeric" min={1} max={100} value={draft} autoFocus
+                onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); }}
+                className="input !w-24 !h-11 !pr-7 text-right" />
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-sm">%</span>
+            </div>
+            <button type="button" onClick={save} className="h-11 px-4 rounded-xl bg-steel-900 text-white text-sm font-bold">Salvar</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setEditing(true)}
+            className="h-11 px-4 rounded-xl border border-steel-200 bg-white text-sm font-semibold text-steel-700 hover:bg-steel-50">
+            Editar %
+          </button>
+        )}
+      </div>
+
+      {real && real.pct !== estPct && (
+        <div className="flex flex-wrap items-center gap-2 text-[12px] text-steel-600 bg-signal-50 rounded-lg px-3 py-2">
+          <span className="flex-1 min-w-[180px]">
+            Nas {real.count} peças com custo lançado, o custo médio é <strong>{real.pct}% do preço</strong>.
+          </span>
+          <button type="button" onClick={() => onChange(real.pct)} className="h-9 px-3 rounded-lg bg-signal-600 text-white text-xs font-bold">
+            Usar {real.pct}%
+          </button>
+        </div>
+      )}
+
+      {total > 0 && (
+        <div>
+          <div className="flex justify-between text-[11px] text-steel-500 mb-1">
+            <span>Custo das peças: {fmtBRL(costReal)} lançado</span>
+            <span>{fmtBRL(costEst)} estimado</span>
+          </div>
+          <div className="h-2 rounded-full bg-pending-200 overflow-hidden">
+            <div className="h-full bg-signal-500" style={{ width: `${realShare ?? 0}%` }} />
+          </div>
+          <p className="text-[11px] text-steel-400 mt-1">
+            {realShare === 100 ? 'Todo o custo vem das peças lançadas: lucro real.'
+              : `${realShare}% do custo é real. ${noParts > 0 ? `${plural(noParts, 'serviço leva peça', 'serviços levam peça')} sem peça lançada. ` : ''}${missingCost ? 'Tem peça sem custo. ' : ''}Lance as peças com custo na OS (“+ detalhar peça”) e o estimado vai sumindo.`}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
