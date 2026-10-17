@@ -23,6 +23,8 @@ export type PlatformItem = {
   id: string; service_order_id: string; kind: 'part' | 'labor'; description: string;
   quantity: number; unit_price: number; unit_cost: number | null;
   used_in_item_id: string | null; platform_job_id: string | null; executor: 'workshop' | 'platform' | null;
+  /** Só serviços: 'servico' = leva peças · 'mao_de_obra' = sem peça */
+  service_type: 'servico' | 'mao_de_obra' | null;
 };
 export type PlatformOs = {
   id: string; number: number | null; executor: 'workshop' | 'platform' | null;
@@ -131,6 +133,8 @@ export type ProfitRow = {
   partsCost: number; paid: number; profit: number;
   /** Alguma peça sem custo de compra lançado (o lucro pode estar maior do que é) */
   missingCost: boolean;
+  /** Serviço que leva peça sem nenhuma peça lançada nele (custo das peças desconhecido) */
+  noParts: string[];
 };
 
 const carOf = (v: PlatformOs['vehicle']) =>
@@ -157,23 +161,33 @@ export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: Pla
     return [...ids].filter(id => osById.has(id));
   };
 
-  const money = (labor: PlatformItem[], parts: PlatformItem[]) => ({
+  const money = (labor: PlatformItem[], parts: PlatformItem[], all: PlatformItem[]) => ({
     labor: labor.reduce((a, i) => a + itemTotal(i), 0),
     parts: parts.reduce((a, i) => a + itemTotal(i), 0),
     partsCost: parts.reduce((a, i) => a + Number(i.quantity) * Number(i.unit_cost ?? 0), 0),
     missingCost: parts.some(i => i.unit_cost == null),
+    // "Leva peça" sem peça ligada a ele (na OS inteira, sem peça nenhuma na OS)
+    noParts: labor.filter(l => l.service_type === 'servico'
+      && !all.some(p => p.kind === 'part' && (p.used_in_item_id === l.id || (!p.used_in_item_id && parts.includes(p)))))
+      .map(l => l.description),
   });
+
+  /** Parte do valor pago de uma demanda que cabe a uma OS (várias OS = pelo peso dos serviços dela em cada uma) */
+  const shareOf = (j: PlatformJob, osId: string) => {
+    const osIds = osOfJob(j);
+    if (osIds.length <= 1) return Number(j.price);
+    const w = (id: string) => (itemsByOs.get(id) ?? [])
+      .filter(i => i.kind === 'labor' && i.platform_job_id === j.id).reduce((a, i) => a + itemTotal(i), 0);
+    const total = osIds.reduce((a, id) => a + w(id), 0);
+    return Number(j.price) * (total ? w(osId) / total : 1 / osIds.length);
+  };
 
   const rows: ProfitRow[] = [];
   const wholeDone = new Set<string>();
   for (const j of done) {
     const osIds = osOfJob(j);
-    // Peso de cada OS na demanda (para dividir o valor pago quando são várias)
-    const weights = osIds.map(id => (itemsByOs.get(id) ?? [])
-      .filter(i => i.kind === 'labor' && i.platform_job_id === j.id).reduce((a, i) => a + itemTotal(i), 0));
-    const totalW = weights.reduce((a, b) => a + b, 0);
 
-    osIds.forEach((osId, idx) => {
+    osIds.forEach(osId => {
       const os = osById.get(osId)!;
       const all = itemsByOs.get(osId) ?? [];
       const base = { osId, osNumber: os.number, car: carOf(os.vehicle), customer: os.customer?.full_name ?? null, date: j.completed_at! };
@@ -182,8 +196,8 @@ export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: Pla
         if (wholeDone.has(osId)) return;
         wholeDone.add(osId);
         const osJobs = allDone.filter(x => osOfJob(x).includes(osId));
-        const m = money(all.filter(i => i.kind === 'labor'), all.filter(i => i.kind === 'part'));
-        const paid = osJobs.reduce((a, x) => a + Number(x.price) / Math.max(1, osOfJob(x).length), 0);
+        const m = money(all.filter(i => i.kind === 'labor'), all.filter(i => i.kind === 'part'), all);
+        const paid = osJobs.reduce((a, x) => a + shareOf(x, osId), 0);
         const charged = m.labor + m.parts;
         rows.push({
           ...base, key: `os-${osId}`, whole: true, mechanics: [...new Set(osJobs.map(nameOf))],
@@ -200,8 +214,8 @@ export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: Pla
       }
       const laborIds = new Set(labor.map(i => i.id));
       const parts = all.filter(i => i.kind === 'part' && i.used_in_item_id && laborIds.has(i.used_in_item_id));
-      const m = money(labor, parts);
-      const paid = osIds.length === 1 ? Number(j.price) : Number(j.price) * (totalW ? weights[idx] / totalW : 1 / osIds.length);
+      const m = money(labor, parts, all);
+      const paid = shareOf(j, osId);
       const charged = m.labor + m.parts;
       rows.push({
         ...base, key: `${j.id}-${osId}`, whole: false, mechanics: [nameOf(j)],
@@ -219,5 +233,6 @@ export function profitTotals(rows: ProfitRow[]) {
   return {
     count: rows.length, charged: sum('charged'), partsCost: sum('partsCost'), paid: sum('paid'), profit: sum('profit'),
     missingCost: rows.some(r => r.missingCost),
+    noParts: rows.filter(r => r.noParts.length > 0).length,
   };
 }

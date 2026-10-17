@@ -14,7 +14,7 @@ import {
 
 const JOB_COLS = 'id, title, status, price, created_at, accepted_at, en_route_at, arrived_at, completed_at, cancelled_at, cancelled_by, cancellation_fee, cancellation_fee_paid_at, workshop_confirmed_at, mechanic_rating, scheduled_at, mechanic_id, service_order_id, pricing, max_hours, estimated_hours, actual_hours, mechanic:mechanics(id, profile:profiles(full_name))';
 
-const ITEM_COLS = 'id, service_order_id, kind, description, quantity, unit_price, unit_cost, used_in_item_id, platform_job_id, executor';
+const ITEM_COLS = 'id, service_order_id, kind, description, quantity, unit_price, unit_cost, used_in_item_id, platform_job_id, executor, service_type';
 const OS_COLS = 'id, number, executor, vehicle:vehicles(make, model, plate, color), customer:customers(full_name)';
 
 /** Busca em lotes de ids (o filtro "in" da URL tem limite de tamanho) */
@@ -152,10 +152,13 @@ export default function PlataformaPainel() {
                 </div>
               ) : (
                 <>
-                  {tot.missingCost && (
-                    <p className="text-[11px] text-pending-700 bg-pending-50 rounded-lg px-3 py-2 mb-2">
-                      Alguma peça está sem custo de compra lançado: nesses serviços o lucro aparece maior do que é.
-                    </p>
+                  {(tot.noParts > 0 || tot.missingCost) && (
+                    <div className="text-[12px] text-pending-800 bg-pending-50 ring-1 ring-pending-200 rounded-xl px-3 py-2.5 mb-2 leading-snug">
+                      <strong>Para o lucro ser o real, lance as peças com custo na OS.</strong>{' '}
+                      {tot.noParts > 0 && `${plural(tot.noParts, 'serviço leva peça', 'serviços levam peça')} mas não tem peça lançada. `}
+                      {tot.missingCost && 'Tem peça sem custo de compra. '}
+                      Nesses casos o lucro aparece maior do que é. Toque no serviço para abrir a OS e usar “+ detalhar peça (estoque / custo)”.
+                    </div>
                   )}
                   <ul className="grid lg:grid-cols-2 gap-3">
                     {(showAllRows ? rows : rows.slice(0, 10)).map(r => <ProfitCard key={r.key} r={r} />)}
@@ -299,11 +302,19 @@ function ProfitCard({ r }: { r: ProfitRow }) {
           {r.whole && <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-brand-700 bg-brand-50 rounded-full px-2 py-0.5">OS inteira</span>}
         </div>
         <div className="text-[13px] text-steel-700 mt-1.5 line-clamp-2">{r.services.join(' + ')}</div>
+        {r.noParts.length > 0 && (
+          <div className="mt-2 text-[11px] font-semibold text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
+            ⚠️ {r.noParts.join(', ')}: leva peça, mas nenhuma peça foi lançada. Lance as peças com custo na OS.
+          </div>
+        )}
 
         <dl className="mt-3 pt-3 border-t border-steel-100 space-y-1 text-sm tabular-nums">
           <Money label="Cobrado do cliente" value={r.charged}
             sub={r.parts > 0 ? `mão de obra ${fmtBRL(r.labor)} + peças ${fmtBRL(r.parts)}` : undefined} />
-          {r.parts > 0 && <Money label="Custo das peças" value={-r.partsCost} sub={r.missingCost ? 'peça sem custo lançado' : undefined} warn={r.missingCost} />}
+          {(r.parts > 0 || r.noParts.length > 0) && (
+            <Money label="Custo das peças" value={-r.partsCost} warn={r.missingCost || r.noParts.length > 0}
+              sub={r.noParts.length > 0 ? 'peças não lançadas' : r.missingCost ? 'peça sem custo lançado' : undefined} />
+          )}
           <Money label="Pago ao mecânico" value={-r.paid} />
           <div className="flex items-baseline justify-between gap-2 pt-1.5 border-t border-steel-100">
             <dt className="font-bold text-steel-900">Lucro</dt>
