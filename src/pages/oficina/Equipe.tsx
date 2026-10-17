@@ -11,6 +11,8 @@ import {
   type Absence, type DayState,
 } from '@/lib/team';
 import { useTeamAccess } from '@/lib/teamAccess';
+import { useModuleAllows } from '@/lib/modules';
+import { CALL_MECHANIC_PATH } from '@/lib/reinforcement';
 import { currentHalf, halfLabel, loadCommissionHalf, shiftHalf } from '@/lib/commissionClosing';
 import { loadPayroll } from '@/lib/payroll';
 import { addMonthsCompetence, fmtCompetence } from '@/lib/payableForms';
@@ -28,7 +30,7 @@ type OpenOs = {
   vehicle: { plate: string | null } | null;
 };
 
-type Alert = { key: string; icon: string; tone: 'alert' | 'pending' | 'info'; text: React.ReactNode; actions: { label: string; to: string }[] };
+type Alert = { key: string; icon: string; tone: 'alert' | 'pending' | 'info'; text: React.ReactNode; actions: { label: string; to: string; highlight?: boolean }[] };
 
 type Filter = 'active' | 'terminated' | 'all';
 
@@ -50,6 +52,7 @@ export default function Equipe() {
   const [list, setList]         = useState<WorkshopMechanic[]>([]);
   const [certs, setCerts]       = useState<MechanicCertification[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
+  const modAllows = useModuleAllows();
   const [openOs, setOpenOs]     = useState<OpenOs[]>([]);
   const [lastAt, setLastAt]     = useState<Record<string, string>>({});
   const [photos, setPhotos]     = useState<Record<string, string>>({});
@@ -210,6 +213,10 @@ export default function Equipe() {
 
   const osLink = (o: OpenOs) => ({ label: `OS ${osNumber(o)}${o.vehicle?.plate ? ` · ${o.vehicle.plate}` : ''}`, to: `/oficina/os/${o.id}` });
 
+  // Faltou alguém: o atalho para cobrir com um mecânico da plataforma (se a oficina tem o módulo)
+  const canCall = modAllows('/oficina/dashboard');
+  const callAction = canCall ? [{ label: '⚡ Chamar mecânico', to: CALL_MECHANIC_PATH, highlight: true }] : [];
+
   const alerts: Alert[] = [];
   for (const x of absent) {
     const os = byMech.get(x.id) ?? [];
@@ -217,14 +224,14 @@ export default function Equipe() {
     const ab = info.get(x.id)!.ab;
     alerts.push({
       key: `abs-${x.id}`, icon: '⚠️', tone: 'alert',
-      text: <><strong>{x.name}</strong> está ausente{ab ? ` (${ABSENCE_REASONS[ab.reason].label.toLowerCase()})` : ''} e tem {os.length} OS em aberto. Passe para outra pessoa.</>,
-      actions: os.slice(0, 3).map(osLink),
+      text: <><strong>{x.name}</strong> está ausente{ab ? ` (${ABSENCE_REASONS[ab.reason].label.toLowerCase()})` : ''} e tem {os.length} OS em aberto. Passe para outra pessoa{canCall ? ' ou chame um mecânico da plataforma' : ''}.</>,
+      actions: [...os.slice(0, 3).map(osLink), ...callAction],
     });
   }
   if (unassigned.length) alerts.push({
     key: 'unassigned', icon: '👤', tone: 'pending',
     text: <><strong>{unassigned.length} OS</strong> sem responsável</>,
-    actions: [...unassigned.slice(0, 3).map(osLink), ...(unassigned.length > 3 ? [{ label: 'Ver todas', to: '/oficina/os' }] : [])],
+    actions: [...unassigned.slice(0, 3).map(osLink), ...(unassigned.length > 3 ? [{ label: 'Ver todas', to: '/oficina/os' }] : []), ...(absent.length ? callAction : [])],
   });
   // Agendada que já passou da hora e não foi iniciada (só aparece se a agenda for usada)
   const late = openOs.filter(o => o.scheduled_at && !o.started_at && new Date(o.scheduled_at).getTime() < now.getTime() - 30 * 60_000
@@ -302,7 +309,9 @@ export default function Equipe() {
                         <div className="flex flex-wrap gap-1.5 sm:justify-end">
                           {a.actions.map(ac => (
                             <Link key={ac.to + ac.label} to={ac.to}
-                              className="text-xs font-semibold px-3 py-1.5 rounded-full border border-steel-200 bg-white hover:border-brand-300 hover:text-brand-700 transition whitespace-nowrap">
+                              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition whitespace-nowrap ${ac.highlight
+                                ? 'border-brand-500 bg-brand-500 text-white hover:bg-brand-600'
+                                : 'border-steel-200 bg-white hover:border-brand-300 hover:text-brand-700'}`}>
                               {ac.label} →
                             </Link>
                           ))}

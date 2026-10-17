@@ -13,6 +13,7 @@ import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
 import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
+import { RehireStrip, usePastMechanics, type PastMechanic } from '@/components/marketplace/Rehire';
 import { FirstDemandHero, QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
 
 type NewJob = {
@@ -71,6 +72,8 @@ export default function WorkshopDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
   const hasPendingFees = usePendingFees(currentWorkshop?.id ?? null);
+  // Recarrega quando o histórico muda (serviço concluído/avaliado)
+  const pastMechanics = usePastMechanics(currentWorkshop?.id ?? null, history.length);
 
   // Recarrega jobs quando a oficina ativa mudar (troca pelo seletor)
   useEffect(() => {
@@ -203,6 +206,21 @@ export default function WorkshopDashboard() {
     setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
     setForm(next); persistDraft(next);
     setMode('open'); setPickedMechanic(''); setMechSearch('');
+    setModal(true);
+  }
+
+  /** "Chamar de novo": convite direto para o mesmo mecânico, com o último serviço dele aqui como ponto de partida */
+  function openRehire(m: PastMechanic) {
+    if (hasPendingFees) return;
+    const l = m.last;
+    const next: NewJob = l.pricing === 'fixed'
+      ? { ...EMPTY, title: l.title, description: l.description, pricing: 'fixed', total: String(l.price_per_hour || ''),
+          max_hours: l.estimated_hours != null ? String(l.estimated_hours) : '' }
+      : { ...EMPTY, title: l.title, description: l.description, pricing: 'hour', price_per_hour: String(l.price_per_hour || ''),
+          max_hours: String(l.max_hours || 1) };
+    setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
+    setForm(next);
+    setMode('direct'); setPickedMechanic(m.id); setMechSearch('');
     setModal(true);
   }
 
@@ -435,6 +453,9 @@ export default function WorkshopDashboard() {
 
       {/* Quem está disponível agora + atalhos dos serviços mais pedidos */}
       <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} />
+
+      {/* Quem já trabalhou bem aqui, a um toque (convite direto) */}
+      <RehireStrip mechanics={pastMechanics} disabled={shopLoading || hasPendingFees} onRehire={openRehire} />
 
       {/* Números rápidos: uma faixa só, cabe em qualquer celular */}
       {!firstTime && (

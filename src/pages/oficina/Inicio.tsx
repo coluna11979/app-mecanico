@@ -15,6 +15,7 @@ import { cashFlowOf, receivables, type FinEntry, type FinOs } from '@/lib/financ
 import { timeAgo } from '@/lib/relativeTime';
 import { Icon, type IconName } from '@/components/home/ui';
 import { ABSENCE_REASONS, fmtDay } from '@/lib/team';
+import { CALL_MECHANIC_PATH, reinforcementNeed } from '@/lib/reinforcement';
 import {
   TODAY_OS_COLS, agendaDay, greeting, openWorkload, osAttention, teamToday,
   type TeamAbsence, type TeamMember, type TodayOs,
@@ -218,6 +219,18 @@ export default function Inicio() {
         details: data.payables.slice(0, 5).map(p => (
           <Row key={p.id} to="/oficina/contas-a-pagar" label={p.description} sub={`vence ${fmtDay(p.due_date)}`} right={fmtBRL(p.amount)} />
         )),
+      });
+    }
+
+    // Faltou gente / pátio cheio / agenda lotada → mecânico da plataforma (só com motivo concreto)
+    const need = can('/oficina/dashboard')
+      ? reinforcementNeed({ team: v.team, workload: v.workload, agenda: v.agendaToday })
+      : null;
+    if (need) {
+      items.push({
+        key: 'reforco', sev: need.reason === 'agenda' ? 'info' : 'important', icon: 'zap',
+        title: need.title, meta: need.meta,
+        actions: [{ label: 'Chamar mecânico', to: CALL_MECHANIC_PATH, primary: true }],
       });
     }
 

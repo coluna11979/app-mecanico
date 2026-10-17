@@ -12,6 +12,8 @@ import {
 } from '@/lib/agenda';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import WhatsAppButton from '@/components/inbox/WhatsAppButton';
+import { useModuleAllows } from '@/lib/modules';
+import { CALL_MECHANIC_PATH } from '@/lib/reinforcement';
 
 type Appt = {
   id: string; number: number | null; title: string; category: string | null; status: string;
@@ -41,6 +43,7 @@ export default function Agenda() {
   // Mecânico (PIN): só o que está atribuído a ele; sem agendar, confirmar ou remarcar (isso é do balcão)
   const access = useCheckupAccess();
   const mech = access.isMechanic;
+  const modAllows = useModuleAllows();
 
   const range = useMemo(() => view === 'day'
     ? { from: anchor, to: addDays(anchor, 1) }
@@ -90,6 +93,19 @@ export default function Agenda() {
     : `${range.from.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} – ${addDays(range.to, -1).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`;
   const isToday = dayKey(anchor) === dayKey(new Date());
 
+  // Dias lotados (de hoje em diante) no que está na tela: sugere um mecânico da plataforma para a demanda extra
+  const fullDays = useMemo(() => {
+    if (mech || !appts || !modAllows('/oficina/dashboard')) return [];
+    const todayKey = dayKey(new Date());
+    const days = view === 'day' ? [anchor] : Array.from({ length: 7 }, (_, i) => addDays(range.from, i));
+    return days.filter(d => {
+      if (dayKey(d) < todayKey) return false;
+      const capacity = daySlots(d, cfg).length * cfg.cars_per_slot;
+      const booked = appts.filter(a => a.schedule_status !== 'no_show' && dayKey(new Date(a.scheduled_at)) === dayKey(d)).length;
+      return capacity > 0 && booked >= capacity;
+    });
+  }, [appts, cfg, view, anchor, range.from, mech, modAllows]);
+
   return (
     <WorkshopLayout>
       <div className="max-w-6xl mx-auto space-y-4">
@@ -133,6 +149,19 @@ export default function Agenda() {
             {mechs.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>}
         </div>
+
+        {fullDays.length > 0 && (
+          <div className="card !py-3 border-l-4 border-l-brand-500 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1 text-sm text-steel-700">
+              <span className="mr-1.5">⚡</span>
+              <strong>{view === 'day'
+                ? (isToday ? 'Agenda de hoje lotada.' : 'Esse dia está lotado.')
+                : `${fullDays.map(d => WEEKDAY_SHORT[d.getDay()]).join(', ')} ${fullDays.length === 1 ? 'está lotado' : 'estão lotados'}.`}</strong>{' '}
+              Com um mecânico da plataforma você atende mais carros sem contratar.
+            </div>
+            <Link to={CALL_MECHANIC_PATH} className="btn-primary text-sm text-center shrink-0">Chamar mecânico</Link>
+          </div>
+        )}
 
         {/* Números */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
