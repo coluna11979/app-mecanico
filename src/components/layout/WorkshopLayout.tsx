@@ -79,6 +79,7 @@ const SECTIONS: NavGroup[] = [
   ] },
   { key: 'plataforma', title: 'MecânicoApp', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
+    { to: '/oficina/plataforma/painel', icon: '📊', label: 'Painel da plataforma' },
     { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar profissionais' },
     { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens da plataforma' },
   ] },
