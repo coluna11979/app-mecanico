@@ -55,7 +55,7 @@ export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
 
 /** Módulos opcionais: nascem desligados e o superadmin liga só para as oficinas escolhidas
  *  (ficam em workshop_modules.enabled_modules; o resto continua "ligado até desligar"). */
-export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox', 'avaliacoes', 'agentes', 'site'];
+export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox', 'avaliacoes', 'agentes', 'site', 'vip'];
 export const isOptIn = (k: string) => (OPT_IN_MODULES as readonly string[]).includes(k);
 
 
@@ -63,7 +63,7 @@ export const isOptIn = (k: string) => (OPT_IN_MODULES as readonly string[]).incl
  *  (Caixa recebe OS, comissão sai da OS, estoque baixa peça na OS…). Os opcionais ficam fora: ligam um a um. */
 export const STAGES: { label: string; desc: string; keys: ModuleKey[] }[] = [
   { label: 'Só mecânicos',    desc: 'Contratar mecânicos da plataforma',               keys: ['plataforma'] },
-  { label: 'Oficina básica',  desc: 'OS, agenda, clientes e tabela de serviços',       keys: ['clientes', 'servicos', 'os', 'agenda', 'vip'] },
+  { label: 'Oficina básica',  desc: 'OS, agenda, clientes e tabela de serviços',       keys: ['clientes', 'servicos', 'os', 'agenda'] },
   { label: 'Vendas',          desc: 'Check-up e mesa comercial (orçamento pelo link)', keys: ['checkup', 'comercial'] },
   { label: 'Financeiro',      desc: 'Caixa, contas a pagar e painel de vendas',        keys: ['caixa', 'contas_pagar', 'financeiro', 'painel'] },
   { label: 'Estoque',         desc: 'Peças, compras, fornecedores e notas antigas',    keys: ['pecas', 'compras', 'importar'] },
