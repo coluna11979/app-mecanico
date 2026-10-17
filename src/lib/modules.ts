@@ -33,7 +33,7 @@ export const MODULES: Record<ModuleKey, {
   compras:      { label: 'Compras e fornecedores', icon: '🧾', desc: 'Notas de compra e fornecedores',            routes: ['/oficina/compras', '/oficina/fornecedores'] },
   equipe:       { label: 'Equipe e desempenho', icon: '👷', desc: 'Colaboradores, desempenho e comissões',        routes: ['/oficina/equipe', '/oficina/desempenho'] },
   fechamentos:  { label: 'Fechamentos',        icon: '🧮', desc: 'Fechar comissões e folha',                      routes: ['/oficina/comissoes', '/oficina/folha'] },
-  plataforma:   { label: 'Plataforma (mecânicos)', icon: '⚡', desc: 'Demandas, buscar mecânicos, mensagens, rastreio', routes: ['/oficina/dashboard', '/oficina/buscar', '/oficina/mensagens', '/oficina/job'] },
+  plataforma:   { label: 'Plataforma (mecânicos)', icon: '⚡', desc: 'Demandas, painel, buscar mecânicos, mensagens, rastreio', routes: ['/oficina/dashboard', '/oficina/plataforma', '/oficina/buscar', '/oficina/mensagens', '/oficina/job'] },
   servicos:     { label: 'Tabela de serviços', icon: '🛠️', desc: 'Preços e serviços padrão',                       routes: ['/oficina/servicos'] },
   acessos:      { label: 'Acessos e modo balcão', icon: '🔐', desc: 'PIN dos colaboradores e funções',            routes: ['/oficina/acessos'] },
   importar:     { label: 'Importar notas antigas', icon: '📷', desc: 'Importar notas/orçamentos por foto',        routes: ['/oficina/importar'] },
@@ -162,6 +162,7 @@ export const FEATURES: Partial<Record<ModuleKey, Feature[]>> = {
   ],
   plataforma: [
     { key: 'plataforma.demandas',  label: 'Demandas',         routes: ['/oficina/dashboard'] },
+    { key: 'plataforma.painel',    label: 'Painel da plataforma', routes: ['/oficina/plataforma/painel'] },
     { key: 'plataforma.buscar',    label: 'Buscar mecânicos', routes: ['/oficina/buscar'] },
     { key: 'plataforma.mensagens', label: 'Mensagens',        routes: ['/oficina/mensagens'] },
     { key: 'plataforma.rastreio',  label: 'Rastreio do serviço', routes: ['/oficina/job'] },
