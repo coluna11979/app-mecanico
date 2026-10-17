@@ -3,6 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
+import { CouponField } from '@/components/CouponField';
+import { attributeSignup } from '@/lib/marketingAttribution';
 import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
 
 function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
@@ -28,6 +30,7 @@ export default function SignupWorkshop() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [coupon, setCoupon] = useState<string | null>(null);
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '',
     business_name: '', cnpj: '',
@@ -98,6 +101,7 @@ export default function SignupWorkshop() {
     if (data.user) {
       try { await recordConsent(data.user.id, 'workshop'); } catch { /* ignora */ }
       if (leadId) await convertLeadToProfile(leadId);
+      await attributeSignup(data.user.id, coupon);
       // Email de boas-vindas (silencioso — se Resend não configurado ou der erro, ignora)
       void supabase.functions.invoke('send-welcome-email', {
         body: { profile_id: data.user.id },
@@ -164,6 +168,8 @@ export default function SignupWorkshop() {
 
             <div><label className="label">Sobre a oficina (opcional)</label>
               <textarea className="input" rows={3} value={f.description} onChange={e => up('description', e.target.value)} /></div>
+
+            <CouponField audience="workshop" onValid={setCoupon} />
 
             {/* Aceite dos Termos */}
             <label className="flex items-start gap-3 bg-steel-50 border border-steel-200 rounded-xl p-3 cursor-pointer hover:bg-steel-100 transition">

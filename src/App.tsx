@@ -90,6 +90,9 @@ import AdminAvisos from './pages/admin/Avisos';
 import AdminEmbaixadores from './pages/admin/Embaixadores';
 import AdminModulos from './pages/admin/Modulos';
 import AdminAgentes from './pages/admin/Agentes';
+import AdminMarketing from './pages/admin/Marketing';
+import CampaignLink from './pages/public/CampaignLink';
+import Unsubscribe from './pages/public/Unsubscribe';
 
 function LazyFallback() {
   return (
@@ -121,6 +124,8 @@ export default function App() {
       <Route path="/recuperar-senha"    element={<ForgotPassword />} />
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
       <Route path="/checkup/:token"     element={<CheckupReport />} />
+      <Route path="/c/:slug"            element={<CampaignLink />} />
+      <Route path="/descadastrar/:token" element={<Unsubscribe />} />
       <Route path="/m/checkup/:token"   element={<MechanicCheckup />} />
       {/* Pré-visualização do check-up com dados fictícios — só em dev */}
       {import.meta.env.DEV && <Route path="/demo/checkup" element={<WorkshopCheckups />} />}
@@ -195,6 +200,7 @@ export default function App() {
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />
       <Route path="/admin/modulos" element={<ProtectedRoute allow={['admin']}><AdminModulos /></ProtectedRoute>} />
       <Route path="/admin/agentes" element={<ProtectedRoute allow={['admin']}><AdminAgentes /></ProtectedRoute>} />
+      <Route path="/admin/marketing" element={<ProtectedRoute allow={['admin']}><AdminMarketing /></ProtectedRoute>} />
       <Route path="/admin/usuario/:id"   element={<ProtectedRoute allow={['admin']}><AdminUserDetail /></ProtectedRoute>} />
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
