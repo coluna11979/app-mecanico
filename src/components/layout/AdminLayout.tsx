@@ -52,6 +52,7 @@ const NAV_GROUPS = [
   {
     label: 'Marketing',
     items: [
+      { to: '/admin/marketing',    icon: '📣', label: 'Painel de Marketing' },
       { to: '/admin/vip',          icon: '⭐', label: 'Plano VIP'    },
       { to: '/admin/leads',        icon: '🎯', label: 'Leads'        },
       { to: '/admin/embaixadores', icon: '🌟', label: 'Embaixadores' },

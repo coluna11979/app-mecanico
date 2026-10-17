@@ -5,6 +5,10 @@ import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { AppErrorBoundary, reloadForNewVersion } from './components/AppErrorBoundary';
 import './styles/globals.css';
+import { captureFromUrl } from './lib/marketingAttribution';
+
+// Origem de marketing (?utm_*, ?cupom=) — guardada pra atribuir o cadastro depois
+captureFromUrl();
 
 // Service Worker é registrado e controlado pelo componente <UpdatePrompt />
 // no App.tsx — ele usa o hook useRegisterSW do vite-plugin-pwa, que faz

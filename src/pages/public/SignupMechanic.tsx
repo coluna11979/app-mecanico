@@ -5,6 +5,8 @@ import { Logo } from '@/components/Logo';
 import { recordConsent } from '@/lib/consent';
 import { isValidCpf, maskCep, maskCpf, maskPhone, onlyDigits } from '@/lib/customers';
 import { lookupCep } from '@/lib/cep';
+import { CouponField } from '@/components/CouponField';
+import { attributeSignup } from '@/lib/marketingAttribution';
 import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
 
 /** Lê (e consome) o pré-preenchimento de lead capturado na home. */
@@ -91,6 +93,7 @@ export default function SignupMechanic() {
   const [err, setErr] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [coupon, setCoupon] = useState<string | null>(null);
   const [cepStatus, setCepStatus] = useState<'idle' | 'loading' | 'found' | 'notfound' | 'error'>('idle');
   const refCode = useRefCode();
   const [refInfo, setRefInfo] = useState<{ valid: boolean; name?: string } | null>(null);
@@ -299,6 +302,7 @@ export default function SignupMechanic() {
     if (data.user) {
       try { await recordConsent(data.user.id, 'mechanic'); } catch { /* ignora */ }
       if (leadId) await convertLeadToProfile(leadId);
+      await attributeSignup(data.user.id, coupon);
       // Email de boas-vindas (silencioso — se Resend não configurado ou der erro, ignora)
       void supabase.functions.invoke('send-welcome-email', {
         body: { profile_id: data.user.id },
@@ -517,6 +521,8 @@ export default function SignupMechanic() {
                   </div>
                   <FieldError k="skills" />
                 </div>
+
+                <CouponField audience="mechanic" onValid={setCoupon} />
 
                 {/* Aceite dos Termos */}
                 <label className="flex items-start gap-3 bg-steel-50 border border-steel-200 rounded-xl p-3 cursor-pointer hover:bg-steel-100 transition">
