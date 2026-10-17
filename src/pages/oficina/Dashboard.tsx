@@ -13,6 +13,7 @@ import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
 import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
+import { FirstDemandHero, QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
 
 type NewJob = {
   title: string; description: string;
@@ -187,6 +188,20 @@ export default function WorkshopDashboard() {
       else { setForm(EMPTY); setDraftRestored(false); }
       setDraftOrigin(draft ? localStorage.getItem(jobDraftOriginKey(currentWorkshop.id)) : null);
     }
+    setMode('open'); setPickedMechanic(''); setMechSearch('');
+    setModal(true);
+  }
+
+  /** Atalho de serviço: abre a demanda já escrita, pelo serviço, com o tempo típico e o preço estimado */
+  function openShortcut(sc: ServiceShortcut) {
+    if (hasPendingFees) return;
+    const rate = medianRate(mechanics);
+    const next: NewJob = {
+      ...EMPTY, title: sc.title, description: sc.description, pricing: 'fixed',
+      max_hours: String(sc.hours), total: rate ? String(estimatePrice(rate, sc.hours)) : '',
+    };
+    setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
+    setForm(next); persistDraft(next);
     setMode('open'); setPickedMechanic(''); setMechSearch('');
     setModal(true);
   }
@@ -379,6 +394,13 @@ export default function WorkshopDashboard() {
   }, [modal]);
 
   const estimated = form.pricing === 'fixed' ? Number(form.total) : Number(form.price_per_hour) * Number(form.max_hours);
+  // Estimativa pelo valor/hora dos mecânicos disponíveis × tempo previsto (o mesmo que a oficina pagaria contratando direto)
+  const rateNow = medianRate(mechanics);
+  const estHours = Number(form.max_hours) || 1;
+  const suggested = rateNow ? (form.pricing === 'fixed' ? estimatePrice(rateNow, estHours) : Math.round(rateNow)) : null;
+  const typedPrice = form.pricing === 'fixed' ? Number(form.total) : Number(form.price_per_hour);
+  // Nunca contratou pela plataforma: a tela vende a primeira demanda
+  const firstTime = !shopLoading && active.length === 0 && history.length === 0 && (shop?.total_jobs ?? 0) === 0;
   // Preferidos no topo; dentro de cada grupo mantém a ordem por nota do fetch
   const filteredMechanics = mechanics
     .filter(m => m.name.toLowerCase().includes(mechSearch.toLowerCase()))
@@ -408,12 +430,20 @@ export default function WorkshopDashboard() {
       {/* Serviços empilhados: esperando mecânico da plataforma (a gestão junta e gera a demanda) */}
       {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={openCreateModal} />}
 
+      {/* Primeira vez: explica e puxa a primeira demanda (os números zerados não dizem nada) */}
+      {firstTime && <FirstDemandHero onCall={openCreateModal} disabled={hasPendingFees} />}
+
+      {/* Quem está disponível agora + atalhos dos serviços mais pedidos */}
+      <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} />
+
       {/* Números rápidos: uma faixa só, cabe em qualquer celular */}
-      <dl className="grid grid-cols-3 divide-x divide-steel-100 rounded-2xl bg-white ring-1 ring-steel-200/70 mb-5">
-        <KPI label="Ativas" value={active.length} />
-        <KPI label="Concluídas" value={shop?.total_jobs ?? 0} />
-        <KPI label="Avaliação" value={shop?.rating ? `★ ${shop.rating.toFixed(1)}` : '—'} />
-      </dl>
+      {!firstTime && (
+        <dl className="grid grid-cols-3 divide-x divide-steel-100 rounded-2xl bg-white ring-1 ring-steel-200/70 mb-5">
+          <KPI label="Ativas" value={active.length} />
+          <KPI label="Concluídas" value={shop?.total_jobs ?? 0} />
+          <KPI label="Avaliação" value={shop?.rating ? `★ ${shop.rating.toFixed(1)}` : '—'} />
+        </dl>
+      )}
 
       {/* Resumo do período: gasto, tempos de aceite/chegada, mecânicos mais contratados */}
       {currentWorkshop?.id && <MarketplaceSummary workshopId={currentWorkshop.id} />}
@@ -559,6 +589,7 @@ export default function WorkshopDashboard() {
         );
 
         if (active.length === 0) {
+          if (firstTime) return null;
           return (
             <section className="mb-8">
               <h2 className="text-lg font-bold mb-3">Demandas ativas</h2>
@@ -695,6 +726,29 @@ export default function WorkshopDashboard() {
                     <div className="text-xs text-steel-400 mt-1">Tempo previsto</div>
                   </div>
                 </div>
+                )}
+                {suggested && !editingId && (
+                  <div className="mt-2 rounded-xl border border-steel-200 px-3 py-2 text-xs text-steel-600 flex items-center gap-2">
+                    <span className="text-sm shrink-0">🧮</span>
+                    <div className="flex-1 min-w-0">
+                      <strong className="text-steel-800">Estimativa: R$ {formatBRL(suggested, { decimals: 0 })}{form.pricing === 'fixed' ? '' : '/h'}</strong>
+                      <div className="text-[11px] text-steel-500">
+                        {form.pricing === 'fixed'
+                          ? `${String(estHours).replace('.', ',')}h × R$ ${Math.round(rateNow!)}/h, valor do meio entre os ${mechanics.length} disponíveis`
+                          : `valor do meio entre os ${mechanics.length} mecânicos disponíveis`}
+                      </div>
+                    </div>
+                    {typedPrice !== suggested && (
+                      <button type="button"
+                        onClick={() => setForm(f => {
+                          const next = f.pricing === 'fixed' ? { ...f, total: String(suggested) } : { ...f, price_per_hour: String(suggested) };
+                          persistDraft(next); return next;
+                        })}
+                        className="shrink-0 h-9 px-3 rounded-lg bg-steel-900 text-white text-xs font-bold active:scale-95">
+                        Usar
+                      </button>
+                    )}
+                  </div>
                 )}
                 {marketRate && form.pricing !== 'fixed' && (
                   <div className="mt-2 bg-signal-50 border border-signal-200 rounded-xl px-3 py-2 text-xs text-signal-800 flex items-start gap-2">
