@@ -4,9 +4,10 @@
  *
  * Definições:
  * - Concluída = status 'completed', pela data de conclusão. Cancelada = pela data do cancelamento.
- * - Pago ao mecânico = preço fechado da demanda (o que a oficina paga).
- * - Cobrado do cliente = soma dos serviços da OS feitos por essa demanda (itens com platform_job_id;
- *   demanda antiga sem itens ligados usa os serviços da OS marcados como "plataforma").
+ * - Pago ao mecânico = preço fechado da demanda (o que a oficina paga; taxa de cartão não entra).
+ * - Lucro por serviço (profitRows): o que o cliente pagou pelos serviços feitos pela plataforma
+ *   (mão de obra + peças usadas neles) − custo dessas peças − pago ao mecânico.
+ *   OS inteira pela plataforma (executor 'platform') = a OS toda numa linha só.
  */
 import { marketplaceOf, type PanelJob, type Range } from '@/lib/workshopMetrics';
 
@@ -17,9 +18,16 @@ export type PlatformJob = PanelJob & {
   estimated_hours: number | null;
   actual_hours: number | null;
 };
-/** Serviço de OS feito por mecânico da plataforma */
+/** Item de OS (serviço ou peça) das OS que tiveram mecânico da plataforma */
 export type PlatformItem = {
-  service_order_id: string; platform_job_id: string | null; quantity: number; unit_price: number;
+  id: string; service_order_id: string; kind: 'part' | 'labor'; description: string;
+  quantity: number; unit_price: number; unit_cost: number | null;
+  used_in_item_id: string | null; platform_job_id: string | null; executor: 'workshop' | 'platform' | null;
+};
+export type PlatformOs = {
+  id: string; number: number | null; executor: 'workshop' | 'platform' | null;
+  vehicle: { make: string; model: string; plate: string; color: string | null } | null;
+  customer: { full_name: string } | null;
 };
 
 const inRange = (iso: string | null | undefined, r: Range) => {
@@ -44,31 +52,12 @@ const SERVICE_KINDS: { label: string; re: RegExp }[] = [
 ];
 export const serviceKind = (title: string) => SERVICE_KINDS.find(k => k.re.test(title))?.label ?? 'Outros';
 
-export function platformPanel(jobs: PlatformJob[], items: PlatformItem[], r: Range, arrivalDeadline: (j: PanelJob) => Date | null) {
+export function platformPanel(jobs: PlatformJob[], r: Range, arrivalDeadline: (j: PanelJob) => Date | null) {
   const base = marketplaceOf(jobs, r, arrivalDeadline);
   const done = jobs.filter(j => j.status === 'completed' && inRange(j.completed_at, r));
   const published = jobs.filter(j => inRange(j.created_at, r)).length;
   const decided = base.doneCount + base.cancelledCount;
 
-  // Cobrado do cliente nos serviços que a plataforma fez
-  const byJob = new Map<string, number>();
-  const linkedOs = new Set<string>();
-  for (const i of items) if (i.platform_job_id) {
-    byJob.set(i.platform_job_id, (byJob.get(i.platform_job_id) ?? 0) + itemTotal(i));
-    linkedOs.add(i.service_order_id);
-  }
-  // Demanda antiga (sem item ligado): serviços "plataforma" da OS dela, divididos entre as demandas dessa OS
-  const legacy = new Map<string, PlatformJob[]>();
-  for (const j of done) if (j.service_order_id && !byJob.has(j.id) && !linkedOs.has(j.service_order_id)) {
-    legacy.set(j.service_order_id, [...(legacy.get(j.service_order_id) ?? []), j]);
-  }
-  for (const [osId, js] of legacy) {
-    const total = items.filter(i => i.service_order_id === osId && !i.platform_job_id).reduce((a, i) => a + itemTotal(i), 0);
-    if (total > 0) for (const j of js) byJob.set(j.id, total / js.length);
-  }
-  const withOs = done.filter(j => byJob.has(j.id));
-  const charged = withOs.reduce((a, j) => a + (byJob.get(j.id) ?? 0), 0);
-  const paidWithOs = withOs.reduce((a, j) => a + Number(j.price), 0);
   const osServed = new Set(done.map(j => j.service_order_id).filter(Boolean)).size;
 
   // Horas: previstas (tempo do pacote ou tempo previsto do "pelo serviço") × reais registradas
@@ -93,9 +82,6 @@ export function platformPanel(jobs: PlatformJob[], items: PlatformItem[], r: Ran
     published,
     completionRate: decided ? (base.doneCount / decided) * 100 : null,
     ticket: base.doneCount ? base.spent / base.doneCount : 0,
-    /** Só demandas ligadas a OS (onde dá para saber quanto o cliente pagou) */
-    charged, paidWithOs, withOsCount: withOs.length,
-    margin: charged - paidWithOs,
     osServed,
     actualHours,
     hoursBase: withHours.length,
@@ -131,4 +117,107 @@ export function platformSeries(jobs: PlatformJob[], r: Range) {
     if (b) { b.spent += Number(j.price); b.count += 1; }
   }
   return { byMonth, rows: [...buckets.values()] };
+}
+
+/* ── Lucro por serviço ─────────────────────────────────────────────────────── */
+
+export type ProfitRow = {
+  key: string; osId: string; osNumber: number | null; car: string; customer: string | null;
+  date: string; mechanics: string[];
+  /** OS inteira feita pela plataforma */
+  whole: boolean;
+  services: string[];
+  labor: number; parts: number; charged: number;
+  partsCost: number; paid: number; profit: number;
+  /** Alguma peça sem custo de compra lançado (o lucro pode estar maior do que é) */
+  missingCost: boolean;
+};
+
+const carOf = (v: PlatformOs['vehicle']) =>
+  (v ? [v.make, v.model, v.color].filter(Boolean).join(' ') + (v.plate ? ` · ${v.plate}` : '') : 'Sem veículo');
+
+/**
+ * Uma linha por serviço feito por mecânico da plataforma, com o lucro depois dos custos.
+ * - OS inteira pela plataforma: a OS toda (todos os serviços e peças; pago = todas as demandas dela).
+ * - Só alguns itens: os serviços daquela demanda nessa OS + as peças usadas neles.
+ *   Demanda com serviços de várias OS (empilhados) divide o valor pago pelo peso de cada OS.
+ */
+export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: PlatformItem[], r: Range): ProfitRow[] {
+  const osById = new Map(osList.map(o => [o.id, o]));
+  const itemsByOs = new Map<string, PlatformItem[]>();
+  for (const i of items) itemsByOs.set(i.service_order_id, [...(itemsByOs.get(i.service_order_id) ?? []), i]);
+  const allDone = jobs.filter(j => j.status === 'completed');
+  const done = allDone.filter(j => inRange(j.completed_at, r));
+  const nameOf = (j: PlatformJob) => j.mechanic?.profile?.full_name ?? 'Mecânico';
+
+  /** OS em que a demanda trabalhou: pelos itens ligados; demanda antiga = a OS de origem */
+  const osOfJob = (j: PlatformJob) => {
+    const ids = new Set(items.filter(i => i.platform_job_id === j.id).map(i => i.service_order_id));
+    if (!ids.size && j.service_order_id) ids.add(j.service_order_id);
+    return [...ids].filter(id => osById.has(id));
+  };
+
+  const money = (labor: PlatformItem[], parts: PlatformItem[]) => ({
+    labor: labor.reduce((a, i) => a + itemTotal(i), 0),
+    parts: parts.reduce((a, i) => a + itemTotal(i), 0),
+    partsCost: parts.reduce((a, i) => a + Number(i.quantity) * Number(i.unit_cost ?? 0), 0),
+    missingCost: parts.some(i => i.unit_cost == null),
+  });
+
+  const rows: ProfitRow[] = [];
+  const wholeDone = new Set<string>();
+  for (const j of done) {
+    const osIds = osOfJob(j);
+    // Peso de cada OS na demanda (para dividir o valor pago quando são várias)
+    const weights = osIds.map(id => (itemsByOs.get(id) ?? [])
+      .filter(i => i.kind === 'labor' && i.platform_job_id === j.id).reduce((a, i) => a + itemTotal(i), 0));
+    const totalW = weights.reduce((a, b) => a + b, 0);
+
+    osIds.forEach((osId, idx) => {
+      const os = osById.get(osId)!;
+      const all = itemsByOs.get(osId) ?? [];
+      const base = { osId, osNumber: os.number, car: carOf(os.vehicle), customer: os.customer?.full_name ?? null, date: j.completed_at! };
+
+      if (os.executor === 'platform') {
+        if (wholeDone.has(osId)) return;
+        wholeDone.add(osId);
+        const osJobs = allDone.filter(x => osOfJob(x).includes(osId));
+        const m = money(all.filter(i => i.kind === 'labor'), all.filter(i => i.kind === 'part'));
+        const paid = osJobs.reduce((a, x) => a + Number(x.price) / Math.max(1, osOfJob(x).length), 0);
+        const charged = m.labor + m.parts;
+        rows.push({
+          ...base, key: `os-${osId}`, whole: true, mechanics: [...new Set(osJobs.map(nameOf))],
+          services: all.filter(i => i.kind === 'labor').map(i => i.description), ...m, charged, paid,
+          profit: charged - m.partsCost - paid,
+        });
+        return;
+      }
+
+      // Só alguns itens: os da demanda (antiga sem ligação = os marcados "plataforma" da OS de origem)
+      let labor = all.filter(i => i.kind === 'labor' && i.platform_job_id === j.id);
+      if (!labor.length && osId === j.service_order_id) {
+        labor = all.filter(i => i.kind === 'labor' && i.executor === 'platform' && !i.platform_job_id);
+      }
+      const laborIds = new Set(labor.map(i => i.id));
+      const parts = all.filter(i => i.kind === 'part' && i.used_in_item_id && laborIds.has(i.used_in_item_id));
+      const m = money(labor, parts);
+      const paid = osIds.length === 1 ? Number(j.price) : Number(j.price) * (totalW ? weights[idx] / totalW : 1 / osIds.length);
+      const charged = m.labor + m.parts;
+      rows.push({
+        ...base, key: `${j.id}-${osId}`, whole: false, mechanics: [nameOf(j)],
+        services: labor.length ? labor.map(i => i.description) : [j.title], ...m, charged, paid,
+        profit: charged - m.partsCost - paid,
+      });
+    });
+  }
+  return rows.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** Totais das linhas de lucro */
+export function profitTotals(rows: ProfitRow[]) {
+  const sum = (k: 'charged' | 'partsCost' | 'paid' | 'profit') => rows.reduce((a, r) => a + r[k], 0);
+  return {
+    count: rows.length, charged: sum('charged'), partsCost: sum('partsCost'), paid: sum('paid'), profit: sum('profit'),
+    missingCost: rows.some(r => r.missingCost),
+  };
 }

@@ -7,9 +7,25 @@ import { fetchAll } from '@/lib/fetchAll';
 import { fmtBRL, fmtDur } from '@/components/os/osHelpers';
 import { arrivalDeadline } from '@/lib/arrivalDeadline';
 import PeriodPicker, { usePeriod } from '@/components/PeriodPicker';
-import { platformPanel, platformSeries, type PlatformItem, type PlatformJob } from '@/lib/platformPanel';
+import {
+  platformPanel, platformSeries, profitRows, profitTotals,
+  type PlatformItem, type PlatformJob, type PlatformOs, type ProfitRow,
+} from '@/lib/platformPanel';
 
 const JOB_COLS = 'id, title, status, price, created_at, accepted_at, en_route_at, arrived_at, completed_at, cancelled_at, cancelled_by, cancellation_fee, cancellation_fee_paid_at, workshop_confirmed_at, mechanic_rating, scheduled_at, mechanic_id, service_order_id, pricing, max_hours, estimated_hours, actual_hours, mechanic:mechanics(id, profile:profiles(full_name))';
+
+const ITEM_COLS = 'id, service_order_id, kind, description, quantity, unit_price, unit_cost, used_in_item_id, platform_job_id, executor';
+const OS_COLS = 'id, number, executor, vehicle:vehicles(make, model, plate, color), customer:customers(full_name)';
+
+/** Busca em lotes de ids (o filtro "in" da URL tem limite de tamanho) */
+async function byIds<T>(ids: string[], run: (chunk: string[]) => PromiseLike<{ data: unknown }>): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data } = await run(ids.slice(i, i + 100));
+    out.push(...((data as T[]) ?? []));
+  }
+  return out;
+}
 
 const fmtH = (h: number) => `${String(Math.round(h * 10) / 10).replace('.', ',')} h`;
 const plural = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
@@ -24,6 +40,8 @@ export default function PlataformaPainel() {
   const period = usePeriod('plataforma-painel-periodo', 'month');
   const [jobs, setJobs] = useState<PlatformJob[]>([]);
   const [items, setItems] = useState<PlatformItem[]>([]);
+  const [osList, setOsList] = useState<PlatformOs[]>([]);
+  const [showAllRows, setShowAllRows] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,24 +49,36 @@ export default function PlataformaPainel() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [j, it] = await Promise.all([
+      const [j, linked] = await Promise.all([
         fetchAll((a, b) => supabase.from('jobs').select(JOB_COLS).eq('workshop_id', wid).order('id').range(a, b)),
-        // Serviços de OS feitos pela plataforma (para saber quanto o cliente pagou por eles)
-        fetchAll((a, b) => supabase.from('service_order_items')
-          .select('service_order_id, platform_job_id, quantity, unit_price')
+        // Serviços de OS feitos pela plataforma: dizem em quais OS os mecânicos trabalharam
+        fetchAll((a, b) => supabase.from('service_order_items').select('service_order_id')
           .eq('workshop_id', wid).eq('kind', 'labor')
           .or('platform_job_id.not.is.null,executor.eq.platform')
           .order('id').range(a, b)),
       ]);
+      const jobList = (j.data as unknown as PlatformJob[]) ?? [];
+      // Essas OS inteiras (serviços + peças com custo) para o lucro por serviço
+      const osIds = [...new Set([
+        ...((linked.data as { service_order_id: string }[]) ?? []).map(i => i.service_order_id),
+        ...jobList.map(x => x.service_order_id).filter((x): x is string => !!x),
+      ])];
+      const [osRows, itemRows] = await Promise.all([
+        byIds<PlatformOs>(osIds, ids => supabase.from('service_orders').select(OS_COLS).eq('workshop_id', wid).in('id', ids)),
+        byIds<PlatformItem>(osIds, ids => supabase.from('service_order_items').select(ITEM_COLS).eq('workshop_id', wid).in('service_order_id', ids)),
+      ]);
       if (!alive) return;
-      setJobs((j.data as unknown as PlatformJob[]) ?? []);
-      setItems((it.data as unknown as PlatformItem[]) ?? []);
+      setJobs(jobList);
+      setOsList(osRows);
+      setItems(itemRows);
       setLoading(false);
     })();
     return () => { alive = false; };
   }, [wid]);
 
-  const m = useMemo(() => platformPanel(jobs, items, period.range, j => arrivalDeadline(j)), [jobs, items, period.range]);
+  const m = useMemo(() => platformPanel(jobs, period.range, j => arrivalDeadline(j)), [jobs, period.range]);
+  const rows = useMemo(() => profitRows(jobs, osList, items, period.range), [jobs, osList, items, period.range]);
+  const tot = useMemo(() => profitTotals(rows), [rows]);
   const series = useMemo(() => platformSeries(jobs, period.range), [jobs, period.range]);
   const maxBar = Math.max(1, ...series.rows.map(s => s.spent));
   const maxService = Math.max(1, ...m.services.map(s => s.count));
@@ -98,14 +128,46 @@ export default function PlataformaPainel() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <Kpi highlight label="Pago aos mecânicos" value={fmtBRL(m.spent)}
                   note={m.doneCount ? `${plural(m.doneCount, 'demanda concluída', 'demandas concluídas')} · ticket ${fmtBRL(m.ticket)}` : 'nenhuma concluída no período'} />
-                <Kpi label="Cobrado do cliente" value={m.withOsCount ? fmtBRL(m.charged) : '—'}
-                  note={m.withOsCount ? `nos serviços de ${plural(m.withOsCount, 'demanda ligada', 'demandas ligadas')} a OS` : 'nenhuma demanda ligada a OS'} />
-                <Kpi label="Ficou com a oficina" value={m.withOsCount ? fmtBRL(m.margin) : '—'}
-                  tone={m.withOsCount ? (m.margin >= 0 ? 'good' : 'bad') : undefined}
-                  note={m.withOsCount ? `cobrado − pago${m.charged > 0 ? ` · ${Math.round((m.margin / m.charged) * 100)}% do cobrado` : ''}` : 'aparece quando a demanda sai de uma OS'} />
+                <Kpi label="Cobrado do cliente" value={tot.count ? fmtBRL(tot.charged) : '—'}
+                  note={tot.count ? `serviços e peças de ${plural(tot.count, 'serviço', 'serviços')} feitos pela plataforma` : 'nenhuma demanda ligada a OS'} />
+                <Kpi label="Lucro depois dos custos" value={tot.count ? fmtBRL(tot.profit) : '—'}
+                  tone={tot.count ? (tot.profit >= 0 ? 'good' : 'bad') : undefined}
+                  note={tot.count
+                    ? `cobrado − peças ${fmtBRL(tot.partsCost)} − mecânicos${tot.charged > 0 ? ` · ${Math.round((tot.profit / tot.charged) * 100)}%` : ''}`
+                    : 'aparece quando a demanda sai de uma OS'} />
                 <Kpi label="Multas de cancelamento" value={fmtBRL(m.feesPaid)}
                   note={m.pendingFees > 0 ? `${fmtBRL(m.pendingFees)} em aberto` : 'nada em aberto'} tone={m.pendingFees > 0 ? 'bad' : undefined} />
               </div>
+            </section>
+
+            {/* Lucro por serviço */}
+            <section>
+              <div className="flex items-baseline justify-between gap-2 mb-2">
+                <SectionTitle>Lucro por serviço</SectionTitle>
+                {tot.count > 0 && <span className="text-[11px] text-steel-400">{plural(tot.count, 'serviço', 'serviços')} no período</span>}
+              </div>
+              {rows.length === 0 ? (
+                <div className="card text-sm text-steel-500">
+                  Nenhum serviço feito pela plataforma ligado a OS no período. Quando a demanda sai de uma OS (Caixa, OS ou empilhados), o lucro de cada serviço aparece aqui.
+                </div>
+              ) : (
+                <>
+                  {tot.missingCost && (
+                    <p className="text-[11px] text-pending-700 bg-pending-50 rounded-lg px-3 py-2 mb-2">
+                      Alguma peça está sem custo de compra lançado: nesses serviços o lucro aparece maior do que é.
+                    </p>
+                  )}
+                  <ul className="grid lg:grid-cols-2 gap-3">
+                    {(showAllRows ? rows : rows.slice(0, 10)).map(r => <ProfitCard key={r.key} r={r} />)}
+                  </ul>
+                  {rows.length > 10 && (
+                    <button type="button" onClick={() => setShowAllRows(v => !v)}
+                      className="mt-3 w-full h-11 rounded-xl border border-steel-200 bg-white text-sm font-semibold text-steel-700 hover:bg-steel-50">
+                      {showAllRows ? 'Mostrar menos' : `Ver todos os ${rows.length} serviços`}
+                    </button>
+                  )}
+                </>
+              )}
             </section>
 
             {/* Gráfico */}
@@ -209,12 +271,61 @@ export default function PlataformaPainel() {
             </div>
 
             <p className="text-[11px] text-steel-400">
-              “Cobrado do cliente” soma os serviços da OS feitos pelo mecânico da plataforma; demandas abertas sem OS não entram nessa conta.
+              Lucro = o que o cliente pagou pelos serviços feitos pela plataforma (mão de obra + peças usadas neles) − custo de compra dessas peças − valor pago ao mecânico.
+              Na OS inteira feita pela plataforma, entra a OS toda. Demandas sem OS não entram nessa conta.
             </p>
           </>
         )}
       </div>
     </WorkshopLayout>
+  );
+}
+
+/** Um serviço feito pela plataforma: o que o cliente pagou, os custos e o lucro */
+function ProfitCard({ r }: { r: ProfitRow }) {
+  const pct = r.charged > 0 ? Math.round((r.profit / r.charged) * 100) : null;
+  return (
+    <li>
+      <Link to={`/oficina/os/${r.osId}`} className="card block !p-4 hover:ring-brand-200 transition min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-steel-900 truncate">
+              OS {r.osNumber != null ? String(r.osNumber).padStart(4, '0') : '—'} · {r.car}
+            </div>
+            <div className="text-xs text-steel-500 truncate">
+              {[r.customer, r.mechanics.join(', '), new Date(r.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+          {r.whole && <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-brand-700 bg-brand-50 rounded-full px-2 py-0.5">OS inteira</span>}
+        </div>
+        <div className="text-[13px] text-steel-700 mt-1.5 line-clamp-2">{r.services.join(' + ')}</div>
+
+        <dl className="mt-3 pt-3 border-t border-steel-100 space-y-1 text-sm tabular-nums">
+          <Money label="Cobrado do cliente" value={r.charged}
+            sub={r.parts > 0 ? `mão de obra ${fmtBRL(r.labor)} + peças ${fmtBRL(r.parts)}` : undefined} />
+          {r.parts > 0 && <Money label="Custo das peças" value={-r.partsCost} sub={r.missingCost ? 'peça sem custo lançado' : undefined} warn={r.missingCost} />}
+          <Money label="Pago ao mecânico" value={-r.paid} />
+          <div className="flex items-baseline justify-between gap-2 pt-1.5 border-t border-steel-100">
+            <dt className="font-bold text-steel-900">Lucro</dt>
+            <dd className={`font-bold font-display text-base ${r.profit >= 0 ? 'text-signal-600' : 'text-alert-600'}`}>
+              {fmtBRL(r.profit)}{pct != null && <span className="text-xs font-semibold ml-1">({pct}%)</span>}
+            </dd>
+          </div>
+        </dl>
+      </Link>
+    </li>
+  );
+}
+
+function Money({ label, value, sub, warn = false }: { label: string; value: number; sub?: string; warn?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <dt className="text-steel-600 min-w-0">
+        {label}
+        {sub && <span className={`block text-[11px] ${warn ? 'text-pending-700' : 'text-steel-400'}`}>{sub}</span>}
+      </dt>
+      <dd className="font-semibold text-steel-900 shrink-0">{value < 0 ? `− ${fmtBRL(-value)}` : fmtBRL(value)}</dd>
+    </div>
   );
 }
 
