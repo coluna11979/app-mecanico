@@ -182,7 +182,9 @@ export interface Job {
   cancellation_fee: number | null;
   cancellation_refund: number | null;
   stripe_refund_id: string | null;
-  audience: 'public' | 'favorites';
+  audience: 'public' | 'favorites' | 'invite';
+  /** Convite direto: mecânico convidado. Só vira mechanic_id quando ele aceita. */
+  invited_mechanic_id?: string | null;
   /** OS de onde a demanda saiu ("Chamar mecânico" no Caixa) */
   service_order_id?: string | null;
   /** Forma de preço (0109): hour = valor/hora × horas; fixed = preço pelo serviço (price_per_hour = total, max_hours = 1) */

@@ -7,6 +7,9 @@ import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate'
 import { toast } from '@/components/ui/Toast';
 import type { Mechanic, Profile } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
+import { inviteFields } from '@/lib/jobInvite';
+import { markPlatformItems } from '@/lib/callMechanic';
+import OsLinkPicker, { osCar, osNumber, type OsLink } from '@/components/marketplace/OsLinkPicker';
 
 const ALL_SKILLS = ['Motor', 'Suspensão', 'Freios', 'Elétrica', 'Injeção eletrônica', 'Câmbio', 'Ar-condicionado', 'Diagnóstico', 'Diesel'];
 
@@ -67,7 +70,39 @@ export default function WorkshopSearch() {
 
   // hire modal
   const [target, setTarget] = useState<MechRow | null>(null);
-  const [job, setJob] = useState({ title: '', description: '', price_per_hour: 0, max_hours: 1 });
+  type HireForm = {
+    title: string; description: string;
+    /** fixed = preço pelo serviço (total); hour = valor/hora × horas */
+    pricing: 'hour' | 'fixed'; price_per_hour: number; max_hours: number;
+    total: string; est_hours: string;
+    when: 'now' | 'scheduled'; scheduled_at: string;
+  };
+  const blankHire = (rate: number): HireForm => ({
+    title: '', description: '', pricing: 'hour', price_per_hour: rate, max_hours: 1,
+    total: '', est_hours: '', when: 'now', scheduled_at: '',
+  });
+  const [job, setJob] = useState<HireForm>(blankHire(0));
+  const [osLink, setOsLink] = useState<OsLink | null>(null);
+
+  /* Ligou a uma OS: preenche título/descrição com os serviços (só se estiverem vazios) */
+  function linkOs(v: OsLink | null) {
+    setOsLink(v);
+    if (!v) return;
+    const picked = v.items.filter(i => v.itemIds.includes(i.id));
+    const car = osCar(v.os);
+    const names = picked.length ? picked.map(i => i.text) : [v.os.title];
+    const title = (names.length === 1 ? names[0] : `${names[0]} + ${names.length - 1} serviço(s)`) + (car ? ` — ${car}` : '');
+    const description = [
+      'Serviços a realizar:', ...names.map(n => `• ${n}`), '',
+      car || v.os.vehicle?.plate ? `Veículo: ${[car, v.os.vehicle?.plate].filter(Boolean).join(' · ')}` : '',
+      `Referência: OS nº ${osNumber(v.os)}`,
+    ].filter(l => l !== '').join('\n');
+    setJob(j => ({
+      ...j,
+      title: j.title.trim() ? j.title : title.slice(0, 120),
+      description: j.description.trim() ? j.description : description,
+    }));
+  }
   const [hiring, setHiring] = useState(false);
 
   useEffect(() => { search(); }, [filter]);
@@ -89,27 +124,53 @@ export default function WorkshopSearch() {
       toast.error('Você tem multa de cancelamento pendente. Quite no painel de Demandas antes de contratar.');
       return;
     }
+    const scheduledAt = job.when === 'scheduled' && job.scheduled_at ? new Date(job.scheduled_at) : null;
+    if (job.when === 'scheduled' && (!scheduledAt || scheduledAt.getTime() < Date.now())) {
+      toast.error('Escolha uma data e hora no futuro para o agendamento.');
+      return;
+    }
+    // Preço pelo serviço: grava valor × 1h (as contas de cobrança não mudam) e o tempo previsto à parte
+    const fixed = job.pricing === 'fixed';
+    const pph = fixed ? Number(job.total) : (Number(job.price_per_hour) || target.hourly_rate);
+    const mh  = fixed ? 1 : (Number(job.max_hours) || 1);
+    const est = fixed && job.est_hours ? Number(job.est_hours) : null;
+    if (!pph || pph < 1) {
+      toast.error(fixed ? 'Informe o valor do serviço (mínimo R$ 1).' : 'Informe o valor por hora (mínimo R$ 1).');
+      return;
+    }
+    if (est != null && !(est > 0 && est <= 99)) { toast.error('Tempo previsto inválido.'); return; }
+    if (osLink && osLink.items.length > 0 && osLink.itemIds.length === 0) {
+      toast.error('Marque pelo menos um serviço da OS (ou remova a OS).');
+      return;
+    }
     setHiring(true);
-    const pph = Number(job.price_per_hour) || target.hourly_rate;
-    const mh  = Number(job.max_hours) || 1;
-    const { error } = await supabase.from('jobs').insert({
-      workshop_id:    shop.id,
-      mechanic_id:    target.id,
-      title:          job.title,
-      description:    job.description,
-      price_per_hour: pph,
-      max_hours:      mh,
-      price:          pph * mh,
-      status:         'assigned',
-    });
+    // Convite direto: nasce pendente e só vira "aceito" quando o mecânico aceitar
+    const { data: ins, error } = await supabase.from('jobs').insert({
+      workshop_id:     shop.id,
+      title:           job.title,
+      description:     job.description,
+      price_per_hour:  pph,
+      max_hours:       mh,
+      price:           pph * mh,
+      pricing:         fixed ? 'fixed' : 'hour',
+      estimated_hours: est,
+      scheduled_at:    scheduledAt ? scheduledAt.toISOString() : null,
+      service_order_id: osLink?.os.id ?? null,
+      ...inviteFields(target.id),
+    }).select('id').single();
+    // Serviços escolhidos passam a "mecânico da plataforma" e ficam ligados a esta demanda
+    if (!error && osLink) {
+      await markPlatformItems(shop.id, [osLink.os.id], osLink.itemIds, { jobId: ins?.id });
+    }
     setHiring(false);
     if (error) {
       console.error('[hire] erro:', error);
-      toast.error('Não foi possível contratar: ' + error.message);
+      toast.error('Não foi possível enviar o convite: ' + error.message);
       return; // mantém o modal aberto com os dados
     }
-    setTarget(null);
-    toast.success('Mecânico contratado! Acompanhe pelo painel de Demandas.');
+    const firstName = target.profile.full_name.split(' ')[0];
+    setTarget(null); setOsLink(null);
+    toast.success(`Convite enviado! Avisamos ${firstName} — acompanhe em Demandas até ele aceitar.`);
   }
 
   return (
@@ -171,7 +232,7 @@ export default function WorkshopSearch() {
               <div className="mt-3 flex justify-between items-center">
                 <div><span className="text-2xl font-bold font-display">R$ {formatBRL(m.hourly_rate, { decimals: 0 })}</span><span className="text-xs text-steel-500">/h</span></div>
                 <button
-                  onClick={() => { setTarget(m); setJob({ title: '', description: '', price_per_hour: m.hourly_rate, max_hours: 1 }); }}
+                  onClick={() => { setTarget(m); setJob(blankHire(m.hourly_rate)); setOsLink(null); }}
                   disabled={hasPendingFees}
                   title={hasPendingFees ? 'Quite a multa pendente para contratar' : undefined}
                   className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
@@ -196,16 +257,26 @@ export default function WorkshopSearch() {
         </div>}
 
       {target && (() => {
-        const pph = Number(job.price_per_hour) || target.hourly_rate;
-        const mh  = Number(job.max_hours) || 1;
-        const est = pph * mh;
+        const est = job.pricing === 'fixed'
+          ? Number(job.total) || 0
+          : (Number(job.price_per_hour) || target.hourly_rate) * (Number(job.max_hours) || 1);
         return (
           <div className="fixed inset-0 bg-steel-900/60 grid place-items-center p-4 z-50" onClick={() => setTarget(null)}>
-            <form onClick={e => e.stopPropagation()} onSubmit={hire} className="card max-w-md w-full space-y-4">
+            <form onClick={e => e.stopPropagation()} onSubmit={hire} className="card max-w-md w-full space-y-4 max-h-[92vh] overflow-y-auto">
               <div>
                 <h3 className="text-xl font-bold">Contratar {target.profile.full_name}</h3>
                 <p className="text-sm text-steel-500 mt-1">Taxa de referência: R$ {formatBRL(target.hourly_rate, { decimals: 0 })}/h · ★ {target.rating.toFixed(1)}</p>
+                <p className="text-xs text-steel-500 mt-2 bg-steel-50 border border-steel-200 rounded-lg px-3 py-2">
+                  Ele recebe um convite e precisa <strong>aceitar</strong>. O prazo de chegada só começa depois do aceite — e cancelar antes disso não tem multa.
+                </p>
               </div>
+
+              {shop && (
+                <div>
+                  <label className="label">Ordem de serviço</label>
+                  <OsLinkPicker wid={shop.id} value={osLink} onChange={linkOs} />
+                </div>
+              )}
 
               <div>
                 <label className="label">Título do serviço *</label>
@@ -221,38 +292,92 @@ export default function WorkshopSearch() {
                   placeholder="Descreva o serviço, veículo, detalhes…" />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">R$/hora</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
-                    <input type="number" min={1} className="input !pl-9" required
-                      value={job.price_per_hour || ''}
-                      placeholder={target.hourly_rate.toFixed(0)}
-                      onChange={e => setJob(j => ({ ...j, price_per_hour: Number(e.target.value) }))} />
-                  </div>
+              <div>
+                <label className="label">Como cobrar</label>
+                <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-3">
+                  {([['fixed', 'Pelo serviço'], ['hour', 'Por hora']] as const).map(([k, l]) => (
+                    <button key={k} type="button" onClick={() => setJob(j => ({ ...j, pricing: k }))}
+                      className={`flex-1 min-h-[40px] rounded-lg text-sm font-semibold transition ${
+                        job.pricing === k ? 'bg-white shadow text-steel-900' : 'text-steel-500'}`}>
+                      {l}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <label className="label">Máx. horas</label>
-                  <div className="relative">
-                    <input type="number" min={0.5} max={24} step={0.5} className="input !pr-9" required
-                      value={job.max_hours}
-                      onChange={e => setJob(j => ({ ...j, max_hours: Number(e.target.value) }))} />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
+                {job.pricing === 'fixed' ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                        <input type="number" min={1} step={0.01} className="input !pl-9" required
+                          placeholder="150" value={job.total}
+                          onChange={e => setJob(j => ({ ...j, total: e.target.value }))} />
+                      </div>
+                      <div className="text-xs text-steel-400 mt-1">Valor do serviço</div>
+                    </div>
+                    <div>
+                      <div className="relative">
+                        <input type="number" min={0.5} max={99} step={0.5} className="input !pr-9"
+                          placeholder="opcional" value={job.est_hours}
+                          onChange={e => setJob(j => ({ ...j, est_hours: e.target.value }))} />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
+                      </div>
+                      <div className="text-xs text-steel-400 mt-1">Tempo previsto (opcional)</div>
+                    </div>
                   </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                        <input type="number" min={1} className="input !pl-9" required
+                          value={job.price_per_hour || ''}
+                          placeholder={target.hourly_rate.toFixed(0)}
+                          onChange={e => setJob(j => ({ ...j, price_per_hour: Number(e.target.value) }))} />
+                      </div>
+                      <div className="text-xs text-steel-400 mt-1">Valor por hora</div>
+                    </div>
+                    <div>
+                      <div className="relative">
+                        <input type="number" min={0.5} max={24} step={0.5} className="input !pr-9" required
+                          value={job.max_hours}
+                          onChange={e => setJob(j => ({ ...j, max_hours: Number(e.target.value) }))} />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
+                      </div>
+                      <div className="text-xs text-steel-400 mt-1">Máx. horas</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="label">Quando</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([['now', '⚡ Agora', 'Vem assim que aceitar'], ['scheduled', '📅 Agendar', 'Escolha dia e hora']] as const).map(([v, t, d]) => (
+                    <button key={v} type="button" onClick={() => setJob(j => ({ ...j, when: v }))}
+                      className={`rounded-xl border-2 p-3 text-left min-h-[44px] transition active:scale-95 ${job.when === v ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="font-semibold text-sm">{t}</div>
+                      <div className="text-xs text-steel-500 mt-0.5">{d}</div>
+                    </button>
+                  ))}
                 </div>
+                {job.when === 'scheduled' && (
+                  <input type="datetime-local" className="input mt-2" required
+                    min={toLocalInput(new Date())}
+                    value={job.scheduled_at}
+                    onChange={e => setJob(j => ({ ...j, scheduled_at: e.target.value }))} />
+                )}
               </div>
 
               {est > 0 && (
                 <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
-                  <span className="text-sm text-brand-700">Teto do orçamento</span>
+                  <span className="text-sm text-brand-700">{job.pricing === 'fixed' ? 'Valor fechado do serviço' : 'Teto do orçamento'}</span>
                   <span className="font-bold text-brand-700 font-display">R$ {formatBRL(est)}</span>
                 </div>
               )}
 
               <div className="flex gap-2">
                 <button type="button" onClick={() => setTarget(null)} className="btn-ghost flex-1">Cancelar</button>
-                <button className="btn-primary flex-1" disabled={hiring}>{hiring ? '…' : 'Contratar'}</button>
+                <button className="btn-primary flex-1" disabled={hiring}>{hiring ? '…' : 'Enviar convite'}</button>
               </div>
             </form>
           </div>
@@ -260,4 +385,10 @@ export default function WorkshopSearch() {
       })()}
     </WorkshopLayout>
   );
+}
+
+/** Date → valor de <input type="datetime-local"> no fuso local */
+function toLocalInput(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }

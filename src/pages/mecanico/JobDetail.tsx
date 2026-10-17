@@ -7,6 +7,7 @@ import { formatBRL, mechanicNet, hoursLabel } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { WorkshopReviews } from '@/components/WorkshopReviews';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
+import { declineInvite, isPendingInvite } from '@/lib/jobInvite';
 import type { Job, Workshop } from '@/types/database';
 
 export default function MechanicJobDetail() {
@@ -18,6 +19,8 @@ export default function MechanicJobDetail() {
   const [busy, setBusy] = useState(false);
   const [showReviews, setShowReviews] = useState(false);
   const [myMechanicId, setMyMechanicId] = useState<string | null>(null);
+  const [declining, setDeclining] = useState(false);
+  const [declineReason, setDeclineReason] = useState('');
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -36,6 +39,17 @@ export default function MechanicJobDetail() {
 
   // Já aceitei esse job? (agendamento aceito aguardando o dia)
   const isMine = !!job?.mechanic_id && job.mechanic_id === myMechanicId;
+  // Convite direto pra mim, ainda sem resposta
+  const isInvite = !!job && isPendingInvite(job) && !!myMechanicId && job.invited_mechanic_id === myMechanicId;
+
+  async function decline() {
+    if (!job) return;
+    setBusy(true);
+    const { error } = await declineInvite(job.id, declineReason);
+    setBusy(false);
+    if (error) { alert('Erro ao recusar: ' + error.message); return; }
+    nav('/mecanico/dashboard');
+  }
 
   async function startDeparture() {
     if (!job) return;
@@ -76,7 +90,8 @@ export default function MechanicJobDetail() {
       .select('id');
     if (error || !updated?.length) {
       setBusy(false);
-      alert(error ? 'Erro ao aceitar: ' + error.message : 'Esse job já foi aceito por outro mecânico.');
+      alert(error ? 'Erro ao aceitar: ' + error.message
+        : job.audience === 'invite' ? 'Esse convite não está mais disponível.' : 'Esse job já foi aceito por outro mecânico.');
       nav('/mecanico/dashboard');
       return;
     }
@@ -94,7 +109,7 @@ export default function MechanicJobDetail() {
         {/* Job header */}
         <div className="card !bg-steel-800">
           <div className="text-xs text-brand-400 uppercase tracking-wider font-bold">
-            {isMine ? (job.en_route_at ? 'Job em andamento' : 'Agendamento aceito') : 'Job disponível'}
+            {isMine ? (job.en_route_at ? 'Job em andamento' : 'Agendamento aceito') : isInvite ? 'Convite para você' : 'Job disponível'}
           </div>
           <h1 className="text-2xl font-bold mt-1">{job.title}</h1>
           <p className="mt-3 text-steel-300 leading-relaxed">{job.description}</p>
@@ -115,6 +130,13 @@ export default function MechanicJobDetail() {
             )
           )}
         </div>
+
+        {isInvite && (
+          <div className="rounded-2xl border border-brand-500/40 bg-brand-500/10 px-4 py-3 text-sm text-steel-200 leading-snug">
+            <strong className="text-white">{shop?.business_name ?? 'A oficina'}</strong> escolheu você para este serviço.
+            Aceite ou recuse — o prazo de chegada só começa depois que você aceitar.
+          </div>
+        )}
 
         {/* Pacote (sem expor R$/h ou bruto — só horas previstas) */}
         <div className="card !bg-steel-800 text-center">
@@ -194,6 +216,34 @@ export default function MechanicJobDetail() {
               </button>
             </div>
           )
+        ) : job.status !== 'open' ? (
+          <div className="rounded-2xl bg-steel-800 border border-steel-700 px-4 py-4 text-center text-sm text-steel-300">
+            {job.status === 'cancelled' ? 'Essa demanda foi cancelada.' : 'Essa demanda não está mais disponível.'}
+          </div>
+        ) : isInvite && declining ? (
+          <div className="rounded-2xl bg-steel-800 border border-steel-700 p-4 space-y-3">
+            <div className="font-bold text-white">Recusar o convite?</div>
+            <textarea
+              className="input !bg-steel-900 !text-white !border-steel-600 resize-none text-base"
+              rows={2} placeholder="Motivo (opcional) — ex.: estou longe, sem horário…"
+              value={declineReason} onChange={e => setDeclineReason(e.target.value)}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setDeclining(false)} disabled={busy} className="btn-ghost btn-lg">Voltar</button>
+              <button onClick={decline} disabled={busy}
+                className="btn-lg rounded-xl font-bold bg-alert-500 text-white disabled:opacity-50">
+                {busy ? '…' : 'Recusar'}
+              </button>
+            </div>
+            <div className="text-xs text-steel-400">A oficina é avisada e escolhe outro mecânico. Recusar não gera multa.</div>
+          </div>
+        ) : isInvite ? (
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setDeclining(true)} disabled={busy} className="btn-ghost btn-lg">Recusar</button>
+            <button onClick={accept} disabled={busy} className="btn-primary btn-lg">
+              {busy ? '…' : 'Aceitar convite'}
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
             <Link to="/mecanico/dashboard" className="btn-ghost btn-lg">Recusar</Link>

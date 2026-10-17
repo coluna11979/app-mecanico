@@ -8,6 +8,7 @@ import { CancelJobButton } from '@/components/CancelJobButton';
 import { MechanicReviews } from '@/components/MechanicReviews';
 import { formatScheduled } from '@/lib/scheduling';
 import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
+import { inviteFields, inviteWaitingTooLong, isPendingInvite } from '@/lib/jobInvite';
 import type { Job } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
@@ -53,6 +54,8 @@ export default function WorkshopDashboard() {
   const [history, setHistory]   = useState<Job[]>([]);
   const [pendingConfirm, setPendingConfirm] = useState<Job[]>([]);
   const [pendingRate, setPendingRate] = useState<Job[]>([]);
+  /* Nome de quem foi convidado (convite direto) — id do mecânico → nome */
+  const [inviteNames, setInviteNames] = useState<Record<string, string>>({});
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [modal, setModal]       = useState(false);
   const [stackVer, setStackVer] = useState(0);
@@ -71,6 +74,13 @@ export default function WorkshopDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
   const hasPendingFees = usePendingFees(currentWorkshop?.id ?? null);
+
+  const inviteName = (j: Job) => (j.invited_mechanic_id && inviteNames[j.invited_mechanic_id]) || 'o mecânico';
+
+  /* Convites recusados nas últimas 12h — a oficina escolhe outro mecânico */
+  const declinedInvites = history.filter(j =>
+    j.status === 'cancelled' && j.audience === 'invite' && j.cancelled_by === 'mechanic'
+    && !!j.cancelled_at && Date.now() - new Date(j.cancelled_at).getTime() < 12 * 60 * 60 * 1000);
 
   // Recarrega jobs quando a oficina ativa mudar (troca pelo seletor)
   useEffect(() => {
@@ -152,6 +162,13 @@ export default function WorkshopDashboard() {
     ]);
     setActive((a as Job[]) ?? []);
     setHistory((h as Job[]) ?? []);
+    const invited = [...new Set([...(a ?? []), ...(h ?? [])]
+      .map(j => (j as Job).invited_mechanic_id).filter((x): x is string => !!x))];
+    if (invited.length) {
+      const { data: ms } = await supabase.from('mechanics')
+        .select('id, profile:profiles(full_name)').in('id', invited);
+      setInviteNames(Object.fromEntries((ms ?? []).map((m: any) => [m.id, m.profile?.full_name ?? 'Mecânico'])));
+    }
     setPendingConfirm((pc as Job[]) ?? []);
     setPendingRate((pr as Job[]) ?? []);
   }
@@ -317,9 +334,10 @@ export default function WorkshopDashboard() {
       max_hours:      mh,
       price:          pph * mh,
       ...pricingFields,
-      status:         isDirect ? 'assigned' : 'open',
-      mechanic_id:    isDirect ? pickedMechanic : null,
-      audience:       isFavorites ? 'favorites' : 'public',
+      // Mecânico específico = convite: só vira "aceito" quando ele aceitar
+      ...(isDirect
+        ? inviteFields(pickedMechanic)
+        : { status: 'open', mechanic_id: null, audience: isFavorites ? 'favorites' : 'public' }),
     };
     if (form.service_order_id) payload.service_order_id = form.service_order_id;
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
@@ -448,6 +466,28 @@ export default function WorkshopDashboard() {
       {/* Resumo do período: gasto, tempos de aceite/chegada, mecânicos mais contratados */}
       {currentWorkshop?.id && <MarketplaceSummary workshopId={currentWorkshop.id} />}
 
+      {/* Convite recusado: avisa e leva para escolher outro mecânico */}
+      {declinedInvites.length > 0 && (
+        <section className="mb-6 space-y-2">
+          {declinedInvites.map(j => (
+            <div key={j.id} className="rounded-2xl border border-alert-200 bg-alert-500/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-steel-900 leading-snug">
+                  {firstName(inviteName(j))} {j.cancellation_reason?.startsWith('Mecânico desistiu') ? 'desistiu do' : 'recusou o'} convite
+                </div>
+                <div className="text-sm text-steel-600 mt-0.5 break-words">
+                  “{j.title}” foi cancelada sem multa. Escolha outro mecânico ou publique para todos.
+                </div>
+              </div>
+              <Link to="/oficina/buscar"
+                className="shrink-0 inline-flex items-center justify-center h-11 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">
+                Escolher outro mecânico
+              </Link>
+            </div>
+          ))}
+        </section>
+      )}
+
       {/* 🔔 Confirmações pendentes — ação prioritária */}
       {pendingConfirm.length > 0 && (
         <section className="mb-6">
@@ -547,7 +587,11 @@ export default function WorkshopDashboard() {
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-steel-900 leading-snug line-clamp-2 break-words">{j.title}</div>
-                <div className="text-[13px] text-steel-500 mt-0.5">{statusLabel(j)}</div>
+                <div className="text-[13px] text-steel-500 mt-0.5">
+                  {isPendingInvite(j)
+                    ? `Convite enviado para ${inviteName(j)} — aguardando ele aceitar`
+                    : statusLabel(j)}
+                </div>
               </div>
               <div className="text-right shrink-0">
                 <div className="font-display text-lg font-bold tabular-nums leading-tight">R$ {formatBRL(j.price, { decimals: 0 })}</div>
@@ -557,6 +601,12 @@ export default function WorkshopDashboard() {
               </div>
             </div>
             <ArrivalInfo j={j} />
+            {inviteWaitingTooLong(j) && (
+              <div className="mt-2 text-[12px] text-pending-700 bg-pending-50 border border-pending-200 rounded-lg px-2.5 py-2 leading-snug">
+                ⏳ {firstName(inviteName(j))} ainda não respondeu. Você pode cancelar sem multa e{' '}
+                <Link to="/oficina/buscar" className="font-bold underline">chamar outro mecânico</Link>.
+              </div>
+            )}
             {j.scheduled_at && (
               <div className="text-xs text-steel-500 mt-1.5">📅 {formatScheduled(j.scheduled_at)}</div>
             )}
@@ -572,8 +622,9 @@ export default function WorkshopDashboard() {
                 ) : j.mechanic_id ? (
                   <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-signal-50 text-signal-700 text-xs font-bold">✓ Aceito</span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-pending-50 text-pending-700 text-xs font-bold">
-                    <span className="h-1.5 w-1.5 rounded-full bg-pending-500 animate-pulse-soft" /> Aguardando aceite
+                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-pending-50 text-pending-700 text-xs font-bold max-w-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-pending-500 animate-pulse-soft shrink-0" />
+                    <span className="truncate">{isPendingInvite(j) ? `Aguardando ${firstName(inviteName(j))} aceitar` : 'Aguardando aceite'}</span>
                   </span>
                 )}
               </div>
@@ -804,7 +855,7 @@ export default function WorkshopDashboard() {
                       className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
                       <div className="text-lg mb-1">🎯</div>
                       <div className="font-semibold text-sm">Mecânico específico</div>
-                      <div className="text-xs text-steel-500 mt-0.5">Convide diretamente e inicie o chat</div>
+                      <div className="text-xs text-steel-500 mt-0.5">Convite direto — ele precisa aceitar</div>
                     </button>
                   </div>
                 </div>
@@ -1063,6 +1114,9 @@ function HistoryRow({ j }: { j: Job }) {
         <div className="text-xs text-steel-500">
           {date ? new Date(date).toLocaleDateString('pt-BR') : '—'}
         </div>
+        {isCancelled && j.audience === 'invite' && j.cancelled_by === 'mechanic' && (
+          <div className="text-xs text-alert-600">Convite recusado pelo mecânico</div>
+        )}
         <div className="text-xs text-steel-400">
           Pacote: {pricingLabel(j)}
           {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
@@ -1112,4 +1166,8 @@ function statusLabel(j: Job): string {
   if (!j.pix_paid_at)             return 'Mecânico chegou — aguarda pagamento';
   if (!j.started_at)              return '✅ Pago — aguardando início do serviço';
   return 'Em serviço';
+}
+
+function firstName(name: string): string {
+  return name.split(' ')[0] || name;
 }

@@ -102,6 +102,36 @@ Deno.serve(async (req) => {
     if (job.cancelled_at) return new Response(JSON.stringify({ error: 'job already cancelled' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
     if (job.status === 'completed') return new Response(JSON.stringify({ error: 'cannot cancel completed job' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+    // Convite direto aceito e depois desistido: a oficina escolheu ESTE mecânico, então não
+    // reabre (só ele veria) — cancela sem multa e a oficina escolhe outro.
+    if (cancelled_by === 'mechanic' && job.audience === 'invite' && job.status === 'assigned' && !job.arrived_at && !job.pix_paid_at) {
+      await admin.from('jobs').update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+        cancelled_by,
+        cancellation_reason: `Mecânico desistiu do convite: ${reason}`,
+        cancellation_fee: 0,
+        cancellation_refund: 0,
+      }).eq('id', job_id);
+      try {
+        await admin.from('messages').insert({
+          job_id, sender_id: user.id,
+          content: `⚠️ O mecânico desistiu do convite.\nMotivo: ${reason}\nVocê pode escolher outro mecânico em Buscar profissionais — sem multa.`,
+        });
+        const { data: shop } = await admin.from('workshops').select('profile_id').eq('id', job.workshop_id).maybeSingle();
+        if (shop?.profile_id) {
+          await admin.from('notifications').insert({
+            user_id: shop.profile_id, type: 'warning', link: '/oficina/buscar',
+            title: 'Mecânico desistiu do convite',
+            body: `"${job.title}" foi cancelada sem multa. Escolha outro mecânico ou publique para todos.`,
+          });
+        }
+      } catch {}
+      return new Response(JSON.stringify({ success: true, scenario: 'mechanic_dropped_invite', kept_open: false, fee: 0, refund: 0 }), {
+        status: 200, headers: { ...CORS, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (cancelled_by === 'mechanic' && job.status === 'assigned' && !job.arrived_at && !job.pix_paid_at) {
       await admin.from('jobs').update({
         mechanic_id: null, status: 'open', arrived_at: null,
