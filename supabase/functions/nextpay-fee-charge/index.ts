@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error('[nextpay-fee-charge]', e);
     // Recusa da NextPay ("NextPay /charges: 400 CODE Motivo"): mostra o motivo, não um erro genérico
-    const reason = /^NextPay [^:]+: 4dds+(?:[A-Z_]{3,}s+)?(.+)$/.exec(String((e as Error)?.message ?? ''))?.[1]?.trim();
+    const reason = /^NextPay [^:]+: 4\d\d\s+(?:[A-Z_]{3,}\s+)?(.+)$/.exec(String((e as Error)?.message ?? ''))?.[1]?.trim();
     if (reason) return json({ error: `A NextPay recusou o pagamento: ${reason}` }, 502);
     return json({ error: 'Não foi possível gerar o pagamento agora. Tente de novo em instantes.' }, 500);
   }
