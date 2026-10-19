@@ -13,6 +13,7 @@
 import { supabase } from '@/lib/supabase';
 import { elapsedShiftMinutes, parseSchedule, scheduledMinutesInMonth, scheduledMinutesOn, type Absence } from '@/lib/team';
 import { dayKey, daySummary, type HalfData } from '@/lib/commissionDaily';
+import type { CostCfg } from '@/lib/costSettings';
 
 const norm = (s?: string | null) => (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 /** "Mecânico", "Mecânico chefe"… (eletricista, alinhador, auxiliar, gerente e administrativo ficam de fora) */
@@ -32,10 +33,10 @@ export type CostPerson = {
   productiveMin: number | null;
   absent: boolean;
   hourly: number | null;
-  salaryCost: number; commission: number; total: number;
+  salaryCost: number; encargosCost: number; benefitsCost: number; commission: number; total: number;
 };
 export type TeamCost = {
-  people: CostPerson[]; total: number; salaryCost: number; commission: number;
+  people: CostPerson[]; total: number; salaryCost: number; encargosCost: number; benefitsCost: number; commission: number;
   workedMin: number; productiveMin: number | null; revenue: number;
   /** Mecânicos sem jornada ou sem salário: o custo deles não entrou na conta */
   missing: { name: string; why: string }[];
@@ -73,6 +74,7 @@ export function buildTeamCost(
   inp: { team: CostMech[]; salary: Map<string, number>; absences: Absence[]; logs: Log[] },
   half: HalfData,
   now = new Date(),
+  cfg: CostCfg = { encargosPct: 0, benefitsMonthly: 0 },
 ): TeamCost {
   const date = new Date(`${day}T12:00:00`);
   const isToday = dayKey(now) === day;
@@ -95,6 +97,9 @@ export function buildTeamCost(
     const paidMin = absent ? scheduledMin : workedMin;
     const salaryCost = hourly != null ? r2(hourly * paidMin / 60) : 0;
     const commission = r2(commissionOf.get(m.id) ?? 0);
+    // Encargos e provisões sobre o salário; benefícios (VT, refeição, uniforme…) rateados pelas horas, como o salário
+    const encargosCost = r2(salaryCost * cfg.encargosPct / 100);
+    const benefitsCost = monthMin > 0 ? r2((cfg.benefitsMonthly / (monthMin / 60)) * paidMin / 60) : 0;
 
     let productiveMin: number | null = null;
     if (hasClock) {
@@ -106,14 +111,16 @@ export function buildTeamCost(
     }
     if (!hasSchedule) missing.push({ name: m.name, why: 'sem jornada cadastrada' });
     else if (!hasSalary) missing.push({ name: m.name, why: 'sem salário cadastrado' });
-    return { id: m.id, name: m.name, hasSchedule, hasSalary, scheduledMin, workedMin, productiveMin, absent, hourly, salaryCost, commission, total: r2(salaryCost + commission) };
+    return { id: m.id, name: m.name, hasSchedule, hasSalary, scheduledMin, workedMin, productiveMin, absent, hourly, salaryCost, encargosCost, benefitsCost, commission, total: r2(salaryCost + encargosCost + benefitsCost + commission) };
   });
 
   const salaryCost = r2(people.reduce((a, p) => a + p.salaryCost, 0));
+  const encargosCost = r2(people.reduce((a, p) => a + p.encargosCost, 0));
+  const benefitsCost = r2(people.reduce((a, p) => a + p.benefitsCost, 0));
   const commission = r2(people.reduce((a, p) => a + p.commission, 0));
   return {
     people: people.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
-    total: r2(salaryCost + commission), salaryCost, commission,
+    total: r2(salaryCost + encargosCost + benefitsCost + commission), salaryCost, encargosCost, benefitsCost, commission,
     workedMin: people.reduce((a, p) => a + p.workedMin, 0),
     productiveMin: hasClock ? people.reduce((a, p) => a + (p.productiveMin ?? 0), 0) : null,
     revenue: sum.revenue, missing, hasClock,
@@ -134,8 +141,9 @@ export function buildTeamCostRange(
   inp: Parameters<typeof buildTeamCost>[1],
   half: HalfData,
   now = new Date(),
+  cfg: CostCfg = { encargosPct: 0, benefitsMonthly: 0 },
 ): TeamCostRange {
-  const per = days.map(d => ({ day: d, c: buildTeamCost(d, inp, half, now) }));
+  const per = days.map(d => ({ day: d, c: buildTeamCost(d, inp, half, now, cfg) }));
   const byId = new Map<string, CostPerson>();
   const missing = new Map<string, string>();
   for (const { c } of per) {
@@ -145,7 +153,8 @@ export function buildTeamCostRange(
       if (!cur) { byId.set(p.id, { ...p }); continue; }
       cur.workedMin += p.workedMin; cur.scheduledMin += p.scheduledMin;
       cur.salaryCost = r2(cur.salaryCost + p.salaryCost); cur.commission = r2(cur.commission + p.commission);
-      cur.total = r2(cur.salaryCost + cur.commission);
+      cur.encargosCost = r2(cur.encargosCost + p.encargosCost); cur.benefitsCost = r2(cur.benefitsCost + p.benefitsCost);
+      cur.total = r2(cur.salaryCost + cur.encargosCost + cur.benefitsCost + cur.commission);
       cur.productiveMin = p.productiveMin == null ? cur.productiveMin : (cur.productiveMin ?? 0) + p.productiveMin;
       cur.absent = cur.absent || p.absent;
       cur.hourly = p.hourly ?? cur.hourly;
@@ -153,10 +162,12 @@ export function buildTeamCostRange(
   }
   const people = [...byId.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   const salaryCost = r2(people.reduce((a, p) => a + p.salaryCost, 0));
+  const encargosCost = r2(people.reduce((a, p) => a + p.encargosCost, 0));
+  const benefitsCost = r2(people.reduce((a, p) => a + p.benefitsCost, 0));
   const commission = r2(people.reduce((a, p) => a + p.commission, 0));
   const hasClock = per.some(x => x.c.hasClock);
   return {
-    people, total: r2(salaryCost + commission), salaryCost, commission,
+    people, total: r2(salaryCost + encargosCost + benefitsCost + commission), salaryCost, encargosCost, benefitsCost, commission,
     workedMin: people.reduce((a, p) => a + p.workedMin, 0),
     productiveMin: hasClock ? people.reduce((a, p) => a + (p.productiveMin ?? 0), 0) : null,
     revenue: r2(per.reduce((a, x) => a + x.c.revenue, 0)),

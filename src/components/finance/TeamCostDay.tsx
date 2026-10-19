@@ -4,6 +4,8 @@ import { dayKey, loadRangeData, type HalfData } from '@/lib/commissionDaily';
 import { buildTeamCostRange, fmtHours, loadTeamCostInputs } from '@/lib/teamCost';
 import { estimatedServiceMinutes, servicesExecuted } from '@/lib/serviceCatalog';
 import type { PanelItem, PanelOs } from '@/lib/workshopMetrics';
+import { DEFAULT_SETTINGS, REGIMES, cfgOf, encargosPctOf, useCostSettings, type Regime } from '@/lib/costSettings';
+import TeamCostCompare, { CostBreakdown } from '@/components/finance/TeamCostCompare';
 
 const MAX_DAYS = 93;
 const br = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -46,9 +48,11 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
     return () => { alive = false; };
   }, [wid, key, first, last, tooLong]);
 
-  const all = useMemo(() => (data && data.key === key ? buildTeamCostRange(days, data.inp, data.hd) : null), [data, key, days]);
+  const { settings, save } = useCostSettings(wid);
+  const cfg = useMemo(() => cfgOf(settings ?? DEFAULT_SETTINGS), [settings]);
+  const all = useMemo(() => (data && data.key === key ? buildTeamCostRange(days, data.inp, data.hd, new Date(), cfg) : null), [data, key, days, cfg]);
   const focused = focus && days.includes(focus) ? focus : null;
-  const cost = useMemo(() => (focused && data && data.key === key ? buildTeamCostRange([focused], data.inp, data.hd) : all), [focused, all, data, key]);
+  const cost = useMemo(() => (focused && data && data.key === key ? buildTeamCostRange([focused], data.inp, data.hd, new Date(), cfg) : all), [focused, all, data, key, cfg]);
 
   const single = !!focused || days.length === 1;
   const title = focused ? brLong(focused) : single ? brLong(first) : first ? `${br(first)} a ${br(last)} · ${days.length} dias` : '';
@@ -58,8 +62,18 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
     if (!ds.length) return null;
     const from = new Date(`${ds[0]}T00:00:00`);
     const to = new Date(new Date(`${ds[ds.length - 1]}T00:00:00`).getTime() + 86400000);
-    return estimatedServiceMinutes(servicesExecuted(os, items, { from, to }, 100).rows);
+    const rows = servicesExecuted(os, items, { from, to }, 100).rows;
+    return { ...estimatedServiceMinutes(rows), rows };
   }, [focused, days, os, items]);
+
+  // Valor/hora da plataforma no simulador: digita na hora e grava depois de uns instantes
+  const [hourly, setHourly] = useState<number | null>(null);
+  const hourlyNow = hourly ?? settings?.platform_hourly ?? DEFAULT_SETTINGS.platform_hourly;
+  useEffect(() => {
+    if (hourly == null || !settings || hourly === settings.platform_hourly) return;
+    const t = setTimeout(() => { save({ platform_hourly: hourly }); }, 800);
+    return () => clearTimeout(t);
+  }, [hourly]); // eslint-disable-line react-hooks/exhaustive-deps
   const pctOfRevenue = cost && cost.revenue > 0 ? (cost.total / cost.revenue) * 100 : null;
   const perHour = cost && cost.workedMin > 0 ? cost.total / (cost.workedMin / 60) : null;
   const use = cost && cost.productiveMin != null && cost.workedMin > 0 ? (cost.productiveMin / cost.workedMin) * 100 : null;
@@ -88,7 +102,7 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
             <div className="rounded-2xl bg-steel-900 text-white p-4 col-span-2 sm:col-span-1">
               <div className="text-[11px] text-steel-400">Custo da equipe {single ? 'no dia' : 'no período'}</div>
               <div className="text-2xl font-bold font-display mt-0.5">{brl(cost.total)}</div>
-              <div className="text-[11px] text-steel-300 mt-0.5">salários {brl(cost.salaryCost)} + comissões {brl(cost.commission)}</div>
+              <div className="text-[11px] text-steel-300 mt-0.5">custo real da equipe própria: salários, encargos, benefícios e comissões</div>
             </div>
             <div className="rounded-2xl border border-steel-200 p-4 col-span-2 sm:col-span-1">
               <div className="text-[11px] text-steel-500">Horas trabalhadas · soma da equipe</div>
@@ -114,6 +128,14 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
             </div>
           </div>
 
+          <div className="mt-4">
+            <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-2">De onde vem o custo</div>
+            <CostBreakdown c={cost} />
+            {cfg.encargosPct > 0 && (
+              <p className="text-[11px] text-steel-400 mt-2">Encargos = {cfg.encargosPct.toLocaleString('pt-BR')}% do salário ({REGIMES[settings?.regime ?? 'simples'].label}): {REGIMES[settings?.regime ?? 'simples'].items.map(([n, v]) => `${n} ${v.toLocaleString('pt-BR')}%`).join(' · ')}.</p>
+            )}
+          </div>
+
           {cost.commission === 0 && (
             <p className="text-xs bg-steel-50 border border-steel-200 text-steel-600 rounded-xl px-3 py-2 mt-3">
               Nenhum serviço finalizado {single ? 'neste dia' : 'neste período'}, então a comissão é R$ 0,00 (ela conta no dia em que o serviço termina).
@@ -136,6 +158,8 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
                     </div>
                     <div className="text-[11px] text-steel-400 mt-0.5">
                       {p.hasSalary && p.hasSchedule ? `salário ${brl(p.salaryCost)}` : p.hasSalary ? 'salário não entrou na conta' : <span className="text-pending-800">sem salário cadastrado</span>}
+                      {p.hasSalary && p.hasSchedule && p.encargosCost > 0 && ` · encargos ${brl(p.encargosCost)}`}
+                      {p.benefitsCost > 0 && ` · benefícios ${brl(p.benefitsCost)}`}
                       {' · '}comissão <strong className={p.commission > 0 ? 'text-signal-700' : ''}>{brl(p.commission)}</strong>
                       {p.hourly != null && <> · {brl(p.hourly)}/h</>}
                     </div>
@@ -146,7 +170,7 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
             ))}
             <li className="py-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm bg-steel-50 -mx-2 px-2 rounded-lg">
               <span className="font-semibold">Total {single ? 'do dia' : 'do período'}</span>
-              <span className="text-xs text-steel-500">salários {brl(cost.salaryCost)} · comissões <strong className="text-signal-700">{brl(cost.commission)}</strong></span>
+              <span className="text-xs text-steel-500">salários {brl(cost.salaryCost)}{cost.encargosCost > 0 && <> · encargos {brl(cost.encargosCost)}</>}{cost.benefitsCost > 0 && <> · benefícios {brl(cost.benefitsCost)}</>} · comissões <strong className="text-signal-700">{brl(cost.commission)}</strong></span>
               <strong className="tabular-nums">{brl(cost.total)}</strong>
             </li>
           </ul>
@@ -179,9 +203,32 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
               ⚠️ Custo incompleto: {cost.missing.map(m => `${m.name} (${m.why})`).join(', ')}. Complete na ficha da Equipe.
             </p>
           )}
+          <details className="mt-3 rounded-xl border border-steel-200 px-3 py-2 group">
+            <summary className="cursor-pointer list-none text-xs font-semibold text-steel-600 flex items-center justify-between">
+              <span>⚙️ Parâmetros do custo (regime e benefícios)</span><span className="text-steel-400 group-open:rotate-90 transition">›</span>
+            </summary>
+            <div className="mt-3 grid sm:grid-cols-2 gap-3">
+              <label className="text-xs text-steel-500">Regime da oficina
+                <select className="input mt-1" value={settings?.regime ?? 'simples'} onChange={e => save({ regime: e.target.value as Regime })}>
+                  {(Object.keys(REGIMES) as Regime[]).map(r => <option key={r} value={r}>{REGIMES[r].label} · encargos {encargosPctOf(r).toLocaleString('pt-BR')}%</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-steel-500">Benefícios por mecânico (R$ por mês)
+                <input className="input mt-1" inputMode="decimal" placeholder="0,00" defaultValue={settings?.benefits_monthly ? String(settings.benefits_monthly).replace('.', ',') : ''}
+                  key={settings ? 'ok' : 'wait'} onBlur={e => save({ benefits_monthly: Math.max(0, Number(e.target.value.replace(',', '.')) || 0) })} />
+                <span className="text-[11px] text-steel-400">vale-transporte, refeição, uniforme, EPI, exames…</span>
+              </label>
+            </div>
+            <p className="text-[11px] text-steel-400 mt-2">Percentuais padrão da legislação trabalhista: confirme com o contador antes de tratar como definitivo.</p>
+          </details>
+
+          {est && est.counted > 0 && cost.workedMin > 0 && (
+            <TeamCostCompare cost={cost} estMin={est.min} services={est.rows} hourly={hourlyNow} onHourly={v => setHourly(v)} />
+          )}
+
           <p className="text-[11px] text-steel-400 leading-relaxed mt-3">
             Custo por hora = salário ÷ horas contratadas do mês. Horas trabalhadas = jornada de cada dia (hoje, só o que já passou), sem folga nem afastamento;
-            afastado não trabalha, mas o salário é pago. Comissão = a da aba “Por dia” das Comissões (conta no dia em que o serviço termina). Sem encargos (13º, férias, FGTS).
+            afastado não trabalha, mas o salário é pago. Comissão = a da aba “Por dia” das Comissões (conta no dia em que o serviço termina). Encargos e benefícios seguem os parâmetros acima.
           </p>
         </>
       )}
