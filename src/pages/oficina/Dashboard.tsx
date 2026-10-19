@@ -31,11 +31,25 @@ type NewJob = {
   service_order_ids?: string[];
   /** Serviços empilhados avulsos (sem OS) que viram esta demanda */
   stacked_service_ids?: string[];
+  /** Veículo do serviço (texto livre). Vai na descrição e no título da demanda */
+  vehicle?: string;
 };
 type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
 type JobMode = 'open' | 'favorites' | 'direct';
 
-const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '' };
+const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '', vehicle: '' };
+
+/** Título e descrição com o veículo (o mecânico vê em qual carro vai trabalhar) */
+function withVehicle(f: NewJob) {
+  const v = (f.vehicle ?? '').trim();
+  const title = f.title.trim(), description = f.description.trim();
+  if (!v) return { title, description };
+  const model = v.split('·')[0].trim();
+  return {
+    title: (title.toLowerCase().includes(model.toLowerCase()) ? title : `${title} — ${model}`).slice(0, 120),
+    description: `${description}${description ? '\n\n' : ''}Veículo: ${v}`,
+  };
+}
 
 const draftKey = jobDraftKey;
 function loadDraft(workshopId: string): NewJob | null {
@@ -320,10 +334,11 @@ export default function WorkshopDashboard() {
       setSaving(false);
       return setFormError('Você ainda não tem mecânicos preferidos. Adicione pelo menos um antes de usar esse modo.');
     }
+    const text = withVehicle(form);
     const payload: Record<string, unknown> = {
       workshop_id:    currentShop.id,
-      title:          form.title.trim(),
-      description:    form.description.trim(),
+      title:          text.title,
+      description:    text.description,
       price_per_hour: pph,
       max_hours:      mh,
       price:          pph * mh,
@@ -389,6 +404,7 @@ export default function WorkshopDashboard() {
       workshop_id: shop.id,
       title: form.title.trim(),
       description: form.description.trim(),
+      vehicle: form.vehicle?.trim() || null,
       total: Math.round(price.pph * price.mh * 100) / 100,
       hours: price.fixed ? price.est : price.mh,
       created_by: user?.id ?? null,
@@ -757,6 +773,16 @@ export default function WorkshopDashboard() {
                 <input className="input" required placeholder="Ex.: Troca de pastilha de freio — Civic"
                   value={form.title} onChange={set('title')} />
               </div>
+
+              {/* Veículo: só na demanda avulsa (a que vem de OS/empilhados já traz os carros) */}
+              {!editingId && !form.service_order_id && !form.stacked_service_ids?.length && (
+                <div>
+                  <label className="label">Veículo</label>
+                  <input className="input" placeholder="Ex.: Gol prata 2015 · ABC1D23"
+                    value={form.vehicle ?? ''} onChange={set('vehicle')} />
+                  <div className="text-xs text-steel-400 mt-1">Modelo, cor e placa: o mecânico vê em qual carro vai trabalhar</div>
+                </div>
+              )}
 
               {/* Descrição */}
               <div>

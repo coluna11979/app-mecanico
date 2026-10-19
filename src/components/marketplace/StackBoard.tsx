@@ -9,7 +9,7 @@ type StackItem = {
   order: { id: string; number: number | null; title: string; status: string; vehicle: { make: string | null; model: string | null; plate: string | null } | null } | null;
 };
 /** Serviço empilhado avulso (sem OS), guardado direto pela Nova demanda */
-type FreeItem = { id: string; title: string; description: string; total: number; hours: number | null };
+type FreeItem = { id: string; title: string; description: string; total: number; hours: number | null; vehicle: string | null };
 /** Um card da pilha: os serviços de uma OS ou um serviço avulso */
 type Card = {
   key: string; kind: 'os' | 'free'; osId: string | null; number: number | null; title: string; car: string;
@@ -40,7 +40,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
         .select('id, service_order_id, description, quantity, unit_price, order:service_orders(id, number, title, status, vehicle:vehicles(make, model, plate))')
         .eq('workshop_id', wid).eq('kind', 'labor').eq('executor', 'platform')
         .not('stacked_at', 'is', null).is('platform_job_id', null).order('stacked_at'),
-      supabase.from('stacked_services').select('id, title, description, total, hours')
+      supabase.from('stacked_services').select('id, title, description, total, hours, vehicle')
         .eq('workshop_id', wid).is('job_id', null).is('removed_at', null).order('created_at'),
     ]);
     if (os.error) console.warn('[StackBoard]', os.error.message);
@@ -64,7 +64,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
       m.set(o.id, c);
     }
     const freeCards: Card[] = free.map(f => ({
-      key: `free:${f.id}`, kind: 'free', osId: null, number: null, title: f.title, car: '',
+      key: `free:${f.id}`, kind: 'free', osId: null, number: null, title: f.title, car: f.vehicle?.trim() ?? '',
       items: [{ id: f.id, description: f.title, quantity: 1, amount: f.total }], labor: f.total, free: f,
     }));
     return [...m.values(), ...freeCards];
@@ -111,13 +111,16 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
     if (!inSearch.length) return;
     const many = inSearch.length > 1;
     const first = searchItems[0];
-    const vehicles = osCards.length;
+    // Carros diferentes na demanda: um por OS + os avulsos com veículo (mesmo texto = mesmo carro)
+    const cars = [...new Set(inSearch.map(c => (c.kind === 'os' ? `os:${c.osId}` : c.car.toLowerCase())).filter(Boolean))];
+    const oneCar = inSearch.find(c => c.car)?.car ?? '';
+    const vehicles = cars.length;
     const title = (searchItems.length === 1 ? first.description : `${first.description} + ${searchItems.length - 1} serviço(s)`)
-      + (vehicles > 1 ? ` — ${vehicles} veículos` : vehicles === 1 && osCards[0].car ? ` — ${osCards[0].car.split(' · ')[0]}` : '');
+      + (vehicles > 1 ? ` — ${vehicles} veículos` : vehicles === 1 && oneCar ? ` — ${oneCar.split(' · ')[0]}` : '');
     const description = [
       'Serviços a realizar:',
       ...inSearch.flatMap(c => (c.kind === 'free'
-        ? [`• ${c.title.trim()}${c.free!.description.trim() ? ` — ${c.free!.description.trim()}` : ''}`]
+        ? [`• ${c.title.trim()}${c.car ? ` (${c.car})` : ''}${c.free!.description.trim() ? ` — ${c.free!.description.trim()}` : ''}`]
         : [
             many ? `\nVeículo${c.car ? `: ${c.car}` : ''} (OS nº ${osNum(c.number, c.osId!)})` : '',
             ...c.items.map(i => `• ${i.description.trim()}${i.quantity > 1 ? ` (${i.quantity}x)` : ''}`),
@@ -160,7 +163,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
                 </div>
                 <div className="text-xs text-steel-500 truncate">
                   {c.kind === 'os' ? (c.car || c.title)
-                    : [c.free!.description || 'Serviço avulso', c.free!.hours ? `~${String(c.free!.hours).replace('.', ',')}h` : ''].filter(Boolean).join(' · ')}
+                    : [c.car ? `🚗 ${c.car}` : (c.free!.description || 'Serviço avulso'), c.free!.hours ? `~${String(c.free!.hours).replace('.', ',')}h` : ''].filter(Boolean).join(' · ')}
                 </div>
               </div>
               <div className="text-sm font-bold text-steel-900 shrink-0">{brl(c.labor)}</div>
@@ -204,6 +207,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
               <div className="text-sm font-semibold text-steel-900">
                 Vai gerar 1 demanda · {searchItems.length} {searchItems.length === 1 ? 'serviço' : 'serviços'}
                 {osCards.length > 0 && ` · ${osCards.length} OS`}
+                {(() => { const n = new Set(inSearch.map(c => (c.kind === 'os' ? `os:${c.osId}` : c.car.toLowerCase())).filter(Boolean)).size; return n > 1 ? ` · ${n} veículos` : ''; })()}
               </div>
               <div className="text-xs text-steel-500">
                 {osCards.length > 0 && `Mão de obra das OS ${brl(osLabor)} → sugestão ${brl(sug.total)}`}
