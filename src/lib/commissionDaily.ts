@@ -31,8 +31,8 @@ export const halfOfDay = (day: string): { competence: string; half: Half } => ({
 type OsRow = { id: string; number: number | null; title: string; price: number; completed_at?: string; customer: { full_name: string } | null };
 const toInfo = (o: OsRow): DayOs => ({ id: o.id, number: o.number, title: o.title, customer: o.customer?.full_name ?? null, price: Number(o.price) });
 
-export async function loadHalfData(wid: string, competence: string, half: Half): Promise<HalfData> {
-  const { from, to } = halfRange(competence, half);
+/** Dados de comissão e faturamento de um intervalo qualquer (ISO). Dentro dele, cada dia sai de daySummary */
+export async function loadRangeData(wid: string, from: string, to: string): Promise<HalfData> {
   const [mechs, base, sales] = await Promise.all([
     supabase.from('workshop_mechanics').select(`id, name, active, ${COMMISSION_COLS}`).eq('workshop_id', wid).order('name'),
     loadCommissionBase(wid, from, to),
@@ -42,13 +42,18 @@ export async function loadHalfData(wid: string, competence: string, half: Half):
   ]);
   const saleRows = ((sales.data ?? []) as unknown as OsRow[]).map(o => ({ ...toInfo(o), completed_at: o.completed_at! }));
   const osInfo = new Map<string, DayOs>(saleRows.map(s => [s.id, s]));
-  // Serviço finalizado na quinzena em OS que concluiu fora dela: busca só os dados de exibição
+  // Serviço finalizado no intervalo em OS que concluiu fora dele: busca só os dados de exibição
   const missing = [...new Set(base.map(b => b.service_order_id))].filter(id => !osInfo.has(id));
   for (let i = 0; i < missing.length; i += 80) {
     const { data } = await supabase.from('service_orders').select('id, number, title, price, customer:customers(full_name)').in('id', missing.slice(i, i + 80));
     for (const o of (data ?? []) as unknown as OsRow[]) osInfo.set(o.id, toInfo(o));
   }
   return { mechs: (mechs.data ?? []) as unknown as Mech[], base, sales: saleRows, osInfo };
+}
+
+export function loadHalfData(wid: string, competence: string, half: Half): Promise<HalfData> {
+  const { from, to } = halfRange(competence, half);
+  return loadRangeData(wid, from, to);
 }
 
 export type DayLine = { os: DayOs; commission: number };
