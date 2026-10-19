@@ -100,3 +100,44 @@ export function partsSharePct(rows: ServiceExecuted[]) {
   const l = rows.reduce((t, x) => t + x.labor, 0);
   return p + l > 0 ? Math.round((p / (p + l)) * 100) : 0;
 }
+
+/**
+ * Tempo de REFERÊNCIA por tipo de serviço (minutos), carro de passeio e mecânico experiente.
+ * É uma estimativa inicial de mercado — não é tabela oficial nem tempo medido da equipe. Serve só para
+ * comparar e estimar até existirem tempos reais (relógio da OS). Motor (reparos grandes) fica de fora: varia demais.
+ */
+const REFERENCE: [string, number][] = [
+  ['Troca de óleo', 30],
+  ['Pneus, alinhamento', 45],
+  ['Freios', 90],
+  ['Suspensão', 90],
+  ['Coxins', 90],
+  ['Embreagem', 300],
+  ['Correia dentada', 180],
+  ['Arrefecimento', 120],
+  ['Direção', 60],
+  ['Ignição', 60],
+  ['Elétrica', 60],
+  ['Ar-condicionado', 60],
+  ['Escapamento', 45],
+  ['Transmissão', 90],
+  ['Revisão e diagnóstico', 30],
+  ['Correias do motor', 45],
+  ['Carroceria', 30],
+];
+
+/** Minutos de referência do serviço (null = sem referência, como Motor ou "não identificado") */
+export function refMinutesOf(serviceName: string): number | null {
+  return REFERENCE.find(([k]) => serviceName.startsWith(k))?.[1] ?? null;
+}
+
+/** Horas de serviço estimadas: quantidade de cada serviço × tempo de referência (só os que têm referência) */
+export function estimatedServiceMinutes(rows: { name: string; orders: number }[]) {
+  let min = 0, counted = 0, skipped = 0;
+  for (const r of rows) {
+    const ref = refMinutesOf(r.name);
+    if (ref == null) { skipped += r.orders; continue; }
+    min += ref * r.orders; counted += r.orders;
+  }
+  return { min, counted, skipped };
+}

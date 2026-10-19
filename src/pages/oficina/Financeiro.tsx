@@ -391,7 +391,7 @@ export default function Financeiro() {
               </div>
             </div>
 
-            {isGestor && wid && <TeamCostDay wid={wid} range={range} />}
+            {isGestor && wid && <TeamCostDay wid={wid} range={range} os={os} items={svcItems} />}
 
             {/* Origem do faturamento + recebimentos */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

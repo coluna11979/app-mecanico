@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { brl } from '@/lib/cash';
 import { dayKey, loadRangeData, type HalfData } from '@/lib/commissionDaily';
 import { buildTeamCostRange, fmtHours, loadTeamCostInputs } from '@/lib/teamCost';
+import { estimatedServiceMinutes, servicesExecuted } from '@/lib/serviceCatalog';
+import type { PanelItem, PanelOs } from '@/lib/workshopMetrics';
 
 const MAX_DAYS = 93;
 const br = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -15,7 +17,7 @@ type Inputs = Awaited<ReturnType<typeof loadTeamCostInputs>>;
  * Um dia = o dia; vários dias = a soma deles (dias futuros ficam de fora). Gerencial, só para o gestor.
  * Não entra no Resultado do período (que já conta salários/comissões pagos): ver lib/teamCost.ts.
  */
-export default function TeamCostDay({ wid, range }: { wid: string; range: { from: Date; to: Date } }) {
+export default function TeamCostDay({ wid, range, os, items }: { wid: string; range: { from: Date; to: Date }; os: PanelOs[]; items: PanelItem[] }) {
   const todayKey = dayKey(new Date());
   // Dias do período (até hoje)
   const days = useMemo(() => {
@@ -50,6 +52,14 @@ export default function TeamCostDay({ wid, range }: { wid: string; range: { from
 
   const single = !!focused || days.length === 1;
   const title = focused ? brLong(focused) : single ? brLong(first) : first ? `${br(first)} a ${br(last)} · ${days.length} dias` : '';
+  /** Estimativa pela tabela de referência (só enquanto o relógio das OS não é usado): serviços feitos × tempo de referência */
+  const est = useMemo(() => {
+    const ds = focused ? [focused] : days;
+    if (!ds.length) return null;
+    const from = new Date(`${ds[0]}T00:00:00`);
+    const to = new Date(new Date(`${ds[ds.length - 1]}T00:00:00`).getTime() + 86400000);
+    return estimatedServiceMinutes(servicesExecuted(os, items, { from, to }, 100).rows);
+  }, [focused, days, os, items]);
   const pctOfRevenue = cost && cost.revenue > 0 ? (cost.total / cost.revenue) * 100 : null;
   const perHour = cost && cost.workedMin > 0 ? cost.total / (cost.workedMin / 60) : null;
   const use = cost && cost.productiveMin != null && cost.workedMin > 0 ? (cost.productiveMin / cost.workedMin) * 100 : null;
@@ -86,7 +96,11 @@ export default function TeamCostDay({ wid, range }: { wid: string; range: { from
               <div className="text-[11px] text-steel-500 mt-0.5">
                 {cost.productiveMin != null
                   ? <>produtivas em OS: <strong>{fmtHours(cost.productiveMin)}</strong>{use != null && <> · aproveitamento <strong>{Math.round(use)}%</strong></>}</>
-                  : 'sem relógio de OS no período'}
+                  : est && est.counted > 0
+                    ? <>serviços feitos ≈ <strong>{fmtHours(est.min)}</strong> pela tabela de referência
+                      {cost.workedMin > 0 && <> · ocupação estimada <strong>{Math.round((est.min / cost.workedMin) * 100)}%</strong></>}
+                      <span className="text-steel-400"> (estimativa; motor e não identificados ficam de fora)</span></>
+                    : 'sem relógio de OS no período'}
               </div>
             </div>
             <div className="rounded-2xl border border-steel-200 p-4">
