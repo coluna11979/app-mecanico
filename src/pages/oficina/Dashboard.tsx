@@ -1094,7 +1094,8 @@ export default function WorkshopDashboard() {
                 </div>
               )}
               {/* Empilhar: só ao criar uma demanda avulsa (a que vem de OS/empilhados já tem o próprio caminho) */}
-              {!editingId && step === 3 && mode !== 'direct' && !form.service_order_id && !form.stacked_service_ids?.length && (
+              {/* A partir do passo 2: já tem serviço e valor, e a data não importa para empilhar */}
+              {!editingId && step >= 2 && mode !== 'direct' && !form.service_order_id && !form.stacked_service_ids?.length && (
                 <button type="button" onClick={stackService} disabled={saving}
                   className="w-full min-h-[44px] rounded-xl border border-steel-200 bg-white px-4 py-2 text-sm font-semibold text-steel-700 hover:bg-steel-50 disabled:opacity-50">
                   📚 Empilhar para juntar com outros serviços
