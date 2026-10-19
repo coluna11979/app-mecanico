@@ -22,7 +22,7 @@ export default function MarketplaceSummary({ workshopId }: { workshopId: string 
     let alive = true;
     (async () => {
       const { data } = await fetchAll((a, b) => supabase.from('jobs')
-        .select('id, title, status, price, created_at, accepted_at, en_route_at, arrived_at, completed_at, cancelled_at, cancelled_by, cancellation_fee, cancellation_fee_paid_at, workshop_confirmed_at, mechanic_rating, scheduled_at, mechanic_id, mechanic:mechanics(id, profile:profiles(full_name))')
+        .select('id, title, status, price, created_at, accepted_at, en_route_at, arrived_at, completed_at, cancelled_at, cancelled_by, cancellation_fee, cancellation_fee_paid_at, workshop_confirmed_at, mechanic_rating, scheduled_at, mechanic_id, mechanic:mechanics!jobs_mechanic_id_fkey(id, profile:profiles(full_name))')
         .eq('workshop_id', workshopId).order('id').range(a, b));
       if (!alive) return;
       setJobs(data as unknown as PanelJob[]);

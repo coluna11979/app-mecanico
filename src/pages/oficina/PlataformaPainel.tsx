@@ -12,7 +12,7 @@ import {
   type PlatformItem, type PlatformJob, type PlatformOs, type ProfitRow,
 } from '@/lib/platformPanel';
 
-const JOB_COLS = 'id, title, status, price, created_at, accepted_at, en_route_at, arrived_at, completed_at, cancelled_at, cancelled_by, cancellation_fee, cancellation_fee_paid_at, workshop_confirmed_at, mechanic_rating, scheduled_at, mechanic_id, service_order_id, pricing, max_hours, estimated_hours, actual_hours, mechanic:mechanics(id, profile:profiles(full_name))';
+const JOB_COLS = 'id, title, status, price, created_at, accepted_at, en_route_at, arrived_at, completed_at, cancelled_at, cancelled_by, cancellation_fee, cancellation_fee_paid_at, workshop_confirmed_at, mechanic_rating, scheduled_at, mechanic_id, service_order_id, pricing, max_hours, estimated_hours, actual_hours, mechanic:mechanics!jobs_mechanic_id_fkey(id, profile:profiles(full_name))';
 
 const ITEM_COLS = 'id, service_order_id, kind, description, quantity, unit_price, unit_cost, used_in_item_id, platform_job_id, executor, service_type';
 const OS_COLS = 'id, number, executor, vehicle:vehicles(make, model, plate, color), customer:customers(full_name)';
