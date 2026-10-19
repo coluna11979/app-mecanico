@@ -210,14 +210,17 @@ export default function WorkshopDashboard() {
 
   /* Nova demanda em 3 passos: 1 o quê · 2 quanto · 3 quando (a edição mostra tudo numa tela só) */
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  /** Mostrar "Para quem" (todos / preferidos / um mecânico) */
-  const [moreOpts, setMoreOpts] = useState(false);
   /** Mostrar "Pelo serviço / Por hora" */
   const [hourOpt, setHourOpt] = useState(false);
   const [pickDate, setPickDate] = useState(false);
   const formBody = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (modal) { setStep(1); setMoreOpts(false); setHourOpt(false); setPickDate(false); } }, [modal]);
-  const goStep = (n: 1 | 2 | 3) => { setFormError(null); setStep(n); formBody.current?.scrollTo({ top: 0 }); };
+  useEffect(() => { if (modal) { setStep(1); setHourOpt(false); setPickDate(false); } }, [modal]);
+  /** Até quando ignorar "publicar" (o toque em Continuar não pode virar publicação) */
+  const submitLockUntil = useRef(0);
+  const goStep = (n: 1 | 2 | 3) => {
+    setFormError(null); setStep(n); formBody.current?.scrollTo({ top: 0 });
+    if (n === 3) submitLockUntil.current = Date.now() + 800;
+  };
   function nextStep() {
     if (step === 1) {
       if (!form.title.trim()) return setFormError('Diga qual é o serviço.');
@@ -771,7 +774,11 @@ export default function WorkshopDashboard() {
         <div className="fixed inset-0 bg-steel-900/70 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={resetModal}>
           <form
             onClick={e => e.stopPropagation()}
-            onSubmit={e => { if (!editingId && step < 3) { e.preventDefault(); nextStep(); return; } createJob(e); }}
+            onSubmit={e => {
+              if (!editingId && step < 3) { e.preventDefault(); nextStep(); return; }
+              if (!editingId && Date.now() < submitLockUntil.current) { e.preventDefault(); return; }
+              createJob(e);
+            }}
             className="bg-white w-full sm:rounded-2xl sm:max-w-lg sm:shadow-2xl rounded-t-3xl max-h-[92vh] flex flex-col"
           >
             {/* Sheet handle (mobile) */}
@@ -973,42 +980,33 @@ export default function WorkshopDashboard() {
                 </div>
               )}
 
-              {!editingId && mode === 'open' && !moreOpts && (
-                <div className="rounded-xl bg-steel-50 px-3 py-2.5 flex items-center justify-between gap-2">
-                  <span className="text-sm text-steel-700">📢 Vai para <strong>todos os mecânicos disponíveis</strong></span>
-                  <button type="button" onClick={() => setMoreOpts(true)} className="text-xs font-semibold text-brand-600 shrink-0 min-h-[36px]">Trocar</button>
-                </div>
-              )}
-
-              {/* Modo de publicação — só na criação (escondido até tocar em "Trocar") */}
-              {!editingId && (moreOpts || mode !== 'open') && (
+              {/* Para quem — só na criação */}
+              {!editingId && (
                 <div>
-                  <label className="label">Como publicar</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <label className="label">Para quem</label>
+                  <div className="grid grid-cols-3 gap-2">
                     <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
-                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg mb-1">📢</div>
-                      <div className="font-semibold text-sm">Para todos</div>
-                      <div className="text-xs text-steel-500 mt-0.5">Todos os mecânicos disponíveis verão</div>
+                      className={`min-h-[76px] rounded-xl border-2 p-2.5 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg leading-none mb-1">📢</div>
+                      <div className="font-semibold text-sm leading-tight">Todos</div>
+                      <div className="text-[11px] text-steel-500 mt-0.5 leading-snug">os disponíveis</div>
                     </button>
                     <button type="button"
                       onClick={() => { setMode('favorites'); setPickedMechanic(''); }}
                       disabled={favorites.size === 0}
                       title={favorites.size === 0 ? 'Adicione preferidos em "Buscar mecânicos" ou no picker abaixo' : undefined}
-                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${mode === 'favorites' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg mb-1">⭐</div>
-                      <div className="font-semibold text-sm">Meus preferidos</div>
-                      <div className="text-xs text-steel-500 mt-0.5">
-                        {favorites.size === 0
-                          ? 'Sem preferidos ainda'
-                          : `${favorites.size} ${favorites.size === 1 ? 'mecânico' : 'mecânicos'} na sua lista`}
+                      className={`min-h-[76px] rounded-xl border-2 p-2.5 text-left transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${mode === 'favorites' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg leading-none mb-1">⭐</div>
+                      <div className="font-semibold text-sm leading-tight">Preferidos</div>
+                      <div className="text-[11px] text-steel-500 mt-0.5 leading-snug">
+                        {favorites.size === 0 ? 'nenhum ainda' : `${favorites.size} na lista`}
                       </div>
                     </button>
                     <button type="button" onClick={() => setMode('direct')}
-                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg mb-1">🎯</div>
-                      <div className="font-semibold text-sm">Mecânico específico</div>
-                      <div className="text-xs text-steel-500 mt-0.5">Convite direto — ele precisa aceitar</div>
+                      className={`min-h-[76px] rounded-xl border-2 p-2.5 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <div className="text-lg leading-none mb-1">🎯</div>
+                      <div className="font-semibold text-sm leading-tight">Um mecânico</div>
+                      <div className="text-[11px] text-steel-500 mt-0.5 leading-snug">convite direto</div>
                     </button>
                   </div>
                 </div>
@@ -1107,14 +1105,14 @@ export default function WorkshopDashboard() {
                   ? <button type="button" onClick={() => goStep((step - 1) as 1 | 2)} className="btn-ghost flex-1">← Voltar</button>
                   : <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>}
                 {!editingId && step < 3 ? (
-                  <button type="button" onClick={nextStep} className="btn-primary flex-[2]">Continuar →</button>
+                  <button key="next" type="button" onClick={e => { e.preventDefault(); nextStep(); }} className="btn-primary flex-[2]">Continuar →</button>
                 ) : (
-                  <button type="submit" className="btn-primary flex-[2]" disabled={saving}>
+                  <button key="submit" type="submit" className="btn-primary flex-[2]" disabled={saving}>
                     {saving
-                      ? (editingId ? 'Salvando…' : 'Chamando…')
+                      ? (editingId ? 'Salvando…' : 'Publicando…')
                       : editingId ? 'Salvar alterações'
                       : mode === 'direct' ? 'Convidar mecânico'
-                      : '⚡ Chamar mecânico'}
+                      : '⚡ Publicar demanda'}
                   </button>
                 )}
               </div>
