@@ -202,6 +202,8 @@ const BOTTOM_TABS: Record<OperatorRole, NavItem[]> = {
 /** Pacote "Só mecânicos": a barra é só a Plataforma */
 const PLATFORM_TABS: NavItem[] = [TAB.demandas, TAB.buscar, TAB.mensagens];
 const HOME = '/oficina/inicio';
+/** Para onde o login e os redirecionamentos mandam a oficina sem ela ter escolhido (Login.destino, ProtectedRoute) */
+const LANDING_PATHS = [HOME, '/oficina/painel', '/oficina/resultado'];
 
 const LS_KEY = 'oficina_msgs_last_seen';
 
@@ -534,6 +536,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     if (mods.loaded && mods.workshopId === shopId && !moduleAllows(mods.disabled, location.pathname)) {
       const alt = moduleEntry(mods.disabled, location.pathname);
       if (alt && allowed(alt)) { nav(alt, { replace: true }); return; }
+      // Tela de entrada padrão (login cai no Painel/Resultado): vai pra tela certa sem aviso
+      if (LANDING_PATHS.includes(location.pathname)) { nav(homePath(), { replace: true }); return; }
       const onlyDesktop = mods.isMobile && moduleAllows(mods.off, location.pathname);
       toast.warning(onlyDesktop
         ? 'Esse módulo está liberado só no computador.'
@@ -541,6 +545,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       nav(homePath(), { replace: true });
     }
   }, [mods.loaded, mods.disabled, shopId, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Modo balcão só faz sentido com o módulo "Acessos e modo balcão" (é lá que se cadastram os PINs)
+  const balcaoOk = !mods.off.includes('acessos');
 
   async function enterBalcao() {
     if (!shopId) return;
@@ -825,7 +832,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 </button>
               )
             ) : !op.balcao ? (
-              rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
+              !balcaoOk ? (rail ? null : <span className="flex-1" />)
+              : rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
                 <button onClick={enterBalcao} title="Cada colaborador entra com o próprio PIN e vê só as telas da função dele"
                   className={`flex-1 h-8 px-2 inline-flex items-center gap-2 rounded-lg text-xs font-semibold transition ${T.tool}`}>
                   <Icon name="lock" size={14} />Modo balcão
@@ -1051,7 +1059,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 );
               })()}
 
-              {!sheetGroup && !op.balcao && (
+              {!sheetGroup && !op.balcao && balcaoOk && (
                 <button onClick={enterBalcao}
                   className="w-full flex items-center gap-3 rounded-2xl bg-white ring-1 ring-steel-200/70 px-4 py-3 text-left active:bg-steel-100">
                   <span className="text-xl">🔒</span>

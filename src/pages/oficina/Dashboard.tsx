@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/Toast';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
 import { MechanicReviews } from '@/components/MechanicReviews';
@@ -28,11 +29,27 @@ type NewJob = {
   service_order_item_ids?: string[];
   /** Demanda com serviços de várias OS (vindo dos empilhados) */
   service_order_ids?: string[];
+  /** Serviços empilhados avulsos (sem OS) que viram esta demanda */
+  stacked_service_ids?: string[];
+  /** Veículo do serviço (texto livre). Vai na descrição e no título da demanda */
+  vehicle?: string;
 };
 type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
 type JobMode = 'open' | 'favorites' | 'direct';
 
-const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '' };
+const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '', vehicle: '' };
+
+/** Título e descrição com o veículo (o mecânico vê em qual carro vai trabalhar) */
+function withVehicle(f: NewJob) {
+  const v = (f.vehicle ?? '').trim();
+  const title = f.title.trim(), description = f.description.trim();
+  if (!v) return { title, description };
+  const model = v.split('·')[0].trim();
+  return {
+    title: (title.toLowerCase().includes(model.toLowerCase()) ? title : `${title} — ${model}`).slice(0, 120),
+    description: `${description}${description ? '\n\n' : ''}Veículo: ${v}`,
+  };
+}
 
 const draftKey = jobDraftKey;
 function loadDraft(workshopId: string): NewJob | null {
@@ -277,18 +294,9 @@ export default function WorkshopDashboard() {
     // Validação explícita (mobile não mostra o tooltip do browser)
     if (!form.title.trim()) return setFormError('Informe o título do serviço.');
     if (!form.description.trim()) return setFormError('Informe a descrição do serviço.');
-    // Preço pelo serviço: grava valor × 1h (as contas de cobrança não mudam) e o tempo previsto à parte
-    const fixed = form.pricing === 'fixed';
-    const pph = fixed ? Number(form.total) : Number(form.price_per_hour);
-    const mh  = fixed ? 1 : Number(form.max_hours);
-    const est = fixed && form.max_hours ? Number(form.max_hours) : null;
-    if (fixed) {
-      if (!pph || pph < 1) return setFormError('Informe o valor do serviço (mínimo R$ 1).');
-      if (est != null && !(est > 0 && est <= 99)) return setFormError('Tempo previsto inválido.');
-    } else {
-      if (!pph || pph < 1) return setFormError('Informe o valor por hora (mínimo R$ 1).');
-      if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
-    }
+    const price = priceOf();
+    if (typeof price === 'string') return setFormError(price);
+    const { fixed, pph, mh, est } = price;
     const pricingFields = { pricing: fixed ? 'fixed' : 'hour', estimated_hours: est };
     if (mode === 'direct' && !pickedMechanic) return setFormError('Selecione o mecânico para contratação direta.');
 
@@ -326,10 +334,11 @@ export default function WorkshopDashboard() {
       setSaving(false);
       return setFormError('Você ainda não tem mecânicos preferidos. Adicione pelo menos um antes de usar esse modo.');
     }
+    const text = withVehicle(form);
     const payload: Record<string, unknown> = {
       workshop_id:    currentShop.id,
-      title:          form.title.trim(),
-      description:    form.description.trim(),
+      title:          text.title,
+      description:    text.description,
       price_per_hour: pph,
       max_hours:      mh,
       price:          pph * mh,
@@ -357,9 +366,56 @@ export default function WorkshopDashboard() {
       const osIds = form.service_order_ids?.length ? form.service_order_ids : [form.service_order_id];
       await markPlatformItems(currentShop.id, osIds, form.service_order_item_ids ?? [], { jobId: ins?.id });
     }
+    // Empilhados avulsos que viraram esta demanda saem da pilha
+    if (form.stacked_service_ids?.length && ins?.id) {
+      await supabase.from('stacked_services').update({ job_id: ins.id })
+        .in('id', form.stacked_service_ids).eq('workshop_id', currentShop.id);
+    }
     setStackVer(v => v + 1);
     resetModal();
     await fetchJobs(currentShop.id);
+  }
+
+  /** Preço do formulário (pelo serviço = valor × 1h; por hora = valor/hora × horas) ou a mensagem de erro */
+  function priceOf(): { fixed: boolean; pph: number; mh: number; est: number | null } | string {
+    const fixed = form.pricing === 'fixed';
+    const pph = fixed ? Number(form.total) : Number(form.price_per_hour);
+    const mh  = fixed ? 1 : Number(form.max_hours);
+    const est = fixed && form.max_hours ? Number(form.max_hours) : null;
+    if (fixed) {
+      if (!pph || pph < 1) return 'Informe o valor do serviço (mínimo R$ 1).';
+      if (est != null && !(est > 0 && est <= 99)) return 'Tempo previsto inválido.';
+    } else {
+      if (!pph || pph < 1) return 'Informe o valor por hora (mínimo R$ 1).';
+      if (!mh  || mh  < 0.5) return 'Informe o máximo de horas (mínimo 0,5h).';
+    }
+    return { fixed, pph, mh, est };
+  }
+
+  /** 📚 Empilhar: guarda o serviço para juntar com outros numa demanda só (um mecânico, mais barato) */
+  async function stackService() {
+    setFormError(null);
+    if (!form.title.trim()) return setFormError('Informe o título do serviço.');
+    const price = priceOf();
+    if (typeof price === 'string') return setFormError(price);
+    if (!shop) return setFormError('Oficina não encontrada. Recarregue a página.');
+    setSaving(true);
+    const { error } = await supabase.from('stacked_services').insert({
+      workshop_id: shop.id,
+      title: form.title.trim(),
+      description: form.description.trim(),
+      vehicle: form.vehicle?.trim() || null,
+      total: Math.round(price.pph * price.mh * 100) / 100,
+      hours: price.fixed ? price.est : price.mh,
+      created_by: user?.id ?? null,
+    });
+    setSaving(false);
+    if (error) return setFormError('Não foi possível empilhar: ' + error.message);
+    localStorage.removeItem(draftKey(shop.id));
+    localStorage.removeItem(jobDraftOriginKey(shop.id));
+    toast.success('Serviço empilhado 📚 — junte com outros em Empilhados e publique tudo para um mecânico só');
+    setStackVer(v => v + 1);
+    resetModal();
   }
 
   function set(k: keyof NewJob) {
@@ -703,7 +759,7 @@ export default function WorkshopDashboard() {
               {draftRestored && !editingId && (
                 <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
                   <span className="text-amber-800">
-                    {draftOrigin ? `🔧 Preenchido com os serviços da ${draftOrigin} — revise e publique.` : '📝 Rascunho restaurado do último acesso.'}
+                    {draftOrigin ? `🔧 Preenchido com ${draftOrigin} — revise e publique.` : '📝 Rascunho restaurado do último acesso.'}
                   </span>
                   <button type="button" onClick={discardDraft} className="text-amber-700 underline font-semibold whitespace-nowrap">
                     Descartar
@@ -717,6 +773,16 @@ export default function WorkshopDashboard() {
                 <input className="input" required placeholder="Ex.: Troca de pastilha de freio — Civic"
                   value={form.title} onChange={set('title')} />
               </div>
+
+              {/* Veículo: só na demanda avulsa (a que vem de OS/empilhados já traz os carros) */}
+              {!editingId && !form.service_order_id && !form.stacked_service_ids?.length && (
+                <div>
+                  <label className="label">Veículo</label>
+                  <input className="input" placeholder="Ex.: Gol prata 2015 · ABC1D23"
+                    value={form.vehicle ?? ''} onChange={set('vehicle')} />
+                  <div className="text-xs text-steel-400 mt-1">Modelo, cor e placa: o mecânico vê em qual carro vai trabalhar</div>
+                </div>
+              )}
 
               {/* Descrição */}
               <div>
@@ -936,6 +1002,14 @@ export default function WorkshopDashboard() {
                 <div className="bg-alert-500/10 border border-alert-300 text-alert-700 text-sm font-semibold rounded-xl px-4 py-2.5 flex items-center gap-2">
                   <span>⚠️</span><span>{formError}</span>
                 </div>
+              )}
+              {/* Empilhar: só ao criar uma demanda avulsa (a que vem de OS/empilhados já tem o próprio caminho) */}
+              {!editingId && mode !== 'direct' && !form.service_order_id && !form.stacked_service_ids?.length && (
+                <button type="button" onClick={stackService} disabled={saving}
+                  className="w-full min-h-[44px] rounded-xl border border-steel-200 bg-white px-4 py-2 text-sm font-semibold text-steel-700 hover:bg-steel-50 disabled:opacity-50">
+                  📚 Empilhar para juntar com outros serviços
+                  <span className="block text-[11px] font-normal text-steel-500">Um mecânico faz vários serviços numa demanda só: sai mais barato</span>
+                </button>
               )}
               <div className="flex gap-3">
                 <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>
