@@ -1,9 +1,10 @@
-import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
+import { localInput } from '@/lib/agenda';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
 import { MechanicReviews } from '@/components/MechanicReviews';
@@ -42,7 +43,7 @@ const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hour
 /** Título e descrição com o veículo (o mecânico vê em qual carro vai trabalhar) */
 function withVehicle(f: NewJob) {
   const v = (f.vehicle ?? '').trim();
-  const title = f.title.trim(), description = f.description.trim();
+  const title = f.title.trim(), description = f.description.trim() || title;
   if (!v) return { title, description };
   const model = v.split('·')[0].trim();
   return {
@@ -207,6 +208,40 @@ export default function WorkshopDashboard() {
     setMechanics(list);
   }
 
+  /* Nova demanda em 3 passos: 1 o quê · 2 quanto · 3 quando (a edição mostra tudo numa tela só) */
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  /** Mostrar "Para quem" (todos / preferidos / um mecânico) */
+  const [moreOpts, setMoreOpts] = useState(false);
+  /** Mostrar "Pelo serviço / Por hora" */
+  const [hourOpt, setHourOpt] = useState(false);
+  const [pickDate, setPickDate] = useState(false);
+  const formBody = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (modal) { setStep(1); setMoreOpts(false); setHourOpt(false); setPickDate(false); } }, [modal]);
+  const goStep = (n: 1 | 2 | 3) => { setFormError(null); setStep(n); formBody.current?.scrollTo({ top: 0 }); };
+  function nextStep() {
+    if (step === 1) {
+      if (!form.title.trim()) return setFormError('Diga qual é o serviço.');
+      return goStep(2);
+    }
+    if (step === 2) {
+      const price = priceOf();
+      if (typeof price === 'string') return setFormError(price);
+      return goStep(3);
+    }
+  }
+  const showStep = (n: 1 | 2 | 3) => !!editingId || step === n;
+  /** Botões de data: '' = o quanto antes; null = escolher no calendário */
+  function dateOptions(): { label: string; value: string | null }[] {
+    const now = new Date();
+    const at = (days: number, h: number) => { const d = new Date(now); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return localInput(d); };
+    return [
+      { label: '⚡ O quanto antes', value: '' },
+      ...(now.getHours() < 13 ? [{ label: 'Hoje à tarde (14h)', value: at(0, 14) }] : []),
+      { label: 'Amanhã cedo (8h)', value: at(1, 8) },
+      { label: '📅 Outro dia', value: null },
+    ];
+  }
+
   function resetModal() {
     setModal(false); setForm(EMPTY);
     setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
@@ -292,8 +327,7 @@ export default function WorkshopDashboard() {
     }
 
     // Validação explícita (mobile não mostra o tooltip do browser)
-    if (!form.title.trim()) return setFormError('Informe o título do serviço.');
-    if (!form.description.trim()) return setFormError('Informe a descrição do serviço.');
+    if (!form.title.trim()) return setFormError('Informe qual é o serviço.');
     const price = priceOf();
     if (typeof price === 'string') return setFormError(price);
     const { fixed, pph, mh, est } = price;
@@ -309,7 +343,7 @@ export default function WorkshopDashboard() {
       // Edição: só campos editáveis. Status, workshop_id e mechanic_id ficam intocados.
       const updatePayload: Record<string, unknown> = {
         title:          form.title.trim(),
-        description:    form.description.trim(),
+        description:    form.description.trim() || form.title.trim(),
         price_per_hour: pph,
         max_hours:      mh,
         price:          pph * mh,
@@ -737,7 +771,7 @@ export default function WorkshopDashboard() {
         <div className="fixed inset-0 bg-steel-900/70 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={resetModal}>
           <form
             onClick={e => e.stopPropagation()}
-            onSubmit={createJob}
+            onSubmit={e => { if (!editingId && step < 3) { e.preventDefault(); nextStep(); return; } createJob(e); }}
             className="bg-white w-full sm:rounded-2xl sm:max-w-lg sm:shadow-2xl rounded-t-3xl max-h-[92vh] flex flex-col"
           >
             {/* Sheet handle (mobile) */}
@@ -746,16 +780,25 @@ export default function WorkshopDashboard() {
             </div>
 
             {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto px-5 pb-2 pt-4 space-y-4">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight">{editingId ? 'Editar demanda' : 'Nova demanda'}</h2>
-                <p className="text-sm text-steel-500 mt-0.5">
-                  {editingId
-                    ? 'Ajuste o que precisar enquanto nenhum mecânico aceitou.'
-                    : 'Descreva o serviço e escolha como publicar.'}
-                </p>
-              </div>
+            <div ref={formBody} className="flex-1 overflow-y-auto px-5 pb-2 pt-4 space-y-4">
+              {editingId ? (
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">Editar demanda</h2>
+                  <p className="text-sm text-steel-500 mt-0.5">Ajuste o que precisar enquanto nenhum mecânico aceitou.</p>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex gap-1.5 mb-3" aria-hidden>
+                    {[1, 2, 3].map(n => <span key={n} className={`h-1.5 flex-1 rounded-full ${n <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />)}
+                  </div>
+                  <div className="text-xs font-semibold text-steel-500">Passo {step} de 3</div>
+                  <h2 className="text-xl font-bold tracking-tight mt-0.5">
+                    {step === 1 ? 'Qual serviço?' : step === 2 ? 'Quanto você paga?' : 'Para quando?'}
+                  </h2>
+                </div>
+              )}
 
+              {showStep(1) && <>
               {draftRestored && !editingId && (
                 <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
                   <span className="text-amber-800">
@@ -769,8 +812,8 @@ export default function WorkshopDashboard() {
 
               {/* Título */}
               <div>
-                <label className="label">Título do serviço *</label>
-                <input className="input" required placeholder="Ex.: Troca de pastilha de freio — Civic"
+                <label className="label">Serviço</label>
+                <input className="input" placeholder="Ex.: Troca de pastilha de freio"
                   value={form.title} onChange={set('title')} />
               </div>
 
@@ -786,14 +829,17 @@ export default function WorkshopDashboard() {
 
               {/* Descrição */}
               <div>
-                <label className="label">Descrição *</label>
-                <textarea className="input" rows={3} required
-                  placeholder="Descreva o problema, veículo, detalhes importantes…"
+                <label className="label">Detalhes <span className="font-normal text-steel-500">(opcional)</span></label>
+                <textarea className="input" rows={3}
+                  placeholder="Algo a mais que o mecânico precisa saber?"
                   value={form.description} onChange={set('description')} />
               </div>
+              </>}
 
-              {/* Precificação */}
+              {/* Passo 2: quanto */}
+              {showStep(2) && (
               <div>
+                {(editingId || hourOpt || form.pricing === 'hour') && <>
                 <label className="label">Como cobrar</label>
                 <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-3">
                   {([['fixed', 'Pelo serviço'], ['hour', 'Por hora']] as const).map(([k, l]) => (
@@ -805,6 +851,7 @@ export default function WorkshopDashboard() {
                     </button>
                   ))}
                 </div>
+                </>}
                 {form.pricing === 'fixed' ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -880,11 +927,16 @@ export default function WorkshopDashboard() {
                     </div>
                   </div>
                 )}
-                <p className="text-[11px] text-steel-500 mt-2 leading-relaxed">
+                <p className="text-xs text-steel-600 mt-2 leading-relaxed">
                   💡 <strong>Valor fechado:</strong> {form.pricing === 'fixed'
-                    ? 'a oficina paga o valor do serviço e o mecânico recebe esse valor, não importa quanto tempo leve.'
-                    : 'a oficina paga o pacote (hora × tempo previsto) e o mecânico recebe esse valor mesmo se terminar antes ou levar mais tempo.'} O tempo real é registrado para análise.
+                    ? 'você paga esse valor e pronto, não importa quanto tempo leve.'
+                    : 'você paga hora × tempo previsto, mesmo se ele terminar antes ou levar mais tempo.'}
                 </p>
+                {!editingId && !hourOpt && form.pricing !== 'hour' && (
+                  <button type="button" onClick={() => setHourOpt(true)} className="mt-1 text-xs font-semibold text-brand-600 min-h-[36px]">
+                    Prefere pagar por hora?
+                  </button>
+                )}
                 {estimated > 0 && (
                   <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
                     <span className="text-sm text-brand-700">Valor fechado da demanda</span>
@@ -892,9 +944,44 @@ export default function WorkshopDashboard() {
                   </div>
                 )}
               </div>
+              )}
 
-              {/* Modo de publicação — só na criação */}
+              {/* Passo 3: quando e para quem */}
+              {showStep(3) && <>
               {!editingId && (
+                <div>
+                  <label className="label">Quando</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {dateOptions().map(o => {
+                      const on = o.value === null ? pickDate : !pickDate && form.scheduled_at === o.value;
+                      return (
+                        <button key={o.label} type="button"
+                          onClick={() => {
+                            if (o.value === null) { setPickDate(true); return; }
+                            setPickDate(false);
+                            setForm(f => { const next = { ...f, scheduled_at: o.value! }; persistDraft(next); return next; });
+                          }}
+                          className={`min-h-[48px] rounded-xl border-2 px-3 py-2 text-sm font-semibold text-left transition active:scale-[0.98] ${on ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-steel-200 text-steel-700'}`}>
+                          {o.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {pickDate && (
+                    <input className="input mt-2" type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} />
+                  )}
+                </div>
+              )}
+
+              {!editingId && mode === 'open' && !moreOpts && (
+                <div className="rounded-xl bg-steel-50 px-3 py-2.5 flex items-center justify-between gap-2">
+                  <span className="text-sm text-steel-700">📢 Vai para <strong>todos os mecânicos disponíveis</strong></span>
+                  <button type="button" onClick={() => setMoreOpts(true)} className="text-xs font-semibold text-brand-600 shrink-0 min-h-[36px]">Trocar</button>
+                </div>
+              )}
+
+              {/* Modo de publicação — só na criação (escondido até tocar em "Trocar") */}
+              {!editingId && (moreOpts || mode !== 'open') && (
                 <div>
                   <label className="label">Como publicar</label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -988,12 +1075,15 @@ export default function WorkshopDashboard() {
                 </div>
               )}
 
-              {/* Data */}
-              <div>
-                <label className="label">Data / hora desejada</label>
-                <input className="input" type="datetime-local"
-                  value={form.scheduled_at} onChange={set('scheduled_at')} />
-              </div>
+              {/* Data (edição) */}
+              {editingId && (
+                <div>
+                  <label className="label">Data / hora desejada</label>
+                  <input className="input" type="datetime-local"
+                    value={form.scheduled_at} onChange={set('scheduled_at')} />
+                </div>
+              )}
+              </>}
             </div>
 
             {/* Sticky footer */}
@@ -1004,7 +1094,7 @@ export default function WorkshopDashboard() {
                 </div>
               )}
               {/* Empilhar: só ao criar uma demanda avulsa (a que vem de OS/empilhados já tem o próprio caminho) */}
-              {!editingId && mode !== 'direct' && !form.service_order_id && !form.stacked_service_ids?.length && (
+              {!editingId && step === 3 && mode !== 'direct' && !form.service_order_id && !form.stacked_service_ids?.length && (
                 <button type="button" onClick={stackService} disabled={saving}
                   className="w-full min-h-[44px] rounded-xl border border-steel-200 bg-white px-4 py-2 text-sm font-semibold text-steel-700 hover:bg-steel-50 disabled:opacity-50">
                   📚 Empilhar para juntar com outros serviços
@@ -1012,14 +1102,20 @@ export default function WorkshopDashboard() {
                 </button>
               )}
               <div className="flex gap-3">
-                <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>
-                <button type="submit" className="btn-primary flex-1" disabled={saving}>
-                  {saving
-                    ? (editingId ? 'Salvando…' : 'Publicando…')
-                    : editingId ? 'Salvar alterações'
-                    : mode === 'direct' ? 'Convidar mecânico'
-                    : 'Publicar demanda'}
-                </button>
+                {!editingId && step > 1
+                  ? <button type="button" onClick={() => goStep((step - 1) as 1 | 2)} className="btn-ghost flex-1">← Voltar</button>
+                  : <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>}
+                {!editingId && step < 3 ? (
+                  <button type="button" onClick={nextStep} className="btn-primary flex-[2]">Continuar →</button>
+                ) : (
+                  <button type="submit" className="btn-primary flex-[2]" disabled={saving}>
+                    {saving
+                      ? (editingId ? 'Salvando…' : 'Chamando…')
+                      : editingId ? 'Salvar alterações'
+                      : mode === 'direct' ? 'Convidar mecânico'
+                      : '⚡ Chamar mecânico'}
+                  </button>
+                )}
               </div>
             </div>
           </form>
