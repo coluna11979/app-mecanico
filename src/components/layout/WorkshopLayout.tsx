@@ -202,6 +202,8 @@ const BOTTOM_TABS: Record<OperatorRole, NavItem[]> = {
 /** Pacote "Só mecânicos": a barra é só a Plataforma */
 const PLATFORM_TABS: NavItem[] = [TAB.demandas, TAB.buscar, TAB.mensagens];
 const HOME = '/oficina/inicio';
+/** Para onde o login e os redirecionamentos mandam a oficina sem ela ter escolhido (Login.destino, ProtectedRoute) */
+const LANDING_PATHS = [HOME, '/oficina/painel', '/oficina/resultado'];
 
 const LS_KEY = 'oficina_msgs_last_seen';
 
@@ -534,6 +536,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     if (mods.loaded && mods.workshopId === shopId && !moduleAllows(mods.disabled, location.pathname)) {
       const alt = moduleEntry(mods.disabled, location.pathname);
       if (alt && allowed(alt)) { nav(alt, { replace: true }); return; }
+      // Tela de entrada padrão (login cai no Painel/Resultado): vai pra tela certa sem aviso
+      if (LANDING_PATHS.includes(location.pathname)) { nav(homePath(), { replace: true }); return; }
       const onlyDesktop = mods.isMobile && moduleAllows(mods.off, location.pathname);
       toast.warning(onlyDesktop
         ? 'Esse módulo está liberado só no computador.'
