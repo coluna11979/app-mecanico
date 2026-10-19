@@ -31,6 +31,9 @@ export default function TeamCostDay({ wid, range }: { wid: string; range: { from
   const key = `${first}|${last}`;
 
   const [data, setData] = useState<{ key: string; hd: HalfData; inp: Inputs } | null>(null);
+  /** Dia escolhido na lista "Dia a dia": mostra só o custo daquele dia */
+  const [focus, setFocus] = useState<string | null>(null);
+  useEffect(() => { setFocus(null); }, [key]);
   useEffect(() => {
     if (!first || tooLong) return;
     let alive = true;
@@ -41,19 +44,24 @@ export default function TeamCostDay({ wid, range }: { wid: string; range: { from
     return () => { alive = false; };
   }, [wid, key, first, last, tooLong]);
 
-  const cost = useMemo(() => (data && data.key === key ? buildTeamCostRange(days, data.inp, data.hd) : null), [data, key, days]);
+  const all = useMemo(() => (data && data.key === key ? buildTeamCostRange(days, data.inp, data.hd) : null), [data, key, days]);
+  const focused = focus && days.includes(focus) ? focus : null;
+  const cost = useMemo(() => (focused && data && data.key === key ? buildTeamCostRange([focused], data.inp, data.hd) : all), [focused, all, data, key]);
 
-  const single = days.length === 1;
-  const title = single ? brLong(first) : first ? `${br(first)} a ${br(last)} · ${days.length} dias` : '';
+  const single = !!focused || days.length === 1;
+  const title = focused ? brLong(focused) : single ? brLong(first) : first ? `${br(first)} a ${br(last)} · ${days.length} dias` : '';
   const pctOfRevenue = cost && cost.revenue > 0 ? (cost.total / cost.revenue) * 100 : null;
   const perHour = cost && cost.workedMin > 0 ? cost.total / (cost.workedMin / 60) : null;
   const use = cost && cost.productiveMin != null && cost.workedMin > 0 ? (cost.productiveMin / cost.workedMin) * 100 : null;
-  const maxDay = Math.max(1, ...(cost?.days ?? []).map(d => d.total));
+  const maxDay = Math.max(1, ...(all?.days ?? []).map(d => d.total));
 
   return (
     <div className="card">
       <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">👷 Custo da equipe {single ? 'no dia' : 'no período'}</div>
       <p className="text-[11px] text-steel-400 mb-2">Só mecânicos, pelas horas trabalhadas · segue o período escolhido no topo · informativo (não entra no Resultado)</p>
+      {focused && (
+        <button onClick={() => setFocus(null)} className="text-xs font-semibold text-brand-700 hover:underline mb-1">‹ Voltar ao período {br(first)} a {br(last)}</button>
+      )}
       {title && <div className="text-sm font-semibold capitalize mb-3">{title}</div>}
 
       {tooLong ? (
@@ -73,7 +81,7 @@ export default function TeamCostDay({ wid, range }: { wid: string; range: { from
               <div className="text-[11px] text-steel-300 mt-0.5">salários {brl(cost.salaryCost)} + comissões {brl(cost.commission)}</div>
             </div>
             <div className="rounded-2xl border border-steel-200 p-4 col-span-2 sm:col-span-1">
-              <div className="text-[11px] text-steel-500">Horas trabalhadas</div>
+              <div className="text-[11px] text-steel-500">Horas trabalhadas · soma da equipe</div>
               <div className="text-2xl font-bold font-display mt-0.5">{fmtHours(cost.workedMin)}</div>
               <div className="text-[11px] text-steel-500 mt-0.5">
                 {cost.productiveMin != null
@@ -129,20 +137,23 @@ export default function TeamCostDay({ wid, range }: { wid: string; range: { from
             </li>
           </ul>
 
-          {!single && cost.days.length > 1 && (
+          {!focused && all && all.days.length > 1 && (
             <div className="mt-4">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-2">Dia a dia</div>
+              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-0.5">Dia a dia</div>
+              <p className="text-[11px] text-steel-400 mb-2">Toque em um dia para ver o custo só daquele dia.</p>
               <ul className="space-y-1">
-                {cost.days.filter(d => d.workedMin > 0 || d.total > 0).map(d => (
-                  <li key={d.day} className="px-1">
-                    <div className="flex items-baseline justify-between gap-3 text-sm">
-                      <span className="capitalize text-steel-700">{brShort(d.day)}
-                        <span className="text-steel-400 text-xs"> · {fmtHours(d.workedMin)}{d.commission > 0 ? ` · comissão ${brl(d.commission)}` : ''}</span></span>
-                      <strong className="tabular-nums">{brl(d.total)}</strong>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-steel-100 mt-1 overflow-hidden">
-                      <div className="h-full rounded-full bg-brand-500" style={{ width: `${(d.total / maxDay) * 100}%` }} />
-                    </div>
+                {all.days.filter(d => d.workedMin > 0 || d.total > 0).map(d => (
+                  <li key={d.day}>
+                    <button onClick={() => setFocus(d.day)} className="w-full text-left rounded-xl px-2 py-1.5 hover:bg-steel-50 transition">
+                      <div className="flex items-baseline justify-between gap-3 text-sm">
+                        <span className="capitalize text-steel-700">{brShort(d.day)}
+                          <span className="text-steel-400 text-xs"> · {fmtHours(d.workedMin)} da equipe{d.commission > 0 ? ` · comissão ${brl(d.commission)}` : ''}</span></span>
+                        <strong className="tabular-nums">{brl(d.total)}</strong>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-steel-100 mt-1 overflow-hidden">
+                        <div className="h-full rounded-full bg-brand-500" style={{ width: `${(d.total / maxDay) * 100}%` }} />
+                      </div>
+                    </button>
                   </li>
                 ))}
               </ul>
