@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { brl } from '@/lib/cash';
-import { dayKey, halfOfDay, loadHalfData, type HalfData } from '@/lib/commissionDaily';
+import { dayKey, daysOfHalf, halfOfDay, loadHalfData, type HalfData } from '@/lib/commissionDaily';
 import { buildTeamCost, fmtHours, loadTeamCostInputs } from '@/lib/teamCost';
 
 const addDays = (day: string, n: number) => {
@@ -43,6 +43,13 @@ export default function TeamCostDay({ wid }: { wid: string }) {
     if (!inp || inp.day !== day || !hd || hd.key !== halfKey) return null;
     return buildTeamCost(day, inp.d, hd.d);
   }, [inp, hd, day, halfKey]);
+
+  /** Dia mais recente (até o escolhido) com serviço finalizado na quinzena, para quando o dia está vazio */
+  const lastWithWork = useMemo(() => {
+    if (!hd || hd.key !== halfKey) return null;
+    const list = daysOfHalf(hd.d).filter(x => x.day <= day && x.total > 0);
+    return list.length ? list[list.length - 1].day : null;
+  }, [hd, halfKey, day]);
 
   const pctOfRevenue = cost && cost.revenue > 0 ? (cost.total / cost.revenue) * 100 : null;
   const perHour = cost && cost.workedMin > 0 ? cost.total / (cost.workedMin / 60) : null;
@@ -97,6 +104,15 @@ export default function TeamCostDay({ wid }: { wid: string }) {
               <div className="text-[11px] text-steel-400">faturado {brl(cost.revenue)}</div>
             </div>
           </div>
+
+          {cost.commission === 0 && (
+            <p className="text-xs bg-steel-50 border border-steel-200 text-steel-600 rounded-xl px-3 py-2 mt-3">
+              Nenhum serviço finalizado neste dia, então a comissão do dia é R$ 0,00 (ela conta no dia em que o serviço termina).
+              {lastWithWork && lastWithWork !== day && (
+                <> <button className="font-semibold text-brand-700 underline" onClick={() => setDay(lastWithWork)}>Ver {new Date(`${lastWithWork}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}, o último dia com comissão</button>.</>
+              )}
+            </p>
+          )}
 
           <ul className="mt-4 divide-y divide-steel-100">
             {cost.people.map(p => (
