@@ -542,6 +542,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     }
   }, [mods.loaded, mods.disabled, shopId, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Modo balcão só faz sentido com o módulo "Acessos e modo balcão" (é lá que se cadastram os PINs)
+  const balcaoOk = !mods.off.includes('acessos');
+
   async function enterBalcao() {
     if (!shopId) return;
     const { count } = await supabase.from('workshop_operators')
@@ -825,7 +828,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 </button>
               )
             ) : !op.balcao ? (
-              rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
+              !balcaoOk ? (rail ? null : <span className="flex-1" />)
+              : rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
                 <button onClick={enterBalcao} title="Cada colaborador entra com o próprio PIN e vê só as telas da função dele"
                   className={`flex-1 h-8 px-2 inline-flex items-center gap-2 rounded-lg text-xs font-semibold transition ${T.tool}`}>
                   <Icon name="lock" size={14} />Modo balcão
@@ -1051,7 +1055,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 );
               })()}
 
-              {!sheetGroup && !op.balcao && (
+              {!sheetGroup && !op.balcao && balcaoOk && (
                 <button onClick={enterBalcao}
                   className="w-full flex items-center gap-3 rounded-2xl bg-white ring-1 ring-steel-200/70 px-4 py-3 text-left active:bg-steel-100">
                   <span className="text-xl">🔒</span>
