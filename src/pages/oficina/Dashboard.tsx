@@ -252,10 +252,20 @@ export default function WorkshopDashboard() {
     setEditingId(null);
   }
 
-  function openCreateModal() {
+  /**
+   * Abre a Nova demanda. Clique em "Chamar mecânico" = formulário limpo; só o que veio de uma OS
+   * (Caixa/OS → ?nova=os) ou do "Gerar demanda" dos Empilhados (fromFlow) abre já preenchido.
+   * Rascunho de OS/empilhados que ficou para trás é descartado; texto digitado e não enviado volta.
+   */
+  function openCreateModal(fromFlow = false) {
     setEditingId(null);
     if (currentWorkshop?.id) {
-      const draft = loadDraft(currentWorkshop.id);
+      const wid = currentWorkshop.id;
+      if (!fromFlow && localStorage.getItem(jobDraftOriginKey(wid))) {
+        localStorage.removeItem(draftKey(wid));
+        localStorage.removeItem(jobDraftOriginKey(wid));
+      }
+      const draft = loadDraft(wid);
       if (draft) { setForm(draft); setDraftRestored(true); }
       else { setForm(EMPTY); setDraftRestored(false); }
       setDraftOrigin(draft ? localStorage.getItem(jobDraftOriginKey(currentWorkshop.id)) : null);
@@ -278,12 +288,13 @@ export default function WorkshopDashboard() {
     setModal(true);
   }
 
-  // Link "Chamar mecânico da plataforma" (vindo da Nova OS): /oficina/dashboard?nova=1
+  // ?nova=1 = abrir a Nova demanda (limpa); ?nova=os = veio do Caixa/OS com o rascunho da OS preenchido
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
-    if (searchParams.get('nova') !== '1' || !currentWorkshop?.id) return;
+    const nova = searchParams.get('nova');
+    if ((nova !== '1' && nova !== 'os') || !currentWorkshop?.id) return;
     setSearchParams(p => { p.delete('nova'); return p; }, { replace: true });
-    if (!hasPendingFees) openCreateModal();
+    if (!hasPendingFees) openCreateModal(nova === 'os');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, currentWorkshop?.id]);
 
@@ -526,7 +537,7 @@ export default function WorkshopDashboard() {
           <h1 className="font-display text-[26px] lg:text-3xl font-bold tracking-tight text-steel-900 leading-tight truncate">{shop?.business_name ?? '…'}</h1>
         </div>
         <button
-          onClick={openCreateModal}
+          onClick={() => openCreateModal()}
           disabled={shopLoading || hasPendingFees}
           title={hasPendingFees ? 'Quite a multa pendente para publicar nova demanda' : undefined}
           className="shrink-0 inline-flex items-center justify-center gap-2 h-12 sm:h-11 px-5 rounded-xl bg-brand-500 text-white font-bold shadow-brand active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -539,10 +550,10 @@ export default function WorkshopDashboard() {
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
 
       {/* Serviços empilhados: esperando mecânico da plataforma (a gestão junta e gera a demanda) */}
-      {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={openCreateModal} />}
+      {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={() => openCreateModal(true)} />}
 
       {/* Primeira vez: explica e puxa a primeira demanda (os números zerados não dizem nada) */}
-      {firstTime && <FirstDemandHero onCall={openCreateModal} disabled={hasPendingFees} />}
+      {firstTime && <FirstDemandHero onCall={() => openCreateModal()} disabled={hasPendingFees} />}
 
       {/* Quem está disponível agora + atalhos dos serviços mais pedidos */}
       <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} />
@@ -739,7 +750,7 @@ export default function WorkshopDashboard() {
               <h2 className="text-lg font-bold mb-3">Demandas ativas</h2>
               <div className="card text-center text-steel-500 py-10">
                 Nenhuma demanda ativa.{' '}
-                <button onClick={openCreateModal} className="text-brand-500 font-semibold">
+                <button onClick={() => openCreateModal()} className="text-brand-500 font-semibold">
                   Criar uma demanda →
                 </button>
               </div>
