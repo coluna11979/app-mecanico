@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { useAdminBadges } from '@/hooks/useAdminBadges';
+import { MetasAtivasWidget } from '@/components/admin/MetasAtivasWidget';
 
 interface KPIs {
   volumeHoje:   number;
@@ -207,6 +208,11 @@ export default function AdminDashboard() {
         <ContextPill label="Mecânicos"          value={kpis?.totalMechanics ?? '—'}   tone="neutral" href="/admin/mecanicos" />
         <ContextPill label="Oficinas"           value={kpis?.totalWorkshops ?? '—'}   tone="neutral" href="/admin/oficinas" />
         <ContextPill label="GMV acumulado"      value={kpis ? `R$ ${fmt(kpis.gmv)}` : '—'} tone="neutral" />
+      </div>
+
+      {/* Widget de metas (aparece só se tiver metas ativas) */}
+      <div className="mb-4">
+        <MetasAtivasWidget />
       </div>
 
       {/* ── 30d sparkline + atividade live ── */}
