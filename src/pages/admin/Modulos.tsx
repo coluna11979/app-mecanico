@@ -3,7 +3,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { DEPENDS_ON, FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, STAGES, isOptIn, stageOf, stageOff, type ModuleKey } from '@/lib/modules';
+import { ADDONS, DEPENDS_ON, FEATURES, MODULES, MODULE_GROUPS, MODULE_KEYS, STAGES, addonOn, isOptIn, stageOf, stageOff, type ModuleKey } from '@/lib/modules';
 import { inboxCall } from '@/lib/inbox';
 import { fmtPhone } from '@/components/os/osHelpers';
 
@@ -65,6 +65,10 @@ export default function AdminModulos() {
   const shop = shops.find(s => s.id === selected) ?? null;
   const cfg = selected ? configs[selected] ?? EMPTY : EMPTY;
   const off = cfg.off;
+  /** Pacotes extras ligados nesta oficina */
+  const activeAddons = ADDONS.filter(a => addonOn(a.keys, off, cfg.on));
+  /** Etapa da trilha (os módulos dos pacotes ligados não contam: "Só mecânicos + Atendimento" é etapa 1) */
+  const currentStage = stageOf(off) ?? stageOf([...off, ...activeAddons.flatMap(a => a.keys.filter(k => !isOptIn(k)))]);
 
   async function save(workshopId: string, next: Config) {
     const prev = configs[workshopId] ?? EMPTY;
@@ -121,8 +125,23 @@ export default function AdminModulos() {
   async function applyStage(n: number) {
     if (!selected) return;
     const liberated = new Set<string>(STAGES.slice(0, n + 1).flatMap(s => [...s.keys, ...s.keys.flatMap(featKeys)]));
-    if (await save(selected, { off: stageOff(n), mobileOff: cfg.mobileOff.filter(k => !liberated.has(k)), on: cfg.on }))
+    // Pacotes extras ligados continuam ligados ao trocar de etapa
+    const keep = new Set<string>(activeAddons.flatMap(a => a.keys));
+    if (await save(selected, { off: stageOff(n).filter(k => !keep.has(k)), mobileOff: cfg.mobileOff.filter(k => !liberated.has(k)), on: cfg.on }))
       toast.success(`Etapa ${n + 1} · ${STAGES[n].label}`);
+  }
+
+  /** Pacote extra (ex.: Atendimento): liga ou desliga os módulos dele de uma vez, sem mexer no resto */
+  async function toggleAddon(a: (typeof ADDONS)[number]) {
+    if (!selected) return;
+    const isOn = addonOn(a.keys, cfg.off, cfg.on);
+    const keys = new Set<string>([...a.keys, ...a.keys.flatMap(featKeys)]);
+    const optIn = a.keys.filter(isOptIn);
+    const plain = a.keys.filter(k => !isOptIn(k));
+    const next = isOn
+      ? { off: [...new Set([...cfg.off, ...plain])], mobileOff: cfg.mobileOff, on: cfg.on.filter(k => !optIn.includes(k as ModuleKey)) }
+      : { off: cfg.off.filter(k => !keys.has(k)), mobileOff: cfg.mobileOff.filter(k => !keys.has(k)), on: [...new Set([...cfg.on, ...optIn])] };
+    if (await save(selected, next)) toast.success(`Pacote ${a.label} ${isOn ? 'desligado' : 'ligado'}`);
   }
 
   async function copyFrom(sourceId: string) {
@@ -197,7 +216,30 @@ export default function AdminModulos() {
               </div>
             </div>
 
-            <StageTrail current={stageOf(off)} onPick={applyStage} />
+            <StageTrail current={currentStage} onPick={applyStage} />
+
+            {/* Pacotes extras por cima da etapa */}
+            <div className="mb-6 rounded-xl border border-steel-200 p-3">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-steel-500 mb-2">Pacotes extras</p>
+              <div className="grid sm:grid-cols-2 gap-2">
+                {ADDONS.map(a => {
+                  const isOn = addonOn(a.keys, off, cfg.on);
+                  return (
+                    <div key={a.key} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${isOn ? 'border-emerald-300 bg-emerald-50/60' : 'border-steel-200'}`}>
+                      <span className="text-xl" aria-hidden>{a.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-steel-900">{a.label} {isOn && <span className="text-[10px] font-bold text-emerald-700 uppercase ml-1">ligado</span>}</div>
+                        <div className="text-[11px] text-steel-600 leading-snug">{a.desc}</div>
+                      </div>
+                      <button type="button" onClick={() => toggleAddon(a)}
+                        className={`shrink-0 h-9 px-3 rounded-lg text-xs font-bold ${isOn ? 'border border-steel-300 bg-white text-steel-700' : 'bg-emerald-600 text-white'}`}>
+                        {isOn ? 'Desligar' : 'Ligar'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="space-y-5">
               {MODULE_GROUPS.map(g => {
