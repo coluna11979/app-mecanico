@@ -8,7 +8,7 @@ import { OS_CATEGORIES, fmtBRL, moneyInput, parseMoney } from '@/components/os/o
 import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/services';
 import { fmtDate } from '@/lib/purchasing';
 import {
-  commonName, groupBy, loadServiceCharges, matchesVehicle, norm, vehicleLabel, type ServiceCharge,
+  commonName, groupBy, loadServiceCharges, norm, vehicleLabel, type ServiceCharge,
 } from '@/lib/servicePrices';
 
 /** Serviço já lançado em OS mas que ainda não está na tabela */
@@ -163,10 +163,10 @@ export default function Servicos() {
               </p>
             )}
 
-            <div className="flex gap-2">
-              {([['tabela', '🛠️ Tabela'], ['veiculo', '🚗 Por veículo']] as const).map(([k, label]) => (
+            <div className="inline-flex rounded-xl bg-steel-100 p-1">
+              {([['tabela', '🛠️ Tabela de preços'], ['veiculo', '🚗 Histórico por veículo']] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setTab(k)}
-                  className={`text-sm font-semibold px-4 py-2 rounded-full border transition ${tab === k ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-steel-600 border-steel-200'}`}>
+                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${tab === k ? 'bg-white text-steel-900 shadow-sm' : 'text-steel-500 hover:text-steel-700'}`}>
                   {label}
                 </button>
               ))}
@@ -383,96 +383,231 @@ function PricesByVehicle({ service, charges }: { service: WorkshopService; charg
   );
 }
 
-/** Aba "Por veículo": digita o carro e vê o que já foi feito nele e por quanto */
+/** Faixa de preço do serviço neste veículo: ponto = último valor cobrado */
+function PriceBar({ min, max, last }: { min: number; max: number; last: number }) {
+  if (min === max) return <span className="text-[11px] text-steel-400">preço fixo</span>;
+  const pos = Math.min(100, Math.max(0, ((last - min) / (max - min)) * 100));
+  return (
+    <div className="w-full max-w-[150px] ml-auto" title={`De ${fmtBRL(min)} a ${fmtBRL(max)} · último ${fmtBRL(last)}`}>
+      <div className="relative h-1.5 rounded-full bg-steel-200">
+        <div className="absolute inset-y-0 left-0 right-0 rounded-full bg-brand-100" />
+        <div className="absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full bg-brand-600 ring-2 ring-white" style={{ left: `${pos}%` }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-steel-400"><span>{fmtBRL(min)}</span><span>{fmtBRL(max)}</span></div>
+    </div>
+  );
+}
+
+type Sel = { kind: 'model'; key: string; label: string } | { kind: 'plate'; plate: string; label: string };
+type SortBy = 'vezes' | 'preco' | 'recente';
+
+/** Aba "Por veículo": escolhe o carro e vê o que já foi feito nele e por quanto */
 function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
-  const [vq, setVq] = useState('');
+  const [q, setQ] = useState('');
+  const [sel, setSel] = useState<Sel | null>(null);
+  const [focus, setFocus] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [year, setYear] = useState<number | null>(null);
+  const [sort, setSort] = useState<SortBy>('vezes');
   const [sq, setSq] = useState('');
   const [open, setOpen] = useState<string | null>(null);
 
-  // Modelos mais atendidos, para começar sem digitar
-  const topModels = useMemo(() => groupBy(charges ?? [], c => c.vehicleKey).slice(0, 12)
-    .map(g => ({ key: g.key, label: commonName(g.items, c => vehicleLabel({ ...c, year: null })), n: new Set(g.items.map(i => i.osId)).size })), [charges]);
+  // Modelos e placas conhecidos (vêm das OS)
+  const models = useMemo(() => groupBy(charges ?? [], c => c.vehicleKey).map(g => ({
+    key: g.key, label: commonName(g.items, c => vehicleLabel({ ...c, year: null })),
+    os: new Set(g.items.map(i => i.osId)).size,
+  })).sort((a, b) => b.os - a.os), [charges]);
+  const plates = useMemo(() => {
+    const m = new Map<string, { plate: string; label: string; os: Set<string> }>();
+    for (const c of charges ?? []) {
+      if (!c.plate) continue;
+      const k = norm(c.plate), e = m.get(k);
+      if (e) e.os.add(c.osId); else m.set(k, { plate: c.plate, label: vehicleLabel(c), os: new Set([c.osId]) });
+    }
+    return [...m.entries()].map(([k, v]) => ({ k, plate: v.plate, label: v.label, os: v.os.size }));
+  }, [charges]);
 
+  // "gol 2015": o ano vira filtro, o resto procura o modelo
+  const terms = norm(q).split(' ').filter(Boolean);
+  const yearTerm = terms.find(t => /^(19|20)\d{2}$/.test(t));
+  const words = terms.filter(t => t !== yearTerm);
+  const sugs = useMemo(() => {
+    if (!words.length && !yearTerm) return [];
+    const ms = words.length ? models.filter(m => words.every(t => m.key.includes(t))).slice(0, 6) : [];
+    const ps = words.length ? plates.filter(p => words.every(t => p.k.includes(t))).slice(0, 3) : [];
+    return [
+      ...ms.map(m => ({ id: `m-${m.key}`, sel: { kind: 'model', key: m.key, label: m.label } as Sel, title: m.label, sub: `${m.os} OS` })),
+      ...ps.map(p => ({ id: `p-${p.k}`, sel: { kind: 'plate', plate: p.plate, label: `${p.label} · ${p.plate}` } as Sel, title: p.plate, sub: `${p.label} · ${p.os} OS` })),
+    ];
+  }, [models, plates, q]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  function pick(i: number) {
+    const s = sugs[i];
+    if (!s) return;
+    setSel(s.sel); setYear(yearTerm ? Number(yearTerm) : null); setQ(''); setSq(''); setOpen(null); setFocus(false);
+  }
+  function clear() { setSel(null); setYear(null); setSq(''); setOpen(null); setQ(''); }
+
+  // Tudo do veículo escolhido, depois ano e serviço
+  const base = useMemo(() => !sel || !charges ? [] : charges.filter(c => sel.kind === 'model' ? c.vehicleKey === sel.key : norm(c.plate) === norm(sel.plate)), [charges, sel]);
+  const years = useMemo(() => {
+    const m = new Map<number, Set<string>>();
+    for (const c of base) if (c.year) (m.get(c.year) ?? m.set(c.year, new Set()).get(c.year)!).add(c.osId);
+    return [...m.entries()].sort((a, b) => b[0] - a[0]).map(([y, s]) => ({ y, n: s.size }));
+  }, [base]);
   const found = useMemo(() => {
-    if (!charges || !vq.trim()) return [];
     const st = norm(sq);
-    return charges.filter(c => matchesVehicle(c, vq) && (!st || c.key.includes(st)));
-  }, [charges, vq, sq]);
-  const groups = useMemo(() => groupBy(found, c => c.key), [found]);
-  const vehicles = useMemo(() => groupBy(found, c => c.vehicleKey).map(g => commonName(g.items, c => vehicleLabel({ ...c, year: null }))), [found]);
+    return base.filter(c => (!year || c.year === year) && (!st || c.key.includes(st)));
+  }, [base, year, sq]);
+  const groups = useMemo(() => {
+    const g = groupBy(found, c => c.key);
+    if (sort === 'preco') g.sort((a, b) => b.sum.last - a.sum.last);
+    else if (sort === 'recente') g.sort((a, b) => b.sum.lastDate.localeCompare(a.sum.lastDate));
+    return g;
+  }, [found, sort]);
+  const stats = useMemo(() => ({
+    os: new Set(found.map(c => c.osId)).size,
+    last: found.reduce((m, c) => (c.date > m ? c.date : m), ''),
+  }), [found]);
 
-  if (charges === null) return <div className="h-24 bg-white rounded-2xl animate-pulse" />;
+  if (charges === null) return <div className="h-40 bg-white rounded-2xl animate-pulse" />;
   if (charges.length === 0) {
     return <div className="card text-center py-8 text-sm text-steel-500">Ainda não há serviços lançados em OS com veículo — conforme as OS forem feitas, o histórico por carro aparece aqui.</div>;
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <input className="input !w-auto flex-1 min-w-[220px]" placeholder="Veículo: marca, modelo, ano ou placa (ex.: gol 2015)"
-          value={vq} onChange={e => { setVq(e.target.value); setOpen(null); }} />
-        <input className="input !w-auto sm:max-w-[220px] flex-1 min-w-[160px]" placeholder="Filtrar serviço (opcional)"
-          value={sq} onChange={e => setSq(e.target.value)} />
-      </div>
-
-      {!vq.trim() ? (
-        <div className="card">
-          <div className="text-xs font-bold text-steel-500 uppercase tracking-wider mb-2">Veículos mais atendidos</div>
-          <div className="flex flex-wrap gap-2">
-            {topModels.map(m => (
-              <button key={m.key} onClick={() => setVq(m.label)}
-                className="text-sm font-semibold px-3 py-1.5 rounded-full border border-steel-200 bg-white text-steel-700 hover:border-brand-300">
-                {m.label} <span className="opacity-50">({m.n})</span>
-              </button>
-            ))}
+      {!sel ? (
+        <>
+          {/* Busca com sugestões */}
+          <div className="relative">
+            <div className="flex items-center gap-3 rounded-2xl border border-steel-200 bg-white px-4 py-3 shadow-sm focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-100 transition">
+              <span className="text-lg text-steel-400" aria-hidden>🔎</span>
+              <input className="flex-1 min-w-0 bg-transparent outline-none text-base placeholder:text-steel-400"
+                placeholder="Qual veículo? Ex.: Gol, Civic 2015 ou a placa"
+                value={q} autoComplete="off" spellCheck={false}
+                onChange={e => { setQ(e.target.value); setHi(0); setFocus(true); }}
+                onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 120)}
+                onKeyDown={e => {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(h + 1, sugs.length - 1)); }
+                  else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); }
+                  else if (e.key === 'Enter') { e.preventDefault(); pick(hi); }
+                  else if (e.key === 'Escape') setFocus(false);
+                }} />
+              {q && <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => setQ('')} className="h-6 w-6 rounded-full grid place-items-center text-steel-400 hover:bg-steel-100" aria-label="Limpar">✕</button>}
+            </div>
+            {focus && q.trim() && (
+              <div className="absolute z-20 left-0 right-0 mt-2 rounded-2xl border border-steel-200 bg-white shadow-xl overflow-hidden">
+                {sugs.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-steel-500">Nenhum veículo com “{q.trim()}” nas OS.</div>
+                ) : sugs.map((s, i) => (
+                  <button key={s.id} type="button" onMouseDown={e => e.preventDefault()} onMouseEnter={() => setHi(i)} onClick={() => pick(i)}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left transition ${i === hi ? 'bg-brand-50' : ''}`}>
+                    <span className="min-w-0 truncate"><span className="mr-2">{s.sel.kind === 'plate' ? '🔖' : '🚗'}</span><span className="font-semibold text-steel-900">{s.title}</span>
+                      {s.sel.kind === 'plate' && <span className="text-sm text-steel-500"> · {s.sub.split(' · ')[0]}</span>}</span>
+                    <span className="shrink-0 text-xs text-steel-500">{s.sel.kind === 'plate' ? s.sub.split(' · ').slice(-1)[0] : s.sub}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <p className="text-xs text-steel-400 mt-3">Digite o veículo para ver os serviços já feitos nele e os preços cobrados.</p>
-        </div>
-      ) : groups.length === 0 ? (
-        <div className="card text-center py-8 text-sm text-steel-500">Nenhum serviço lançado para esse veículo.</div>
+
+          {/* Atalhos */}
+          <div>
+            <div className="text-[11px] font-bold text-steel-500 uppercase tracking-wider mb-2">Mais atendidos</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {models.slice(0, 12).map(m => (
+                <button key={m.key} onClick={() => { setSel({ kind: 'model', key: m.key, label: m.label }); setYear(null); }}
+                  className="text-left rounded-xl border border-steel-200 bg-white px-3 py-2.5 hover:border-brand-300 hover:shadow-sm transition">
+                  <div className="text-sm font-semibold text-steel-900 truncate">{m.label}</div>
+                  <div className="text-[11px] text-steel-500">{m.os} OS</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       ) : (
         <>
-          <p className="text-xs text-steel-500">
-            {found.length} serviço{found.length === 1 ? '' : 's'} em {new Set(found.map(c => c.osId)).size} OS ·{' '}
-            {vehicles.slice(0, 4).join(', ')}{vehicles.length > 4 ? ` e mais ${vehicles.length - 4}` : ''}
-          </p>
-          <div className="card !p-0 overflow-hidden">
-            <div className="hidden md:grid grid-cols-12 gap-2 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
-              <div className="col-span-5">Serviço</div>
-              <div className="col-span-2 text-right">Vezes</div>
-              <div className="col-span-2 text-right">Último preço</div>
-              <div className="col-span-3 text-right">Variou entre</div>
+          {/* Veículo escolhido */}
+          <div className="card !p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-11 w-11 shrink-0 rounded-xl bg-brand-50 grid place-items-center text-xl">🚗</div>
+              <div className="min-w-0">
+                <div className="text-lg font-bold text-steel-900 truncate">{sel.label}{year ? ` · ${year}` : ''}</div>
+                <div className="text-xs text-steel-500">
+                  {stats.os} OS · {found.length} serviço{found.length === 1 ? '' : 's'}{stats.last ? ` · última vez em ${fmtDate(stats.last.slice(0, 10))}` : ''}
+                </div>
+              </div>
             </div>
-            <ul className="divide-y divide-steel-100">
-              {groups.map(g => (
-                <li key={g.key}>
-                  <button onClick={() => setOpen(open === g.key ? null : g.key)}
-                    className="w-full text-left px-5 py-3 grid grid-cols-12 gap-2 items-center hover:bg-steel-50 transition">
-                    <div className="col-span-12 md:col-span-5 min-w-0">
-                      <div className="text-sm font-semibold truncate">{commonName(g.items, c => c.service)}</div>
-                      <div className="text-xs text-steel-500">último em {fmtDate(g.sum.lastDate.slice(0, 10))}</div>
-                    </div>
-                    <div className="col-span-4 md:col-span-2 text-sm md:text-right text-steel-600">{g.sum.count}×</div>
-                    <div className="col-span-4 md:col-span-2 text-right text-sm font-bold">{fmtBRL(g.sum.last)}</div>
-                    <div className="col-span-4 md:col-span-3 text-right text-xs text-steel-500">{g.sum.min === g.sum.max ? 'sempre igual' : fmtRange(g.sum.min, g.sum.max)}</div>
-                  </button>
-                  {open === g.key && (
-                    <ul className="bg-steel-50 px-5 py-2 divide-y divide-steel-100 text-sm">
-                      {[...g.items].sort((a, b) => b.date.localeCompare(a.date)).map((c, i) => (
-                        <li key={`${c.osId}-${i}`} className="py-1.5 flex items-center justify-between gap-3">
-                          <span className="min-w-0 truncate">
-                            {vehicleLabel(c)}{c.plate ? ` · ${c.plate}` : ''}
-                            <span className="text-steel-400"> · {fmtDate(c.date.slice(0, 10))}{c.osNumber ? ` · OS ${c.osNumber}` : ''}</span>
-                          </span>
-                          <strong className="shrink-0">{fmtBRL(c.price)}</strong>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <button onClick={clear} className="text-sm font-semibold text-brand-700 px-3 py-1.5 rounded-lg border border-steel-200 bg-white hover:border-brand-300">Trocar veículo</button>
           </div>
+
+          {(years.length > 1 || base.length > 8) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {years.length > 1 && <>
+                <button onClick={() => setYear(null)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${year === null ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>Todos os anos</button>
+                {years.map(({ y, n }) => (
+                  <button key={y} onClick={() => setYear(year === y ? null : y)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${year === y ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                    {y} <span className="opacity-60">({n})</span>
+                  </button>
+                ))}
+              </>}
+              <input className="input !w-auto !py-1.5 text-sm ml-auto min-w-[180px]" placeholder="Filtrar serviço" value={sq} onChange={e => setSq(e.target.value)} />
+            </div>
+          )}
+
+          {groups.length === 0 ? (
+            <div className="card text-center py-8 text-sm text-steel-500">Nenhum serviço encontrado com esse filtro.</div>
+          ) : (
+            <div className="card !p-0 overflow-hidden">
+              <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider items-center">
+                <div className="col-span-5">Serviço</div>
+                <div className="col-span-1 text-center">
+                  <button onClick={() => setSort('vezes')} className={sort === 'vezes' ? 'text-brand-700' : 'hover:text-steel-700'}>Vezes{sort === 'vezes' ? ' ↓' : ''}</button>
+                </div>
+                <div className="col-span-2 text-right">
+                  <button onClick={() => setSort('preco')} className={sort === 'preco' ? 'text-brand-700' : 'hover:text-steel-700'}>Último preço{sort === 'preco' ? ' ↓' : ''}</button>
+                </div>
+                <div className="col-span-2 text-right">Faixa cobrada</div>
+                <div className="col-span-2 text-right">
+                  <button onClick={() => setSort('recente')} className={sort === 'recente' ? 'text-brand-700' : 'hover:text-steel-700'}>Última vez{sort === 'recente' ? ' ↓' : ''}</button>
+                </div>
+              </div>
+              <ul className="divide-y divide-steel-100">
+                {groups.map(g => (
+                  <li key={g.key}>
+                    <button onClick={() => setOpen(open === g.key ? null : g.key)}
+                      className="w-full text-left px-5 py-3 grid grid-cols-12 gap-x-3 gap-y-1 items-center hover:bg-steel-50 transition">
+                      <div className="col-span-9 md:col-span-5 min-w-0">
+                        <div className="text-sm font-semibold text-steel-900 truncate">{commonName(g.items, c => c.service)}</div>
+                        <div className="text-[11px] text-steel-500 md:hidden">{g.sum.count}× · {fmtDate(g.sum.lastDate.slice(0, 10))}</div>
+                      </div>
+                      <div className="hidden md:block col-span-1 text-center text-sm text-steel-600">{g.sum.count}×</div>
+                      <div className="col-span-3 md:col-span-2 text-right text-base font-bold text-steel-900">{fmtBRL(g.sum.last)}</div>
+                      <div className="col-span-12 md:col-span-2 md:text-right"><PriceBar min={g.sum.min} max={g.sum.max} last={g.sum.last} /></div>
+                      <div className="hidden md:flex col-span-2 items-center justify-end gap-2 text-xs text-steel-500">
+                        {fmtDate(g.sum.lastDate.slice(0, 10))}<span className="text-steel-300">{open === g.key ? '▾' : '›'}</span>
+                      </div>
+                    </button>
+                    {open === g.key && (
+                      <ul className="bg-steel-50 px-5 py-2 divide-y divide-steel-100 text-sm">
+                        {[...g.items].sort((a, b) => b.date.localeCompare(a.date)).map((c, i) => (
+                          <li key={`${c.osId}-${i}`} className="py-1.5 flex items-center justify-between gap-3">
+                            <span className="min-w-0 truncate">
+                              {vehicleLabel(c)}{c.plate ? ` · ${c.plate}` : ''}
+                              <span className="text-steel-400"> · {fmtDate(c.date.slice(0, 10))}{c.osNumber ? ` · OS ${c.osNumber}` : ''}</span>
+                            </span>
+                            <strong className="shrink-0">{fmtBRL(c.price)}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </div>
