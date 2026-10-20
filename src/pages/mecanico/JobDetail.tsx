@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import JobDescription from '@/components/JobDescription';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
@@ -112,7 +113,8 @@ export default function MechanicJobDetail() {
             {isMine ? (job.en_route_at ? 'Job em andamento' : 'Agendamento aceito') : isInvite ? 'Convite para você' : 'Job disponível'}
           </div>
           <h1 className="text-2xl font-bold mt-1">{job.title}</h1>
-          <p className="mt-3 text-steel-300 leading-relaxed">{job.description}</p>
+          {/* Organizado por carro: em demanda com vários carros o mecânico não confunde o que é de cada um */}
+          <JobDescription text={job.description} />
           {job.scheduled_at && (
             isScheduled(job) ? (
               <div className="mt-3 bg-pending-500/15 border border-pending-500/40 rounded-xl px-3 py-2 flex items-center gap-2 text-sm">

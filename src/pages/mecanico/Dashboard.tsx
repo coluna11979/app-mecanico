@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { jobSummary } from '@/lib/jobDescription';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
@@ -311,7 +312,7 @@ export default function MechanicDashboard() {
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-white leading-snug line-clamp-2">{capitalize(j.title)}</div>
-                        {j.description && <div className="text-sm text-steel-300 line-clamp-2 mt-1">{j.description}</div>}
+                        {j.description && <div className="text-sm text-steel-300 line-clamp-2 mt-1">{jobSummary(j.description) ?? j.description}</div>}
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-signal-500 font-bold font-display text-2xl leading-tight">R$ {formatMoney(net)}</div>
@@ -458,7 +459,7 @@ export default function MechanicDashboard() {
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-white leading-snug line-clamp-2">{capitalize(j.title)}</div>
                           {j.description && (
-                            <div className="text-sm text-steel-300 line-clamp-2 mt-1">{j.description}</div>
+                            <div className="text-sm text-steel-300 line-clamp-2 mt-1">{jobSummary(j.description) ?? j.description}</div>
                           )}
                         </div>
                         <div className="text-right shrink-0">

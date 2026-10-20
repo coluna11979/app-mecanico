@@ -17,6 +17,7 @@ import type { Job } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
+import RateMechanicModal from '@/components/marketplace/RateMechanic';
 import { MechanicCarousel, PlatformHero, StatusCounters } from '@/components/marketplace/PlatformHome';
 import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
 
@@ -84,6 +85,8 @@ export default function WorkshopDashboard() {
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [modal, setModal]       = useState(false);
   const [stackVer, setStackVer] = useState(0);
+  /** Demanda sendo avaliada na janela (sem ir para o mapa) */
+  const [rating, setRatingJob] = useState<Job | null>(null);
   const [form, setForm]         = useState<NewJob>(EMPTY);
   const [draftRestored, setDraftRestored] = useState(false);
   /* Rascunho montado no Caixa ("Chamar mecânico"): de qual OS veio */
@@ -683,10 +686,11 @@ export default function WorkshopDashboard() {
             </div>
             <div className="space-y-2">
               {pendingRate.slice(0, 3).map(j => (
-                <Link
+                <button
                   key={j.id}
-                  to={`/oficina/job/${j.id}/tracking`}
-                  className="flex items-center justify-between gap-3 bg-white rounded-xl px-3 py-2.5 hover:bg-steel-50 transition border border-steel-100"
+                  type="button"
+                  onClick={() => setRatingJob(j)}
+                  className="w-full text-left flex items-center justify-between gap-3 bg-white rounded-xl px-3 py-2.5 min-h-[52px] hover:bg-steel-50 transition border border-steel-100"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-steel-900 truncate text-sm">{j.title}</div>
@@ -697,7 +701,7 @@ export default function WorkshopDashboard() {
                   <span className="text-steel-600 text-xs font-semibold shrink-0">
                     ⭐ Avaliar
                   </span>
-                </Link>
+                </button>
               ))}
               {pendingRate.length > 3 && (
                 <div className="text-[11px] text-steel-400 text-center pt-1">
@@ -816,6 +820,13 @@ export default function WorkshopDashboard() {
         <MechanicCarousel mechanics={mechanics} list />
       </aside>
       </div>
+
+      {/* Avaliar o mecânico sem sair da tela */}
+      {rating && (
+        <RateMechanicModal job={{ id: rating.id, title: rating.title }}
+          onClose={() => setRatingJob(null)}
+          onSaved={() => { setRatingJob(null); if (currentWorkshop?.id) fetchJobs(currentWorkshop.id); }} />
+      )}
 
       {/* ── Modal nova demanda ── */}
       {modal && (
