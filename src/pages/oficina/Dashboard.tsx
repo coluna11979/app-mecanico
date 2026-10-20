@@ -280,18 +280,17 @@ export default function WorkshopDashboard() {
   }
 
   /** Atalhos marcados: abre a demanda já escrita (um ou vários serviços para um mecânico), pelo serviço,
-   *  com o tempo típico somado e o preço estimado de cada um somado */
+   *  com o tempo típico somado. O valor vem VAZIO: a estimativa aparece só como dica ("Usar") no passo 2,
+   *  para ninguém empilhar/publicar um valor que não escolheu. */
   function openShortcut(list: ServiceShortcut[]) {
     if (hasPendingFees || !list.length) return;
-    const rate = medianRate(mechanics);
     const hours = list.reduce((a, s) => a + s.hours, 0);
-    const total = rate ? list.reduce((a, s) => a + estimatePrice(rate, s.hours), 0) : 0;
     const one = list.length === 1;
     const next: NewJob = {
       ...EMPTY,
       title: one ? list[0].title : `${list[0].title} + ${list.length - 1} serviço(s)`,
       description: one ? list[0].description : ['Serviços a realizar:', ...list.map(s => `• ${s.title} — ${s.description}`)].join('\n'),
-      pricing: 'fixed', max_hours: String(hours), total: total ? String(total) : '',
+      pricing: 'fixed', max_hours: String(hours), total: '',
     };
     setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
     setForm(next); persistDraft(next);
