@@ -15,7 +15,6 @@ import type { Job } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
-import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
 import { MechanicCarousel, PlatformHero, StatusCounters } from '@/components/marketplace/PlatformHome';
 import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
 
@@ -564,8 +563,7 @@ export default function WorkshopDashboard() {
       {/* Quem está disponível agora: foto, nota, especialidades */}
       <MechanicCarousel mechanics={mechanics} />
 
-      {/* Resumo do período: gasto, tempos de aceite/chegada, mecânicos mais contratados */}
-      {currentWorkshop?.id && <MarketplaceSummary workshopId={currentWorkshop.id} />}
+      {/* Números do período (gasto, tempos, ranking) ficam no Painel da Plataforma: esta é a tela de trabalho */}
 
       {/* Convite recusado: avisa e leva para escolher outro mecânico */}
       {declinedInvites.length > 0 && (

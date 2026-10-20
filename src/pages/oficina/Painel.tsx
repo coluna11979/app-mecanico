@@ -17,7 +17,7 @@ import PeriodPicker, { PREV_LABEL, addDays, startOfDay, usePeriod } from '@/comp
 
 /**
  * Painel de vendas: tudo que é venda (faturamento, ticket, orçamentos, mais vendidos, clientes).
- * Produtividade e comissões ficam em Equipe → Desempenho; mecânicos da plataforma em Demandas.
+ * Produtividade e comissões ficam em Equipe → Desempenho; mecânicos da plataforma no Painel da Plataforma.
  */
 export default function Painel() {
   const { currentWorkshop } = useAuth();
@@ -248,7 +248,7 @@ export default function Painel() {
             {/* Onde foram parar as outras seções */}
             <p className="text-[11px] text-steel-400">
               Desempenho e comissões da equipe estão em <Link to="/oficina/desempenho" className="text-brand-600 hover:underline">Equipe → Desempenho</Link> e <Link to="/oficina/comissoes" className="text-brand-600 hover:underline">Comissões</Link>.
-              O resumo dos mecânicos da plataforma está em <Link to="/oficina/dashboard" className="text-brand-600 hover:underline">Demandas</Link>.
+              O resumo dos mecânicos da plataforma está no <Link to="/oficina/plataforma/painel" className="text-brand-600 hover:underline">Painel da Plataforma</Link>.
             </p>
           </>
         )}
