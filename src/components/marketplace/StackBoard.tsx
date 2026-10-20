@@ -9,7 +9,7 @@ type StackItem = {
   order: { id: string; number: number | null; title: string; status: string; vehicle: { make: string | null; model: string | null; plate: string | null } | null } | null;
 };
 /** Serviço empilhado avulso (sem OS), guardado direto pela Nova demanda */
-type FreeItem = { id: string; title: string; description: string; total: number; hours: number | null; vehicle: string | null };
+type FreeItem = { id: string; title: string; description: string; total: number; hours: number | null; vehicle: string | null; customer_charge: number | null };
 /** Um card da pilha: os serviços de uma OS ou um serviço avulso */
 type Card = {
   key: string; kind: 'os' | 'free'; osId: string | null; number: number | null; title: string; car: string;
@@ -43,13 +43,16 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
         .select('id, service_order_id, description, quantity, unit_price, order:service_orders(id, number, title, status, vehicle:vehicles(make, model, plate))')
         .eq('workshop_id', wid).eq('kind', 'labor').eq('executor', 'platform')
         .not('stacked_at', 'is', null).is('platform_job_id', null).order('stacked_at'),
-      supabase.from('stacked_services').select('id, title, description, total, hours, vehicle')
+      supabase.from('stacked_services').select('id, title, description, total, hours, vehicle, customer_charge')
         .eq('workshop_id', wid).is('job_id', null).is('removed_at', null).order('created_at'),
     ]);
     if (os.error) console.warn('[StackBoard]', os.error.message);
     if (av.error) console.warn('[StackBoard] avulsos', av.error.message);
     setItems(((os.data ?? []) as unknown as StackItem[]).filter(i => i.order && i.order.status !== 'cancelled'));
-    setFree(((av.data ?? []) as FreeItem[]).map(f => ({ ...f, total: Number(f.total), hours: f.hours != null ? Number(f.hours) : null })));
+    setFree(((av.data ?? []) as FreeItem[]).map(f => ({
+      ...f, total: Number(f.total), hours: f.hours != null ? Number(f.hours) : null,
+      customer_charge: f.customer_charge != null ? Number(f.customer_charge) : null,
+    })));
   }, [wid]);
   useEffect(() => { load(); }, [load, reloadKey]);
 
@@ -144,6 +147,9 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
       serviceOrderId: osCards[0]?.osId ?? '', serviceOrderIds: osCards.length ? osCards.map(c => c.osId!) : undefined,
       itemIds: osCards.flatMap(c => c.items.map(i => i.id)),
       stackedServiceIds: freeCards.map(c => c.free!.id),
+      // Valor cobrado do cliente: só quando todos os serviços juntados são avulsos e todos têm o valor
+      customerCharge: !osCards.length && freeCards.every(c => c.free!.customer_charge != null)
+        ? freeCards.reduce((a, c) => a + (c.free!.customer_charge ?? 0), 0) : undefined,
       title: title.slice(0, 120), description, total, hours: Math.max(1, hours), scheduledAt: '',
     });
     onGenerate();

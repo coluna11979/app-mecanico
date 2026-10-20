@@ -139,6 +139,8 @@ export type ProfitRow = {
   missingCost: boolean;
   /** Serviço que leva peça sem nenhuma peça lançada nele (custo das peças desconhecido) */
   noParts: string[];
+  /** Demanda sem OS: o cobrado é o valor que a própria oficina informou (job_customer_charges) */
+  manual?: boolean; jobId?: string;
 };
 
 const carOf = (v: PlatformOs['vehicle']) =>
@@ -150,7 +152,11 @@ const carOf = (v: PlatformOs['vehicle']) =>
  * - Só alguns itens: os serviços daquela demanda nessa OS + as peças usadas neles.
  *   Demanda com serviços de várias OS (empilhados) divide o valor pago pelo peso de cada OS.
  */
-export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: PlatformItem[], r: Range, estPct = 50): ProfitRow[] {
+export function profitRows(
+  jobs: PlatformJob[], osList: PlatformOs[], items: PlatformItem[], r: Range, estPct = 50,
+  /** Quanto a oficina disse que cobrou do cliente, por demanda (demandas sem OS) */
+  charges: Map<string, number> = new Map(),
+): ProfitRow[] {
   const est = Math.min(100, Math.max(0, estPct)) / 100;
   const osById = new Map(osList.map(o => [o.id, o]));
   const itemsByOs = new Map<string, PlatformItem[]>();
@@ -197,6 +203,20 @@ export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: Pla
   for (const j of done) {
     const osIds = osOfJob(j);
 
+    // Sem OS: o lucro sai do valor que a oficina informou (sem peças: é o valor geral)
+    if (!osIds.length) {
+      const amount = charges.get(j.id);
+      if (amount == null) continue;
+      const paid = Number(j.price);
+      rows.push({
+        key: `job-${j.id}`, osId: '', osNumber: null, car: '', customer: null, date: j.completed_at!,
+        mechanics: [nameOf(j)], whole: false, services: [j.title],
+        labor: amount, parts: 0, charged: amount, partsCost: 0, costReal: 0, costEst: 0, paid, profit: amount - paid,
+        missingCost: false, noParts: [], manual: true, jobId: j.id,
+      });
+      continue;
+    }
+
     osIds.forEach(osId => {
       const os = osById.get(osId)!;
       const all = itemsByOs.get(osId) ?? [];
@@ -235,6 +255,14 @@ export function profitRows(jobs: PlatformJob[], osList: PlatformOs[], items: Pla
     });
   }
   return rows.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** Demandas concluídas no período, sem OS e sem o valor cobrado informado (para pedir à oficina) */
+export function missingCharges(jobs: PlatformJob[], items: PlatformItem[], charges: Map<string, number>, r: Range) {
+  const linked = new Set(items.filter(i => i.platform_job_id).map(i => i.platform_job_id!));
+  return jobs.filter(j => j.status === 'completed' && inRange(j.completed_at, r)
+    && !j.service_order_id && !linked.has(j.id) && !charges.has(j.id))
+    .sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''));
 }
 
 /** Totais das linhas de lucro */
