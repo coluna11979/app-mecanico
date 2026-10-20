@@ -180,6 +180,9 @@ const TAB = {
   hoje:      { to: '/oficina/inicio',    icon: '🏠', label: 'Hoje'      },
   plataforma:{ to: '/oficina/dashboard', icon: '⚡', label: 'Plataforma' },
   demandas:  { to: '/oficina/dashboard', icon: '⚡', label: 'Demandas'  },
+  inicioPlataforma: { to: '/oficina/dashboard', icon: '🏠', label: 'Início' },
+  /** Abre a Nova demanda (a tela de Demandas lê o ?nova=1) */
+  chamar:    { to: '/oficina/dashboard?nova=1', icon: '＋', label: 'Chamar' },
   buscar:    { to: '/oficina/buscar',    icon: '🔍', label: 'Buscar'    },
   mensagens: { to: '/oficina/mensagens', icon: '💬', label: 'Mensagens' },
   equipe:    { to: '/oficina/desempenho', icon: '🏆', label: 'Equipe'   },
@@ -200,7 +203,7 @@ const BOTTOM_TABS: Record<OperatorRole, NavItem[]> = {
   mecanico:  [TAB.os, TAB.agenda, TAB.checkup],
 };
 /** Pacote "Só mecânicos": a barra é só a Plataforma */
-const PLATFORM_TABS: NavItem[] = [TAB.demandas, TAB.buscar, TAB.mensagens];
+const PLATFORM_TABS: NavItem[] = [TAB.inicioPlataforma, TAB.chamar, TAB.mensagens];
 const HOME = '/oficina/inicio';
 /** Para onde o login e os redirecionamentos mandam a oficina sem ela ter escolhido (Login.destino, ProtectedRoute) */
 const LANDING_PATHS = [HOME, '/oficina/painel', '/oficina/resultado'];
@@ -941,11 +944,12 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             return (
               <NavLink key={tab.to} to={tab.to} onClick={() => setOpen(false)}
                 className={({ isActive }) => `group flex flex-col items-center justify-center gap-1 text-[10px] font-semibold tracking-tight transition-colors ${
-                  isActive && !open ? 'text-brand-600' : 'text-steel-400 active:text-steel-600'}`}>
+                  tab.to.includes('?') ? 'text-brand-600' : isActive && !open ? 'text-brand-600' : 'text-steel-400 active:text-steel-600'}`}>
                 {({ isActive }) => (
                   <>
                     <span className={`relative grid place-items-center h-7 w-12 rounded-full text-lg leading-none transition-all duration-200 ${
-                      isActive && !open ? 'bg-brand-50' : 'grayscale-[35%] opacity-80 group-active:scale-90'}`}>
+                      tab.to.includes('?') ? 'bg-brand-500 text-white font-bold group-active:scale-90'
+                      : isActive && !open ? 'bg-brand-50' : 'grayscale-[35%] opacity-80 group-active:scale-90'}`}>
                       {tab.icon}
                       {badge > 0 && <Badge n={badge} />}
                     </span>

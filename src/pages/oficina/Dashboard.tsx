@@ -16,7 +16,8 @@ import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
 import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
-import { FirstDemandHero, QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
+import { MechanicCarousel, PlatformHero, StatusCounters } from '@/components/marketplace/PlatformHome';
+import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
 
 type NewJob = {
   title: string; description: string;
@@ -35,7 +36,10 @@ type NewJob = {
   /** Veículo do serviço (texto livre). Vai na descrição e no título da demanda */
   vehicle?: string;
 };
-type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
+type MechanicOption = {
+  id: string; name: string; rating: number; total_jobs: number; hourly_rate: number;
+  skills?: string[] | null; avatar?: string | null;
+};
 type JobMode = 'open' | 'favorites' | 'direct';
 
 const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '', vehicle: '' };
@@ -194,7 +198,7 @@ export default function WorkshopDashboard() {
   async function fetchMechanics() {
     const { data } = await supabase
       .from('mechanics')
-      .select('id, rating, total_jobs, hourly_rate, is_available, profile:profiles!inner(full_name, status)')
+      .select('id, rating, total_jobs, hourly_rate, is_available, skills, profile:profiles!inner(full_name, status, avatar_url)')
       .eq('profile.status', 'approved')
       .eq('is_available', true)
       .order('rating', { ascending: false });
@@ -204,6 +208,8 @@ export default function WorkshopDashboard() {
       rating: m.rating,
       total_jobs: m.total_jobs,
       hourly_rate: m.hourly_rate,
+      skills: m.skills ?? [],
+      avatar: m.profile.avatar_url ?? null,
     }));
     setMechanics(list);
   }
@@ -530,21 +536,11 @@ export default function WorkshopDashboard() {
 
   return (
     <WorkshopLayout>
-      {/* Cabeçalho: no celular o botão de chamar ocupa a largura toda (é o que se faz aqui) */}
-      <div className="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs font-medium text-steel-500">Plataforma · mecânicos sob demanda</div>
-          <h1 className="font-display text-[26px] lg:text-3xl font-bold tracking-tight text-steel-900 leading-tight truncate">{shop?.business_name ?? '…'}</h1>
-        </div>
-        <button
-          onClick={() => openCreateModal()}
-          disabled={shopLoading || hasPendingFees}
-          title={hasPendingFees ? 'Quite a multa pendente para publicar nova demanda' : undefined}
-          className="shrink-0 inline-flex items-center justify-center gap-2 h-12 sm:h-11 px-5 rounded-xl bg-brand-500 text-white font-bold shadow-brand active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {shopLoading ? '…' : hasPendingFees ? <>🔒 Multa pendente</> : <><span className="text-lg leading-none">⚡</span> Chamar mecânico</>}
-        </button>
-      </div>
+      <h1 className="sr-only">Demandas · {shop?.business_name ?? ''}</h1>
+
+      {/* O que se faz aqui, em um botão */}
+      <PlatformHero available={mechanics.length} onCall={() => openCreateModal()}
+        disabled={shopLoading || hasPendingFees} locked={hasPendingFees} />
 
       {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
@@ -552,20 +548,21 @@ export default function WorkshopDashboard() {
       {/* Serviços empilhados: esperando mecânico da plataforma (a gestão junta e gera a demanda) */}
       {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={() => openCreateModal(true)} />}
 
-      {/* Primeira vez: explica e puxa a primeira demanda (os números zerados não dizem nada) */}
-      {firstTime && <FirstDemandHero onCall={() => openCreateModal()} disabled={hasPendingFees} />}
-
-      {/* Quem está disponível agora + atalhos dos serviços mais pedidos */}
-      <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} />
-
-      {/* Números rápidos: uma faixa só, cabe em qualquer celular */}
+      {/* Como estão os pedidos (oficina que nunca pediu não vê quatro zeros) */}
       {!firstTime && (
-        <dl className="grid grid-cols-3 divide-x divide-steel-100 rounded-2xl bg-white ring-1 ring-steel-200/70 mb-5">
-          <KPI label="Ativas" value={active.length} />
-          <KPI label="Concluídas" value={shop?.total_jobs ?? 0} />
-          <KPI label="Avaliação" value={shop?.rating ? `★ ${shop.rating.toFixed(1)}` : '—'} />
-        </dl>
+        <StatusCounters
+          searching={active.filter(j => !j.mechanic_id).length}
+          accepted={active.filter(j => j.mechanic_id && !j.arrived_at && j.status !== 'in_progress').length}
+          working={active.filter(j => j.mechanic_id && (j.arrived_at || j.status === 'in_progress')).length}
+          done={shop?.total_jobs ?? 0}
+          onPick={t => document.getElementById(t === 'ativas' ? 'minhas-solicitacoes' : 'historico')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
       )}
+
+      {/* Atalhos dos serviços mais pedidos (um toque abre a demanda pronta) */}
+      <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact />
+
+      {/* Quem está disponível agora: foto, nota, especialidades */}
+      <MechanicCarousel mechanics={mechanics} />
 
       {/* Resumo do período: gasto, tempos de aceite/chegada, mecânicos mais contratados */}
       {currentWorkshop?.id && <MarketplaceSummary workshopId={currentWorkshop.id} />}
@@ -744,14 +741,16 @@ export default function WorkshopDashboard() {
         );
 
         if (active.length === 0) {
-          if (firstTime) return null;
           return (
-            <section className="mb-8">
-              <h2 className="text-lg font-bold mb-3">Demandas ativas</h2>
-              <div className="card text-center text-steel-500 py-10">
-                Nenhuma demanda ativa.{' '}
-                <button onClick={() => openCreateModal()} className="text-brand-500 font-semibold">
-                  Criar uma demanda →
+            <section id="minhas-solicitacoes" className="mb-8 scroll-mt-4">
+              <h2 className="text-[15px] lg:text-lg font-bold mb-3">Minhas solicitações</h2>
+              <div className="rounded-2xl bg-white ring-1 ring-steel-200/70 text-center px-5 py-8">
+                <div className="text-3xl" aria-hidden>📋</div>
+                <div className="font-semibold text-steel-900 mt-2">Nenhuma solicitação em andamento</div>
+                <p className="text-sm text-steel-600 mt-1">Chame um mecânico e acompanhe tudo por aqui: aceite, chegada e serviço.</p>
+                <button type="button" onClick={() => openCreateModal()} disabled={shopLoading || hasPendingFees}
+                  className="mt-4 inline-flex items-center justify-center gap-2 h-12 px-6 rounded-xl bg-brand-500 text-white font-bold active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-50">
+                  ＋ Chamar mecânico agora
                 </button>
               </div>
             </section>
@@ -759,7 +758,7 @@ export default function WorkshopDashboard() {
         }
 
         return (
-          <div className="mb-8">
+          <div id="minhas-solicitacoes" className="mb-8 scroll-mt-4">
             {ACTIVE_GROUPS.map(g => {
               const jobs = buckets[g.key];
               if (jobs.length === 0) return null;
@@ -778,7 +777,7 @@ export default function WorkshopDashboard() {
       })()}
 
       {/* Histórico — fechado por padrão; a oficina escolhe abrir */}
-      <HistorySection history={history} workshopId={currentWorkshop?.id ?? null} />
+      <div id="historico" className="scroll-mt-4"><HistorySection history={history} workshopId={currentWorkshop?.id ?? null} /></div>
 
       {/* ── Modal nova demanda ── */}
       {modal && (
