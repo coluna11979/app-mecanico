@@ -7,8 +7,10 @@ import { fetchAll } from '@/lib/fetchAll';
 import { fmtBRL, fmtDur } from '@/components/os/osHelpers';
 import { arrivalDeadline } from '@/lib/arrivalDeadline';
 import PeriodPicker, { usePeriod } from '@/components/PeriodPicker';
+import { ChargeInput, loadCharges, saveCharge } from '@/components/marketplace/CustomerCharge';
+import { toast } from '@/components/ui/Toast';
 import {
-  DEFAULT_EST_PCT, loadEstPct, platformPanel, platformSeries, profitRows, profitTotals, realCostPct, saveEstPct,
+  DEFAULT_EST_PCT, loadEstPct, missingCharges, platformPanel, platformSeries, profitRows, profitTotals, realCostPct, saveEstPct,
   type PlatformItem, type PlatformJob, type PlatformOs, type ProfitRow,
 } from '@/lib/platformPanel';
 
@@ -35,11 +37,13 @@ const plural = (n: number, one: string, other: string) => `${n} ${n === 1 ? one 
  * Só fatos (valores, tempos, notas, quem trabalhou) — sem comparações com outras formas de contratar.
  */
 export default function PlataformaPainel() {
-  const { currentWorkshop } = useAuth();
+  const { currentWorkshop, user } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const period = usePeriod('plataforma-painel-periodo', 'month');
   const [jobs, setJobs] = useState<PlatformJob[]>([]);
   const [items, setItems] = useState<PlatformItem[]>([]);
+  /** Quanto a oficina disse que cobrou do cliente, por demanda (só ela vê) */
+  const [charges, setCharges] = useState<Map<string, number>>(new Map());
   const [osList, setOsList] = useState<PlatformOs[]>([]);
   const [showAllRows, setShowAllRows] = useState(false);
   /** % do preço usado como custo quando a peça não tem custo lançado (editável aqui) */
@@ -71,21 +75,34 @@ export default function PlataformaPainel() {
         ...((linked.data as { service_order_id: string }[]) ?? []).map(i => i.service_order_id),
         ...jobList.map(x => x.service_order_id).filter((x): x is string => !!x),
       ])];
-      const [osRows, itemRows] = await Promise.all([
+      const [osRows, itemRows, chargeMap] = await Promise.all([
         byIds<PlatformOs>(osIds, ids => supabase.from('service_orders').select(OS_COLS).eq('workshop_id', wid).in('id', ids)),
         byIds<PlatformItem>(osIds, ids => supabase.from('service_order_items').select(ITEM_COLS).eq('workshop_id', wid).in('service_order_id', ids)),
+        loadCharges(wid),
       ]);
       if (!alive) return;
       setJobs(jobList);
       setOsList(osRows);
       setItems(itemRows);
+      setCharges(chargeMap);
       setLoading(false);
     })();
     return () => { alive = false; };
   }, [wid]);
 
   const m = useMemo(() => platformPanel(jobs, period.range, j => arrivalDeadline(j)), [jobs, period.range]);
-  const rows = useMemo(() => profitRows(jobs, osList, items, period.range, estPct), [jobs, osList, items, period.range, estPct]);
+  const rows = useMemo(() => profitRows(jobs, osList, items, period.range, estPct, charges), [jobs, osList, items, period.range, estPct, charges]);
+  const missing = useMemo(() => missingCharges(jobs, items, charges, period.range), [jobs, items, charges, period.range]);
+  const hasOsRows = rows.some(r => !r.manual);
+  /** Grava o valor cobrado e atualiza o painel na hora */
+  async function setCharge(jobId: string, amount: number | null) {
+    if (!wid) return false;
+    const { error } = await saveCharge(wid, jobId, amount, user?.id);
+    if (error) { toast.error('Não salvou: ' + error.message); return false; }
+    setCharges(prev => { const n = new Map(prev); if (amount == null) n.delete(jobId); else n.set(jobId, amount); return n; });
+    toast.success(amount == null ? 'Valor apagado' : 'Valor salvo');
+    return true;
+  }
   const real = useMemo(() => realCostPct(items), [items]);
   const tot = useMemo(() => profitTotals(rows), [rows]);
   const series = useMemo(() => platformSeries(jobs, period.range), [jobs, period.range]);
@@ -138,12 +155,12 @@ export default function PlataformaPainel() {
                 <Kpi highlight label="Pago aos mecânicos" value={fmtBRL(m.spent)}
                   note={m.doneCount ? `${plural(m.doneCount, 'demanda concluída', 'demandas concluídas')} · ticket ${fmtBRL(m.ticket)}` : 'nenhuma concluída no período'} />
                 <Kpi label="Cobrado do cliente" value={tot.count ? fmtBRL(tot.charged) : '—'}
-                  note={tot.count ? `serviços e peças de ${plural(tot.count, 'serviço', 'serviços')} feitos pela plataforma` : 'nenhuma demanda ligada a OS'} />
+                  note={tot.count ? `de ${plural(tot.count, 'serviço', 'serviços')} feitos pela plataforma` : 'informe quanto cobrou em cada serviço'} />
                 <Kpi label="Lucro depois dos custos" value={tot.count ? fmtBRL(tot.profit) : '—'}
                   tone={tot.count ? (tot.profit >= 0 ? 'good' : 'bad') : undefined}
                   note={tot.count
                     ? `cobrado − peças ${fmtBRL(tot.partsCost)}${tot.costEst > 0 ? ` (${fmtBRL(tot.costEst)} estimado)` : ''} − mecânicos${tot.charged > 0 ? ` · ${Math.round((tot.profit / tot.charged) * 100)}%` : ''}`
-                    : 'aparece quando a demanda sai de uma OS'} />
+                    : 'aparece quando você informa quanto cobrou'} />
                 <Kpi label="Multas de cancelamento" value={fmtBRL(m.feesPaid)}
                   note={m.pendingFees > 0 ? `${fmtBRL(m.pendingFees)} em aberto` : 'nada em aberto'} tone={m.pendingFees > 0 ? 'bad' : undefined} />
               </div>
@@ -155,16 +172,43 @@ export default function PlataformaPainel() {
                 <SectionTitle>Lucro por serviço</SectionTitle>
                 {tot.count > 0 && <span className="text-[11px] text-steel-400">{plural(tot.count, 'serviço', 'serviços')} no período</span>}
               </div>
-              {rows.length === 0 ? (
-                <div className="card text-sm text-steel-500">
-                  Nenhum serviço feito pela plataforma ligado a OS no período. Quando a demanda sai de uma OS (Caixa, OS ou empilhados), o lucro de cada serviço aparece aqui.
+              {/* Serviços concluídos sem o valor cobrado: dá para informar aqui mesmo */}
+              {missing.length > 0 && (
+                <div className="card !p-4 mb-3">
+                  <div className="text-sm font-bold text-steel-900">💰 Quanto você cobrou do cliente?</div>
+                  <p className="text-xs text-steel-600 mt-0.5 mb-3">
+                    Informe o valor geral de cada serviço para ver seu lucro. Só você vê; o mecânico não.
+                  </p>
+                  <ul className="divide-y divide-steel-100">
+                    {missing.slice(0, 8).map(j => (
+                      <li key={j.id} className="py-2.5 grid sm:grid-cols-[minmax(0,1fr)_260px] gap-2 sm:items-center">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-steel-900 truncate">{j.title}</div>
+                          <div className="text-xs text-steel-600">
+                            {j.completed_at && new Date(j.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} · pago ao mecânico {fmtBRL(Number(j.price))}
+                          </div>
+                        </div>
+                        <ChargeInput compact initial={null} onSave={n => setCharge(j.id, n)} />
+                      </li>
+                    ))}
+                  </ul>
+                  {missing.length > 8 && <p className="text-xs text-steel-500 mt-2">+{missing.length - 8} serviços no período sem valor informado</p>}
                 </div>
+              )}
+              {rows.length === 0 ? (
+                missing.length === 0 && (
+                  <div className="card text-sm text-steel-500">
+                    Nenhum serviço concluído no período. Quando um mecânico terminar, informe quanto você cobrou do cliente e o lucro aparece aqui.
+                  </div>
+                )
               ) : (
                 <>
-                  <EstimateBar estPct={estPct} onChange={changeEst} real={real}
-                    costReal={tot.costReal} costEst={tot.costEst} noParts={tot.noParts} missingCost={tot.missingCost} />
+                  {hasOsRows && (
+                    <EstimateBar estPct={estPct} onChange={changeEst} real={real}
+                      costReal={tot.costReal} costEst={tot.costEst} noParts={tot.noParts} missingCost={tot.missingCost} />
+                  )}
                   <ul className="grid lg:grid-cols-2 gap-3">
-                    {(showAllRows ? rows : rows.slice(0, 10)).map(r => <ProfitCard key={r.key} r={r} />)}
+                    {(showAllRows ? rows : rows.slice(0, 10)).map(r => <ProfitCard key={r.key} r={r} onCharge={setCharge} />)}
                   </ul>
                   {rows.length > 10 && (
                     <button type="button" onClick={() => setShowAllRows(v => !v)}
@@ -288,8 +332,44 @@ export default function PlataformaPainel() {
 }
 
 /** Um serviço feito pela plataforma: o que o cliente pagou, os custos e o lucro */
-function ProfitCard({ r }: { r: ProfitRow }) {
+function ProfitCard({ r, onCharge }: { r: ProfitRow; onCharge: (jobId: string, n: number | null) => Promise<boolean> }) {
   const pct = r.charged > 0 ? Math.round((r.profit / r.charged) * 100) : null;
+  const [editing, setEditing] = useState(false);
+  if (r.manual) {
+    return (
+      <li className="card !p-4 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <Link to={`/oficina/job/${r.jobId}/tracking`} className="text-sm font-bold text-steel-900 hover:underline line-clamp-2">{r.services[0]}</Link>
+            <div className="text-xs text-steel-500 truncate">
+              {[r.mechanics.join(', '), new Date(r.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })].join(' · ')}
+            </div>
+          </div>
+          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-steel-600 bg-steel-100 rounded-full px-2 py-0.5">informado por você</span>
+        </div>
+        <dl className="mt-3 pt-3 border-t border-steel-100 space-y-1 text-sm tabular-nums">
+          {editing ? (
+            <div className="pb-1">
+              <div className="text-xs text-steel-600 mb-1">Cobrado do cliente (vazio apaga)</div>
+              <ChargeInput compact initial={r.charged} onSave={async n => { const ok = await onCharge(r.jobId!, n); if (ok) setEditing(false); return ok; }} />
+            </div>
+          ) : (
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-steel-600">Cobrado do cliente <button type="button" onClick={() => setEditing(true)} className="ml-1 text-xs font-semibold text-brand-600">editar</button></dt>
+              <dd className="font-semibold text-steel-900 shrink-0">{fmtBRL(r.charged)}</dd>
+            </div>
+          )}
+          <Money label="Pago ao mecânico" value={-r.paid} />
+          <div className="flex items-baseline justify-between gap-2 pt-1.5 border-t border-steel-100">
+            <dt className="font-bold text-steel-900">Lucro</dt>
+            <dd className={`font-bold font-display text-base ${r.profit >= 0 ? 'text-signal-600' : 'text-alert-600'}`}>
+              {fmtBRL(r.profit)}{pct != null && <span className="text-xs font-semibold ml-1">({pct}%)</span>}
+            </dd>
+          </div>
+        </dl>
+      </li>
+    );
+  }
   return (
     <li>
       <Link to={`/oficina/os/${r.osId}`} className="card block !p-4 hover:ring-brand-200 transition min-w-0">
