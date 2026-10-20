@@ -65,7 +65,11 @@ export default function Comercial() {
   const [stage, setStage] = useState<Stage | 'interessado'>('aguardando');
   const [view, setViewState] = useState<View>(loadView);
   const setView = (v: View) => { setViewState(v); try { localStorage.setItem(LS_VIEW, v); } catch { /* sem localStorage */ } };
-  const inboxOn = useModuleAllows()('/oficina/inbox');
+  const modAllows = useModuleAllows();
+  const inboxOn = modAllows('/oficina/inbox');
+  // Sem OS e sem check-up (ex.: pacote Atendimento): não há orçamento — o Comercial é só a lista de interessados
+  const leadsOnly = !modAllows('/oficina/os') && !modAllows('/oficina/checkup');
+  useEffect(() => { if (leadsOnly) setStage('interessado'); }, [leadsOnly]);
   const siteOn = useFeature()('site');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [origin, setOrigin] = useState<'all' | 'checkup' | 'os'>('all');
@@ -184,14 +188,17 @@ export default function Comercial() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Comercial</h1>
-            <p className="text-xs text-steel-500 mt-0.5">Orçamentos de check-up e de OS: do envio até a aprovação.</p>
+            <p className="text-xs text-steel-500 mt-0.5">
+              {leadsOnly ? 'Interessados que chegaram pelo WhatsApp e pelo site: quem pediu preço e ainda não virou serviço.'
+                : 'Orçamentos de check-up e de OS: do envio até a aprovação.'}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <select className="input !py-2 text-sm flex-1 sm:hidden" value={preset} onChange={e => period.setPreset(e.target.value as Preset)}>
               {PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
             <div className="hidden sm:block"><PeriodPicker period={period} /></div>
-            <div className="hidden md:flex rounded-xl border border-steel-200 bg-white p-0.5 shrink-0">
+            <div className={`${leadsOnly ? 'hidden' : 'hidden md:flex'} rounded-xl border border-steel-200 bg-white p-0.5 shrink-0`}>
               {(['lista', 'colunas'] as View[]).map(v => (
                 <button key={v} type="button" onClick={() => setView(v)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${view === v ? 'bg-steel-900 text-white' : 'text-steel-600 hover:bg-steel-50'}`}>
@@ -214,9 +221,10 @@ export default function Comercial() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-white rounded-2xl animate-pulse" />)}</div>
         ) : (
           <>
-            {wid && canDo(session, balcao, 'ver_financeiro') && <ShopGoalCard wid={wid} canEdit={canDo(session, balcao, 'ver_financeiro')} />}
+            {!leadsOnly && wid && canDo(session, balcao, 'ver_financeiro') && <ShopGoalCard wid={wid} canEdit={canDo(session, balcao, 'ver_financeiro')} />}
 
             {/* KPIs */}
+            {!leadsOnly && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi label="Em aberto" value={String(fn.open.length)} sub="montando + aguardando cliente" />
               <Kpi label="Valor em aberto" value={fmtBRL(fn.openValue)} sub={fn.viewedWaiting ? `${fn.viewedWaiting} já viram o orçamento` : 'aguardando decisão'} />
@@ -226,10 +234,11 @@ export default function Comercial() {
               <Kpi label="Aprovados no período" value={`${fn.aprovado.length}`} dark
                 sub={fn.aprovado.length ? `${fmtBRL(fn.approvedValue)} · ticket ${fmtBRL(fn.ticket)}` : 'nenhum no período'} />
             </div>
+            )}
 
             {siteOn && wid && <SiteStats workshopId={wid} from={range.from} to={range.to} />}
 
-            {view === 'colunas' ? (
+            {view === 'colunas' && !leadsOnly ? (
               <div className="hidden md:block">
                 <Board
                   leads={inboxOn ? leads : null} leadsValue={leadsValue} fn={fn}
@@ -237,8 +246,9 @@ export default function Comercial() {
                 />
               </div>
             ) : null}
-            <div className={view === 'colunas' ? 'md:hidden space-y-5' : 'space-y-5'}>
+            <div className={view === 'colunas' && !leadsOnly ? 'md:hidden space-y-5' : 'space-y-5'}>
             {/* Funil */}
+            {!leadsOnly && <>
             <div>
               <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-4 snap-x">
                 {STAGES.map((s, i) => {
@@ -299,13 +309,15 @@ export default function Comercial() {
               )}
             </div>
 
+            </>}
+
             {/* Lista da etapa */}
             <div className="card !p-0 overflow-hidden">
               <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-steel-100">
                 <div className="font-bold text-sm">{stage === 'interessado' ? '💬 Interessados' : STAGE_LABEL[stage]} <span className="text-steel-400 font-medium">({stage === 'interessado' ? leads.length : list.length})</span>
                   <span className="text-xs font-normal text-steel-400 ml-2">{stage === 'interessado' ? 'pediram preço no WhatsApp, ainda sem orçamento' : stage === 'montando' || stage === 'aguardando' ? 'situação de agora' : 'no período'}</span>
                 </div>
-                <button onClick={() => setMoreFilters(v => !v)} className="text-xs font-semibold text-steel-600 hover:text-steel-900">
+                <button onClick={() => setMoreFilters(v => !v)} className={`text-xs font-semibold text-steel-600 hover:text-steel-900 ${leadsOnly ? 'hidden' : ''}`}>
                   {moreFilters ? 'Menos filtros' : 'Mais filtros'}{(origin !== 'all' || mechanic !== 'all') && ' •'}
                 </button>
               </div>

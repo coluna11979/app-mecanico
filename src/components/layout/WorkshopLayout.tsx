@@ -96,7 +96,9 @@ const SECTIONS: NavGroup[] = [
 /** Pacote "Só mecânicos": sem Configurações à parte, o perfil da oficina fica junto da Plataforma */
 const PLATFORM_SECTIONS: NavGroup[] = SECTIONS.filter(sec => sec.key !== 'config').map(sec => (sec.key === 'plataforma'
   ? { ...sec, items: [...sec.items, { to: '/oficina/perfil', icon: '🏪', label: 'Perfil da oficina' }] }
-  : sec));
+  : sec))
+  // O produto principal fica em primeiro, mesmo com pacotes extras (ex.: Atendimento) ligados
+  .sort((a, b) => Number(b.key === 'plataforma') - Number(a.key === 'plataforma'));
 
 /** Ícone de cada bloco na gaveta "Mais" (celular) */
 const SECTION_ICON: Record<string, string> = {
