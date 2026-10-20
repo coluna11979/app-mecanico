@@ -82,7 +82,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -159,7 +159,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   /** Preço já cobrado de cada serviço neste modelo de veículo (outras OS) — chave = nome normalizado */
   const [vehPrices, setVehPrices] = useState<Map<string, PriceSummary>>(new Map());
-  const vehModel = vehicle?.model?.trim() ?? '';
+  /** Modelo escolhido no painel quando a OS não tem veículo: só para sugerir preço */
+  const [refModel, setRefModel] = useState('');
+  const vehModel = vehicle?.model?.trim() || refModel;
   useEffect(() => {
     if (!vehModel || saleMode || readOnly) { setVehPrices(new Map()); return; }
     let alive = true;
@@ -271,7 +273,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       const [cat, svc, hist, margin] = await Promise.all([
         supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price, stock_qty, unit')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
-        supabase.from('workshop_services').select('name, price')
+        supabase.from('workshop_services').select('name, price, category')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
           .select('description, kind, unit_price, created_at')
@@ -287,9 +289,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit });
       }
       // Tabela de serviços da oficina: preço oficial da mão de obra
-      for (const s of (svc.data ?? []) as { name: string; price: number }[]) {
+      for (const s of (svc.data ?? []) as { name: string; price: number; category: string | null }[]) {
         const k = s.name.trim().toLowerCase();
-        if (!seen.has(k)) seen.set(k, { description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true });
+        if (!seen.has(k)) seen.set(k, { description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true, category: s.category ?? undefined });
       }
       for (const d of (hist.data ?? []) as Suggestion[]) {
         const k = d.description.trim().toLowerCase();
@@ -346,6 +348,19 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       while (j < rs.length && rs[j].kind === 'part') j++;
       return [...rs.slice(0, j), row, ...rs.slice(j)];
     });
+  }
+  /** Modelos de veículo já atendidos pela oficina (para escolher um quando a OS abriu sem veículo) */
+  async function loadModels() {
+    const { data } = await supabase.from('vehicles').select('model').eq('workshop_id', workshopId).not('model', 'is', null).limit(5000);
+    const m = new Map<string, { names: Map<string, number>; n: number }>();
+    for (const v of (data ?? []) as { model: string }[]) {
+      const label = v.model.trim(), k = norm(label);
+      if (!k) continue;
+      const e = m.get(k) ?? { names: new Map(), n: 0 };
+      e.n++; e.names.set(label, (e.names.get(label) ?? 0) + 1);
+      m.set(k, e);
+    }
+    return [...m.values()].map(e => ({ label: [...e.names.entries()].sort((a, b) => b[1] - a[1])[0][0], n: e.n })).sort((a, b) => b.n - a.n);
   }
   /** Peças do kit do serviço escolhido no catálogo (cadastradas na Tabela de serviços) */
   async function kitFor(s: Suggestion): Promise<Suggestion[]> {
@@ -516,7 +531,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                   // Nome não bate com nada deste carro: mostra parecidos (neste modelo) ou o que se costuma cobrar nos outros
                   const sm = similar[norm(r.description)];
                   const list = sm?.model.length ? sm.model : sm?.all ?? [];
-                  if (!list.length) return null;
+                  if (!list.length || cur > 0) return null;
                   const here = !!sm?.model.length;
                   return (
                     <div className="text-[11px] text-steel-500 mt-1">
@@ -687,7 +702,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             )}
             <button type="button" onClick={() => setCatalogOpen(true)}
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
-              🔍 Buscar no catálogo
+              🧭 Escolher serviço e peças
             </button>
             {showCost && (
               <button type="button" onClick={() => setQuick({ key: null, name: '', qty: 1 })}
@@ -750,7 +765,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       {catalogOpen && (
         <CatalogPanel suggestions={suggestions} itemCount={blocks.length} total={total}
           services={rows.filter(r => r.kind === 'labor').map(r => ({ key: r.key, name: r.description.trim() }))}
-          onPick={addFromCatalog} kitFor={kitFor} onClose={() => setCatalogOpen(false)} />
+          onPick={addFromCatalog} kitFor={kitFor}
+          vehicleModel={vehModel} osHasVehicle={!!vehicle?.model?.trim()} onVehicle={setRefModel} loadModels={loadModels}
+          priceFor={sg => { const vp = vehPrices.get(norm(sg.description)); return vp ? { price: vp.last, count: vp.count } : null; }}
+          onClose={() => setCatalogOpen(false)} />
       )}
 
       {quick && (
