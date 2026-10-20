@@ -49,6 +49,8 @@ export function saveJobDraft(wid: string, origin: string, draft: {
   serviceOrderId: string; itemIds: string[];
   /** Serviços empilhados avulsos (sem OS) que vão nesta demanda */
   stackedServiceIds?: string[];
+  /** Quanto a oficina vai cobrar do cliente (soma dos empilhados que tinham o valor) */
+  customerCharge?: number;
   /** Demanda com serviços de várias OS (vindo dos empilhados) */
   serviceOrderIds?: string[]; title: string; description: string; total: number; hours: number;
   /** datetime-local ('' = o quanto antes) */
@@ -63,6 +65,7 @@ export function saveJobDraft(wid: string, origin: string, draft: {
     service_order_id: draft.serviceOrderId, service_order_item_ids: draft.itemIds,
     ...(draft.serviceOrderIds ? { service_order_ids: draft.serviceOrderIds } : {}),
     ...(draft.stackedServiceIds?.length ? { stacked_service_ids: draft.stackedServiceIds } : {}),
+    ...(draft.customerCharge != null ? { customer_charge: String(draft.customerCharge) } : {}),
   }));
   localStorage.setItem(jobDraftOriginKey(wid), origin);
 }

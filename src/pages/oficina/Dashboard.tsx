@@ -4,6 +4,8 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
+import { isPlatformOnly, useWorkshopModules } from '@/lib/modules';
+import { saveCharge } from '@/components/marketplace/CustomerCharge';
 import { localInput } from '@/lib/agenda';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
@@ -34,6 +36,8 @@ type NewJob = {
   stacked_service_ids?: string[];
   /** Veículo do serviço (texto livre). Vai na descrição e no título da demanda */
   vehicle?: string;
+  /** Quanto a oficina vai cobrar do cliente (só ela vê; oficina "Só mecânicos") */
+  customer_charge?: string;
 };
 type MechanicOption = {
   id: string; name: string; rating: number; total_jobs: number; hourly_rate: number;
@@ -95,6 +99,14 @@ export default function WorkshopDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
   const hasPendingFees = usePendingFees(currentWorkshop?.id ?? null);
+  // Oficina "Só mecânicos": pode informar quanto vai cobrar do cliente (quem tem OS tem o valor pela OS)
+  const platformOnly = useWorkshopModules(s => s.loaded && isPlatformOnly(s.off));
+  /** Valor cobrado do cliente digitado no formulário (null = não informou) */
+  const chargeOf = (f: NewJob) => {
+    const raw = (f.customer_charge ?? '').trim().replace(',', '.');
+    const n = raw === '' ? null : Number(raw);
+    return n != null && n >= 0 ? n : null;
+  };
 
   const inviteName = (j: Job) => (j.invited_mechanic_id && inviteNames[j.invited_mechanic_id]) || 'o mecânico';
 
@@ -424,6 +436,12 @@ export default function WorkshopDashboard() {
       const osIds = form.service_order_ids?.length ? form.service_order_ids : [form.service_order_id];
       await markPlatformItems(currentShop.id, osIds, form.service_order_item_ids ?? [], { jobId: ins?.id });
     }
+    // Quanto vai cobrar do cliente (só a oficina vê)
+    const charge = chargeOf(form);
+    if (platformOnly && charge != null && ins?.id) {
+      const { error: chErr } = await saveCharge(currentShop.id, ins.id, charge, user?.id);
+      if (chErr) toast.error('A demanda foi publicada, mas o valor cobrado não salvou: ' + chErr.message);
+    }
     // Empilhados avulsos que viraram esta demanda saem da pilha
     if (form.stacked_service_ids?.length && ins?.id) {
       await supabase.from('stacked_services').update({ job_id: ins.id })
@@ -463,6 +481,7 @@ export default function WorkshopDashboard() {
       title: form.title.trim(),
       description: form.description.trim(),
       vehicle: form.vehicle?.trim() || null,
+      customer_charge: platformOnly ? chargeOf(form) : null,
       total: Math.round(price.pph * price.mh * 100) / 100,
       hours: price.fixed ? price.est : price.mh,
       created_by: user?.id ?? null,
@@ -977,6 +996,31 @@ export default function WorkshopDashboard() {
                   <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
                     <span className="text-sm text-brand-700">Valor fechado da demanda</span>
                     <span className="font-bold text-brand-700 font-display">R$ {formatBRL(estimated)}</span>
+                  </div>
+                )}
+
+                {/* Quanto vai cobrar do cliente (só a oficina "Só mecânicos"; só ela vê) */}
+                {platformOnly && !editingId && (
+                  <div className="mt-4 rounded-xl border border-steel-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-sm font-semibold text-steel-800" htmlFor="customer-charge">💰 Quanto você vai cobrar do cliente?</label>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-steel-500">só você vê</span>
+                    </div>
+                    <div className="relative mt-2">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                      <input id="customer-charge" className="input !pl-9" type="number" inputMode="decimal" min={0} step={0.01}
+                        placeholder="opcional" value={form.customer_charge ?? ''} onChange={set('customer_charge')} />
+                    </div>
+                    {(() => {
+                      const c = chargeOf(form);
+                      if (c == null || !(estimated > 0)) return <p className="text-xs text-steel-600 mt-1.5">Opcional. Com ele o Painel mostra quanto você ganha em cada serviço. O mecânico não vê.</p>;
+                      const left = c - estimated;
+                      return (
+                        <p className={`text-xs font-semibold mt-1.5 ${left >= 0 ? 'text-signal-700' : 'text-alert-600'}`}>
+                          Fica R$ {formatBRL(left)} com você ({c > 0 ? Math.round((left / c) * 100) : 0}% do cobrado)
+                        </p>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
