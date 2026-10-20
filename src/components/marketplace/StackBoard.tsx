@@ -225,9 +225,9 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
             </button>
           )}
 
-          {/* Barra fixa: junta os marcados numa demanda só */}
+          {/* Barra no fim da lista (não fica por cima das linhas): junta os marcados numa demanda só */}
           {inSearch.length > 0 && (
-            <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-0 z-10 border-t border-brand-200 bg-white/95 backdrop-blur px-4 py-3">
+            <div className="border-t border-brand-200 bg-brand-50/60 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-sm font-bold text-steel-900">
