@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { fmtBRL } from '@/components/os/osHelpers';
+import { isPlatformOnly, useWorkshopModules } from '@/lib/modules';
 
 /**
  * Quanto a oficina cobrou do cliente por uma demanda (valor geral, opcional). Fica em
  * job_customer_charges, que só a oficina enxerga — o mecânico nunca vê.
+ * Só para a oficina no pacote "Só mecânicos" (sem OS): quem usa a gestão completa tem o lucro pela OS.
  */
 
 /** Valores cobrados da oficina, por demanda */
@@ -60,6 +62,10 @@ export function CustomerChargeCard({ workshopId, jobId, paid, userId }: {
 }) {
   const [amount, setAmount] = useState<number | null | undefined>(undefined);
   const [editing, setEditing] = useState(false);
+  // Módulos da oficina da demanda (esta tela não usa o menu da oficina, então carrega aqui se precisar)
+  const mods = useWorkshopModules();
+  useEffect(() => { if (mods.workshopId !== workshopId) mods.load(workshopId); }, [workshopId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const platformOnly = mods.loaded && mods.workshopId === workshopId && isPlatformOnly(mods.off);
   useEffect(() => {
     let alive = true;
     supabase.from('job_customer_charges').select('amount').eq('job_id', jobId).maybeSingle()
@@ -67,7 +73,7 @@ export function CustomerChargeCard({ workshopId, jobId, paid, userId }: {
     return () => { alive = false; };
   }, [jobId]);
 
-  if (amount === undefined) return null;
+  if (amount === undefined || !platformOnly) return null;
 
   async function onSave(n: number | null) {
     const { error } = await saveCharge(workshopId, jobId, n, userId);

@@ -8,6 +8,7 @@ import { fmtBRL, fmtDur } from '@/components/os/osHelpers';
 import { arrivalDeadline } from '@/lib/arrivalDeadline';
 import PeriodPicker, { usePeriod } from '@/components/PeriodPicker';
 import { ChargeInput, loadCharges, saveCharge } from '@/components/marketplace/CustomerCharge';
+import { isPlatformOnly, useWorkshopModules } from '@/lib/modules';
 import { toast } from '@/components/ui/Toast';
 import {
   DEFAULT_EST_PCT, loadEstPct, missingCharges, platformPanel, platformSeries, profitRows, profitTotals, realCostPct, saveEstPct,
@@ -28,6 +29,8 @@ async function byIds<T>(ids: string[], run: (chunk: string[]) => PromiseLike<{ d
   }
   return out;
 }
+
+const NO_CHARGES: Map<string, number> = new Map();
 
 const fmtH = (h: number) => `${String(Math.round(h * 10) / 10).replace('.', ',')} h`;
 const plural = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
@@ -91,8 +94,11 @@ export default function PlataformaPainel() {
   }, [wid]);
 
   const m = useMemo(() => platformPanel(jobs, period.range, j => arrivalDeadline(j)), [jobs, period.range]);
-  const rows = useMemo(() => profitRows(jobs, osList, items, period.range, estPct, charges), [jobs, osList, items, period.range, estPct, charges]);
-  const missing = useMemo(() => missingCharges(jobs, items, charges, period.range), [jobs, items, charges, period.range]);
+  // Valor cobrado informado à mão: só para a oficina "Só mecânicos" (quem tem OS tem o lucro pela OS)
+  const platformOnly = useWorkshopModules(s => s.loaded && isPlatformOnly(s.off));
+  const usedCharges = platformOnly ? charges : NO_CHARGES;
+  const rows = useMemo(() => profitRows(jobs, osList, items, period.range, estPct, usedCharges), [jobs, osList, items, period.range, estPct, usedCharges]);
+  const missing = useMemo(() => (platformOnly ? missingCharges(jobs, items, charges, period.range) : []), [platformOnly, jobs, items, charges, period.range]);
   const hasOsRows = rows.some(r => !r.manual);
   /** Grava o valor cobrado e atualiza o painel na hora */
   async function setCharge(jobId: string, amount: number | null) {
@@ -155,12 +161,12 @@ export default function PlataformaPainel() {
                 <Kpi highlight label="Pago aos mecânicos" value={fmtBRL(m.spent)}
                   note={m.doneCount ? `${plural(m.doneCount, 'demanda concluída', 'demandas concluídas')} · ticket ${fmtBRL(m.ticket)}` : 'nenhuma concluída no período'} />
                 <Kpi label="Cobrado do cliente" value={tot.count ? fmtBRL(tot.charged) : '—'}
-                  note={tot.count ? `de ${plural(tot.count, 'serviço', 'serviços')} feitos pela plataforma` : 'informe quanto cobrou em cada serviço'} />
+                  note={tot.count ? `de ${plural(tot.count, 'serviço', 'serviços')} feitos pela plataforma` : platformOnly ? 'informe quanto cobrou em cada serviço' : 'nenhuma demanda ligada a OS'} />
                 <Kpi label="Lucro depois dos custos" value={tot.count ? fmtBRL(tot.profit) : '—'}
                   tone={tot.count ? (tot.profit >= 0 ? 'good' : 'bad') : undefined}
                   note={tot.count
                     ? `cobrado − peças ${fmtBRL(tot.partsCost)}${tot.costEst > 0 ? ` (${fmtBRL(tot.costEst)} estimado)` : ''} − mecânicos${tot.charged > 0 ? ` · ${Math.round((tot.profit / tot.charged) * 100)}%` : ''}`
-                    : 'aparece quando você informa quanto cobrou'} />
+                    : platformOnly ? 'aparece quando você informa quanto cobrou' : 'aparece quando a demanda sai de uma OS'} />
                 <Kpi label="Multas de cancelamento" value={fmtBRL(m.feesPaid)}
                   note={m.pendingFees > 0 ? `${fmtBRL(m.pendingFees)} em aberto` : 'nada em aberto'} tone={m.pendingFees > 0 ? 'bad' : undefined} />
               </div>
@@ -198,7 +204,9 @@ export default function PlataformaPainel() {
               {rows.length === 0 ? (
                 missing.length === 0 && (
                   <div className="card text-sm text-steel-500">
-                    Nenhum serviço concluído no período. Quando um mecânico terminar, informe quanto você cobrou do cliente e o lucro aparece aqui.
+                    {platformOnly
+                      ? 'Nenhum serviço concluído no período. Quando um mecânico terminar, informe quanto você cobrou do cliente e o lucro aparece aqui.'
+                      : 'Nenhum serviço feito pela plataforma ligado a OS no período. Quando a demanda sai de uma OS (Caixa, OS ou empilhados), o lucro de cada serviço aparece aqui.'}
                   </div>
                 )
               ) : (
