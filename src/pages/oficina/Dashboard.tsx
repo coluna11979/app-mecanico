@@ -769,7 +769,9 @@ export default function WorkshopDashboard() {
                   ✏️ Editar
                 </button>
               )}
-              <span className="shrink-0"><CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} /></span>
+              <span className="shrink-0"><CancelJobButton job={j}
+                onEdit={j.status === 'open' && !j.mechanic_id ? () => openEditModal(j) : undefined}
+                onCancelled={() => { setStackVer(v => v + 1); if (currentWorkshop?.id) fetchJobs(currentWorkshop.id); }} /></span>
             </div>
           </div>
         );
