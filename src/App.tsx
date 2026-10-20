@@ -88,6 +88,9 @@ import AdminLeads from './pages/admin/Leads';
 import AdminLeadsImport from './pages/admin/LeadsImport';
 import AdminLeadsMetrics from './pages/admin/LeadsMetrics';
 import AdminLeadsImportCsv from './pages/admin/LeadsImportCsv';
+import CrescimentoRadar from './pages/admin/CrescimentoRadar';
+import CrescimentoMetas from './pages/admin/CrescimentoMetas';
+import CrescimentoFunis from './pages/admin/CrescimentoFunis';
 import AdminAvisos from './pages/admin/Avisos';
 import AdminEmbaixadores from './pages/admin/Embaixadores';
 import AdminModulos from './pages/admin/Modulos';
@@ -199,6 +202,10 @@ export default function App() {
       <Route path="/admin/leads/importar" element={<ProtectedRoute allow={['admin']}><AdminLeadsImport /></ProtectedRoute>} />
       <Route path="/admin/leads/metricas" element={<ProtectedRoute allow={['admin']}><AdminLeadsMetrics /></ProtectedRoute>} />
       <Route path="/admin/leads/importar-csv" element={<ProtectedRoute allow={['admin']}><AdminLeadsImportCsv /></ProtectedRoute>} />
+      <Route path="/admin/crescimento"        element={<Navigate to="/admin/crescimento/radar" replace />} />
+      <Route path="/admin/crescimento/radar"  element={<ProtectedRoute allow={['admin']}><CrescimentoRadar /></ProtectedRoute>} />
+      <Route path="/admin/crescimento/metas"  element={<ProtectedRoute allow={['admin']}><CrescimentoMetas /></ProtectedRoute>} />
+      <Route path="/admin/crescimento/funis"  element={<ProtectedRoute allow={['admin']}><CrescimentoFunis /></ProtectedRoute>} />
       <Route path="/admin/aprovacoes" element={<ProtectedRoute allow={['admin']}><AdminApprovals /></ProtectedRoute>} />
       <Route path="/admin/mecanicos" element={<ProtectedRoute allow={['admin']}><AdminMechanics /></ProtectedRoute>} />
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />

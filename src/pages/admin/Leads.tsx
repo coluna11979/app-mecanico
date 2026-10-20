@@ -7,6 +7,7 @@ import { buildInviteUrl, buildInviteWhatsapp } from '@/lib/leadInvite';
 import { calcTemperatura, TEMPERATURA_META } from '@/lib/leadTemperatura';
 import { LeadTagsInput, LeadTagsPills } from '@/components/admin/LeadTagsInput';
 import { MergeLeadsModal } from '@/components/admin/MergeLeadsModal';
+import { LeadsTabs } from '@/components/admin/LeadsTabs';
 
 const STATUS_META: Record<LeadStatus, { label: string; emoji: string; cls: string }> = {
   lead_novo:         { label: 'Novo',               emoji: '🆕', cls: 'bg-brand-50 text-brand-700 border-brand-200' },
@@ -149,106 +150,94 @@ export default function AdminLeads() {
 
   return (
     <AdminLayout>
-      <div className="flex items-start justify-between gap-4 mb-2 flex-wrap">
+      <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Pipeline de Leads</h1>
-          <p className="text-steel-500 text-sm mt-1">Capte, acompanhe e converta oficinas e mecânicos em cadastros.</p>
+          <h1 className="admin-h1">Leads</h1>
+          <p className="text-steel-500 text-sm mt-0.5">Pipeline, importação e métricas de captação.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex bg-steel-100 rounded-xl p-1 text-sm">
-            <button
-              onClick={() => setView('kanban')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition ${view === 'kanban' ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}
-            >🗂️ Kanban</button>
-            <button
-              onClick={() => setView('lista')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition ${view === 'lista' ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}
-            >📋 Lista</button>
+          <div className="inline-flex bg-steel-100 rounded-lg p-0.5 text-xs">
+            <button onClick={() => setView('kanban')}
+              className={`px-2.5 py-1 rounded-md font-semibold transition ${view === 'kanban' ? 'bg-white shadow-sm text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>Kanban</button>
+            <button onClick={() => setView('lista')}
+              className={`px-2.5 py-1 rounded-md font-semibold transition ${view === 'lista' ? 'bg-white shadow-sm text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>Lista</button>
           </div>
           <button
             onClick={() => { setBulkMode(v => !v); clearSel(); }}
-            className={`px-3 py-2 rounded-xl text-sm font-bold transition border ${bulkMode ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-700 border-steel-300 hover:bg-steel-50'}`}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition border ${bulkMode ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-700 border-steel-200 hover:bg-steel-50'}`}
           >
-            {bulkMode ? '✓ Modo seleção' : '☐ Selecionar'}
+            {bulkMode ? '✓ Selecionando' : 'Selecionar'}
           </button>
-          <Link
-            to="/admin/leads/metricas"
-            className="bg-white hover:bg-steel-50 border border-steel-300 text-steel-700 font-bold text-sm px-4 py-2.5 rounded-xl transition"
-          >
-            📊 Métricas
-          </Link>
-          <Link
-            to="/admin/leads/importar-csv"
-            className="bg-white hover:bg-steel-50 border border-steel-300 text-steel-700 font-bold text-sm px-4 py-2.5 rounded-xl transition"
-          >
-            📥 CSV
-          </Link>
-          <Link
-            to="/admin/leads/importar"
-            className="bg-white hover:bg-steel-50 border border-steel-300 text-steel-700 font-bold text-sm px-4 py-2.5 rounded-xl transition"
-          >
-            🔎 Importar do Google
-          </Link>
-          <button
-            onClick={() => setModal('new')}
-            className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm px-4 py-2.5 rounded-xl transition"
-          >
-            + Novo lead
-          </button>
+          <AddDropdown onNewLead={() => setModal('new')} />
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6 mb-6">
-        <StatCard label="Total" value={leads.length} />
-        <StatCard label="Em pipeline" value={stats.ativos} tone="pending" />
-        <StatCard label="Convertidos" value={stats.convertidos} tone="signal" />
-        <StatCard label="Taxa de conversão" value={`${stats.conversao}%`} tone="brand" />
-      </div>
+      <LeadsTabs />
 
-      {/* Filtros */}
-      <div className="bg-white border border-steel-200 rounded-2xl p-4 mb-4 flex flex-wrap gap-3 items-end">
-        <Filter label="Busca">
-          <input
-            value={filtros.busca}
-            onChange={e => setFiltros(f => ({ ...f, busca: e.target.value }))}
-            placeholder="Nome, telefone, cidade…"
-            className="w-full px-3 py-2 border border-steel-200 rounded-lg text-sm"
-          />
-        </Filter>
-        <Filter label="Status">
+      {/* Stats line + filters — tudo em 1 bloco compacto */}
+      <div className="flex flex-col gap-2 mb-3">
+        {/* Linha fininha de métricas (quem quer análise, vai pra aba Métricas) */}
+        <div className="flex items-center gap-3 text-xs text-steel-500 flex-wrap">
+          <span><span className="admin-num font-bold text-steel-800">{leads.length}</span> leads</span>
+          <span className="text-steel-300">·</span>
+          <span><span className="admin-num font-bold text-steel-800">{stats.ativos}</span> em pipeline</span>
+          <span className="text-steel-300">·</span>
+          <span><span className="admin-num font-bold text-signal-700">{stats.convertidos}</span> convertido{stats.convertidos === 1 ? '' : 's'}</span>
+          <span className="text-steel-300">·</span>
+          <span>
+            <span className={`admin-num font-bold ${conversaoCls(stats.conversao)}`}>{stats.conversao}%</span>
+            <span className="text-steel-400 ml-1">conversão</span>
+          </span>
+          <span className="ml-auto text-steel-400">
+            {filtered.length === leads.length ? `${leads.length} itens` : `${filtered.length} de ${leads.length}`}
+          </span>
+        </div>
+
+        {/* Barra de filtros compacta: 1 linha, inputs pequenos */}
+        <div className="flex items-center gap-2 bg-white border border-steel-200 rounded-lg px-2 py-1.5 flex-wrap">
+          <div className="relative flex-1 min-w-[180px]">
+            <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-steel-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input
+              value={filtros.busca}
+              onChange={e => setFiltros(f => ({ ...f, busca: e.target.value }))}
+              placeholder="Buscar nome, telefone, cidade…"
+              className="w-full pl-7 pr-2 py-1 text-sm bg-transparent outline-none"
+            />
+          </div>
+          <span className="w-px h-5 bg-steel-200" />
           <select
             value={filtros.status}
             onChange={e => setFiltros(f => ({ ...f, status: e.target.value as LeadStatus | 'all' }))}
-            className="px-3 py-2 border border-steel-200 rounded-lg text-sm bg-white"
+            className="text-xs font-medium bg-transparent border-0 outline-none cursor-pointer hover:text-brand-600 py-1"
           >
-            <option value="all">Todos</option>
-            {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_META[s].emoji} {STATUS_META[s].label}</option>)}
+            <option value="all">Status: todos</option>
+            {STATUS_ORDER.map(s => <option key={s} value={s}>Status: {STATUS_META[s].label}</option>)}
           </select>
-        </Filter>
-        <Filter label="Tipo">
+          <span className="w-px h-5 bg-steel-200" />
           <select
             value={filtros.intent}
             onChange={e => setFiltros(f => ({ ...f, intent: e.target.value as LeadIntent | 'all' }))}
-            className="px-3 py-2 border border-steel-200 rounded-lg text-sm bg-white"
+            className="text-xs font-medium bg-transparent border-0 outline-none cursor-pointer hover:text-brand-600 py-1"
           >
-            <option value="all">Todos</option>
-            <option value="mechanic">🔧 Mecânico</option>
-            <option value="workshop">🏭 Oficina</option>
+            <option value="all">Tipo: todos</option>
+            <option value="mechanic">Tipo: mecânico</option>
+            <option value="workshop">Tipo: oficina</option>
           </select>
-        </Filter>
-        <Filter label="Origem">
+          <span className="w-px h-5 bg-steel-200" />
           <select
             value={filtros.origem}
             onChange={e => setFiltros(f => ({ ...f, origem: e.target.value as LeadOrigem | 'all' }))}
-            className="px-3 py-2 border border-steel-200 rounded-lg text-sm bg-white"
+            className="text-xs font-medium bg-transparent border-0 outline-none cursor-pointer hover:text-brand-600 py-1"
           >
-            <option value="all">Todas</option>
-            {(Object.keys(ORIGEM_META) as LeadOrigem[]).map(o => <option key={o} value={o}>{ORIGEM_META[o]}</option>)}
+            <option value="all">Origem: todas</option>
+            {(Object.keys(ORIGEM_META) as LeadOrigem[]).map(o => <option key={o} value={o}>Origem: {ORIGEM_META[o]}</option>)}
           </select>
-        </Filter>
-        <div className="ml-auto text-xs text-steel-500 self-center">
-          Mostrando <b className="text-steel-800">{filtered.length}</b> de {leads.length}
+          {(filtros.busca || filtros.status !== 'all' || filtros.intent !== 'all' || filtros.origem !== 'all') && (
+            <button onClick={() => setFiltros({ status: 'all', intent: 'all', origem: 'all', busca: '' })}
+              className="text-xs text-steel-500 hover:text-alert-600 ml-auto px-1.5 py-0.5">
+              × limpar
+            </button>
+          )}
         </div>
       </div>
 
@@ -309,6 +298,37 @@ export default function AdminLeads() {
         />
       )}
     </AdminLayout>
+  );
+}
+
+function AddDropdown({ onNewLead }: { onNewLead: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(v => !v)}
+        className="bg-brand-500 hover:bg-brand-600 text-white font-semibold text-sm px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5">
+        + Adicionar <span className="text-xs opacity-70">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-steel-200 rounded-xl shadow-lg z-40 py-1 text-sm">
+            <button onClick={() => { setOpen(false); onNewLead(); }}
+              className="w-full text-left px-3 py-2 hover:bg-steel-50 flex items-center gap-2.5">
+              <span className="text-base">➕</span> Novo lead (manual)
+            </button>
+            <Link to="/admin/leads/importar-csv" onClick={() => setOpen(false)}
+              className="w-full text-left px-3 py-2 hover:bg-steel-50 flex items-center gap-2.5">
+              <span className="text-base">📥</span> Importar CSV
+            </Link>
+            <Link to="/admin/leads/importar" onClick={() => setOpen(false)}
+              className="w-full text-left px-3 py-2 hover:bg-steel-50 flex items-center gap-2.5">
+              <span className="text-base">🔎</span> Importar do Google
+            </Link>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -392,27 +412,48 @@ function KanbanBoard({
     setDragId(null); setDragOver(null);
   }
 
+  // Mini-stats por coluna: contagem de "esquecidos há 7+ dias"
+  const esquecidos = useMemo(() => {
+    const out: Record<LeadStatus, number> = {
+      lead_novo: 0, contato_feito: 0, interessado: 0, cadastro_iniciado: 0, convertido: 0, perdido: 0,
+    };
+    const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    leads.forEach(l => {
+      if (l.status === 'convertido' || l.status === 'perdido') return;
+      const ts = new Date(l.last_contact_at ?? l.created_at).getTime();
+      if (ts < limite) out[l.status]++;
+    });
+    return out;
+  }, [leads]);
+
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4">
+    <div className="flex gap-2.5 overflow-x-auto pb-4">
       {STATUS_ORDER.map(status => {
         const meta = STATUS_META[status];
         const cards = grouped[status];
         const isOver = dragOver === status;
+        const stale = esquecidos[status];
         return (
           <div
             key={status}
             onDragOver={(e: DragEvent) => { e.preventDefault(); setDragOver(status); }}
             onDragLeave={() => setDragOver(d => d === status ? null : d)}
             onDrop={() => handleDrop(status)}
-            className={`flex-shrink-0 w-72 bg-steel-100/60 rounded-2xl p-3 transition ${isOver ? 'ring-2 ring-brand-400 bg-brand-50' : ''}`}
+            className={`flex-shrink-0 w-64 bg-steel-100/60 rounded-xl p-2 transition ${isOver ? 'ring-2 ring-brand-400 bg-brand-50' : ''}`}
           >
-            <div className="flex items-center justify-between mb-3 px-1">
-              <div className={`text-xs font-bold rounded-full px-2.5 py-1 border ${meta.cls}`}>
-                {meta.emoji} {meta.label}
+            <div className="flex items-center justify-between mb-2 px-1 gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className={`admin-dot ${meta.cls.includes('brand') ? 'bg-brand-500' : meta.cls.includes('signal') ? 'bg-signal-500' : meta.cls.includes('pending') ? 'bg-pending-500' : meta.cls.includes('orange') ? 'bg-orange-500' : meta.cls.includes('blue') ? 'bg-blue-500' : 'bg-steel-400'}`} />
+                <span className="text-xs font-semibold text-steel-700 truncate">{meta.label}</span>
+                <span className="admin-num text-xs font-bold text-steel-500">{cards.length}</span>
               </div>
-              <span className="text-xs font-bold text-steel-500">{cards.length}</span>
+              {stale > 0 && (
+                <span className="admin-num text-[10px] font-bold text-alert-600 bg-alert-50 border border-alert-200 rounded-full px-1.5" title={`${stale} esquecidos há 7+ dias`}>
+                  ⏱ {stale}
+                </span>
+              )}
             </div>
-            <div className="space-y-2 min-h-[80px]">
+            <div className="space-y-1.5 min-h-[60px]">
               {cards.map(l => {
                 const temp = calcTemperatura(l);
                 const tMeta = TEMPERATURA_META[temp];
@@ -424,43 +465,48 @@ function KanbanBoard({
                     onDragStart={() => setDragId(l.id)}
                     onDragEnd={() => { setDragId(null); setDragOver(null); }}
                     onClick={() => bulkMode ? onToggleSel(l.id) : onOpen(l)}
-                    className={`bg-white rounded-xl p-3 border shadow-sm transition relative
-                      ${bulkMode ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing hover:shadow-md hover:border-brand-300'}
-                      ${isSel ? 'border-brand-500 ring-2 ring-brand-200' : 'border-steel-200'}
-                      ${dragId === l.id ? 'opacity-50' : ''}`}
+                    className={`bg-white rounded-md px-2 py-1 border transition leading-tight
+                      ${bulkMode ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing hover:border-brand-300'}
+                      ${isSel ? 'border-brand-500 ring-1 ring-brand-300' : 'border-steel-200'}
+                      ${dragId === l.id ? 'opacity-40' : ''}`}
                   >
-                    {bulkMode && (
-                      <input type="checkbox" checked={isSel} onChange={() => onToggleSel(l.id)}
-                        onClick={e => e.stopPropagation()}
-                        className="absolute top-2 right-2 h-4 w-4 accent-brand-500" />
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {bulkMode && (
+                        <input type="checkbox" checked={isSel} onChange={() => onToggleSel(l.id)}
+                          onClick={e => e.stopPropagation()}
+                          className="h-3 w-3 accent-brand-500 shrink-0" />
+                      )}
+                      <span className={`admin-dot shrink-0 ${tMeta.dotCls}`} title={tMeta.label} />
+                      <span className="text-xs font-semibold text-steel-800 truncate flex-1">{l.name}</span>
+                      <span className={`text-[9px] font-bold rounded px-1 shrink-0 ${l.intent === 'mechanic' ? 'bg-brand-50 text-brand-700' : 'bg-steel-100 text-steel-600'}`}
+                        title={INTENT_META[l.intent].label}>
+                        {l.intent === 'mechanic' ? 'MEC' : 'OFI'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-steel-500 min-w-0">
+                      {l.phone && l.phone !== '—' && (
+                        <span className="admin-num truncate">{l.phone}</span>
+                      )}
+                      {l.cidade && (
+                        <span className="truncate text-steel-400">· {l.cidade}{l.estado ? `/${l.estado}` : ''}</span>
+                      )}
+                    </div>
+                    {(l.proxima_acao || (l.tags && l.tags.length > 0)) && (
+                      <div className="flex items-center gap-1.5 mt-0.5 pt-0.5 border-t border-steel-100">
+                        {l.proxima_acao && (
+                          <span className="text-[10px] text-brand-700 truncate flex-1 font-medium">
+                            {l.data_proxima_acao && <span className="admin-num">{fmtData(l.data_proxima_acao)} </span>}
+                            {l.proxima_acao}
+                          </span>
+                        )}
+                        {l.tags && l.tags.length > 0 && <LeadTagsPills tags={l.tags} max={2} />}
+                      </div>
                     )}
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <span className="font-semibold text-steel-800 text-sm truncate flex-1">{l.name}</span>
-                      {!bulkMode && (
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className={`inline-block w-2 h-2 rounded-full ${tMeta.dotCls}`} title={tMeta.label} />
-                          <span className="text-xs" title={INTENT_META[l.intent].label}>{INTENT_META[l.intent].emoji}</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-xs text-steel-500 space-y-0.5">
-                      {l.cidade && <div>📍 {l.cidade}{l.estado ? `/${l.estado}` : ''}</div>}
-                      {l.phone && l.phone !== '—' && <div>📱 {l.phone}</div>}
-                      {l.proxima_acao && (
-                        <div className="mt-1.5 pt-1.5 border-t border-steel-100 text-steel-700">
-                          {l.data_proxima_acao && <b className="text-brand-600 mr-1">{fmtData(l.data_proxima_acao)}</b>}
-                          {l.proxima_acao}
-                        </div>
-                      )}
-                      {l.tags?.length > 0 && (
-                        <div className="pt-1.5"><LeadTagsPills tags={l.tags} max={3} /></div>
-                      )}
-                    </div>
                   </div>
                 );
               })}
               {cards.length === 0 && (
-                <div className="text-xs text-steel-400 text-center py-6 italic">Arraste cards aqui</div>
+                <div className="text-[11px] text-steel-400 text-center py-4 italic">—</div>
               )}
             </div>
           </div>
@@ -549,26 +595,10 @@ function ListaView({
   );
 }
 
-function StatCard({ label, value, tone }: { label: string; value: string | number; tone?: 'brand' | 'signal' | 'pending' }) {
-  const cls = tone === 'brand'   ? 'text-brand-600'
-            : tone === 'signal'  ? 'text-signal-600'
-            : tone === 'pending' ? 'text-pending-700'
-            : 'text-steel-800';
-  return (
-    <div className="bg-white border border-steel-200 rounded-2xl px-5 py-4">
-      <div className="text-xs text-steel-500 font-semibold uppercase tracking-wider">{label}</div>
-      <div className={`text-3xl font-bold mt-1 ${cls}`}>{value}</div>
-    </div>
-  );
-}
-
-function Filter({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 min-w-[160px]">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-steel-500">{label}</span>
-      {children}
-    </label>
-  );
+function conversaoCls(pct: number): string {
+  if (pct >= 20) return 'text-signal-700';
+  if (pct >= 10) return 'text-pending-700';
+  return 'text-alert-700';
 }
 
 function fmtData(iso: string) {

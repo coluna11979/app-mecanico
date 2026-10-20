@@ -4,6 +4,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { getSetting } from '@/lib/settings';
 import { parseCidadeUf, PlaceResult, searchPlaces } from '@/lib/googlePlaces';
+import { LeadsTabs } from '@/components/admin/LeadsTabs';
 
 const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
@@ -125,12 +126,14 @@ export default function AdminLeadsImport() {
 
   return (
     <AdminLayout>
-      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
-        <div>
-          <Link to="/admin/leads" className="text-xs text-steel-500 hover:text-brand-500 mb-1 inline-block">← Pipeline de Leads</Link>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Captação ativa — Google Places</h1>
-          <p className="text-steel-500 text-sm mt-1">Busque oficinas e mecânicos por cidade e importe em lote como leads.</p>
-        </div>
+      <div className="mb-4">
+        <h1 className="admin-h1">Leads</h1>
+        <p className="text-steel-500 text-sm mt-0.5">Pipeline, importação e métricas de captação.</p>
+      </div>
+      <LeadsTabs />
+      <div className="mb-4">
+        <h2 className="admin-h2">Captação ativa — Google Places</h2>
+        <p className="text-xs text-steel-500 mt-0.5">Busque oficinas e mecânicos por cidade e importe em lote como leads.</p>
       </div>
 
       {apiKey === null ? (

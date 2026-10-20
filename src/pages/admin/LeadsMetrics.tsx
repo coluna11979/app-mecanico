@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import type { Lead, LeadOrigem, LeadStatus } from '@/types/database';
+import { LeadsTabs } from '@/components/admin/LeadsTabs';
 
 type Periodo = '7' | '30' | '90' | 'all';
 
@@ -160,11 +161,15 @@ export default function AdminLeadsMetrics() {
 
   return (
     <AdminLayout>
-      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+      <div className="mb-4">
+        <h1 className="admin-h1">Leads</h1>
+        <p className="text-steel-500 text-sm mt-0.5">Pipeline, importação e métricas de captação.</p>
+      </div>
+      <LeadsTabs />
+      <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
         <div>
-          <Link to="/admin/leads" className="text-xs text-steel-500 hover:text-brand-500 mb-1 inline-block">← Pipeline de Leads</Link>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Métricas de Captação</h1>
-          <p className="text-steel-500 text-sm mt-1">Veja o funil, descubra qual canal paga melhor e o que precisa de atenção.</p>
+          <h2 className="admin-h2">Métricas de Captação</h2>
+          <p className="text-xs text-steel-500 mt-0.5">Veja o funil, descubra qual canal paga melhor e o que precisa de atenção.</p>
         </div>
         <div className="inline-flex bg-steel-100 rounded-xl p-1 text-sm">
           {PERIODOS.map(p => (
