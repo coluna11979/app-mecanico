@@ -57,7 +57,6 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
   const [picked, setPicked] = useState<string[]>([]);
   const toggle = (label: string) => setPicked(p => (p.includes(label) ? p.filter(x => x !== label) : [...p, label]));
   const pickedList = picked.map(l => SERVICE_SHORTCUTS.find(s => s.label === l)!).filter(Boolean);
-  const pickedTotal = rate ? pickedList.reduce((a, s) => a + estimatePrice(rate, s.hours), 0) : null;
 
   return (
     <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 overflow-hidden">
@@ -119,9 +118,6 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
               <span className="text-xl leading-none shrink-0">{s.icon}</span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-steel-900 leading-tight">{s.label}</span>
-                <span className="block text-[11px] text-steel-500 tabular-nums">
-                  {rate ? `≈ R$ ${formatBRL(estimatePrice(rate, s.hours), { decimals: 0 })}` : `~${String(s.hours).replace('.', ',')}h`}
-                </span>
               </span>
             </button>
             );
@@ -133,7 +129,7 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
           <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-brand-50 ring-1 ring-brand-200 px-3 py-2.5">
             <div className="min-w-0">
               <div className="text-sm font-bold text-steel-900">
-                {pickedList.length} {pickedList.length === 1 ? 'serviço' : 'serviços'}{pickedTotal ? ` · ≈ R$ ${formatBRL(pickedTotal, { decimals: 0 })}` : ''}
+                {pickedList.length} {pickedList.length === 1 ? 'serviço marcado' : 'serviços marcados'}
               </div>
               <div className="text-[11px] text-steel-600 leading-tight">
                 {pickedList.length > 1 ? 'um mecânico faz todos · ' : ''}
