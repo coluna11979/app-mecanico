@@ -24,15 +24,18 @@ const amt = (i: StackItem) => Math.round(Number(i.quantity) * Number(i.unit_pric
 /**
  * 📚 Empilhados — serviços esperando mecânico da plataforma que ainda não viraram demanda:
  * os marcados numa OS e os avulsos guardados pela Nova demanda (oficina sem OS).
- * Cada OS / serviço avulso é um card separado (nada se mistura sozinho). A gestão move os cards que
- * quer resolver para "Buscar mecânico" e gera a demanda: um mecânico, vários serviços — mais barato.
+ * Fica fechado (só o resumo) para a tela não crescer; aberto, é uma lista compacta: a oficina marca os
+ * serviços que quer resolver juntos e "Juntar e chamar 1 mecânico" gera a demanda — mais barato.
  */
 export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string; reloadKey: number; onGenerate: () => void }) {
   const [items, setItems] = useState<StackItem[] | null>(null);
   const [free, setFree] = useState<FreeItem[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [dragOver, setDragOver] = useState<'stack' | 'search' | null>(null);
+  /** Lista aberta (fechada = só o resumo) */
+  const [open, setOpen] = useState(false);
+  /** Quantos mostrar antes do "Ver mais" */
+  const [limit, setLimit] = useState(5);
 
   const load = useCallback(async () => {
     const [os, av] = await Promise.all([
@@ -107,8 +110,15 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
     load();
   }
 
-  function generate() {
-    if (!inSearch.length) return;
+  /** Monta a demanda com os cards dados (os marcados, ou um só pelo "Enviar" da linha) */
+  function generate(list: Card[] = inSearch) {
+    if (!list.length) return;
+    const inSearch = list;
+    const searchItems = list.flatMap(c => c.items);
+    const osCards = list.filter(c => c.kind === 'os');
+    const freeCards = list.filter(c => c.kind === 'free');
+    const sug = suggestPay(osCards.reduce((a, c) => a + c.labor, 0), loadCallParams(wid));
+    const total = (osCards.length ? sug.total : 0) + freeCards.reduce((a, c) => a + c.labor, 0);
     const many = inSearch.length > 1;
     const first = searchItems[0];
     // Carros diferentes na demanda: um por OS + os avulsos com veículo (mesmo texto = mesmo carro)
@@ -141,86 +151,101 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
 
   if (items === null || cards.length === 0) return null;
 
-  const Col = ({ id, title, hint, list, children }: { id: 'stack' | 'search'; title: string; hint: string; list: Card[]; children?: React.ReactNode }) => (
-    <div
-      onDragOver={e => { e.preventDefault(); setDragOver(id); }}
-      onDragLeave={() => setDragOver(null)}
-      onDrop={e => { e.preventDefault(); setDragOver(null); const key = e.dataTransfer.getData('text/plain'); if (key) move(key, id); }}
-      className={`rounded-2xl p-3 transition ${dragOver === id ? 'bg-brand-50 ring-2 ring-brand-300' : 'bg-steel-50'}`}>
-      <div className="flex items-baseline justify-between px-1 mb-2">
-        <h3 className="text-sm font-bold text-steel-800">{title} <span className="text-steel-400 font-semibold">{list.length}</span></h3>
-        <span className="text-[11px] text-steel-400">{hint}</span>
-      </div>
-      <div className="space-y-2 min-h-[56px]">
-        {list.length === 0 && <div className="rounded-xl border border-dashed border-steel-300 px-3 py-4 text-center text-xs text-steel-400">{id === 'search' ? 'Arraste ou use “Buscar mecânico →”' : 'Nada empilhado'}</div>}
-        {list.map(c => (
-          <div key={c.key} draggable onDragStart={e => e.dataTransfer.setData('text/plain', c.key)}
-            className="bg-white rounded-xl ring-1 ring-steel-200/70 p-3 cursor-grab active:cursor-grabbing">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-steel-900 truncate">
-                  {c.kind === 'os' ? `OS nº ${osNum(c.number, c.osId!)}` : c.title}
-                </div>
-                <div className="text-xs text-steel-500 truncate">
-                  {c.kind === 'os' ? (c.car || c.title)
-                    : [c.car ? `🚗 ${c.car}` : (c.free!.description || 'Serviço avulso'), c.free!.hours ? `~${String(c.free!.hours).replace('.', ',')}h` : ''].filter(Boolean).join(' · ')}
-                </div>
-              </div>
-              <div className="text-sm font-bold text-steel-900 shrink-0">{brl(c.labor)}</div>
-            </div>
-            {c.kind === 'os' && (
-              <ul className="mt-2 text-xs text-steel-600 space-y-0.5">
-                {c.items.map(i => <li key={i.id} className="flex justify-between gap-2"><span className="truncate">• {i.description}</span><span className="shrink-0 text-steel-400">{brl(i.amount)}</span></li>)}
-              </ul>
-            )}
-            <div className="mt-2.5 flex items-center justify-between gap-2">
-              {id === 'stack' ? (
-                <>
-                  <button type="button" onClick={() => unstack(c)} disabled={busy} className="text-xs text-steel-500 hover:text-alert-600 underline min-h-[36px]">
-                    {c.kind === 'os' ? 'Desempilhar' : 'Tirar da pilha'}
-                  </button>
-                  <button type="button" onClick={() => move(c.key, 'search')} className="btn-secondary !py-2 !px-3 text-xs min-h-[40px]">Buscar mecânico →</button>
-                </>
-              ) : (
-                <button type="button" onClick={() => move(c.key, 'stack')} className="text-xs text-steel-500 hover:text-steel-800 underline min-h-[36px]">← Voltar para a pilha</button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-      {children}
-    </div>
-  );
+  const allTotal = cards.reduce((a, c) => a + c.labor, 0);
+  const allPicked = picked.size === cards.length;
+  const toggle = (key: string) => move(key, picked.has(key) ? 'stack' : 'search');
+  const shown = cards.slice(0, limit);
 
   return (
-    <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 p-4">
-      <div className="mb-3">
-        <h2 className="text-base font-bold text-steel-900">📚 Empilhados</h2>
-        <p className="text-xs text-steel-500">Serviços esperando mecânico da plataforma. Junte vários em “Buscar mecânico” e gere uma demanda só: um mecânico faz tudo e sai mais barato.</p>
-      </div>
-      <div className="grid md:grid-cols-2 gap-3">
-        {Col({ id: 'stack', title: 'Empilhados', hint: 'cada serviço separado', list: inStack })}
-        {Col({
-          id: 'search', title: 'Buscar mecânico', hint: 'vão na mesma demanda', list: inSearch,
-          children: inSearch.length > 0 && (
-            <div className="mt-3 rounded-xl bg-white ring-1 ring-brand-200 p-3 space-y-2">
-              <div className="text-sm font-semibold text-steel-900">
-                Vai gerar 1 demanda · {searchItems.length} {searchItems.length === 1 ? 'serviço' : 'serviços'}
-                {osCards.length > 0 && ` · ${osCards.length} OS`}
-                {(() => { const n = new Set(inSearch.map(c => (c.kind === 'os' ? `os:${c.osId}` : c.car.toLowerCase())).filter(Boolean)).size; return n > 1 ? ` · ${n} veículos` : ''; })()}
+    <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 overflow-hidden">
+      {/* Resumo: um toque abre a lista */}
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-steel-50">
+        <span className="h-10 w-10 shrink-0 rounded-xl bg-brand-50 grid place-items-center text-xl" aria-hidden>📚</span>
+        <span className="flex-1 min-w-0">
+          <span className="block font-bold text-steel-900 text-[15px] leading-tight">
+            {cards.length} {cards.length === 1 ? 'serviço empilhado' : 'serviços empilhados'} · {brl(allTotal)}
+          </span>
+          <span className="block text-xs text-steel-600 mt-0.5">
+            {open ? 'Envie um, ou marque vários para um mecânico fazer junto' : 'Junte vários para um mecânico só e pague menos'}
+          </span>
+        </span>
+        <span className={`shrink-0 text-sm font-semibold text-brand-600 ${open ? '' : 'whitespace-nowrap'}`}>
+          {open ? 'Fechar ▲' : 'Ver e juntar ▼'}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-steel-100">
+          <div className="flex items-center justify-between px-4 py-2 bg-steel-50">
+            <button type="button" onClick={() => setPicked(allPicked ? new Set() : new Set(cards.map(c => c.key)))}
+              className="text-xs font-semibold text-brand-700 min-h-[36px]">
+              {allPicked ? 'Desmarcar todos' : 'Selecionar todos'}
+            </button>
+            <span className="text-xs text-steel-500">{picked.size} de {cards.length} marcados</span>
+          </div>
+
+          <ul className="divide-y divide-steel-100">
+            {shown.map(c => {
+              const on = picked.has(c.key);
+              const name = c.kind === 'os'
+                ? (c.items.length === 1 ? c.items[0].description : `${c.items[0].description} + ${c.items.length - 1}`)
+                : c.title;
+              const sub = [brl(c.labor), ...(c.kind === 'os'
+                ? [`OS nº ${osNum(c.number, c.osId!)}`, c.car]
+                : [c.car ? `🚗 ${c.car}` : '', c.free!.hours ? `~${String(c.free!.hours).replace('.', ',')}h` : ''])].filter(Boolean).join(' · ');
+              return (
+                <li key={c.key} className={`flex items-center gap-3 px-4 py-3 ${on ? 'bg-brand-50/60' : ''}`}>
+                  <button type="button" onClick={() => toggle(c.key)} aria-pressed={on}
+                    className="flex-1 min-w-0 flex items-center gap-3 text-left min-h-[44px]">
+                    <span className={`h-6 w-6 shrink-0 rounded-md border-2 grid place-items-center text-sm font-bold transition ${
+                      on ? 'bg-brand-500 border-brand-500 text-white' : 'border-steel-300 bg-white'}`} aria-hidden>{on ? '✓' : ''}</span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-steel-900 truncate">{name}</span>
+                      <span className="block text-xs text-steel-600 truncate">{sub}</span>
+                    </span>
+                  </button>
+                  <button type="button" onClick={() => generate([c])}
+                    className="h-10 px-3 shrink-0 rounded-lg border border-brand-300 bg-white text-brand-700 text-xs font-bold active:scale-95 hover:bg-brand-50">
+                    Enviar
+                  </button>
+                  <button type="button" onClick={() => unstack(c)} disabled={busy}
+                    title={c.kind === 'os' ? 'Desempilhar (volta para a OS)' : 'Tirar da pilha'}
+                    aria-label={`Tirar ${name} da pilha`}
+                    className="h-10 w-10 shrink-0 rounded-lg grid place-items-center text-steel-400 hover:text-alert-600 hover:bg-alert-50 disabled:opacity-40">✕</button>
+                </li>
+              );
+            })}
+          </ul>
+
+          {cards.length > limit && (
+            <button type="button" onClick={() => setLimit(l => l + 10)}
+              className="w-full h-11 text-sm font-semibold text-steel-700 border-t border-steel-100 hover:bg-steel-50">
+              Ver mais {cards.length - limit}
+            </button>
+          )}
+
+          {/* Barra fixa: junta os marcados numa demanda só */}
+          {inSearch.length > 0 && (
+            <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-0 z-10 border-t border-brand-200 bg-white/95 backdrop-blur px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-steel-900">
+                    {searchItems.length} {searchItems.length === 1 ? 'serviço' : 'serviços'} · {brl(total)}
+                  </div>
+                  <div className="text-[11px] text-steel-600 leading-tight">
+                    {searchItems.length > 1 ? 'um mecânico faz todos · ' : ''}você revisa antes de publicar
+                  </div>
+                </div>
+                <button type="button" onClick={() => generate()}
+                  className="shrink-0 h-12 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.98] hover:bg-brand-600">
+                  📤 Enviar para demanda
+                </button>
               </div>
-              <div className="text-xs text-steel-500">
-                {osCards.length > 0 && `Mão de obra das OS ${brl(osLabor)} → sugestão ${brl(sug.total)}`}
-                {osCards.length > 0 && freeCards.length > 0 && ' + '}
-                {freeCards.length > 0 && `avulsos ${brl(freeTotal)}`}
-                {' '}= <strong className="text-steel-800">{brl(total)}</strong> (você ajusta antes de publicar)
-              </div>
-              <button type="button" onClick={generate} className="btn-primary w-full">Gerar demanda →</button>
-              <p className="text-[11px] text-steel-400">Quer mais de uma demanda? Gere esta e depois mova os outros cards.</p>
             </div>
-          ),
-        })}
-      </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
