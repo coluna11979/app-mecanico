@@ -39,10 +39,12 @@ export const estimatePrice = (rate: number, hours: number) => Math.max(5, Math.r
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('');
 
 /** Topo das Demandas: quem está disponível agora + atalhos dos serviços mais pedidos */
-export function QuickCall({ mechanics, disabled, onShortcut }: {
+export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
   mechanics: AvailableMechanic[];
   disabled?: boolean;
   onShortcut: (s: ServiceShortcut) => void;
+  /** Só os atalhos (quem está disponível aparece no cartão principal e no carrossel) */
+  compact?: boolean;
 }) {
   const rate = medianRate(mechanics);
   const rates = mechanics.map(m => Number(m.hourly_rate)).filter(r => r > 0);
@@ -53,6 +55,7 @@ export function QuickCall({ mechanics, disabled, onShortcut }: {
   return (
     <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 overflow-hidden">
       {/* Disponíveis agora */}
+      {!compact && (
       <div className="px-4 py-3.5 flex items-center gap-3 border-b border-steel-100">
         {n > 0 ? (
           <div className="flex -space-x-2 shrink-0" aria-hidden>
@@ -76,12 +79,15 @@ export function QuickCall({ mechanics, disabled, onShortcut }: {
           <div className="text-xs text-steel-500 mt-0.5">
             {n > 0
               ? [avgRating != null && `★ ${avgRating.toFixed(1)} em média`,
-                 rates.length && `R$ ${Math.min(...rates).toFixed(0)}–${Math.max(...rates).toFixed(0)}/h`,
+                 rates.length && (Math.min(...rates) === Math.max(...rates)
+                   ? `R$ ${Math.min(...rates).toFixed(0)}/h`
+                   : `R$ ${Math.min(...rates).toFixed(0)}–${Math.max(...rates).toFixed(0)}/h`),
                  'verificados'].filter(Boolean).join(' · ')
               : 'Cada demanda nova chega na hora no celular deles.'}
           </div>
         </div>
       </div>
+      )}
 
       {/* Atalhos: um toque abre a demanda pronta */}
       <div className="px-4 pt-3 pb-4">

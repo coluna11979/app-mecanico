@@ -119,7 +119,7 @@ export default function CallMechanicModal({ wid, os, onClose }: { wid: string; o
       serviceOrderId: os.id, itemIds: picked.flatMap(r => (r.itemId ? [r.itemId] : [])),
       title: title.slice(0, 120), description, total: finalTotal, hours: hoursN, scheduledAt: when,
     });
-    nav('/oficina/dashboard?nova=1');
+    nav('/oficina/dashboard?nova=os');
   }
 
   return (
