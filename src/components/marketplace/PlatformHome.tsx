@@ -12,7 +12,7 @@ const firstLast = (name: string) => { const p = name.trim().split(/\s+/); return
 /** Roda estilizada (decoração do cartão principal, sem foto) */
 function WheelArt() {
   return (
-    <svg viewBox="0 0 200 200" className="absolute -right-10 -bottom-12 w-56 h-56 sm:w-72 sm:h-72 opacity-90 pointer-events-none" aria-hidden>
+    <svg viewBox="0 0 200 200" className="absolute -right-10 -bottom-12 w-56 h-56 sm:w-72 sm:h-72 lg:right-6 lg:-bottom-16 lg:w-80 lg:h-80 opacity-90 pointer-events-none" aria-hidden>
       <defs>
         <radialGradient id="ph-glow" cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="#ff6b1a" stopOpacity="0.45" />
@@ -62,9 +62,11 @@ export function PlatformHero({ available, onCall, disabled, locked }: {
 }
 
 /** Em busca · Aceitas · Em execução · Concluídas */
-export function StatusCounters({ searching, accepted, working, done, onPick }: {
+export function StatusCounters({ searching, accepted, working, done, onPick, side }: {
   searching: number; accepted: number; working: number; done: number;
   onPick: (target: 'ativas' | 'historico') => void;
+  /** Coluna lateral do computador: 2×2 compacto dentro de um cartão */
+  side?: boolean;
 }) {
   const items = [
     { n: searching, label: 'Em busca',    icon: '⏱️', tone: 'bg-pending-50',  target: 'ativas' as const },
@@ -72,6 +74,25 @@ export function StatusCounters({ searching, accepted, working, done, onPick }: {
     { n: working,   label: 'Em execução', icon: '🔧', tone: 'bg-brand-50',    target: 'ativas' as const },
     { n: done,      label: 'Concluídas',  icon: '🏁', tone: 'bg-steel-100',   target: 'historico' as const },
   ];
+  if (side) {
+    return (
+      <section className="rounded-2xl bg-white ring-1 ring-steel-200/70 p-4">
+        <h2 className="text-sm font-bold text-steel-900 mb-3">Seus pedidos</h2>
+        <div className="grid grid-cols-2 gap-2">
+          {items.map(i => (
+            <button key={i.label} type="button" onClick={() => onPick(i.target)}
+              className="flex items-center gap-2.5 rounded-xl bg-steel-50 px-3 py-2.5 text-left hover:bg-brand-50 transition min-w-0">
+              <span className={`grid place-items-center h-8 w-8 shrink-0 rounded-lg text-base ${i.tone}`} aria-hidden>{i.icon}</span>
+              <span className="min-w-0">
+                <span className={`block font-display text-lg font-bold leading-none tabular-nums ${i.n ? 'text-steel-900' : 'text-steel-300'}`}>{i.n}</span>
+                <span className="block text-xs font-semibold text-steel-600 mt-0.5 leading-tight">{i.label}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  }
   return (
     <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-4">
       {items.map(i => (
@@ -87,8 +108,45 @@ export function StatusCounters({ searching, accepted, working, done, onPick }: {
 }
 
 /** Mecânicos disponíveis agora: foto, nota real, especialidades */
-export function MechanicCarousel({ mechanics }: { mechanics: HomeMechanic[] }) {
+export function MechanicCarousel({ mechanics, list }: {
+  mechanics: HomeMechanic[];
+  /** Coluna lateral do computador: lista vertical em vez de carrossel */
+  list?: boolean;
+}) {
   if (!mechanics.length) return null;
+  if (list) {
+    return (
+      <section className="rounded-2xl bg-white ring-1 ring-steel-200/70 p-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h2 className="text-sm font-bold text-steel-900">Disponíveis agora</h2>
+          <Link to="/oficina/buscar" className="text-xs font-semibold text-brand-600 hover:underline">Ver todos ›</Link>
+        </div>
+        <ul className="divide-y divide-steel-100">
+          {mechanics.slice(0, 6).map(m => {
+            const skills = (m.skills ?? []).filter(Boolean).slice(0, 2);
+            return (
+              <li key={m.id} className="flex items-center gap-3 py-2.5">
+                <span className="relative shrink-0">
+                  {m.avatar
+                    ? <img src={m.avatar} alt="" className="h-10 w-10 rounded-full object-cover bg-steel-100" loading="lazy" />
+                    : <span className="h-10 w-10 rounded-full bg-brand-50 grid place-items-center text-sm font-bold text-brand-700">{initials(m.name)}</span>}
+                  <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-signal-500 ring-2 ring-white" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-steel-900 truncate">{firstLast(m.name)}</span>
+                  <span className="block text-xs text-steel-600 truncate">
+                    {m.rating > 0 ? <><span className="text-amber-500">★</span> {m.rating.toFixed(1).replace('.', ',')} · </> : 'Novo · '}
+                    {skills.length ? skills.join(', ') : 'Mecânica geral'}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        {mechanics.length > 6 && <Link to="/oficina/buscar" className="block text-center text-xs font-semibold text-brand-600 pt-2">+{mechanics.length - 6} disponíveis</Link>}
+      </section>
+    );
+  }
   return (
     <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 py-4">
       <div className="flex items-center justify-between gap-2 px-4 mb-3">
