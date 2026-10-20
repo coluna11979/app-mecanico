@@ -667,6 +667,7 @@ export default function OsDetail() {
               customerBroughtParts={!!os.customer_brought_parts}
               saleMode={isSale}
               planning={os.status !== 'completed'}
+              vehicle={os.vehicle}
               osLabel={`OS nº ${os.number != null ? String(os.number).padStart(4, '0') : os.id.slice(0, 8)}`}
               onSaved={load}
             />}

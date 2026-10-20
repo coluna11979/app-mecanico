@@ -8,6 +8,7 @@ import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
 import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
+import { groupBy, loadServiceCharges, norm, type PriceSummary } from '@/lib/servicePrices';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -136,10 +137,12 @@ interface Props {
   saleMode?: boolean;
   /** OS ainda sendo montada (aberta/aprovação/aprovada): ninguém executou nada, então não pergunta "Quem fez" */
   planning?: boolean;
+  /** Veículo da OS: o serviço sugere o preço já cobrado nesse modelo */
+  vehicle?: { make?: string | null; model?: string | null } | null;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, vehicle = null, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -153,6 +156,18 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const [itemRules, setItemRules] = useState<ItemRule[]>([]);
   /** Serviço com o campo de comissão aberto */
   const [commEdit, setCommEdit] = useState<string | null>(null);
+
+  /** Preço já cobrado de cada serviço neste modelo de veículo (outras OS) — chave = nome normalizado */
+  const [vehPrices, setVehPrices] = useState<Map<string, PriceSummary>>(new Map());
+  const vehModel = vehicle?.model?.trim() ?? '';
+  useEffect(() => {
+    if (!vehModel || saleMode || readOnly) { setVehPrices(new Map()); return; }
+    let alive = true;
+    loadServiceCharges(workshopId, { model: vehModel, excludeOs: osId })
+      .then(cs => { if (alive) setVehPrices(new Map(groupBy(cs, c => c.key).map(g => [g.key, g.sum]))); })
+      .catch(() => { /* sem histórico: segue só com a tabela */ });
+    return () => { alive = false; };
+  }, [workshopId, osId, vehModel, saleMode, readOnly]);
 
   // Equipe, para dizer quem fez cada item (comissão)
   useEffect(() => {
@@ -287,7 +302,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   }
   /** Item escolhido no painel do catálogo: serviço entra como item; peça entra dentro do serviço escolhido (ou avulsa se não há serviço) */
   function addFromCatalog(sg: Suggestion, targetKey: string) {
-    const price = sg.unit_price > 0 ? moneyInput(sg.unit_price) : '';
+    const vp = sg.kind === 'labor' ? vehPrices.get(norm(sg.description)) : undefined;
+    const price = vp ? moneyInput(vp.last) : sg.unit_price > 0 ? moneyInput(sg.unit_price) : '';
     if (sg.kind === 'labor') {
       setRows(rs => [...rs, { key: newKey(), kind: 'labor', description: sg.description, quantity: '1', unit_price: price, unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
       return;
@@ -314,6 +330,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           next.kind = s.kind;
           // Serviço da tabela sem preço fixo: o valor é digitado na OS
           if (!r.unit_price && s.unit_price > 0) next.unit_price = moneyInput(s.unit_price);
+          // Serviço já cobrado neste modelo de veículo: o último preço dele vale mais que o da tabela
+          const vp = s.kind === 'labor' && !r.unit_price ? vehPrices.get(norm(s.description)) : undefined;
+          if (vp) next.unit_price = moneyInput(vp.last);
           if (s.part_id && s.part_id !== r.part_id) {
             next.part_id = s.part_id;
             next.unit_price = moneyInput(s.unit_price);
@@ -449,6 +468,21 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                   list={`os-items-sugg-${osId}`} value={r.description}
                   onChange={e => update(r.key, { description: e.target.value })} />
               )}
+              {!readOnly && r.kind === 'labor' && (() => {
+                const vp = vehPrices.get(norm(r.description));
+                if (!vp) return null;
+                const cur = parseMoney(r.unit_price || '0');
+                return (
+                  <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
+                    <span>🚗 {vehModel}: já cobrado <strong className="text-steel-700">{fmtBRL(vp.last)}</strong>
+                      {vp.count > 1 ? ` (${vp.count}×${vp.min !== vp.max ? `, de ${fmtBRL(vp.min)} a ${fmtBRL(vp.max)}` : ''})` : ''}</span>
+                    {Math.abs(cur - vp.last) > 0.001 && (
+                      <button type="button" className="font-semibold text-brand-700 hover:underline"
+                        onClick={() => update(r.key, { unit_price: moneyInput(vp.last) })}>Usar {fmtBRL(vp.last)}</button>
+                    )}
+                  </div>
+                );
+              })()}
               {!readOnly && r.kind === 'part' && !r.part_id && !r.description.trim() && showCost && (
                 <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
                   <span>Digite para buscar no cadastro</span>

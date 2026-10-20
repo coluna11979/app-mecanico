@@ -30,13 +30,20 @@ type Raw = {
 export const norm = (s: string | null | undefined) =>
   (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
-/** Serviços cobrados em OS de verdade (sem orçamento solto nem cancelada) que têm veículo */
-export async function loadServiceCharges(wid: string): Promise<ServiceCharge[]> {
-  const { data } = await fetchAll<Raw>((a, b) => supabase.from('service_order_items')
-    .select('description, quantity, unit_price, service_orders!inner(id, number, created_at, vehicles!inner(make, model, year, plate))')
-    .eq('workshop_id', wid).eq('kind', 'labor').gt('unit_price', 0)
-    .neq('service_orders.status', 'cancelled').is('service_orders.quote_status', null)
-    .order('id').range(a, b) as unknown as PromiseLike<{ data: Raw[] | null; error: unknown }>);
+/**
+ * Serviços cobrados em OS de verdade (sem orçamento solto nem cancelada) que têm veículo.
+ * `model` limita a um modelo (sem diferenciar maiúsculas); `excludeOs` tira a OS que está sendo editada.
+ */
+export async function loadServiceCharges(wid: string, opts: { model?: string; excludeOs?: string } = {}): Promise<ServiceCharge[]> {
+  const { data } = await fetchAll<Raw>((a, b) => {
+    let q = supabase.from('service_order_items')
+      .select('description, quantity, unit_price, service_orders!inner(id, number, created_at, vehicles!inner(make, model, year, plate))')
+      .eq('workshop_id', wid).eq('kind', 'labor').gt('unit_price', 0)
+      .neq('service_orders.status', 'cancelled').is('service_orders.quote_status', null);
+    if (opts.model) q = q.ilike('service_orders.vehicles.model', opts.model.replace(/[%_\\]/g, m => '\\' + m));
+    if (opts.excludeOs) q = q.neq('service_orders.id', opts.excludeOs);
+    return q.order('id').range(a, b) as unknown as PromiseLike<{ data: Raw[] | null; error: unknown }>;
+  });
   const out: ServiceCharge[] = [];
   for (const r of data) {
     const so = r.service_orders, v = so?.vehicles;
