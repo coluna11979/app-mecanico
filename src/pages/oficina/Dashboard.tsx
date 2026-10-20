@@ -279,13 +279,19 @@ export default function WorkshopDashboard() {
     setModal(true);
   }
 
-  /** Atalho de serviço: abre a demanda já escrita, pelo serviço, com o tempo típico e o preço estimado */
-  function openShortcut(sc: ServiceShortcut) {
-    if (hasPendingFees) return;
+  /** Atalhos marcados: abre a demanda já escrita (um ou vários serviços para um mecânico), pelo serviço,
+   *  com o tempo típico somado e o preço estimado de cada um somado */
+  function openShortcut(list: ServiceShortcut[]) {
+    if (hasPendingFees || !list.length) return;
     const rate = medianRate(mechanics);
+    const hours = list.reduce((a, s) => a + s.hours, 0);
+    const total = rate ? list.reduce((a, s) => a + estimatePrice(rate, s.hours), 0) : 0;
+    const one = list.length === 1;
     const next: NewJob = {
-      ...EMPTY, title: sc.title, description: sc.description, pricing: 'fixed',
-      max_hours: String(sc.hours), total: rate ? String(estimatePrice(rate, sc.hours)) : '',
+      ...EMPTY,
+      title: one ? list[0].title : `${list[0].title} + ${list.length - 1} serviço(s)`,
+      description: one ? list[0].description : ['Serviços a realizar:', ...list.map(s => `• ${s.title} — ${s.description}`)].join('\n'),
+      pricing: 'fixed', max_hours: String(hours), total: total ? String(total) : '',
     };
     setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
     setForm(next); persistDraft(next);

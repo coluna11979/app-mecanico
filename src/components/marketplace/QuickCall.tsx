@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { formatBRL } from '@/lib/payment';
 
 /** Mecânico disponível agora (mesmo formato da lista de Demandas) */
@@ -42,7 +43,8 @@ const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(p =>
 export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
   mechanics: AvailableMechanic[];
   disabled?: boolean;
-  onShortcut: (s: ServiceShortcut) => void;
+  /** Abre a Nova demanda com os serviços marcados (um ou vários: um mecânico faz todos) */
+  onShortcut: (list: ServiceShortcut[]) => void;
   /** Só os atalhos (quem está disponível aparece no cartão principal e no carrossel) */
   compact?: boolean;
 }) {
@@ -51,6 +53,11 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
   const rated = mechanics.filter(m => m.rating > 0);
   const avgRating = rated.length ? rated.reduce((s, m) => s + m.rating, 0) / rated.length : null;
   const n = mechanics.length;
+  /** Atalhos marcados (na ordem em que foram tocados) */
+  const [picked, setPicked] = useState<string[]>([]);
+  const toggle = (label: string) => setPicked(p => (p.includes(label) ? p.filter(x => x !== label) : [...p, label]));
+  const pickedList = picked.map(l => SERVICE_SHORTCUTS.find(s => s.label === l)!).filter(Boolean);
+  const pickedTotal = rate ? pickedList.reduce((a, s) => a + estimatePrice(rate, s.hours), 0) : null;
 
   return (
     <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 overflow-hidden">
@@ -89,18 +96,26 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
       </div>
       )}
 
-      {/* Atalhos: um toque abre a demanda pronta */}
+      {/* Atalhos: toque para marcar (um ou vários) e "Continuar" abre a demanda pronta */}
       <div className="px-4 pt-3 pb-4">
-        <div className="text-[11px] font-bold uppercase tracking-widest text-steel-500 mb-2">Do que você precisa?</div>
+        <div className="flex items-baseline justify-between gap-2 mb-2">
+          <div className="text-[11px] font-bold uppercase tracking-widest text-steel-500">Do que você precisa?</div>
+          <div className="text-[11px] text-steel-500">{picked.length ? `${picked.length} marcado${picked.length > 1 ? 's' : ''}` : 'marque um ou vários'}</div>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {SERVICE_SHORTCUTS.map(s => (
+          {SERVICE_SHORTCUTS.map(s => {
+            const on = picked.includes(s.label);
+            return (
             <button
               key={s.label}
               type="button"
               disabled={disabled}
-              onClick={() => onShortcut(s)}
-              className="min-h-[52px] flex items-center gap-2.5 rounded-xl border border-steel-200 px-3 py-2 text-left active:scale-[0.98] active:bg-brand-50 hover:border-brand-300 transition disabled:opacity-50"
+              onClick={() => toggle(s.label)}
+              aria-pressed={on}
+              className={`relative min-h-[52px] flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left active:scale-[0.98] transition disabled:opacity-50 ${
+                on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-steel-200 hover:border-brand-300'}`}
             >
+              {on && <span className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-brand-500 text-white text-[11px] font-bold grid place-items-center" aria-hidden>✓</span>}
               <span className="text-xl leading-none shrink-0">{s.icon}</span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-steel-900 leading-tight">{s.label}</span>
@@ -109,8 +124,28 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
                 </span>
               </span>
             </button>
-          ))}
+            );
+          })}
         </div>
+
+        {/* Marcados: um mecânico faz todos numa demanda só */}
+        {pickedList.length > 0 && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-brand-50 ring-1 ring-brand-200 px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-steel-900">
+                {pickedList.length} {pickedList.length === 1 ? 'serviço' : 'serviços'}{pickedTotal ? ` · ≈ R$ ${formatBRL(pickedTotal, { decimals: 0 })}` : ''}
+              </div>
+              <div className="text-[11px] text-steel-600 leading-tight">
+                {pickedList.length > 1 ? 'um mecânico faz todos · ' : ''}
+                <button type="button" onClick={() => setPicked([])} className="underline">limpar</button>
+              </div>
+            </div>
+            <button type="button" disabled={disabled} onClick={() => { onShortcut(pickedList); setPicked([]); }}
+              className="shrink-0 h-11 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.98] hover:bg-brand-600 disabled:opacity-50">
+              Continuar →
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );
