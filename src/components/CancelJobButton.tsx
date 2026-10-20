@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Job } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
+import { toast } from '@/components/ui/Toast';
 import { ACCEPT_TOLERANCE_MS, acceptedAt, arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 
 interface Props {
@@ -83,13 +84,17 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
   const [error, setError]       = useState<string | null>(null);
   /** Serviços ligados ao anúncio (da OS e empilhados avulsos) e para onde voltam */
   const [linked, setLinked]     = useState<Linked | null>(null);
-  const [dest, setDest]         = useState<'pilha' | 'equipe'>('pilha');
+  /** pilha = volta/guarda nos Empilhados · equipe = a loja faz · nada = só cancela (demanda direta) */
+  const [dest, setDest]         = useState<'pilha' | 'equipe' | 'nada'>('pilha');
 
   const cancellation = analyseJob(job);
   if (!cancellation || cancellation.scenario === 'blocked') return null;
   const isAd = cancellation.scenario === 'open';
   const fullReason = reasonKey === 'Outro' ? reason.trim() : [reasonKey, reason.trim()].filter(Boolean).join(' — ');
   const canConfirm = !!fullReason && (reasonKey !== 'Outro' || !!reason.trim());
+  const hasLinked = !!linked && (linked.osItems > 0 || linked.free > 0);
+  /** Demanda criada direto (sem OS nem empilhado): pode ser guardada nos Empilhados para depois */
+  const direct = isAd && !!linked && !hasLinked;
 
   async function loadLinked() {
     const [os, free] = await Promise.all([
@@ -116,6 +121,7 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
       }
       // O banco já devolveu os serviços para a pilha; "equipe" tira da pilha e devolve para a loja
       if (dest === 'equipe') await backToTeam();
+      if (direct && dest === 'pilha') await saveToStack();
       setBusy(false);
       setOpen(false);
       onCancelled?.();
@@ -138,6 +144,28 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
     }
     await supabase.from('stacked_services').update({ removed_at: new Date().toISOString() })
       .eq('last_job_id', job.id).eq('workshop_id', job.workshop_id).is('job_id', null);
+  }
+
+  /** Demanda direta vira um empilhado avulso: mesmo serviço, carro e valor, sem digitar de novo */
+  async function saveToStack() {
+    let description = (job.description ?? '').trim();
+    const v = description.match(/\n*Ve[ií]culo:\s*(.+)$/i);
+    const vehicle = v ? v[1].trim() : null;
+    if (v) description = description.slice(0, v.index).trim();
+    let title = job.title.trim();
+    const model = vehicle?.split('·')[0].trim();
+    if (model && title.toLowerCase().endsWith(` — ${model.toLowerCase()}`)) title = title.slice(0, -(model.length + 3)).trim();
+    if (description === title) description = '';
+    const { data: ch } = await supabase.from('job_customer_charges').select('amount').eq('job_id', job.id).maybeSingle();
+    const { error } = await supabase.from('stacked_services').insert({
+      workshop_id: job.workshop_id,
+      title, description, vehicle,
+      total: Math.round((job.price_per_hour ?? 0) * (job.max_hours ?? 1) * 100) / 100,
+      hours: job.pricing === 'fixed' ? (job.estimated_hours ?? null) : (job.max_hours ?? null),
+      customer_charge: ch?.amount ?? null,
+      last_job_id: job.id,
+    });
+    if (error) toast.error('O anúncio foi cancelado, mas não deu para guardar nos Empilhados: ' + error.message);
   }
 
   function openModal(e: React.MouseEvent) {
@@ -213,11 +241,30 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
             )}
 
             {/* A OS não é cancelada: só a publicação para os mecânicos */}
-            {linked && (linked.osItems > 0 || linked.free > 0) && (
+            {hasLinked && (
               <div className="rounded-xl bg-signal-50 border border-signal-200 px-3 py-2.5 text-sm text-signal-900">
                 {linked.osNumbers.length > 0
                   ? <>✅ {linked.osNumbers.length === 1 ? `A OS nº ${linked.osNumbers[0]} continua aberta` : `As OS nº ${linked.osNumbers.join(', ')} continuam abertas`}. Só a publicação para os mecânicos é cancelada.</>
                   : <>✅ Os serviços não se perdem: só a publicação para os mecânicos é cancelada.</>}
+              </div>
+            )}
+
+            {/* Demanda direta: guardar nos Empilhados para juntar com outros ou publicar de novo depois */}
+            {direct && (
+              <div>
+                <div className="text-xs font-semibold text-steel-500 uppercase tracking-wider mb-1.5">E o serviço?</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['pilha', '📚 Guardar nos Empilhados', 'publicar de novo depois'],
+                    ['nada', '🗑️ Só cancelar', 'não vou precisar'],
+                  ] as const).map(([k, l, d]) => (
+                    <button key={k} type="button" onClick={() => setDest(k)} disabled={busy}
+                      className={`min-h-[60px] rounded-xl border-2 px-2.5 py-2 text-left transition ${dest === k ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
+                      <span className="block text-sm font-semibold text-steel-900 leading-tight">{l}</span>
+                      <span className="block text-[11px] text-steel-600">{d}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -231,7 +278,7 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
             )}
 
             {/* Para onde voltam os serviços */}
-            {linked && (linked.osItems > 0 || linked.free > 0) && (
+            {hasLinked && (
               <div>
                 <div className="text-xs font-semibold text-steel-500 uppercase tracking-wider mb-1.5">E os serviços?</div>
                 <div className="grid grid-cols-2 gap-2">
@@ -256,7 +303,11 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
               <div className="flex flex-wrap gap-1.5">
                 {REASONS.map(r => (
                   <button key={r} type="button" disabled={busy}
-                    onClick={() => { setReasonKey(r); if (r === 'Vou fazer com a equipe') setDest('equipe'); }}
+                    onClick={() => {
+                      setReasonKey(r);
+                      if (r === 'Vou fazer com a equipe') setDest(direct ? 'nada' : 'equipe');
+                      else if (direct && r === 'Cliente desistiu') setDest('nada');
+                    }}
                     className={`min-h-[36px] rounded-full border px-3 text-xs font-semibold transition ${reasonKey === r ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-700 border-steel-200 hover:border-steel-300'}`}>
                     {r}
                   </button>
