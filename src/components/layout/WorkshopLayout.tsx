@@ -53,6 +53,7 @@ const SECTIONS: NavGroup[] = [
   ] },
   { key: 'comunicacao', title: 'Comunicação', items: [
     { to: '/oficina/inbox',      icon: '💬', label: 'WhatsApp dos clientes' },
+    { to: '/oficina/inbox/painel', icon: '📊', label: 'Painel do WhatsApp' },
     { to: '/oficina/avaliacoes', icon: '⭐', label: 'Avaliações Google'    },
     { to: '/oficina/agentes',    icon: '🤖', label: 'Agentes de IA'        },
   ] },
