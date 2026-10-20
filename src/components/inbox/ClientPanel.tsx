@@ -13,6 +13,7 @@ import ChatAvatar from './ChatAvatar';
 import ChatNotes from './ChatNotes';
 import FollowUp from './FollowUp';
 import LeadBox from './LeadBox';
+import { useModuleAllows } from '@/lib/modules';
 
 type PanelOs = InsOs & {
   number: number | null; title: string; started_at: string | null;
@@ -28,6 +29,8 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
   chat: WaChat; workshopId: string; onLinked: (customerId: string | null) => void; onClose?: () => void;
 }) {
   const [customer, setCustomer] = useState<Customer | null>(null);
+  // Sem OS (ex.: pacote Atendimento): visitas, gasto, recomendações e OS ficariam sempre vazios
+  const hasOs = useModuleAllows()('/oficina/os');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [os, setOs] = useState<PanelOs[]>([]);
   const [recs, setRecs] = useState<InsRec[]>([]);
@@ -177,7 +180,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
             <LeadBox chat={chat} />
 
             {/* Situação: última visita e próxima revisão/visita */}
-            {ins && ins.visits > 0 && (
+            {hasOs && ins && ins.visits > 0 && (
               <div className="rounded-2xl border border-steel-200 p-3 space-y-1.5">
                 <Line label="Última visita" value={timeAgo(ins.lastVisit)} />
                 {dueDays != null && (
@@ -191,17 +194,19 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2">
-              <Stat label="Gasto total" value={fmtBRL(ins?.spent ?? 0)} tone="emerald" />
-              <Stat label="Visitas" value={String(ins?.visits ?? 0)} tone="sky" />
-            </div>
+            {hasOs && (
+              <div className="grid grid-cols-2 gap-2">
+                <Stat label="Gasto total" value={fmtBRL(ins?.spent ?? 0)} tone="emerald" />
+                <Stat label="Visitas" value={String(ins?.visits ?? 0)} tone="sky" />
+              </div>
+            )}
 
             <div className="flex gap-2">
               <Link to={`/oficina/clientes/${customer.id}`} className="btn-secondary flex-1 text-sm text-center">Ver ficha</Link>
-              <Link to={`/oficina/os?nova=1&cliente=${customer.id}${vehicles.length === 1 ? `&veiculo=${vehicles[0].id}` : ''}`} className="btn-primary flex-1 text-sm text-center">+ Nova OS</Link>
+              {hasOs && <Link to={`/oficina/os?nova=1&cliente=${customer.id}${vehicles.length === 1 ? `&veiculo=${vehicles[0].id}` : ''}`} className="btn-primary flex-1 text-sm text-center">+ Nova OS</Link>}
             </div>
 
-            {recs.length > 0 && (
+            {hasOs && recs.length > 0 && (
               <Section title="💡 Recomendado na última visita" count={recs.length}>
                 <div className="space-y-1.5">
                   {recs.slice(0, 4).map(r => (
@@ -226,7 +231,7 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
               ))}
             </Section>
 
-            <Section title="📋 OS em andamento" count={open.length}>
+            {hasOs && <Section title="📋 OS em andamento" count={open.length}>
               {open.length === 0 ? <Empty>Nenhuma OS aberta</Empty> : (
                 <>
                   {/* Aguardando aprovação primeiro (é onde se aprova pela conversa) */}
@@ -240,9 +245,9 @@ export default function ClientPanel({ chat, workshopId, onLinked, onClose }: {
                   )}
                 </>
               )}
-            </Section>
+            </Section>}
 
-            {os.length > open.length && (
+            {hasOs && os.length > open.length && (
               <Section title="🗂️ Últimas OS" count={os.length - open.length} collapsible storageKey="inbox_panel_last_os">
                 {os.filter(o => !open.includes(o)).slice(0, 5).map(o => <OsLine key={o.id} o={o} />)}
                 <Link to={`/oficina/clientes/${customer.id}`} className="block text-xs font-semibold text-brand-600 hover:underline mt-1.5">

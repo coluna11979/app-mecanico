@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOperator } from '@/lib/operators';
 import { AGENT_TEMPLATES, AGENT_TOOLS, type Agent, type AgentDraft, type AgentMessage, type AgentQuestion, type AgentVersion } from '@/lib/agents';
 import ReceptionCard from '@/components/agents/ReceptionCard';
+import { useWorkshopModules } from '@/lib/modules';
 
 const COLS = 'id, workshop_id, template, name, system_prompt, tools, enabled, questions_seeded, draft, version';
 
@@ -15,6 +16,8 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2
 
 export default function Agentes() {
   const { currentWorkshop } = useAuth();
+  // O sócio conversa sobre os números (caixa, vendas): sem o Caixa (ex.: pacote Atendimento) fica só a Recepção
+  const showPartner = useWorkshopModules(s => !s.off.includes('caixa'));
   const balcao = useOperator((s) => s.balcao);
   const wid = currentWorkshop?.id;
   const tpl = AGENT_TEMPLATES.socio;
@@ -286,7 +289,9 @@ export default function Agentes() {
         <div>
           <h1 className="text-2xl font-bold">🤖 Agentes de IA</h1>
           <p className="text-sm text-steel-500 mt-1">
-            Agentes que atendem os clientes no WhatsApp e um sócio virtual para os números da {currentWorkshop?.business_name ?? 'oficina'}.
+            {showPartner
+              ? <>Agentes que atendem os clientes no WhatsApp e um sócio virtual para os números da {currentWorkshop?.business_name ?? 'oficina'}.</>
+              : <>Agente que atende os clientes no WhatsApp da {currentWorkshop?.business_name ?? 'oficina'}.</>}
           </p>
         </div>
 
@@ -297,6 +302,7 @@ export default function Agentes() {
           </section>
         )}
 
+        {showPartner && <>
         <h2 className="text-sm font-semibold text-steel-500 uppercase tracking-wide pt-2">Sócio operacional · só consulta os dados, não altera nada</h2>
 
         {loading ? (
@@ -513,6 +519,7 @@ export default function Agentes() {
             )}
           </>
         )}
+        </>}
       </div>
     </WorkshopLayout>
   );
