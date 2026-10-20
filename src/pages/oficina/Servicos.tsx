@@ -318,6 +318,7 @@ function ServiceForm({ wid, service, charges, onClose, onSaved }: {
             </div>
           </div>
           <p className="text-[11px] text-steel-400">Opcional. Se o preço varia de carro para carro, deixe vazio e coloque na OS. Se tiver preço, ele vem sugerido na OS e dá para mudar lá.</p>
+          {service && <ServiceKit wid={wid} service={service} />}
           {service && <PricesByVehicle service={service} charges={charges} />}
           {service && (
             <label className="flex items-center gap-2 text-sm text-steel-700">
@@ -651,6 +652,146 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+
+type KitRow = { id: string; part_id: string | null; description: string; quantity: number };
+type CatPart = { id: string; name: string; unit: string | null; stock_qty: number };
+type HistPart = { name: string; part_id: string | null; uses_all: number; uses_model: number; qty: number; unit_price: number };
+
+/** Na ficha do serviço: as peças que entram junto (ex.: Troca de óleo → óleo, filtro de óleo, junta do bujão) */
+function ServiceKit({ wid, service }: { wid: string; service: WorkshopService }) {
+  const [items, setItems] = useState<KitRow[] | null>(null);
+  const [parts, setParts] = useState<CatPart[]>([]);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [hist, setHist] = useState<HistPart[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('workshop_service_parts')
+      .select('id, part_id, description, quantity').eq('service_id', service.id).order('position').order('created_at');
+    setItems(((data ?? []) as KitRow[]).map(r => ({ ...r, quantity: Number(r.quantity) })));
+  }, [service.id]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    supabase.from('workshop_parts').select('id, name, unit, stock_qty').eq('workshop_id', wid).eq('active', true).order('name').limit(3000)
+      .then(({ data }) => setParts(((data ?? []) as CatPart[]).map(p => ({ ...p, stock_qty: Number(p.stock_qty) }))));
+  }, [wid]);
+
+  async function add(rows: { description: string; part_id: string | null; quantity: number }[]) {
+    if (!rows.length) return;
+    setBusy(true);
+    const start = items?.length ?? 0;
+    const { error } = await supabase.from('workshop_service_parts').insert(rows.map((r, i) => ({
+      workshop_id: wid, service_id: service.id, part_id: r.part_id, description: r.description.trim(), quantity: r.quantity, position: start + i,
+    })));
+    setBusy(false);
+    if (error) return toast.error('Não foi possível adicionar: ' + error.message);
+    setQ('');
+    load();
+  }
+  async function remove(id: string) {
+    const { error } = await supabase.from('workshop_service_parts').delete().eq('id', id);
+    if (error) return toast.error('Não foi possível remover: ' + error.message);
+    setItems(xs => (xs ?? []).filter(x => x.id !== id));
+  }
+  async function setQty(row: KitRow, v: string) {
+    const n = parseMoney(v);
+    if (!Number.isFinite(n) || n <= 0 || n === row.quantity) return load();
+    const { error } = await supabase.from('workshop_service_parts').update({ quantity: n }).eq('id', row.id);
+    if (error) return toast.error('Não foi possível salvar a quantidade: ' + error.message);
+    setItems(xs => (xs ?? []).map(x => x.id === row.id ? { ...x, quantity: n } : x));
+  }
+  async function loadHistory() {
+    const { data, error } = await supabase.rpc('service_part_suggestions', { p_workshop: wid, p_service: service.name, p_model: null });
+    if (error) return toast.error('Não foi possível buscar o histórico: ' + error.message);
+    const have = new Set((items ?? []).map(i => norm(i.description)));
+    setHist(((data ?? []) as HistPart[]).filter(h => !have.has(norm(h.name))));
+    setPicked(new Set());
+  }
+
+  const inKit = new Set((items ?? []).map(i => i.part_id).filter(Boolean));
+  const words = norm(q).split(' ').filter(Boolean);
+  const matches = words.length ? parts.filter(p => !inKit.has(p.id) && words.every(w => norm(p.name).includes(w))).slice(0, 6) : [];
+
+  return (
+    <div className="rounded-xl border border-steel-200">
+      <div className="px-3 py-2 border-b border-steel-100">
+        <div className="text-xs font-bold text-steel-600">🧰 Peças deste serviço</div>
+        <div className="text-[11px] text-steel-400">Na OS, ao escolher este serviço no catálogo, essas peças são oferecidas para entrar junto.</div>
+      </div>
+
+      {items === null ? (
+        <p className="px-3 py-3 text-xs text-steel-400">Carregando…</p>
+      ) : items.length === 0 ? (
+        <p className="px-3 py-3 text-xs text-steel-400">Nenhuma peça no kit ainda.</p>
+      ) : (
+        <ul className="divide-y divide-steel-100">
+          {items.map(i => (
+            <li key={i.id} className="px-3 py-2 flex items-center gap-2">
+              <span className="flex-1 min-w-0 truncate text-sm">{i.description}{!i.part_id && <span className="ml-1.5 text-[10px] text-steel-400">avulsa</span>}</span>
+              <input className="input !py-1 !px-2 w-16 text-right text-sm" inputMode="decimal" defaultValue={String(i.quantity).replace('.', ',')}
+                onBlur={e => setQty(i, e.target.value)} aria-label={`Quantidade de ${i.description}`} />
+              <button type="button" onClick={() => remove(i.id)} className="h-7 w-7 rounded-lg grid place-items-center text-steel-400 hover:bg-alert-50 hover:text-alert-600" aria-label="Remover">✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="px-3 py-2 border-t border-steel-100 space-y-2">
+        <div className="relative">
+          <input className="input !py-2 text-sm" placeholder="Adicionar peça: buscar no estoque ou digitar o nome" value={q} onChange={e => setQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (matches[0]) add([{ description: matches[0].name, part_id: matches[0].id, quantity: 1 }]); else if (q.trim().length >= 2) add([{ description: q, part_id: null, quantity: 1 }]); } }} />
+          {q.trim().length >= 2 && (
+            <div className="absolute z-10 left-0 right-0 mt-1 rounded-xl border border-steel-200 bg-white shadow-lg overflow-hidden">
+              {matches.map(p => (
+                <button key={p.id} type="button" disabled={busy} onClick={() => add([{ description: p.name, part_id: p.id, quantity: 1 }])}
+                  className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-brand-50">
+                  <span className="truncate">{p.name}</span>
+                  <span className={`shrink-0 text-[11px] ${p.stock_qty <= 0 ? 'text-alert-600 font-semibold' : 'text-steel-500'}`}>{p.stock_qty} {p.unit ?? ''} em estoque</span>
+                </button>
+              ))}
+              <button type="button" disabled={busy} onClick={() => add([{ description: q, part_id: null, quantity: 1 }])}
+                className="w-full px-3 py-2 text-left text-sm text-brand-700 font-semibold hover:bg-brand-50 border-t border-steel-100">
+                ➕ Adicionar “{q.trim()}” como peça avulsa
+              </button>
+            </div>
+          )}
+        </div>
+
+        {norm(service.name).length >= 4 && (
+          hist === null ? (
+            <button type="button" onClick={loadHistory} className="text-xs font-semibold text-brand-700 hover:underline">💡 Sugerir pelo histórico das OS</button>
+          ) : hist.length === 0 ? (
+            <p className="text-[11px] text-steel-400">Nada novo no histórico para este serviço.</p>
+          ) : (
+            <div className="rounded-lg bg-steel-50 p-2 space-y-1.5">
+              <p className="text-[11px] text-steel-500">Peças que já saíram abaixo deste serviço nas OS. <strong>Confira antes de marcar:</strong> numa nota com vários serviços, nem tudo que aparece abaixo é deste.</p>
+              <ul className="space-y-1">
+                {hist.map(h => (
+                  <li key={h.name}>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={picked.has(h.name)} onChange={e => setPicked(s => { const n = new Set(s); if (e.target.checked) n.add(h.name); else n.delete(h.name); return n; })} />
+                      <span className="flex-1 min-w-0 truncate">{h.name}</span>
+                      <span className="shrink-0 text-[11px] text-steel-400">{h.uses_all}× · {fmtBRL(Number(h.unit_price))}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-3 pt-1">
+                <button type="button" disabled={busy || picked.size === 0} className="text-xs font-semibold text-brand-700 disabled:opacity-40"
+                  onClick={async () => { await add(hist.filter(h => picked.has(h.name)).map(h => ({ description: h.name, part_id: h.part_id, quantity: Number(h.qty) || 1 }))); setHist(null); }}>
+                  Adicionar {picked.size || ''} selecionada{picked.size === 1 ? '' : 's'}
+                </button>
+                <button type="button" className="text-xs text-steel-500" onClick={() => setHist(null)}>Fechar</button>
+              </div>
+            </div>
+          )
+        )}
+      </div>
     </div>
   );
 }

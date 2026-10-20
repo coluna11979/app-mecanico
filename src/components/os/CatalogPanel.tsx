@@ -11,20 +11,25 @@ type Tab = 'servico' | 'peca';
  * em vez de digitar. Mostra serviços da tabela e peças do estoque (com saldo e preço) e fica
  * aberto para adicionar vários itens seguidos.
  */
-export default function CatalogPanel({ suggestions, services, itemCount, total, onPick, onClose }: {
+export default function CatalogPanel({ suggestions, services, itemCount, total, onPick, kitFor, onClose }: {
   suggestions: Suggestion[];
   /** Serviços já na OS (destino das peças): key + nome */
   services: { key: string; name: string }[];
   itemCount: number;
   total: number;
   /** targetKey = serviço que recebe a peça ('' = peça avulsa/sem destino) */
-  onPick: (s: Suggestion, targetKey: string) => void;
+  onPick: (s: Suggestion, targetKey: string) => string | void;
+  /** Peças do kit do serviço (cadastradas na Tabela de serviços); vazio = sem kit */
+  kitFor?: (s: Suggestion) => Promise<Suggestion[]>;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('servico');
   const [q, setQ] = useState('');
   const [target, setTarget] = useState(services.at(-1)?.key ?? '');
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  /** Depois de escolher um serviço com kit: as peças dele para entrar junto */
+  const [step, setStep] = useState<{ key: string; name: string; parts: Suggestion[] } | null>(null);
+  const [kitAdded, setKitAdded] = useState<Set<string>>(new Set());
 
   const list = useMemo(() => {
     const words = norm(q).split(/\s+/).filter(Boolean);
@@ -37,8 +42,17 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   // O destino pode sumir (serviço removido) — cai para o último
   const validTarget = services.some(s => s.key === target) ? target : services.at(-1)?.key ?? '';
 
+  function pickKit(p: Suggestion) {
+    if (!step || kitAdded.has(p.description)) return;
+    onPick(p, step.key);
+    setKitAdded(a => new Set(a).add(p.description));
+  }
+
   function pick(s: Suggestion) {
-    onPick(s, s.kind === 'part' ? validTarget : '');
+    const key = onPick(s, s.kind === 'part' ? validTarget : '');
+    if (s.kind === 'labor' && key && kitFor) {
+      kitFor(s).then(parts => { if (parts.length) { setStep({ key, name: s.description, parts }); setKitAdded(new Set()); } }).catch(() => { /* sem kit: segue só com o serviço */ });
+    }
     setJustAdded(s.description);
     setTimeout(() => setJustAdded(j => (j === s.description ? null : j)), 1200);
   }
@@ -52,10 +66,10 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
             <h3 className="font-bold text-lg text-steel-900">Buscar no catálogo</h3>
             <button type="button" onClick={onClose} className="h-10 w-10 rounded-lg grid place-items-center text-steel-500 hover:bg-steel-100" aria-label="Fechar">✕</button>
           </div>
-          <input autoFocus className="input text-sm" placeholder="Digite para buscar…" value={q} onChange={e => setQ(e.target.value)} />
+          <input autoFocus className="input text-sm" placeholder="Digite para buscar…" value={q} onChange={e => { setQ(e.target.value); setStep(null); }} />
           <div className="flex gap-1.5 mt-3">
             {([['servico', 'Serviços'], ['peca', 'Peças']] as [Tab, string][]).map(([k, label]) => (
-              <button key={k} type="button" onClick={() => setTab(k)}
+              <button key={k} type="button" onClick={() => { setTab(k); setStep(null); }}
                 className={`flex-1 h-11 rounded-xl text-sm font-semibold transition ${tab === k ? 'bg-brand-500 text-white' : 'bg-steel-100 text-steel-700'}`}>
                 {label}
               </button>
@@ -71,6 +85,42 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
           )}
         </div>
 
+        {step ? (
+          <div className="flex-1 overflow-y-auto">
+            <div className="px-4 py-3 bg-signal-50 border-b border-steel-100 text-sm text-steel-700">
+              ✓ <strong>{step.name}</strong> entrou na OS. Peças deste serviço:
+            </div>
+            <ul className="divide-y divide-steel-100">
+              {step.parts.map(p => {
+                const done = kitAdded.has(p.description);
+                const out = p.part_id != null && (p.stock ?? 0) <= 0;
+                return (
+                  <li key={p.description}>
+                    <button type="button" onClick={() => pickKit(p)} disabled={done}
+                      className="w-full min-h-[56px] px-4 py-2 flex items-center gap-3 text-left hover:bg-steel-50 active:bg-brand-50 disabled:opacity-60">
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-medium text-steel-800 truncate">{p.description}</span>
+                        <span className="block text-xs text-steel-500">
+                          {fmtQty(p.qty ?? 1)} {p.unit ?? 'un'}
+                          {p.part_id ? <> · <span className={out ? 'text-alert-600 font-semibold' : ''}>{fmtQty(p.stock)} em estoque</span></> : ' · peça avulsa'}
+                        </span>
+                      </span>
+                      <span className="text-sm font-bold text-steel-900 shrink-0">{p.unit_price > 0 ? fmtBRL(p.unit_price) : 'a definir'}</span>
+                      <span className={`h-11 w-11 shrink-0 rounded-xl grid place-items-center text-lg font-bold transition ${done ? 'bg-signal-500 text-white' : 'bg-brand-50 text-brand-700'}`}>{done ? '✓' : '+'}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="p-4 flex flex-col gap-2">
+              <button type="button" className="btn-primary text-sm" disabled={step.parts.every(p => kitAdded.has(p.description))}
+                onClick={() => step.parts.filter(p => !kitAdded.has(p.description)).forEach(pickKit)}>
+                Adicionar todas as peças
+              </button>
+              <button type="button" className="btn-ghost text-sm border border-steel-200" onClick={() => setStep(null)}>Voltar aos serviços</button>
+            </div>
+          </div>
+        ) : (
         <ul className="flex-1 overflow-y-auto divide-y divide-steel-100">
           {list.length === 0 && (
             <li className="px-4 py-10 text-center text-sm text-steel-500">
@@ -101,6 +151,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
             );
           })}
         </ul>
+        )}
 
         <div className="px-4 py-3 border-t border-steel-100 flex items-center justify-between gap-3 bg-steel-50 md:rounded-none">
           <div className="text-sm text-steel-600">

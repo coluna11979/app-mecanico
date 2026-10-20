@@ -82,7 +82,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -329,14 +329,15 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     });
   }
   /** Item escolhido no painel do catálogo: serviço entra como item; peça entra dentro do serviço escolhido (ou avulsa se não há serviço) */
-  function addFromCatalog(sg: Suggestion, targetKey: string) {
+  function addFromCatalog(sg: Suggestion, targetKey: string): string | undefined {
     const vp = sg.kind === 'labor' ? vehPrices.get(norm(sg.description)) : undefined;
     const price = vp ? moneyInput(vp.last) : sg.unit_price > 0 ? moneyInput(sg.unit_price) : '';
     if (sg.kind === 'labor') {
-      setRows(rs => [...rs, { key: newKey(), kind: 'labor', description: sg.description, quantity: '1', unit_price: price, unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
-      return;
+      const key = newKey();
+      setRows(rs => [...rs, { key, kind: 'labor', description: sg.description, quantity: '1', unit_price: price, unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
+      return key;
     }
-    const row: Row = { key: newKey(), kind: 'part', description: sg.description, quantity: '1', unit_price: price,
+    const row: Row = { key: newKey(), kind: 'part', description: sg.description, quantity: sg.qty && sg.qty > 0 ? String(sg.qty).replace('.', ',') : '1', unit_price: price,
       unit_cost: sg.cost ? moneyInput(sg.cost) : '', part_id: sg.part_id ?? null, mechanic_id: '', used_in: '', stype: '', comm: '' };
     setRows(rs => {
       const i = targetKey ? rs.findIndex(r => r.key === targetKey) : -1;
@@ -344,6 +345,18 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       let j = i + 1;
       while (j < rs.length && rs[j].kind === 'part') j++;
       return [...rs.slice(0, j), row, ...rs.slice(j)];
+    });
+  }
+  /** Peças do kit do serviço escolhido no catálogo (cadastradas na Tabela de serviços) */
+  async function kitFor(s: Suggestion): Promise<Suggestion[]> {
+    if (!s.fromTable) return [];
+    const esc = s.description.trim().replace(/[%_\\]/g, m => '\\' + m);
+    const { data } = await supabase.from('workshop_service_parts')
+      .select('description, quantity, part_id, position, workshop_services!inner(name)')
+      .eq('workshop_id', workshopId).ilike('workshop_services.name', esc).order('position');
+    return ((data ?? []) as unknown as { description: string; quantity: number; part_id: string | null }[]).map(k => {
+      const cat = k.part_id ? suggestions.find(x => x.part_id === k.part_id) : undefined;
+      return cat ? { ...cat, qty: Number(k.quantity) } : { description: k.description, kind: 'part' as const, unit_price: 0, qty: Number(k.quantity) };
     });
   }
   function update(key: string, patch: Partial<Row>) {
@@ -737,7 +750,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       {catalogOpen && (
         <CatalogPanel suggestions={suggestions} itemCount={blocks.length} total={total}
           services={rows.filter(r => r.kind === 'labor').map(r => ({ key: r.key, name: r.description.trim() }))}
-          onPick={addFromCatalog} onClose={() => setCatalogOpen(false)} />
+          onPick={addFromCatalog} kitFor={kitFor} onClose={() => setCatalogOpen(false)} />
       )}
 
       {quick && (
