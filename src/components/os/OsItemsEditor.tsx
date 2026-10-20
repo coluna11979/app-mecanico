@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
@@ -8,6 +8,7 @@ import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
 import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
+import { commonName, groupBy, loadServiceCharges, norm, type PriceSummary, type ServiceCharge } from '@/lib/servicePrices';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -136,10 +137,12 @@ interface Props {
   saleMode?: boolean;
   /** OS ainda sendo montada (aberta/aprovação/aprovada): ninguém executou nada, então não pergunta "Quem fez" */
   planning?: boolean;
+  /** Veículo da OS: o serviço sugere o preço já cobrado nesse modelo */
+  vehicle?: { make?: string | null; model?: string | null } | null;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, vehicle = null, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -153,6 +156,46 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const [itemRules, setItemRules] = useState<ItemRule[]>([]);
   /** Serviço com o campo de comissão aberto */
   const [commEdit, setCommEdit] = useState<string | null>(null);
+
+  /** Preço já cobrado de cada serviço neste modelo de veículo (outras OS) — chave = nome normalizado */
+  const [vehPrices, setVehPrices] = useState<Map<string, PriceSummary>>(new Map());
+  const vehModel = vehicle?.model?.trim() ?? '';
+  useEffect(() => {
+    if (!vehModel || saleMode || readOnly) { setVehPrices(new Map()); return; }
+    let alive = true;
+    loadServiceCharges(workshopId, { model: vehModel, excludeOs: osId })
+      .then(cs => { if (alive) setVehPrices(new Map(groupBy(cs, c => c.key).map(g => [g.key, g.sum]))); })
+      .catch(() => { /* sem histórico: segue só com a tabela */ });
+    return () => { alive = false; };
+  }, [workshopId, osId, vehModel, saleMode, readOnly]);
+
+  /** Serviços de nome parecido já cobrados: neste modelo e em qualquer carro da oficina (por nome digitado) */
+  type Hint = { name: string; sum: PriceSummary };
+  const [similar, setSimilar] = useState<Record<string, { model: Hint[]; all: Hint[] }>>({});
+  const asked = useRef(new Set<string>());
+  const typedLabor = rows.filter(r => r.kind === 'labor').map(r => r.description.trim()).filter(d => norm(d).length >= 4).join('|');
+  useEffect(() => {
+    if (saleMode || readOnly || !typedLabor) return;
+    const wanted = [...new Set(typedLabor.split('|'))].filter(d => !asked.current.has(norm(d)));
+    if (!wanted.length) return;
+    const t = setTimeout(() => {
+      for (const d of wanted) {
+        const k = norm(d);
+        asked.current.add(k);
+        loadServiceCharges(workshopId, { like: d, excludeOs: osId }).then(cs => {
+          const near = cs.filter((c: ServiceCharge) => c.key.includes(k));
+          const hints = (xs: ServiceCharge[]): Hint[] => groupBy(xs, c => c.key).slice(0, 3)
+            .map(g => ({ name: commonName(g.items, c => c.service), sum: g.sum }));
+          const mk = norm(vehModel);
+          setSimilar(s => ({ ...s, [k]: {
+            model: mk ? hints(near.filter(c => c.key !== k && norm(c.model) === mk)) : [],
+            all: hints(near),
+          } }));
+        }).catch(() => asked.current.delete(k));
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [typedLabor, workshopId, osId, vehModel, saleMode, readOnly]);
 
   // Equipe, para dizer quem fez cada item (comissão)
   useEffect(() => {
@@ -287,7 +330,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   }
   /** Item escolhido no painel do catálogo: serviço entra como item; peça entra dentro do serviço escolhido (ou avulsa se não há serviço) */
   function addFromCatalog(sg: Suggestion, targetKey: string) {
-    const price = sg.unit_price > 0 ? moneyInput(sg.unit_price) : '';
+    const vp = sg.kind === 'labor' ? vehPrices.get(norm(sg.description)) : undefined;
+    const price = vp ? moneyInput(vp.last) : sg.unit_price > 0 ? moneyInput(sg.unit_price) : '';
     if (sg.kind === 'labor') {
       setRows(rs => [...rs, { key: newKey(), kind: 'labor', description: sg.description, quantity: '1', unit_price: price, unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
       return;
@@ -314,6 +358,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           next.kind = s.kind;
           // Serviço da tabela sem preço fixo: o valor é digitado na OS
           if (!r.unit_price && s.unit_price > 0) next.unit_price = moneyInput(s.unit_price);
+          // Serviço já cobrado neste modelo de veículo: o último preço dele vale mais que o da tabela
+          const vp = s.kind === 'labor' && !r.unit_price ? vehPrices.get(norm(s.description)) : undefined;
+          if (vp) next.unit_price = moneyInput(vp.last);
           if (s.part_id && s.part_id !== r.part_id) {
             next.part_id = s.part_id;
             next.unit_price = moneyInput(s.unit_price);
@@ -449,6 +496,44 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                   list={`os-items-sugg-${osId}`} value={r.description}
                   onChange={e => update(r.key, { description: e.target.value })} />
               )}
+              {!readOnly && r.kind === 'labor' && (() => {
+                const vp = vehPrices.get(norm(r.description));
+                const cur = parseMoney(r.unit_price || '0');
+                if (!vp) {
+                  // Nome não bate com nada deste carro: mostra parecidos (neste modelo) ou o que se costuma cobrar nos outros
+                  const sm = similar[norm(r.description)];
+                  const list = sm?.model.length ? sm.model : sm?.all ?? [];
+                  if (!list.length) return null;
+                  const here = !!sm?.model.length;
+                  return (
+                    <div className="text-[11px] text-steel-500 mt-1">
+                      <div>{here ? `🚗 ${vehModel}: serviços parecidos já feitos` : (vehModel ? `Nunca feito neste ${vehModel}. Nos outros carros:` : 'Já cobrado nos carros da oficina:')}</div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {list.map(h => {
+                          const v = here ? h.sum.last : h.sum.median;
+                          return (
+                            <button key={h.name} type="button" onClick={() => update(r.key, { unit_price: moneyInput(v) })}
+                              title={`${h.sum.count}× · de ${fmtBRL(h.sum.min)} a ${fmtBRL(h.sum.max)}${here ? '' : ` · valor mais comum ${fmtBRL(h.sum.median)}`}`}
+                              className="rounded-full border border-steel-200 bg-white px-2.5 py-1 text-[11px] text-steel-700 hover:border-brand-300 hover:text-brand-700 transition">
+                              {h.name} · <strong>{fmtBRL(v)}</strong> <span className="text-steel-400">({h.sum.count}×)</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
+                    <span>🚗 {vehModel}: já cobrado <strong className="text-steel-700">{fmtBRL(vp.last)}</strong>
+                      {vp.count > 1 ? ` (${vp.count}×${vp.min !== vp.max ? `, de ${fmtBRL(vp.min)} a ${fmtBRL(vp.max)}` : ''})` : ''}</span>
+                    {Math.abs(cur - vp.last) > 0.001 && (
+                      <button type="button" className="font-semibold text-brand-700 hover:underline"
+                        onClick={() => update(r.key, { unit_price: moneyInput(vp.last) })}>Usar {fmtBRL(vp.last)}</button>
+                    )}
+                  </div>
+                );
+              })()}
               {!readOnly && r.kind === 'part' && !r.part_id && !r.description.trim() && showCost && (
                 <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
                   <span>Digite para buscar no cadastro</span>
