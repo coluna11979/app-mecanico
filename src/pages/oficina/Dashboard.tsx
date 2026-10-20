@@ -533,9 +533,24 @@ export default function WorkshopDashboard() {
     .filter(m => m.name.toLowerCase().includes(mechSearch.toLowerCase()))
     .sort((a, b) => Number(favorites.has(b.id)) - Number(favorites.has(a.id)));
 
+  /** Contadores de pedidos (linha no celular, cartão 2×2 na coluna lateral do computador) */
+  const counters = (side = false) => (
+    <StatusCounters side={side}
+      searching={active.filter(j => !j.mechanic_id).length}
+      accepted={active.filter(j => j.mechanic_id && !j.arrived_at && j.status !== 'in_progress').length}
+      working={active.filter(j => j.mechanic_id && (j.arrived_at || j.status === 'in_progress')).length}
+      done={shop?.total_jobs ?? 0}
+      onPick={t => document.getElementById(t === 'ativas' ? 'minhas-solicitacoes' : 'historico')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
+  );
+
   return (
     <WorkshopLayout>
       <h1 className="sr-only">Demandas · {shop?.business_name ?? ''}</h1>
+
+      {/* Computador: largura máxima e duas colunas (trabalho à esquerda, pedidos e mecânicos à direita).
+          Celular: uma coluna só, na mesma ordem de antes. */}
+      <div className="max-w-6xl mx-auto lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5 lg:items-start">
+      <div className="min-w-0">
 
       {/* O que se faz aqui, em um botão */}
       <PlatformHero available={mechanics.length} onCall={() => openCreateModal()}
@@ -548,20 +563,13 @@ export default function WorkshopDashboard() {
       {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={() => openCreateModal(true)} />}
 
       {/* Como estão os pedidos (oficina que nunca pediu não vê quatro zeros) */}
-      {!firstTime && (
-        <StatusCounters
-          searching={active.filter(j => !j.mechanic_id).length}
-          accepted={active.filter(j => j.mechanic_id && !j.arrived_at && j.status !== 'in_progress').length}
-          working={active.filter(j => j.mechanic_id && (j.arrived_at || j.status === 'in_progress')).length}
-          done={shop?.total_jobs ?? 0}
-          onPick={t => document.getElementById(t === 'ativas' ? 'minhas-solicitacoes' : 'historico')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
-      )}
+      {!firstTime && <div className="lg:hidden">{counters()}</div>}
 
       {/* Atalhos dos serviços mais pedidos (um toque abre a demanda pronta) */}
       <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact />
 
       {/* Quem está disponível agora: foto, nota, especialidades */}
-      <MechanicCarousel mechanics={mechanics} />
+      <div className="lg:hidden"><MechanicCarousel mechanics={mechanics} /></div>
 
       {/* Números do período (gasto, tempos, ranking) ficam no Painel da Plataforma: esta é a tela de trabalho */}
 
@@ -776,6 +784,14 @@ export default function WorkshopDashboard() {
 
       {/* Histórico — fechado por padrão; a oficina escolhe abrir */}
       <div id="historico" className="scroll-mt-4"><HistorySection history={history} workshopId={currentWorkshop?.id ?? null} /></div>
+      </div>
+
+      {/* Coluna lateral (só no computador) */}
+      <aside className="hidden lg:block space-y-4 sticky top-4">
+        {!firstTime && counters(true)}
+        <MechanicCarousel mechanics={mechanics} list />
+      </aside>
+      </div>
 
       {/* ── Modal nova demanda ── */}
       {modal && (
