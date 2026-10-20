@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
@@ -8,7 +8,7 @@ import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
 import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
-import { commonName, groupBy, loadServiceCharges, norm, type PriceSummary, type ServiceCharge } from '@/lib/servicePrices';
+import { groupBy, loadServiceCharges, norm, type PriceSummary } from '@/lib/servicePrices';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -82,7 +82,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -137,12 +137,14 @@ interface Props {
   saleMode?: boolean;
   /** OS ainda sendo montada (aberta/aprovação/aprovada): ninguém executou nada, então não pergunta "Quem fez" */
   planning?: boolean;
+  /** Avisa a página quando há itens digitados ainda não salvos (o quadro de comissões só enxerga os salvos) */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Veículo da OS: o serviço sugere o preço já cobrado nesse modelo */
   vehicle?: { make?: string | null; model?: string | null } | null;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, vehicle = null, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, vehicle = null, onDirtyChange, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -159,7 +161,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   /** Preço já cobrado de cada serviço neste modelo de veículo (outras OS) — chave = nome normalizado */
   const [vehPrices, setVehPrices] = useState<Map<string, PriceSummary>>(new Map());
-  const vehModel = vehicle?.model?.trim() ?? '';
+  /** Modelo escolhido no painel quando a OS não tem veículo: só para sugerir preço */
+  const [refModel, setRefModel] = useState('');
+  const vehModel = vehicle?.model?.trim() || refModel;
   useEffect(() => {
     if (!vehModel || saleMode || readOnly) { setVehPrices(new Map()); return; }
     let alive = true;
@@ -168,34 +172,6 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       .catch(() => { /* sem histórico: segue só com a tabela */ });
     return () => { alive = false; };
   }, [workshopId, osId, vehModel, saleMode, readOnly]);
-
-  /** Serviços de nome parecido já cobrados: neste modelo e em qualquer carro da oficina (por nome digitado) */
-  type Hint = { name: string; sum: PriceSummary };
-  const [similar, setSimilar] = useState<Record<string, { model: Hint[]; all: Hint[] }>>({});
-  const asked = useRef(new Set<string>());
-  const typedLabor = rows.filter(r => r.kind === 'labor').map(r => r.description.trim()).filter(d => norm(d).length >= 4).join('|');
-  useEffect(() => {
-    if (saleMode || readOnly || !typedLabor) return;
-    const wanted = [...new Set(typedLabor.split('|'))].filter(d => !asked.current.has(norm(d)));
-    if (!wanted.length) return;
-    const t = setTimeout(() => {
-      for (const d of wanted) {
-        const k = norm(d);
-        asked.current.add(k);
-        loadServiceCharges(workshopId, { like: d, excludeOs: osId }).then(cs => {
-          const near = cs.filter((c: ServiceCharge) => c.key.includes(k));
-          const hints = (xs: ServiceCharge[]): Hint[] => groupBy(xs, c => c.key).slice(0, 3)
-            .map(g => ({ name: commonName(g.items, c => c.service), sum: g.sum }));
-          const mk = norm(vehModel);
-          setSimilar(s => ({ ...s, [k]: {
-            model: mk ? hints(near.filter(c => c.key !== k && norm(c.model) === mk)) : [],
-            all: hints(near),
-          } }));
-        }).catch(() => asked.current.delete(k));
-      }
-    }, 450);
-    return () => clearTimeout(t);
-  }, [typedLabor, workshopId, osId, vehModel, saleMode, readOnly]);
 
   // Equipe, para dizer quem fez cada item (comissão)
   useEffect(() => {
@@ -271,7 +247,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       const [cat, svc, hist, margin] = await Promise.all([
         supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price, stock_qty, unit')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
-        supabase.from('workshop_services').select('name, price')
+        supabase.from('workshop_services').select('name, price, category')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
           .select('description, kind, unit_price, created_at')
@@ -287,9 +263,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit });
       }
       // Tabela de serviços da oficina: preço oficial da mão de obra
-      for (const s of (svc.data ?? []) as { name: string; price: number }[]) {
+      for (const s of (svc.data ?? []) as { name: string; price: number; category: string | null }[]) {
         const k = s.name.trim().toLowerCase();
-        if (!seen.has(k)) seen.set(k, { description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true });
+        if (!seen.has(k)) seen.set(k, { description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true, category: s.category ?? undefined });
       }
       for (const d of (hist.data ?? []) as Suggestion[]) {
         const k = d.description.trim().toLowerCase();
@@ -313,6 +289,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const original = useMemo(() => JSON.stringify(initRows(items)), [items]);
   const dirty = JSON.stringify(rows) !== original
     || Math.abs(disc - (discount ?? 0)) > 0.001;
+  useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   function addRow(kind: OsItemKind | 'mao_de_obra') {
     setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
@@ -329,14 +306,15 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     });
   }
   /** Item escolhido no painel do catálogo: serviço entra como item; peça entra dentro do serviço escolhido (ou avulsa se não há serviço) */
-  function addFromCatalog(sg: Suggestion, targetKey: string) {
+  function addFromCatalog(sg: Suggestion, targetKey: string): string | undefined {
     const vp = sg.kind === 'labor' ? vehPrices.get(norm(sg.description)) : undefined;
     const price = vp ? moneyInput(vp.last) : sg.unit_price > 0 ? moneyInput(sg.unit_price) : '';
     if (sg.kind === 'labor') {
-      setRows(rs => [...rs, { key: newKey(), kind: 'labor', description: sg.description, quantity: '1', unit_price: price, unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
-      return;
+      const key = newKey();
+      setRows(rs => [...rs, { key, kind: 'labor', description: sg.description, quantity: '1', unit_price: price, unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
+      return key;
     }
-    const row: Row = { key: newKey(), kind: 'part', description: sg.description, quantity: '1', unit_price: price,
+    const row: Row = { key: newKey(), kind: 'part', description: sg.description, quantity: sg.qty && sg.qty > 0 ? String(sg.qty).replace('.', ',') : '1', unit_price: price,
       unit_cost: sg.cost ? moneyInput(sg.cost) : '', part_id: sg.part_id ?? null, mechanic_id: '', used_in: '', stype: '', comm: '' };
     setRows(rs => {
       const i = targetKey ? rs.findIndex(r => r.key === targetKey) : -1;
@@ -344,6 +322,31 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       let j = i + 1;
       while (j < rs.length && rs[j].kind === 'part') j++;
       return [...rs.slice(0, j), row, ...rs.slice(j)];
+    });
+  }
+  /** Modelos de veículo já atendidos pela oficina (para escolher um quando a OS abriu sem veículo) */
+  async function loadModels() {
+    const { data } = await supabase.from('vehicles').select('model').eq('workshop_id', workshopId).not('model', 'is', null).limit(5000);
+    const m = new Map<string, { names: Map<string, number>; n: number }>();
+    for (const v of (data ?? []) as { model: string }[]) {
+      const label = v.model.trim(), k = norm(label);
+      if (!k) continue;
+      const e = m.get(k) ?? { names: new Map(), n: 0 };
+      e.n++; e.names.set(label, (e.names.get(label) ?? 0) + 1);
+      m.set(k, e);
+    }
+    return [...m.values()].map(e => ({ label: [...e.names.entries()].sort((a, b) => b[1] - a[1])[0][0], n: e.n })).sort((a, b) => b.n - a.n);
+  }
+  /** Peças do kit do serviço escolhido no catálogo (cadastradas na Tabela de serviços) */
+  async function kitFor(s: Suggestion): Promise<Suggestion[]> {
+    if (!s.fromTable) return [];
+    const esc = s.description.trim().replace(/[%_\\]/g, m => '\\' + m);
+    const { data } = await supabase.from('workshop_service_parts')
+      .select('description, quantity, part_id, position, workshop_services!inner(name)')
+      .eq('workshop_id', workshopId).ilike('workshop_services.name', esc).order('position');
+    return ((data ?? []) as unknown as { description: string; quantity: number; part_id: string | null }[]).map(k => {
+      const cat = k.part_id ? suggestions.find(x => x.part_id === k.part_id) : undefined;
+      return cat ? { ...cat, qty: Number(k.quantity) } : { description: k.description, kind: 'part' as const, unit_price: 0, qty: Number(k.quantity) };
     });
   }
   function update(key: string, patch: Partial<Row>) {
@@ -498,39 +501,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               )}
               {!readOnly && r.kind === 'labor' && (() => {
                 const vp = vehPrices.get(norm(r.description));
-                const cur = parseMoney(r.unit_price || '0');
-                if (!vp) {
-                  // Nome não bate com nada deste carro: mostra parecidos (neste modelo) ou o que se costuma cobrar nos outros
-                  const sm = similar[norm(r.description)];
-                  const list = sm?.model.length ? sm.model : sm?.all ?? [];
-                  if (!list.length) return null;
-                  const here = !!sm?.model.length;
-                  return (
-                    <div className="text-[11px] text-steel-500 mt-1">
-                      <div>{here ? `🚗 ${vehModel}: serviços parecidos já feitos` : (vehModel ? `Nunca feito neste ${vehModel}. Nos outros carros:` : 'Já cobrado nos carros da oficina:')}</div>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        {list.map(h => {
-                          const v = here ? h.sum.last : h.sum.median;
-                          return (
-                            <button key={h.name} type="button" onClick={() => update(r.key, { unit_price: moneyInput(v) })}
-                              title={`${h.sum.count}× · de ${fmtBRL(h.sum.min)} a ${fmtBRL(h.sum.max)}${here ? '' : ` · valor mais comum ${fmtBRL(h.sum.median)}`}`}
-                              className="rounded-full border border-steel-200 bg-white px-2.5 py-1 text-[11px] text-steel-700 hover:border-brand-300 hover:text-brand-700 transition">
-                              {h.name} · <strong>{fmtBRL(v)}</strong> <span className="text-steel-400">({h.sum.count}×)</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                }
+                if (!vp || Math.abs(parseMoney(r.unit_price || '0') - vp.last) <= 0.001) return null;
                 return (
-                  <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap items-center gap-x-2">
-                    <span>🚗 {vehModel}: já cobrado <strong className="text-steel-700">{fmtBRL(vp.last)}</strong>
-                      {vp.count > 1 ? ` (${vp.count}×${vp.min !== vp.max ? `, de ${fmtBRL(vp.min)} a ${fmtBRL(vp.max)}` : ''})` : ''}</span>
-                    {Math.abs(cur - vp.last) > 0.001 && (
-                      <button type="button" className="font-semibold text-brand-700 hover:underline"
-                        onClick={() => update(r.key, { unit_price: moneyInput(vp.last) })}>Usar {fmtBRL(vp.last)}</button>
-                    )}
+                  <div className="text-[11px] text-steel-500 mt-1 truncate" title={`${vp.count}× neste ${vehModel} · de ${fmtBRL(vp.min)} a ${fmtBRL(vp.max)}`}>
+                    🚗 {vehModel}: {fmtBRL(vp.last)}{' '}
+                    <button type="button" className="font-semibold text-brand-700 hover:underline"
+                      onClick={() => update(r.key, { unit_price: moneyInput(vp.last) })}>usar</button>
                   </div>
                 );
               })()}
@@ -674,7 +650,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             )}
             <button type="button" onClick={() => setCatalogOpen(true)}
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
-              🔍 Buscar no catálogo
+              🧭 Escolher serviço e peças
             </button>
             {showCost && (
               <button type="button" onClick={() => setQuick({ key: null, name: '', qty: 1 })}
@@ -737,7 +713,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       {catalogOpen && (
         <CatalogPanel suggestions={suggestions} itemCount={blocks.length} total={total}
           services={rows.filter(r => r.kind === 'labor').map(r => ({ key: r.key, name: r.description.trim() }))}
-          onPick={addFromCatalog} onClose={() => setCatalogOpen(false)} />
+          onPick={addFromCatalog} kitFor={kitFor}
+          vehicleModel={vehModel} osHasVehicle={!!vehicle?.model?.trim()} onVehicle={setRefModel} loadModels={loadModels}
+          priceFor={sg => { const vp = vehPrices.get(norm(sg.description)); return vp ? { price: vp.last, count: vp.count } : null; }}
+          onClose={() => setCatalogOpen(false)} />
       )}
 
       {quick && (
