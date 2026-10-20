@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { jobSummary } from '@/lib/jobDescription';
+import { raisedFrom } from '@/lib/jobRaise';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
@@ -176,7 +177,8 @@ export default function MechanicDashboard() {
         return a.km - b.km;
       });
     }
-    return withDist;
+    // Valor aumentou: sobe para o topo
+    return withDist.sort((a, b) => Number(raisedFrom(b.job) != null) - Number(raisedFrom(a.job) != null));
   }, [openJobs, userPos]);
 
   async function declineJob(job: Job) {
@@ -309,6 +311,7 @@ export default function MechanicDashboard() {
                     <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs font-bold px-2 py-0.5 rounded-full">
                       <IconStar className="w-3 h-3" filled /> {ws?.business_name ?? 'Uma oficina'} escolheu você
                     </div>
+                    <div><RaisedBadge j={j} /></div>
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-white leading-snug line-clamp-2">{capitalize(j.title)}</div>
@@ -450,11 +453,14 @@ export default function MechanicDashboard() {
                 return (
                   <article key={j.id} className="rounded-2xl bg-steel-800 border border-steel-700 overflow-hidden">
                     <Link to={`/mecanico/job/${j.id}`} className="block p-4 active:bg-steel-700/60 transition">
-                      {j.audience === 'favorites' && (
-                        <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs font-bold px-2 py-0.5 rounded-full">
-                          <IconStar className="w-3 h-3" filled /> Convite preferido
-                        </div>
-                      )}
+                      <div className="flex flex-wrap gap-1.5">
+                        {j.audience === 'favorites' && (
+                          <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs font-bold px-2 py-0.5 rounded-full">
+                            <IconStar className="w-3 h-3" filled /> Convite preferido
+                          </div>
+                        )}
+                        <RaisedBadge j={j} />
+                      </div>
                       <div className="flex justify-between items-start gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-white leading-snug line-clamp-2">{capitalize(j.title)}</div>
@@ -666,4 +672,15 @@ function capitalize(s: string | null | undefined) {
 /** "2h previstas" — ou "Preço fechado" na demanda pelo serviço sem tempo informado */
 function previstas(j: Parameters<typeof hoursLabel>[0]) {
   return hoursLabel(j) ?? 'Preço fechado';
+}
+
+/** A oficina aumentou o valor (24 h): mostra quanto era, no líquido que o mecânico recebe */
+function RaisedBadge({ j }: { j: Job }) {
+  const from = raisedFrom(j);
+  if (from == null) return null;
+  return (
+    <div className="mb-2 inline-flex items-center gap-1 bg-signal-500/15 text-signal-400 text-xs font-bold px-2 py-0.5 rounded-full">
+      💰 Valor aumentou · era R$ {formatMoney(mechanicNet(from))}
+    </div>
+  );
 }

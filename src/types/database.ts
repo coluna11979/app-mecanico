@@ -196,6 +196,9 @@ export interface Job {
   payment_method?: 'card' | 'pix' | null;
   paid_amount?: number | null;
   card_fee_amount?: number | null;
+  /** Valor aumentou (0130): quando subiu e o total bruto de antes */
+  raised_at?: string | null;
+  raised_from?: number | null;
   created_at: string;
 }
 
