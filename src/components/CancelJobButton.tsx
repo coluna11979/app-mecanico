@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import type { Job } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
 import { toast } from '@/components/ui/Toast';
+import { splitJobVehicle } from '@/lib/jobDescription';
 import { ACCEPT_TOLERANCE_MS, acceptedAt, arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 
 interface Props {
@@ -148,14 +149,7 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
 
   /** Demanda direta vira um empilhado avulso: mesmo serviço, carro e valor, sem digitar de novo */
   async function saveToStack() {
-    let description = (job.description ?? '').trim();
-    const v = description.match(/\n*Ve[ií]culo:\s*(.+)$/i);
-    const vehicle = v ? v[1].trim() : null;
-    if (v) description = description.slice(0, v.index).trim();
-    let title = job.title.trim();
-    const model = vehicle?.split('·')[0].trim();
-    if (model && title.toLowerCase().endsWith(` — ${model.toLowerCase()}`)) title = title.slice(0, -(model.length + 3)).trim();
-    if (description === title) description = '';
+    const { title, description, vehicle } = splitJobVehicle(job.title, job.description);
     const { data: ch } = await supabase.from('job_customer_charges').select('amount').eq('job_id', job.id).maybeSingle();
     const { error } = await supabase.from('stacked_services').insert({
       workshop_id: job.workshop_id,

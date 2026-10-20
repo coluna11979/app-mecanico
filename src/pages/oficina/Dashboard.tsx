@@ -17,6 +17,7 @@ import type { Job } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
+import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
 import { MechanicCarousel, PlatformHero, StatusCounters } from '@/components/marketplace/PlatformHome';
 import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
@@ -328,9 +329,12 @@ export default function WorkshopDashboard() {
   function openEditModal(j: Job) {
     setEditingId(j.id);
     setDraftRestored(false);
+    const t = splitJobVehicle(j.title, j.description);
     setForm({
-      title: j.title,
-      description: j.description,
+      ...EMPTY,
+      title: t.title,
+      description: t.description,
+      vehicle: t.vehicle ?? '',
       ...priceForm(j),
       scheduled_at: j.scheduled_at ? new Date(j.scheduled_at).toISOString().slice(0, 16) : '',
     });
@@ -339,12 +343,14 @@ export default function WorkshopDashboard() {
   }
 
   /**
-   * Histórico: abre uma demanda nova igual a uma antiga (mesmo serviço e valor, que a oficina já usou).
-   * Com `sameMechanic`, vira convite direto para quem fez da outra vez.
+   * Histórico: abre uma demanda nova com o mesmo serviço e valor de uma antiga. O carro fica em branco
+   * (repetir é quase sempre o mesmo serviço em outro carro). Com `sameMechanic`, vira convite direto
+   * para quem fez da outra vez.
    */
   function openRepeat(j: Job, sameMechanic = false) {
     if (hasPendingFees) return;
-    const next: NewJob = { ...EMPTY, title: j.title, description: j.description ?? '', ...priceForm(j) };
+    const t = splitJobVehicle(j.title, j.description);
+    const next: NewJob = { ...EMPTY, title: t.title, description: t.description, ...priceForm(j) };
     setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
     setForm(next); persistDraft(next);
     const mech = sameMechanic ? j.mechanic_id ?? '' : '';
@@ -394,9 +400,11 @@ export default function WorkshopDashboard() {
 
     if (editingId) {
       // Edição: só campos editáveis. Status, workshop_id e mechanic_id ficam intocados.
+      // O carro volta a ir junto no título e na descrição, como na criação
+      const text = withVehicle(form);
       const updatePayload: Record<string, unknown> = {
-        title:          form.title.trim(),
-        description:    form.description.trim() || form.title.trim(),
+        title:          text.title,
+        description:    text.description,
         price_per_hour: pph,
         max_hours:      mh,
         price:          pph * mh,
