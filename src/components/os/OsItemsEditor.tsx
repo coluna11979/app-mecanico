@@ -137,12 +137,14 @@ interface Props {
   saleMode?: boolean;
   /** OS ainda sendo montada (aberta/aprovação/aprovada): ninguém executou nada, então não pergunta "Quem fez" */
   planning?: boolean;
+  /** Avisa a página quando há itens digitados ainda não salvos (o quadro de comissões só enxerga os salvos) */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Veículo da OS: o serviço sugere o preço já cobrado nesse modelo */
   vehicle?: { make?: string | null; model?: string | null } | null;
   onSaved: () => void;
 }
 
-export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, vehicle = null, onSaved }: Props) {
+export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, vehicle = null, onDirtyChange, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
@@ -315,6 +317,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const original = useMemo(() => JSON.stringify(initRows(items)), [items]);
   const dirty = JSON.stringify(rows) !== original
     || Math.abs(disc - (discount ?? 0)) > 0.001;
+  useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   function addRow(kind: OsItemKind | 'mao_de_obra') {
     setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
