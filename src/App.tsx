@@ -55,6 +55,7 @@ import WorkshopServicos from './pages/oficina/Servicos';
 import WorkshopAgenda from './pages/oficina/Agenda';
 import WorkshopComercial from './pages/oficina/Comercial';
 import WorkshopInbox from './pages/oficina/Inbox';
+import WorkshopInboxDashboard from './pages/oficina/InboxDashboard';
 import Agentes from './pages/oficina/Agentes';
 import Avaliacoes from './pages/oficina/Avaliacoes';
 import WorkshopFornecedores from './pages/oficina/Fornecedores';
@@ -72,6 +73,7 @@ import WorkshopClienteFicha from './pages/oficina/ClienteFicha';
 import AdminVip from './pages/admin/Vip';
 const WorkshopOsPrint = lazy(() => import('./pages/oficina/OsPrint'));
 const WorkshopImportar = lazy(() => import('./pages/oficina/ImportarOrcamentos'));
+const WorkshopPlataformaPainel = lazy(() => import('./pages/oficina/PlataformaPainel'));
 
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminApprovals from './pages/admin/Approvals';
@@ -93,6 +95,9 @@ import AdminAvisos from './pages/admin/Avisos';
 import AdminEmbaixadores from './pages/admin/Embaixadores';
 import AdminModulos from './pages/admin/Modulos';
 import AdminAgentes from './pages/admin/Agentes';
+import AdminMarketing from './pages/admin/Marketing';
+import CampaignLink from './pages/public/CampaignLink';
+import Unsubscribe from './pages/public/Unsubscribe';
 
 function LazyFallback() {
   return (
@@ -124,6 +129,8 @@ export default function App() {
       <Route path="/recuperar-senha"    element={<ForgotPassword />} />
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
       <Route path="/checkup/:token"     element={<CheckupReport />} />
+      <Route path="/c/:slug"            element={<CampaignLink />} />
+      <Route path="/descadastrar/:token" element={<Unsubscribe />} />
       <Route path="/m/checkup/:token"   element={<MechanicCheckup />} />
       {/* Pré-visualização do check-up com dados fictícios — só em dev */}
       {import.meta.env.DEV && <Route path="/demo/checkup" element={<WorkshopCheckups />} />}
@@ -142,6 +149,7 @@ export default function App() {
 
       {/* Oficina */}
       <Route path="/oficina/dashboard" element={<ProtectedRoute allow={['workshop']}><WorkshopDashboard /></ProtectedRoute>} />
+      <Route path="/oficina/plataforma/painel" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopPlataformaPainel /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/inicio" element={<ProtectedRoute allow={['workshop']}><WorkshopInicio /></ProtectedRoute>} />
       <Route path="/oficina/resultado" element={<ProtectedRoute allow={['workshop']}><WorkshopResultado /></ProtectedRoute>} />
       <Route path="/oficina/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopPainel /></ProtectedRoute>} />
@@ -156,6 +164,7 @@ export default function App() {
       <Route path="/oficina/agenda" element={<ProtectedRoute allow={['workshop']}><WorkshopAgenda /></ProtectedRoute>} />
       <Route path="/oficina/comercial" element={<ProtectedRoute allow={['workshop']}><WorkshopComercial /></ProtectedRoute>} />
       <Route path="/oficina/inbox" element={<ProtectedRoute allow={['workshop']}><WorkshopInbox /></ProtectedRoute>} />
+      <Route path="/oficina/inbox/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopInboxDashboard /></ProtectedRoute>} />
       <Route path="/oficina/agentes" element={<ProtectedRoute allow={['workshop']}><Agentes /></ProtectedRoute>} />
       <Route path="/oficina/avaliacoes" element={<ProtectedRoute allow={['workshop']}><Avaliacoes /></ProtectedRoute>} />
       <Route path="/oficina/fornecedores" element={<ProtectedRoute allow={['workshop']}><WorkshopFornecedores /></ProtectedRoute>} />
@@ -202,6 +211,7 @@ export default function App() {
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />
       <Route path="/admin/modulos" element={<ProtectedRoute allow={['admin']}><AdminModulos /></ProtectedRoute>} />
       <Route path="/admin/agentes" element={<ProtectedRoute allow={['admin']}><AdminAgentes /></ProtectedRoute>} />
+      <Route path="/admin/marketing" element={<ProtectedRoute allow={['admin']}><AdminMarketing /></ProtectedRoute>} />
       <Route path="/admin/usuario/:id"   element={<ProtectedRoute allow={['admin']}><AdminUserDetail /></ProtectedRoute>} />
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />

@@ -33,7 +33,7 @@ export const MODULES: Record<ModuleKey, {
   compras:      { label: 'Compras e fornecedores', icon: '🧾', desc: 'Notas de compra e fornecedores',            routes: ['/oficina/compras', '/oficina/fornecedores'] },
   equipe:       { label: 'Equipe e desempenho', icon: '👷', desc: 'Colaboradores, desempenho e comissões',        routes: ['/oficina/equipe', '/oficina/desempenho'] },
   fechamentos:  { label: 'Fechamentos',        icon: '🧮', desc: 'Fechar comissões e folha',                      routes: ['/oficina/comissoes', '/oficina/folha'] },
-  plataforma:   { label: 'Plataforma (mecânicos)', icon: '⚡', desc: 'Demandas, buscar mecânicos, mensagens, rastreio', routes: ['/oficina/dashboard', '/oficina/buscar', '/oficina/mensagens', '/oficina/job'] },
+  plataforma:   { label: 'Plataforma (mecânicos)', icon: '⚡', desc: 'Demandas, painel, buscar mecânicos, mensagens, rastreio', routes: ['/oficina/dashboard', '/oficina/plataforma', '/oficina/buscar', '/oficina/mensagens', '/oficina/job'] },
   servicos:     { label: 'Tabela de serviços', icon: '🛠️', desc: 'Preços e serviços padrão',                       routes: ['/oficina/servicos'] },
   acessos:      { label: 'Acessos e modo balcão', icon: '🔐', desc: 'PIN dos colaboradores e funções',            routes: ['/oficina/acessos'] },
   importar:     { label: 'Importar notas antigas', icon: '📷', desc: 'Importar notas/orçamentos por foto',        routes: ['/oficina/importar'] },
@@ -55,7 +55,7 @@ export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
 
 /** Módulos opcionais: nascem desligados e o superadmin liga só para as oficinas escolhidas
  *  (ficam em workshop_modules.enabled_modules; o resto continua "ligado até desligar"). */
-export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox', 'avaliacoes', 'agentes', 'site'];
+export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox', 'avaliacoes', 'agentes', 'site', 'vip'];
 export const isOptIn = (k: string) => (OPT_IN_MODULES as readonly string[]).includes(k);
 
 
@@ -63,7 +63,7 @@ export const isOptIn = (k: string) => (OPT_IN_MODULES as readonly string[]).incl
  *  (Caixa recebe OS, comissão sai da OS, estoque baixa peça na OS…). Os opcionais ficam fora: ligam um a um. */
 export const STAGES: { label: string; desc: string; keys: ModuleKey[] }[] = [
   { label: 'Só mecânicos',    desc: 'Contratar mecânicos da plataforma',               keys: ['plataforma'] },
-  { label: 'Oficina básica',  desc: 'OS, agenda, clientes e tabela de serviços',       keys: ['clientes', 'servicos', 'os', 'agenda', 'vip'] },
+  { label: 'Oficina básica',  desc: 'OS, agenda, clientes e tabela de serviços',       keys: ['clientes', 'servicos', 'os', 'agenda'] },
   { label: 'Vendas',          desc: 'Check-up e mesa comercial (orçamento pelo link)', keys: ['checkup', 'comercial'] },
   { label: 'Financeiro',      desc: 'Caixa, contas a pagar e painel de vendas',        keys: ['caixa', 'contas_pagar', 'financeiro', 'painel'] },
   { label: 'Estoque',         desc: 'Peças, compras, fornecedores e notas antigas',    keys: ['pecas', 'compras', 'importar'] },
@@ -75,7 +75,8 @@ export const DEPENDS_ON: Partial<Record<ModuleKey, ModuleKey[]>> = {
   os:          ['clientes'],
   agenda:      ['os'],
   checkup:     ['os'],
-  comercial:   ['os'],
+  // Comercial também recebe os interessados do site e do WhatsApp (não depende de OS)
+  comercial:   ['clientes'],
   caixa:       ['os'],
   financeiro:  ['caixa'],
   painel:      ['caixa'],
@@ -88,8 +89,25 @@ export const DEPENDS_ON: Partial<Record<ModuleKey, ModuleKey[]>> = {
   inbox:       ['clientes', 'comercial'],
   avaliacoes:  ['os'],
   site:        ['comercial'],
-  agentes:     ['caixa'],
+  // Recepção (responde o WhatsApp) precisa do Inbox; o "sócio" só tem números com o Caixa
+  agentes:     ['inbox'],
 };
+
+/**
+ * Pacotes extras por cima da trilha (um clique no superadmin). Ligar soma os módulos à oficina,
+ * desligar tira — o resto da configuração fica como estava.
+ * Atendimento: o 1º degrau pago depois do "Só mecânicos" — WhatsApp da oficina + quem é o cliente
+ * (Clientes) + onde cai o interessado (Comercial) + a Recepção (IA que responde no WhatsApp).
+ */
+export const ADDONS: { key: string; label: string; icon: string; desc: string; keys: ModuleKey[] }[] = [
+  { key: 'atendimento', label: 'Atendimento', icon: '💬',
+    desc: 'WhatsApp da oficina + Clientes + Comercial + Recepção (IA que responde no WhatsApp)',
+    keys: ['inbox', 'clientes', 'comercial', 'agentes'] },
+];
+
+/** O pacote está todo ligado? (opcional só conta se foi ligado) */
+export const addonOn = (keys: readonly ModuleKey[], off: readonly string[], on: readonly string[]) =>
+  keys.every(k => !off.includes(k) && (!isOptIn(k) || on.includes(k)));
 
 /** Módulos desligados para a oficina ficar exatamente na etapa `n` (0 = primeira) */
 export const stageOff = (n: number): ModuleKey[] => {
@@ -162,6 +180,7 @@ export const FEATURES: Partial<Record<ModuleKey, Feature[]>> = {
   ],
   plataforma: [
     { key: 'plataforma.demandas',  label: 'Demandas',         routes: ['/oficina/dashboard'] },
+    { key: 'plataforma.painel',    label: 'Painel da plataforma', routes: ['/oficina/plataforma/painel'] },
     { key: 'plataforma.buscar',    label: 'Buscar mecânicos', routes: ['/oficina/buscar'] },
     { key: 'plataforma.mensagens', label: 'Mensagens',        routes: ['/oficina/mensagens'] },
     { key: 'plataforma.rastreio',  label: 'Rastreio do serviço', routes: ['/oficina/job'] },

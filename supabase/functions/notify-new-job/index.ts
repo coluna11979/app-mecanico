@@ -52,14 +52,14 @@ Deno.serve(async (req) => {
 
   const { data: job } = await supabase
     .from('jobs')
-    .select('id, title, status, audience, mechanic_id, workshop_id, price, price_per_hour, max_hours, scheduled_at, workshop:workshops(business_name, lat, lng, city)')
+    .select('id, title, status, audience, mechanic_id, invited_mechanic_id, workshop_id, price, price_per_hour, max_hours, scheduled_at, workshop:workshops(business_name, lat, lng, city)')
     .eq('id', job_id)
     .maybeSingle();
   if (!job) return Response.json({ sent: 0, reason: 'job not found' });
 
-  const isInvite = kind === 'invite';
-  // A demanda pode ter sido aceita entre o insert e esta chamada
-  if (!isInvite && job.status !== 'open') return Response.json({ sent: 0, reason: 'not open' });
+  const isInvite = kind === 'invite' || job.audience === 'invite';
+  // A demanda pode ter sido aceita (ou o convite recusado) entre o insert e esta chamada
+  if (job.status !== 'open') return Response.json({ sent: 0, reason: 'not open' });
 
   // ── Destinatários ──
   type Mech = { id: string; profile_id: string; current_lat: number | null; current_lng: number | null; profile: { status: string } | null };
@@ -67,8 +67,10 @@ Deno.serve(async (req) => {
   const cols = 'id, profile_id, current_lat, current_lng, profile:profiles!inner(status)';
 
   if (isInvite) {
-    if (!job.mechanic_id) return Response.json({ sent: 0, reason: 'no mechanic' });
-    const { data } = await supabase.from('mechanics').select(cols).eq('id', job.mechanic_id);
+    // Convite: o convidado ainda não é mechanic_id (só vira no aceite)
+    const target = job.invited_mechanic_id ?? job.mechanic_id;
+    if (!target) return Response.json({ sent: 0, reason: 'no mechanic' });
+    const { data } = await supabase.from('mechanics').select(cols).eq('id', target);
     mechs = (data ?? []) as unknown as Mech[];
   } else if (job.audience === 'favorites') {
     const { data: favs } = await supabase

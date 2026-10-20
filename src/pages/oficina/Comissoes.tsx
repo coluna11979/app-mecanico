@@ -14,6 +14,7 @@ import {
 import { Restricted } from './Fornecedores';
 import ItemRulesCard from '@/components/team/ItemRulesCard';
 import TeamTabs from '@/components/team/TeamTabs';
+import CommissionDaily from '@/components/team/CommissionDaily';
 
 export default function Comissoes() {
   const { currentWorkshop } = useAuth();
@@ -27,6 +28,8 @@ export default function Comissoes() {
     const m = /^(\d{4}-\d{2})-([12])$/.exec(params.get('quinzena') ?? '');
     return m ? { competence: m[1], half: Number(m[2]) as Half } : currentHalf();
   })();
+  /** Fechamento por quinzena (padrão) ou consulta do dia a dia */
+  const [view, setView] = useState<'quinzena' | 'dia'>(() => (params.get('visao') === 'dia' ? 'dia' : 'quinzena'));
   const [competence, setCompetence] = useState(start.competence);
   const [half, setHalf] = useState<Half>(start.half);
   const [due, setDue] = useState(payDate(start.competence, start.half));
@@ -144,6 +147,33 @@ export default function Comissoes() {
 
   if (!allowed) return <Restricted />;
 
+  const viewSwitch = (
+    <div className="inline-flex rounded-xl border border-steel-200 bg-white p-0.5">
+      {([['quinzena', 'Por quinzena'], ['dia', 'Por dia']] as const).map(([k, l]) => (
+        <button key={k} onClick={() => setView(k)}
+          className={`px-4 py-1.5 rounded-lg text-sm font-semibold ${view === k ? 'bg-steel-900 text-white' : 'text-steel-600 hover:bg-steel-50'}`}>{l}</button>
+      ))}
+    </div>
+  );
+
+  if (view === 'dia') {
+    return (
+      <WorkshopLayout>
+        <div className="max-w-5xl mx-auto space-y-5">
+          <div><TeamTabs /></div>
+          <div className="flex flex-wrap items-end justify-between gap-3 !mt-0">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">🏅 Comissões</h1>
+              <p className="text-sm text-steel-500 mt-1">Quanto cada um ganhou em cada dia, e de quais OS.</p>
+            </div>
+            {viewSwitch}
+          </div>
+          {wid && <CommissionDaily wid={wid} />}
+        </div>
+      </WorkshopLayout>
+    );
+  }
+
   return (
     <WorkshopLayout>
       <div className="max-w-5xl mx-auto space-y-5">
@@ -154,6 +184,7 @@ export default function Comissoes() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">🏅 Comissões</h1>
             <p className="text-sm text-steel-500 mt-1">Quinzenal: OS concluídas do dia 1 ao 15 pagas no dia 15; do 16 ao fim do mês, no dia 30.</p>
+            <div className="mt-3">{viewSwitch}</div>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div>

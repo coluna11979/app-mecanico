@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import NextpayPayment from '@/components/payment/NextpayPayment';
+import { CustomerChargeCard } from '@/components/marketplace/CustomerCharge';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -714,6 +715,11 @@ export default function WorkshopTracking() {
                       {confirming ? '…' : '✅ Confirmar conclusão'}
                     </button>
                   </div>
+                )}
+
+                {/* Quanto a oficina cobrou do cliente (só ela vê) — demanda sem OS; com OS o valor sai da própria OS */}
+                {job?.status === 'completed' && job.workshop_confirmed_at && !job.service_order_id && (
+                  <CustomerChargeCard workshopId={job.workshop_id} jobId={job.id} paid={Number(job.price)} userId={user?.id} />
                 )}
 
                 {/* Step 2 — Avaliação opcional (após confirmação, sem pressa) */}

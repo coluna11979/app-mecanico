@@ -52,7 +52,7 @@ export default function AdminRepasses() {
         price_per_hour,
         price,
         stripe_payment_intent_id,
-        mechanic:mechanics!inner(
+        mechanic:mechanics!jobs_mechanic_id_fkey!inner(
           pix_key,
           profile:profiles!inner(full_name, phone)
         ),

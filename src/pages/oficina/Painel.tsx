@@ -8,7 +8,8 @@ import {
   approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf,
   type PanelItem, type PanelOs,
 } from '@/lib/workshopMetrics';
-import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/serviceCatalog';
+import { partsSharePct, refMinutesOf, revenueByService, servicesExecuted } from '@/lib/serviceCatalog';
+import { fmtHours } from '@/lib/teamCost';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
 import { fetchAll } from '@/lib/fetchAll';
@@ -16,7 +17,7 @@ import PeriodPicker, { PREV_LABEL, addDays, startOfDay, usePeriod } from '@/comp
 
 /**
  * Painel de vendas: tudo que é venda (faturamento, ticket, orçamentos, mais vendidos, clientes).
- * Produtividade e comissões ficam em Equipe → Desempenho; mecânicos da plataforma em Demandas.
+ * Produtividade e comissões ficam em Equipe → Desempenho; mecânicos da plataforma no Painel da Plataforma.
  */
 export default function Painel() {
   const { currentWorkshop } = useAuth();
@@ -247,7 +248,7 @@ export default function Painel() {
             {/* Onde foram parar as outras seções */}
             <p className="text-[11px] text-steel-400">
               Desempenho e comissões da equipe estão em <Link to="/oficina/desempenho" className="text-brand-600 hover:underline">Equipe → Desempenho</Link> e <Link to="/oficina/comissoes" className="text-brand-600 hover:underline">Comissões</Link>.
-              O resumo dos mecânicos da plataforma está em <Link to="/oficina/dashboard" className="text-brand-600 hover:underline">Demandas</Link>.
+              O resumo dos mecânicos da plataforma está no <Link to="/oficina/plataforma/painel" className="text-brand-600 hover:underline">Painel da Plataforma</Link>.
             </p>
           </>
         )}
@@ -320,6 +321,7 @@ function ServiceRanking({ rows }: { rows: { name: string; orders: number; revenu
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
                   <strong className="text-steel-700 tabular-nums">{fmtBRL(t.revenue)}</strong>
+                  {refMinutesOf(t.name) != null && <span className="text-steel-400 whitespace-nowrap" title="Tempo de referência de mercado (estimativa), não é o tempo medido da equipe">⏱ ref. {fmtHours(refMinutesOf(t.name)!)}</span>}
                   {t.parts > 0 && t.labor > 0 && (
                     <>
                       <span className="text-steel-400 whitespace-nowrap">peças {fmtBRL(t.parts)}</span>

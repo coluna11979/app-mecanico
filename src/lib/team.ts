@@ -235,3 +235,34 @@ export function dayState(schedule: string | null | undefined, absent: boolean, n
   const s = toMin(d.start), e = toMin(d.end);
   return s != null && e != null && m >= s && m < e ? 'on' : 'out';
 }
+
+/* ── Horas da jornada (para o custo da equipe) ────────────────────────────── */
+
+/** Jornada prevista num dia (minutos, sem o intervalo); 0 = folga ou sem jornada */
+export function scheduledMinutesOn(raw: string | null | undefined, date: Date): number {
+  const w = parseSchedule(raw);
+  return w ? shiftMinutes(w.days[JS_DAY[date.getDay()]]) : 0;
+}
+
+/** Horas contratadas no mês (soma da jornada de cada dia do mês), em minutos */
+export function scheduledMinutesInMonth(raw: string | null | undefined, year: number, month0: number): number {
+  const w = parseSchedule(raw);
+  if (!w) return 0;
+  let t = 0;
+  for (const d = new Date(year, month0, 1); d.getMonth() === month0; d.setDate(d.getDate() + 1)) t += shiftMinutes(w.days[JS_DAY[d.getDay()]]);
+  return t;
+}
+
+/** Minutos da jornada já cumpridos até agora, no dia de hoje (desconta o intervalo) */
+export function elapsedShiftMinutes(raw: string | null | undefined, now = new Date()): number {
+  const w = parseSchedule(raw);
+  const d = w?.days[JS_DAY[now.getDay()]];
+  if (!d) return 0;
+  const s = toMin(d.start), e = toMin(d.end);
+  if (s == null || e == null || e <= s) return 0;
+  const m = Math.min(now.getHours() * 60 + now.getMinutes(), e);
+  if (m <= s) return 0;
+  const bs = toMin(d.break_start), be = toMin(d.break_end);
+  const brk = bs != null && be != null && be > bs ? Math.max(0, Math.min(m, be) - Math.max(s, bs)) : 0;
+  return Math.max(0, m - s - brk);
+}

@@ -14,6 +14,8 @@ import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/service
 import PeriodPicker, { PRESETS, PREV_LABEL, usePeriod, type Preset } from '@/components/PeriodPicker';
 import ReceivablesTab from '@/components/finance/ReceivablesTab';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
+import TeamCostDay from '@/components/finance/TeamCostDay';
+import { useTeamAccess } from '@/lib/teamAccess';
 import { ShopGoalCard } from '@/components/goals/Goals';
 import CompletedOsList from '@/components/finance/CompletedOsList';
 import {
@@ -34,6 +36,8 @@ export default function Financeiro() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const { balcao, session } = useOperator();
+  /** Salário é dado sensível: o custo da equipe só aparece para o dono e o gestor */
+  const { isGestor } = useTeamAccess();
   const allowed = canDo(session, balcao, 'ver_financeiro');
   /** Link para outra tela só aparece como botão se a pessoa puder abrir */
   const canOpen = (path: string) => !balcao || !session || sessionAllows(session, path);
@@ -386,6 +390,8 @@ export default function Financeiro() {
                 <FlowChart series={f.series} />
               </div>
             </div>
+
+            {isGestor && wid && <TeamCostDay wid={wid} range={range} os={os} items={svcItems} />}
 
             {/* Origem do faturamento + recebimentos */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

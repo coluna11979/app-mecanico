@@ -53,6 +53,7 @@ const SECTIONS: NavGroup[] = [
   ] },
   { key: 'comunicacao', title: 'Comunicação', items: [
     { to: '/oficina/inbox',      icon: '💬', label: 'WhatsApp dos clientes' },
+    { to: '/oficina/inbox/painel', icon: '📊', label: 'Painel do WhatsApp' },
     { to: '/oficina/avaliacoes', icon: '⭐', label: 'Avaliações Google'    },
     { to: '/oficina/agentes',    icon: '🤖', label: 'Agentes de IA'        },
   ] },
@@ -79,6 +80,7 @@ const SECTIONS: NavGroup[] = [
   ] },
   { key: 'plataforma', title: 'MecânicoApp', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
+    { to: '/oficina/plataforma/painel', icon: '📊', label: 'Painel da plataforma' },
     { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar profissionais' },
     { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens da plataforma' },
   ] },
@@ -94,7 +96,9 @@ const SECTIONS: NavGroup[] = [
 /** Pacote "Só mecânicos": sem Configurações à parte, o perfil da oficina fica junto da Plataforma */
 const PLATFORM_SECTIONS: NavGroup[] = SECTIONS.filter(sec => sec.key !== 'config').map(sec => (sec.key === 'plataforma'
   ? { ...sec, items: [...sec.items, { to: '/oficina/perfil', icon: '🏪', label: 'Perfil da oficina' }] }
-  : sec));
+  : sec))
+  // O produto principal fica em primeiro, mesmo com pacotes extras (ex.: Atendimento) ligados
+  .sort((a, b) => Number(b.key === 'plataforma') - Number(a.key === 'plataforma'));
 
 /** Ícone de cada bloco na gaveta "Mais" (celular) */
 const SECTION_ICON: Record<string, string> = {
@@ -179,6 +183,9 @@ const TAB = {
   hoje:      { to: '/oficina/inicio',    icon: '🏠', label: 'Hoje'      },
   plataforma:{ to: '/oficina/dashboard', icon: '⚡', label: 'Plataforma' },
   demandas:  { to: '/oficina/dashboard', icon: '⚡', label: 'Demandas'  },
+  inicioPlataforma: { to: '/oficina/dashboard', icon: '🏠', label: 'Início' },
+  /** Abre a Nova demanda (a tela de Demandas lê o ?nova=1) */
+  chamar:    { to: '/oficina/dashboard?nova=1', icon: '＋', label: 'Chamar' },
   buscar:    { to: '/oficina/buscar',    icon: '🔍', label: 'Buscar'    },
   mensagens: { to: '/oficina/mensagens', icon: '💬', label: 'Mensagens' },
   equipe:    { to: '/oficina/desempenho', icon: '🏆', label: 'Equipe'   },
@@ -199,8 +206,10 @@ const BOTTOM_TABS: Record<OperatorRole, NavItem[]> = {
   mecanico:  [TAB.os, TAB.agenda, TAB.checkup],
 };
 /** Pacote "Só mecânicos": a barra é só a Plataforma */
-const PLATFORM_TABS: NavItem[] = [TAB.demandas, TAB.buscar, TAB.mensagens];
+const PLATFORM_TABS: NavItem[] = [TAB.inicioPlataforma, TAB.chamar, TAB.mensagens];
 const HOME = '/oficina/inicio';
+/** Para onde o login e os redirecionamentos mandam a oficina sem ela ter escolhido (Login.destino, ProtectedRoute) */
+const LANDING_PATHS = [HOME, '/oficina/painel', '/oficina/resultado'];
 
 const LS_KEY = 'oficina_msgs_last_seen';
 
@@ -533,6 +542,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     if (mods.loaded && mods.workshopId === shopId && !moduleAllows(mods.disabled, location.pathname)) {
       const alt = moduleEntry(mods.disabled, location.pathname);
       if (alt && allowed(alt)) { nav(alt, { replace: true }); return; }
+      // Tela de entrada padrão (login cai no Painel/Resultado): vai pra tela certa sem aviso
+      if (LANDING_PATHS.includes(location.pathname)) { nav(homePath(), { replace: true }); return; }
       const onlyDesktop = mods.isMobile && moduleAllows(mods.off, location.pathname);
       toast.warning(onlyDesktop
         ? 'Esse módulo está liberado só no computador.'
@@ -540,6 +551,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       nav(homePath(), { replace: true });
     }
   }, [mods.loaded, mods.disabled, shopId, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Modo balcão só faz sentido com o módulo "Acessos e modo balcão" (é lá que se cadastram os PINs)
+  const balcaoOk = !mods.off.includes('acessos');
 
   async function enterBalcao() {
     if (!shopId) return;
@@ -824,7 +838,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 </button>
               )
             ) : !op.balcao ? (
-              rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
+              !balcaoOk ? (rail ? null : <span className="flex-1" />)
+              : rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
                 <button onClick={enterBalcao} title="Cada colaborador entra com o próprio PIN e vê só as telas da função dele"
                   className={`flex-1 h-8 px-2 inline-flex items-center gap-2 rounded-lg text-xs font-semibold transition ${T.tool}`}>
                   <Icon name="lock" size={14} />Modo balcão
@@ -932,11 +947,12 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             return (
               <NavLink key={tab.to} to={tab.to} onClick={() => setOpen(false)}
                 className={({ isActive }) => `group flex flex-col items-center justify-center gap-1 text-[10px] font-semibold tracking-tight transition-colors ${
-                  isActive && !open ? 'text-brand-600' : 'text-steel-400 active:text-steel-600'}`}>
+                  tab.to.includes('?') ? 'text-brand-600' : isActive && !open ? 'text-brand-600' : 'text-steel-400 active:text-steel-600'}`}>
                 {({ isActive }) => (
                   <>
                     <span className={`relative grid place-items-center h-7 w-12 rounded-full text-lg leading-none transition-all duration-200 ${
-                      isActive && !open ? 'bg-brand-50' : 'grayscale-[35%] opacity-80 group-active:scale-90'}`}>
+                      tab.to.includes('?') ? 'bg-brand-500 text-white font-bold group-active:scale-90'
+                      : isActive && !open ? 'bg-brand-50' : 'grayscale-[35%] opacity-80 group-active:scale-90'}`}>
                       {tab.icon}
                       {badge > 0 && <Badge n={badge} />}
                     </span>
@@ -1050,7 +1066,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 );
               })()}
 
-              {!sheetGroup && !op.balcao && (
+              {!sheetGroup && !op.balcao && balcaoOk && (
                 <button onClick={enterBalcao}
                   className="w-full flex items-center gap-3 rounded-2xl bg-white ring-1 ring-steel-200/70 px-4 py-3 text-left active:bg-steel-100">
                   <span className="text-xl">🔒</span>
