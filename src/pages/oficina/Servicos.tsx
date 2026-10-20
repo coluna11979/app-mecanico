@@ -35,7 +35,7 @@ export default function Servicos() {
   const needCharges = tab === 'veiculo' || !!editing;
   useEffect(() => {
     if (!wid || !allowed || !needCharges || charges) return;
-    loadServiceCharges(wid).then(setCharges).catch(() => setCharges([]));
+    loadServiceCharges(wid, { categories: true }).then(setCharges).catch(() => setCharges([]));
   }, [wid, allowed, needCharges, charges]);
 
   const load = useCallback(async () => {
@@ -410,6 +410,7 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
   const [year, setYear] = useState<number | null>(null);
   const [sort, setSort] = useState<SortBy>('vezes');
   const [sq, setSq] = useState('');
+  const [cat, setCat] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
   // Modelos e placas conhecidos (vêm das OS)
@@ -444,9 +445,9 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
   function pick(i: number) {
     const s = sugs[i];
     if (!s) return;
-    setSel(s.sel); setYear(yearTerm ? Number(yearTerm) : null); setQ(''); setSq(''); setOpen(null); setFocus(false);
+    setSel(s.sel); setYear(yearTerm ? Number(yearTerm) : null); setQ(''); setSq(''); setCat(null); setOpen(null); setFocus(false);
   }
-  function clear() { setSel(null); setYear(null); setSq(''); setOpen(null); setQ(''); }
+  function clear() { setSel(null); setYear(null); setSq(''); setCat(null); setOpen(null); setQ(''); }
 
   // Tudo do veículo escolhido, depois ano e serviço
   const base = useMemo(() => !sel || !charges ? [] : charges.filter(c => sel.kind === 'model' ? c.vehicleKey === sel.key : norm(c.plate) === norm(sel.plate)), [charges, sel]);
@@ -459,12 +460,26 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
     const st = norm(sq);
     return base.filter(c => (!year || c.year === year) && (!st || c.key.includes(st)));
   }, [base, year, sq]);
+  // Categorias do que foi feito neste veículo (com quantos serviços diferentes em cada)
+  const cats = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const c of found) (m.get(c.category) ?? m.set(c.category, new Set()).get(c.category)!).add(c.key);
+    return [...m.entries()].map(([name, s]) => ({ name, n: s.size }))
+      .sort((a, b) => Number(a.name === 'Outro') - Number(b.name === 'Outro') || b.n - a.n);
+  }, [found]);
+  const shown = useMemo(() => (cat ? found.filter(c => c.category === cat) : found), [found, cat]);
   const groups = useMemo(() => {
-    const g = groupBy(found, c => c.key);
+    const g = groupBy(shown, c => c.key);
     if (sort === 'preco') g.sort((a, b) => b.sum.last - a.sum.last);
     else if (sort === 'recente') g.sort((a, b) => b.sum.lastDate.localeCompare(a.sum.lastDate));
     return g;
-  }, [found, sort]);
+  }, [shown, sort]);
+  // Com "Todas" escolhida, a lista sai separada por categoria (a que tem mais serviços primeiro)
+  const sections = useMemo(() => {
+    const m = new Map<string, typeof groups>();
+    for (const g of groups) (m.get(g.items[0].category) ?? m.set(g.items[0].category, []).get(g.items[0].category)!).push(g);
+    return [...m.entries()].sort((a, b) => Number(a[0] === 'Outro') - Number(b[0] === 'Outro') || b[1].length - a[1].length);
+  }, [groups]);
   const stats = useMemo(() => ({
     os: new Set(found.map(c => c.osId)).size,
     last: found.reduce((m, c) => (c.date > m ? c.date : m), ''),
@@ -474,6 +489,37 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
   if (charges.length === 0) {
     return <div className="card text-center py-8 text-sm text-steel-500">Ainda não há serviços lançados em OS com veículo — conforme as OS forem feitas, o histórico por carro aparece aqui.</div>;
   }
+
+  const row = (g: (typeof groups)[number]) => (
+    <li key={g.key}>
+                    <button onClick={() => setOpen(open === g.key ? null : g.key)}
+                      className="w-full text-left px-5 py-3 grid grid-cols-12 gap-x-3 gap-y-1 items-center hover:bg-steel-50 transition">
+                      <div className="col-span-9 md:col-span-5 min-w-0">
+                        <div className="text-sm font-semibold text-steel-900 truncate">{commonName(g.items, c => c.service)}</div>
+                        <div className="text-[11px] text-steel-500 md:hidden">{g.sum.count}× · {fmtDate(g.sum.lastDate.slice(0, 10))}</div>
+                      </div>
+                      <div className="hidden md:block col-span-1 text-center text-sm text-steel-600">{g.sum.count}×</div>
+                      <div className="col-span-3 md:col-span-2 text-right text-base font-bold text-steel-900">{fmtBRL(g.sum.last)}</div>
+                      <div className="col-span-12 md:col-span-2 md:text-right"><PriceBar min={g.sum.min} max={g.sum.max} last={g.sum.last} /></div>
+                      <div className="hidden md:flex col-span-2 items-center justify-end gap-2 text-xs text-steel-500">
+                        {fmtDate(g.sum.lastDate.slice(0, 10))}<span className="text-steel-300">{open === g.key ? '▾' : '›'}</span>
+                      </div>
+                    </button>
+                    {open === g.key && (
+                      <ul className="bg-steel-50 px-5 py-2 divide-y divide-steel-100 text-sm">
+                        {[...g.items].sort((a, b) => b.date.localeCompare(a.date)).map((c, i) => (
+                          <li key={`${c.osId}-${i}`} className="py-1.5 flex items-center justify-between gap-3">
+                            <span className="min-w-0 truncate">
+                              {vehicleLabel(c)}{c.plate ? ` · ${c.plate}` : ''}
+                              <span className="text-steel-400"> · {fmtDate(c.date.slice(0, 10))}{c.osNumber ? ` · OS ${c.osNumber}` : ''}</span>
+                            </span>
+                            <strong className="shrink-0">{fmtBRL(c.price)}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+  );
 
   return (
     <div className="space-y-4">
@@ -517,7 +563,7 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
             <div className="text-[11px] font-bold text-steel-500 uppercase tracking-wider mb-2">Mais atendidos</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {models.slice(0, 12).map(m => (
-                <button key={m.key} onClick={() => { setSel({ kind: 'model', key: m.key, label: m.label }); setYear(null); }}
+                <button key={m.key} onClick={() => { setSel({ kind: 'model', key: m.key, label: m.label }); setYear(null); setCat(null); }}
                   className="text-left rounded-xl border border-steel-200 bg-white px-3 py-2.5 hover:border-brand-300 hover:shadow-sm transition">
                   <div className="text-sm font-semibold text-steel-900 truncate">{m.label}</div>
                   <div className="text-[11px] text-steel-500">{m.os} OS</div>
@@ -557,6 +603,21 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
             </div>
           )}
 
+          {cats.length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setCat(null)}
+                className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${cat === null ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                Todas
+              </button>
+              {cats.map(c => (
+                <button key={c.name} onClick={() => setCat(cat === c.name ? null : c.name)}
+                  className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition ${cat === c.name ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
+                  {c.name} <span className="opacity-60">({c.n})</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {groups.length === 0 ? (
             <div className="card text-center py-8 text-sm text-steel-500">Nenhum serviço encontrado com esse filtro.</div>
           ) : (
@@ -574,38 +635,18 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
                   <button onClick={() => setSort('recente')} className={sort === 'recente' ? 'text-brand-700' : 'hover:text-steel-700'}>Última vez{sort === 'recente' ? ' ↓' : ''}</button>
                 </div>
               </div>
-              <ul className="divide-y divide-steel-100">
-                {groups.map(g => (
-                  <li key={g.key}>
-                    <button onClick={() => setOpen(open === g.key ? null : g.key)}
-                      className="w-full text-left px-5 py-3 grid grid-cols-12 gap-x-3 gap-y-1 items-center hover:bg-steel-50 transition">
-                      <div className="col-span-9 md:col-span-5 min-w-0">
-                        <div className="text-sm font-semibold text-steel-900 truncate">{commonName(g.items, c => c.service)}</div>
-                        <div className="text-[11px] text-steel-500 md:hidden">{g.sum.count}× · {fmtDate(g.sum.lastDate.slice(0, 10))}</div>
-                      </div>
-                      <div className="hidden md:block col-span-1 text-center text-sm text-steel-600">{g.sum.count}×</div>
-                      <div className="col-span-3 md:col-span-2 text-right text-base font-bold text-steel-900">{fmtBRL(g.sum.last)}</div>
-                      <div className="col-span-12 md:col-span-2 md:text-right"><PriceBar min={g.sum.min} max={g.sum.max} last={g.sum.last} /></div>
-                      <div className="hidden md:flex col-span-2 items-center justify-end gap-2 text-xs text-steel-500">
-                        {fmtDate(g.sum.lastDate.slice(0, 10))}<span className="text-steel-300">{open === g.key ? '▾' : '›'}</span>
-                      </div>
-                    </button>
-                    {open === g.key && (
-                      <ul className="bg-steel-50 px-5 py-2 divide-y divide-steel-100 text-sm">
-                        {[...g.items].sort((a, b) => b.date.localeCompare(a.date)).map((c, i) => (
-                          <li key={`${c.osId}-${i}`} className="py-1.5 flex items-center justify-between gap-3">
-                            <span className="min-w-0 truncate">
-                              {vehicleLabel(c)}{c.plate ? ` · ${c.plate}` : ''}
-                              <span className="text-steel-400"> · {fmtDate(c.date.slice(0, 10))}{c.osNumber ? ` · OS ${c.osNumber}` : ''}</span>
-                            </span>
-                            <strong className="shrink-0">{fmtBRL(c.price)}</strong>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              {sections.map(([name, gs]) => (
+                <div key={name}>
+                  {!cat && cats.length > 1 && (
+                    <div className="px-5 py-2 bg-steel-50/70 border-b border-t border-steel-100 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-steel-600">
+                      <span>{name}</span><span className="font-medium normal-case tracking-normal text-steel-400">{gs.length} serviço{gs.length === 1 ? '' : 's'}</span>
+                    </div>
+                  )}
+                  <ul className="divide-y divide-steel-100">
+                    {gs.map(g => row(g))}
+                  </ul>
+                </div>
+              ))}
             </div>
           )}
         </>
