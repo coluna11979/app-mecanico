@@ -88,7 +88,7 @@ export default function Fornecedores() {
                     <button className="min-w-0 text-left flex-1" onClick={() => setEditing(s)}>
                       <div className="text-sm font-semibold truncate">{s.name}{!s.active && <span className="badge bg-steel-100 text-steel-500 ml-2">inativo</span>}</div>
                       <div className="text-xs text-steel-500 truncate">
-                        {[s.contact, s.phone && fmtPhone(s.phone), s.cnpj && fmtCnpj(s.cnpj), s.payment_days ? `prazo ${s.payment_days} dias` : 'à vista']
+                        {[s.contact, s.phone && fmtPhone(s.phone), s.cnpj && fmtCnpj(s.cnpj), s.payment_days ? `prazo ${s.payment_days} dias` : 'à vista', Number(s.discount_percent) > 0 && `acordo ${String(s.discount_percent).replace('.', ',')}%`]
                           .filter(Boolean).join(' · ')}
                       </div>
                     </button>
@@ -152,6 +152,7 @@ export function SupplierForm({ wid, supplier, onClose, onSaved }: {
   const [phone, setPhone]     = useState(supplier?.phone ? fmtPhone(supplier.phone) : '');
   const [contact, setContact] = useState(supplier?.contact ?? '');
   const [days, setDays]       = useState(String(supplier?.payment_days ?? 0));
+  const [agreeStr, setAgree]  = useState(String(supplier?.discount_percent ?? 0).replace('.', ','));
   const [notes, setNotes]     = useState(supplier?.notes ?? '');
   const [active, setActive]   = useState(supplier?.active ?? true);
   const [saving, setSaving]   = useState(false);
@@ -161,9 +162,12 @@ export function SupplierForm({ wid, supplier, onClose, onSaved }: {
     if (!name.trim()) return toast.error('Informe o nome do fornecedor');
     const d = Number(days || 0);
     if (!Number.isInteger(d) || d < 0 || d > 365) return toast.error('Prazo inválido (0 a 365 dias)');
+    const agree = Number((agreeStr || '0').replace(',', '.'));
+    if (!Number.isFinite(agree) || agree < 0 || agree >= 100) return toast.error('Desconto do acordo inválido (0 a 99%)');
     const row = {
       workshop_id: wid, name: name.trim(), cnpj: onlyDigits(cnpj) || null, phone: onlyDigits(phone) || null,
       contact: contact.trim() || null, payment_days: d, notes: notes.trim() || null, active,
+      discount_percent: agree,
     };
     setSaving(true);
     const { data, error } = supplier
@@ -210,6 +214,14 @@ export function SupplierForm({ wid, supplier, onClose, onSaved }: {
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">dias</span>
               </div>
               <p className="text-[11px] text-steel-400 mt-1">0 = à vista. Sugere o vencimento na nota.</p>
+            </div>
+            <div>
+              <label className="label">Desconto do acordo</label>
+              <div className="relative">
+                <input className="input !pr-10 text-right" inputMode="decimal" value={agreeStr} onChange={e => setAgree(e.target.value.replace(/[^\d,.]/g, ''))} />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">%</span>
+              </div>
+              <p className="text-[11px] text-steel-400 mt-1">Aplicado no custo das peças de toda nota deste fornecedor. 0 = sem acordo.</p>
             </div>
           </div>
           <div>
