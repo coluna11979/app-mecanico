@@ -64,7 +64,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
     const words = norm(q).split(/\s+/).filter(Boolean);
     return suggestions
       .filter(s => (tab === 'peca' ? s.kind === 'part' : isLabor(s) && (!cat || catOf(s) === cat)))
-      .filter(s => { const n = norm(s.description); return words.every(w => n.includes(w)); })
+      .filter(s => { const n = norm(`${s.description} ${s.code ?? ''}`); return words.every(w => n.includes(w)); })
       .slice(0, 80);
   }, [suggestions, tab, q, cat]);
 
@@ -79,7 +79,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   const partHits = useMemo(() => {
     const words = norm(pq).split(/\s+/).filter(Boolean);
     if (!words.length) return [];
-    return suggestions.filter(s => s.kind === 'part' && words.every(w => norm(s.description).includes(w))).slice(0, 6);
+    return suggestions.filter(s => s.kind === 'part' && words.every(w => norm(`${s.description} ${s.code ?? ''}`).includes(w))).slice(0, 6);
   }, [suggestions, pq]);
 
   function openVehicle() {
@@ -251,7 +251,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
                     <li key={p.description + (p.part_id ?? '')}>
                       <button type="button" onClick={() => addPart(p)} disabled={added.includes(p.description)}
                         className="w-full px-3 py-2 flex items-center gap-3 text-left text-sm hover:bg-brand-50 disabled:opacity-60">
-                        <span className="flex-1 min-w-0 truncate">{p.description}</span>
+                        <span className="flex-1 min-w-0 truncate">{p.description}{p.code && <span className="text-steel-400"> · {p.code}</span>}</span>
                         <span className="text-[11px] text-steel-500 shrink-0">{fmtQty(p.stock)} {p.unit} em estoque</span>
                         <strong className="shrink-0">{p.unit_price > 0 ? fmtBRL(p.unit_price) : 'a definir'}</strong>
                         <span className="shrink-0 text-brand-700 font-bold">{added.includes(p.description) ? '✓' : '+'}</span>
@@ -300,7 +300,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
                   <button type="button" onClick={() => pick(s)}
                     className="w-full min-h-[56px] px-4 py-2 flex items-center gap-3 text-left hover:bg-steel-50 active:bg-brand-50">
                     <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium text-steel-800 truncate">{s.description}</span>
+                      <span className="block text-sm font-medium text-steel-800 truncate">{s.description}{s.code && <span className="text-steel-400 font-normal"> · cód. {s.code}</span>}</span>
                       <span className="block text-xs text-steel-500">
                         {s.part_id ? <span className={out ? 'text-alert-600 font-semibold' : ''}>{fmtQty(s.stock)} {s.unit} em estoque</span>
                           : vp ? <span className="text-signal-700">já cobrado {vp.count}× neste {vehicleModel}</span>
