@@ -7,6 +7,7 @@ import { canDo, useOperator } from '@/lib/operators';
 import { OS_CATEGORIES, fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/services';
 import { fmtDate } from '@/lib/purchasing';
+import { loadAllParts } from '@/lib/parts';
 import {
   commonName, groupBy, loadServiceCharges, norm, vehicleLabel, type ServiceCharge,
 } from '@/lib/servicePrices';
@@ -677,8 +678,8 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
   }, [service.id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    supabase.from('workshop_parts').select('id, name, unit, stock_qty').eq('workshop_id', wid).eq('active', true).order('name').limit(3000)
-      .then(({ data }) => setParts(((data ?? []) as CatPart[]).map(p => ({ ...p, stock_qty: Number(p.stock_qty) }))));
+    loadAllParts<CatPart>(wid, 'id, name, unit, stock_qty')
+      .then(data => setParts(((data ?? []) as CatPart[]).map(p => ({ ...p, stock_qty: Number(p.stock_qty) }))));
   }, [wid]);
 
   async function add(rows: { description: string; part_id: string | null; quantity: number }[]) {

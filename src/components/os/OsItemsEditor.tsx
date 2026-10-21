@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
-import { DEFAULT_MARGIN, fmtPct, fmtQty, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { DEFAULT_MARGIN, fmtPct, fmtQty, loadAllParts, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
@@ -82,7 +82,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -245,8 +245,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     let alive = true;
     (async () => {
       const [cat, svc, hist, margin] = await Promise.all([
-        supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price, stock_qty, unit')
-          .eq('workshop_id', workshopId).eq('active', true).order('name'),
+        loadAllParts(workshopId, 'id, name, code, cost, margin_percent, sale_price, stock_qty, unit').then(data => ({ data })),
         supabase.from('workshop_services').select('name, price, category')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
@@ -258,9 +257,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       ]);
       if (!alive) return;
       const seen = new Map<string, Suggestion>();
-      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>[]) {
-        const k = p.name.trim().toLowerCase();
-        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit });
+      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>[]) {
+        // Mesmo nome com código diferente é outra peça (ex.: marcas diferentes)
+        const k = `${p.name.trim().toLowerCase()}|${(p.code ?? '').trim()}`;
+        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit });
       }
       // Tabela de serviços da oficina: preço oficial da mão de obra
       for (const s of (svc.data ?? []) as { name: string; price: number; category: string | null }[]) {
@@ -734,7 +734,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       )}
 
       <datalist id={`os-items-sugg-${osId}`}>
-        {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? `Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
+        {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? `${s.code ? `Cód. ${s.code} · ` : ''}Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
       </datalist>
 
       <div className="divide-y divide-steel-100">

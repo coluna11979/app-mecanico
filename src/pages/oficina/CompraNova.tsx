@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  DEFAULT_MARGIN, UNITS, fmtQty, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
+  DEFAULT_MARGIN, UNITS, fmtQty, loadAllParts, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
 } from '@/lib/parts';
 import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
@@ -76,7 +76,7 @@ export default function CompraNova() {
     (async () => {
       const [s, p, m] = await Promise.all([
         supabase.from('suppliers').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
-        supabase.from('workshop_parts').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
+        loadAllParts(wid).then(data => ({ data })),
         loadDefaultMargin(wid),
       ]);
       setSuppliers((s.data as Supplier[]) ?? []);
