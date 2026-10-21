@@ -6,13 +6,13 @@ import { loadItemRules, type ItemRule } from '@/lib/commissionRules';
 
 /**
  * Fechar comissões → "Regras por item": itens que não dão comissão (ex.: alinhamento, pneu)
- * e exceções em valor fixo para quem fez (ex.: Rafael R$ 5 por alinhamento; R$ 10 a cada 2 cambagens).
+ * e exceções para quem fez: valor fixo (ex.: R$ 10 a cada 2 cambagens) ou % do valor do item (ex.: 10% do alinhamento).
  * O item é reconhecido pela palavra no nome dele na OS / nota (sem diferenciar acento ou maiúscula).
  */
 export default function ItemRulesCard({ wid }: { wid: string }) {
   const [rules, setRules] = useState<ItemRule[] | null>(null);
   const [team, setTeam]   = useState<{ id: string; name: string }[]>([]);
-  const [form, setForm]   = useState({ keyword: '', mechanic: '', amount: '', per: '1' });
+  const [form, setForm]   = useState({ keyword: '', mechanic: '', kind: 'percent' as 'percent' | 'fixed', amount: '', percent: '10', per: '1' });
   const [busy, setBusy]   = useState(false);
   const [open, setOpen]   = useState(false);
 
@@ -37,19 +37,24 @@ export default function ItemRulesCard({ wid }: { wid: string }) {
     const keyword = form.keyword.trim();
     const amount = form.amount.trim() ? parseMoney(form.amount) : 0;
     const per = Math.max(1, parseInt(form.per, 10) || 1);
+    const percent = parseMoney(form.percent || '0');
+    const isPct = form.kind === 'percent';
     if (keyword.length < 3) return toast.error('Escreva a palavra do item (ex.: alinhamento)');
-    if (form.mechanic && !(amount > 0)) return toast.error('Informe o valor fixo para essa pessoa');
+    if (form.mechanic && isPct && !(percent > 0 && percent <= 100)) return toast.error('Informe a % (entre 0 e 100) para essa pessoa');
+    if (form.mechanic && !isPct && !(amount > 0)) return toast.error('Informe o valor fixo para essa pessoa');
     setBusy(true);
     const rows = [];
     // Toda regra tira o item da conta de todos; a de "Todos" já basta para isso
     const hasAll = (rules ?? []).some(r => r.keyword.toLowerCase() === keyword.toLowerCase() && !r.mechanic_id);
-    if (!hasAll) rows.push({ workshop_id: wid, keyword, mechanic_id: null, amount: 0, per_units: 1 });
-    if (form.mechanic) rows.push({ workshop_id: wid, keyword, mechanic_id: form.mechanic, amount, per_units: per });
+    if (!hasAll) rows.push({ workshop_id: wid, keyword, mechanic_id: null, amount: 0, per_units: 1, percent: 0 });
+    if (form.mechanic) rows.push(isPct
+      ? { workshop_id: wid, keyword, mechanic_id: form.mechanic, amount: 0, per_units: 1, percent }
+      : { workshop_id: wid, keyword, mechanic_id: form.mechanic, amount, per_units: per, percent: 0 });
     const { error } = rows.length ? await supabase.from('commission_item_rules').insert(rows) : { error: null };
     setBusy(false);
     if (error) return toast.error('Não foi possível salvar: ' + error.message);
     toast.success('Regra salva ✓');
-    setForm({ keyword: '', mechanic: '', amount: '', per: '1' });
+    setForm({ keyword: '', mechanic: '', kind: 'percent', amount: '', percent: '10', per: '1' });
     load();
   }
 
@@ -57,7 +62,7 @@ export default function ItemRulesCard({ wid }: { wid: string }) {
     const all = !r.mechanic_id;
     if (!confirm(all
       ? `Tirar a regra de “${r.keyword}”? O item volta a dar comissão normal (e as exceções dele também saem).`
-      : `Tirar o valor fixo de ${name(r.mechanic_id)} em “${r.keyword}”?`)) return;
+      : `Tirar a regra de ${name(r.mechanic_id)} em “${r.keyword}”?`)) return;
     const q = supabase.from('commission_item_rules').delete().eq('workshop_id', wid);
     const { error } = all ? await q.ilike('keyword', r.keyword) : await q.eq('id', r.id);
     if (error) return toast.error('Não foi possível remover: ' + error.message);
@@ -69,7 +74,7 @@ export default function ItemRulesCard({ wid }: { wid: string }) {
       <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-3 text-left">
         <div>
           <div className="font-bold text-steel-900">⚙️ Regras por item</div>
-          <div className="text-xs text-steel-500">Itens que não dão comissão e exceções em valor fixo (ex.: alinhamento, pneu, cambagem).</div>
+          <div className="text-xs text-steel-500">Itens que não dão comissão e exceções em valor fixo ou % (ex.: alinhamento, pneu, cambagem).</div>
         </div>
         <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Fechar' : `Ver (${byKeyword.length})`}</span>
       </button>
@@ -82,7 +87,7 @@ export default function ItemRulesCard({ wid }: { wid: string }) {
             <ul className="divide-y divide-steel-100 border border-steel-100 rounded-xl overflow-hidden">
               {byKeyword.map(([k, list]) => {
                 const base = list.find(r => !r.mechanic_id) ?? list[0];
-                const fixedOnes = list.filter(r => r.mechanic_id && r.amount > 0);
+                const fixedOnes = list.filter(r => r.mechanic_id && (r.amount > 0 || r.percent > 0));
                 return (
                   <li key={k} className="px-3 py-2.5">
                     <div className="flex items-center justify-between gap-2">
@@ -91,7 +96,9 @@ export default function ItemRulesCard({ wid }: { wid: string }) {
                     </div>
                     {fixedOnes.map(r => (
                       <div key={r.id} className="flex items-center justify-between gap-2 text-xs text-steel-600 mt-1 pl-3">
-                        <span>↳ exceto <strong>{name(r.mechanic_id)}</strong>: {fmtBRL(r.amount)}{r.per_units > 1 ? ` a cada ${r.per_units}` : ' por unidade'}</span>
+                        <span>↳ exceto <strong>{name(r.mechanic_id)}</strong>: {r.percent > 0
+                          ? `${r.percent.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% do valor do item`
+                          : `${fmtBRL(r.amount)}${r.per_units > 1 ? ` a cada ${r.per_units}` : ' por unidade'}`}</span>
                         <button onClick={() => remove(r)} className="text-steel-400 hover:text-alert-600">remover</button>
                       </div>
                     ))}
@@ -108,7 +115,7 @@ export default function ItemRulesCard({ wid }: { wid: string }) {
                 <input className="input !py-2 text-sm mt-0.5" placeholder="Ex.: alinhamento" value={form.keyword}
                   onChange={e => setForm(f => ({ ...f, keyword: e.target.value }))} />
               </label>
-              <label className="text-[11px] text-steel-500">Quem ganha valor fixo (opcional)
+              <label className="text-[11px] text-steel-500">Quem ganha nesse item (opcional)
                 <select className="input !py-2 text-sm mt-0.5" value={form.mechanic} onChange={e => setForm(f => ({ ...f, mechanic: e.target.value }))}>
                   <option value="">Ninguém — só tira da comissão</option>
                   {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -116,6 +123,20 @@ export default function ItemRulesCard({ wid }: { wid: string }) {
               </label>
             </div>
             {form.mechanic && (
+              <div className="flex gap-1.5">
+                {([['percent', '% do valor do item'], ['fixed', 'Valor fixo (R$)']] as const).map(([k, label]) => (
+                  <button key={k} type="button" onClick={() => setForm(f => ({ ...f, kind: k }))}
+                    className={`flex-1 text-xs font-semibold px-3 py-2 rounded-lg border transition ${form.kind === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>{label}</button>
+                ))}
+              </div>
+            )}
+            {form.mechanic && form.kind === 'percent' && (
+              <label className="text-[11px] text-steel-500 block">% do valor do item *
+                <input className="input !py-2 text-sm mt-0.5 text-right" inputMode="decimal" placeholder="10" value={form.percent}
+                  onChange={e => setForm(f => ({ ...f, percent: e.target.value }))} />
+              </label>
+            )}
+            {form.mechanic && form.kind === 'fixed' && (
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-[11px] text-steel-500">Valor fixo (R$) *
                   <input className="input !py-2 text-sm mt-0.5 text-right" inputMode="decimal" placeholder="0,00" value={form.amount}

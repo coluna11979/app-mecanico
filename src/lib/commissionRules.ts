@@ -3,13 +3,15 @@
  * Mesma lógica da view os_commission_base, para as prévias de "Comissões a pagar":
  * - item cujo nome contém uma palavra-chave com regra → sai da conta dos 4% / 10% de todos;
  * - regra com colaborador + valor → valor fixo para essa pessoa quando ela fez o item,
- *   a cada `per_units` unidades (ex.: R$ 10 a cada 2 cambagens).
+ *   a cada `per_units` unidades (ex.: R$ 10 a cada 2 cambagens);
+ * - regra com colaborador + % (migration 0134) → essa % do valor do item para quem fez (ex.: 10% do alinhamento).
+ *   Se a mesma pessoa tiver as duas, vale a maior (igual à view).
  */
 import { supabase } from '@/lib/supabase';
 
 export type ItemRule = {
   id: string; workshop_id: string; keyword: string; mechanic_id: string | null;
-  amount: number; per_units: number; active: boolean;
+  amount: number; per_units: number; /** % do valor do item para quem fez (0 = não usa) */ percent: number; active: boolean;
 };
 
 /** Sem acento e minúsculo, como na view (translate) */
@@ -17,9 +19,9 @@ export const normText = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, ''
 
 export async function loadItemRules(wid: string): Promise<ItemRule[]> {
   const { data } = await supabase.from('commission_item_rules')
-    .select('id, workshop_id, keyword, mechanic_id, amount, per_units, active')
+    .select('id, workshop_id, keyword, mechanic_id, amount, per_units, percent, active')
     .eq('workshop_id', wid).order('keyword').order('created_at');
-  return ((data ?? []) as ItemRule[]).map(r => ({ ...r, amount: Number(r.amount), per_units: Number(r.per_units) }));
+  return ((data ?? []) as ItemRule[]).map(r => ({ ...r, amount: Number(r.amount), per_units: Number(r.per_units), percent: Number(r.percent ?? 0) }));
 }
 
 const matches = (desc: string, r: ItemRule) => r.active && normText(desc).includes(normText(r.keyword));
@@ -27,12 +29,22 @@ const matches = (desc: string, r: ItemRule) => r.active && normText(desc).includ
 /** O item sai da conta dos 4% / 10%? */
 export const isExcluded = (desc: string, rules: ItemRule[]) => rules.some(r => matches(desc, r));
 
-/** Valor fixo de quem fez o item (0 se não tiver) */
-export function fixedFor(desc: string, mechanicId: string, qty: number, rules: ItemRule[]) {
-  let best = 0;
+/**
+ * Extra de quem fez o item: valor fixo e/ou % do valor do item (vale o maior). `lineTotal` = quantidade × preço do item.
+ * `label` explica a conta ("10% de R$ 60,00" ou "R$ 5,00 fixo").
+ */
+export function itemExtra(desc: string, mechanicId: string, qty: number, lineTotal: number, rules: ItemRule[]): { value: number; label: string } {
+  let best = { value: 0, label: '' };
   for (const r of rules) {
-    if (r.mechanic_id !== mechanicId || !(r.amount > 0) || !matches(desc, r)) continue;
-    best = Math.max(best, Math.floor(qty / Math.max(1, r.per_units)) * r.amount);
+    if (r.mechanic_id !== mechanicId || !matches(desc, r)) continue;
+    if (r.amount > 0) {
+      const v = Math.floor(qty / Math.max(1, r.per_units)) * r.amount;
+      if (v > best.value) best = { value: v, label: `${brl2(v)} fixo` };
+    }
+    if (r.percent > 0) {
+      const v = r2(lineTotal * r.percent / 100);
+      if (v > best.value) best = { value: v, label: `${r.percent.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% de ${brl2(lineTotal)}` };
+    }
   }
   return best;
 }
@@ -64,8 +76,8 @@ export function serviceCommission(o: {
     out.push(`${o.pct.labor}% de ${brl2(lineAmt(o.service))}`);
   }
   for (const it of [o.service, ...o.parts]) {
-    const fx = fixedFor(it.description, o.who, Number(it.quantity), o.rules);
-    if (fx > 0) { value += fx; out.push(`${brl2(fx)} fixo (${it.description})`); }
+    const fx = itemExtra(it.description, o.who, Number(it.quantity), lineAmt(it), o.rules);
+    if (fx.value > 0) { value += fx.value; out.push(`${fx.label} (${it.description})`); }
   }
   return { value: r2(value), base: out.join(' + ') };
 }
