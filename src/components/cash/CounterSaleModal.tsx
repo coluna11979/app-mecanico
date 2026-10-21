@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { METHODS, RECEIVE_METHODS, brl, moneyStr, parseMoney, type PayMethod } from '@/lib/cash';
-import { fmtQty, loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { fmtQty, loadAllParts, loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
@@ -50,11 +50,10 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
   useEffect(() => {
     (async () => {
       const [c, m] = await Promise.all([
-        supabase.from('workshop_parts').select('id, name, code, brand, cost, margin_percent, sale_price, stock_qty, unit')
-          .eq('workshop_id', wid).eq('active', true).order('name'),
+        loadAllParts<CatPart>(wid, 'id, name, code, brand, cost, margin_percent, sale_price, stock_qty, unit'),
         loadDefaultMargin(wid),
       ]);
-      setCatalog((c.data as CatPart[]) ?? []);
+      setCatalog(c);
       setMargin(m);
     })();
   }, [wid]);

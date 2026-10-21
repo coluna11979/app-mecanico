@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
-import { DEFAULT_MARGIN, fmtPct, fmtQty, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { DEFAULT_MARGIN, fmtPct, fmtQty, loadAllParts, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
@@ -245,8 +245,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     let alive = true;
     (async () => {
       const [cat, svc, hist, margin] = await Promise.all([
-        supabase.from('workshop_parts').select('id, name, cost, margin_percent, sale_price, stock_qty, unit')
-          .eq('workshop_id', workshopId).eq('active', true).order('name'),
+        loadAllParts(workshopId, 'id, name, cost, margin_percent, sale_price, stock_qty, unit').then(data => ({ data })),
         supabase.from('workshop_services').select('name, price, category')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
