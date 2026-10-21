@@ -945,7 +945,7 @@ export default function WorkshopTracking() {
                 <div className="h-8 w-8 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
               </div>
             ) : gateway === 'nextpay' && job ? (
-              <NextpayPayment jobId={job.id} service={cap} feePassthrough={feeCfg.passthrough} feePercent={feeCfg.percent} />
+              <NextpayPayment request={{ fn: 'nextpay-charge', body: { job_id: job.id } }} service={cap} feePassthrough={feeCfg.passthrough} feePercent={feeCfg.percent} />
             ) : (<>
             {/* Abas de método de pagamento */}
             <div className="flex gap-1 bg-steel-100 rounded-2xl p-1">
