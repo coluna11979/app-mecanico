@@ -15,6 +15,7 @@ import PeriodPicker, { PRESETS, PREV_LABEL, usePeriod, type Preset } from '@/com
 import ReceivablesTab from '@/components/finance/ReceivablesTab';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
 import TeamCostDay from '@/components/finance/TeamCostDay';
+import { NO_FEES, cardFeesOf, hasFees, useCardFees, type CardFees } from '@/lib/cardFees';
 import { useTeamAccess } from '@/lib/teamAccess';
 import { ShopGoalCard } from '@/components/goals/Goals';
 import CompletedOsList from '@/components/finance/CompletedOsList';
@@ -149,6 +150,9 @@ export default function Financeiro() {
     return () => { alive = false; };
   }, [wid, allowed, fromIso, toIso, curFromDay, curToDay, reloadKey]);
 
+  const { fees, save: saveFees } = useCardFees(wid);
+  const cardCfg = fees ?? NO_FEES;
+
   const f = useMemo(() => {
     /** Faturado, custo das peças vendidas, saídas e resultado de um intervalo */
     const periodOf = (r: typeof range) => {
@@ -157,11 +161,13 @@ export default function Financeiro() {
       const withCost = costItems.filter(i => ids.has(i.service_order_id));
       const partsCost = withCost.reduce((a, i) => a + Number(i.quantity) * Number(i.unit_cost), 0);
       const out = outflowsOf(entries, payables, r);
-      const res = operatingResult(sales.revenue, partsCost, out.operating);
+      // Taxa de cartão (maquininha) é custo: estimada pelas taxas da oficina sobre os recebimentos em cartão
+      const card = cardFeesOf(entries, r, cardCfg);
+      const res = operatingResult(sales.revenue, partsCost, out.operating + card.total);
       // Cobertura do custo: OS com peças × OS em que alguma peça tem custo cadastrado
       const withParts = sales.sales.filter(o => Number(o.parts_cost ?? 0) > 0).length;
       const costed = new Set(withCost.map(i => i.service_order_id)).size;
-      return { sales, partsCost, out, res, withParts, costed, cash: cashFlowOf(entries, payments, r) };
+      return { sales, partsCost, out, card, res, withParts, costed, cash: cashFlowOf(entries, payments, r) };
     };
     const cur = periodOf(range);
     const before = periodOf(prev);
@@ -189,7 +195,7 @@ export default function Financeiro() {
       received: receivedGroups(entries, range),
       series: flowSeriesFull(entries, payables, range),
     };
-  }, [entries, payments, regs, os, range, prev, firstOpen, costItems, payables]);
+  }, [entries, payments, regs, os, range, prev, firstOpen, costItems, payables, cardCfg]);
 
   const svc = useMemo(() => servicesExecuted(os, svcItems, range, 100), [os, svcItems, range]);
   const svcRows = useMemo(() => revenueByService(svc.rows), [svc]);
@@ -347,6 +353,14 @@ export default function Financeiro() {
                 {cur.out.groups.map(g => (
                   <Row key={g.key} label={`${g.icon} ${g.label}`} value={brl(g.total)} indent />
                 ))}
+                {hasFees(cardCfg) && (
+                  <>
+                    <Row label="(−) Taxas de cartão (estimadas)" value={brl(cur.card.total)} />
+                    {cur.card.rows.filter(x => x.base > 0).map(x => (
+                      <Row key={x.key} label={`💳 ${x.label} · ${x.rate.toLocaleString('pt-BR')}% de ${brl(x.base)}`} value={brl(x.fee)} indent />
+                    ))}
+                  </>
+                )}
                 <div className="flex items-baseline justify-between gap-3 pt-2.5 mt-1 border-t border-steel-200">
                   <span className="font-bold">= {noExpenses ? 'Resultado parcial (sem despesas)' : 'Resultado operacional estimado'}</span>
                   <span className={`text-lg font-bold font-display ${cur.res.result < 0 ? 'text-alert-600' : ''}`}>{brl(cur.res.result)}</span>
@@ -425,6 +439,13 @@ export default function Financeiro() {
                     💡 {brl(f.received.installments)} no crédito parcelado — esse dinheiro cai no banco aos poucos.
                   </p>
                 )}
+                {hasFees(cardCfg) && cur.card.base > 0 && (
+                  <p className="text-xs text-steel-600 bg-steel-50 rounded-lg px-3 py-2 mt-2">
+                    💳 Taxa de cartão estimada: <strong>{brl(cur.card.total)}</strong> sobre {brl(cur.card.base)} recebidos em débito e crédito
+                    ({((cur.card.total / cur.card.base) * 100).toFixed(2).replace('.', ',')}% em média). Cai líquido na conta: {brl(cur.card.base - cur.card.total)}.
+                  </p>
+                )}
+                {isGestor && <CardFeesEditor fees={cardCfg} onSave={saveFees} />}
               </div>
             </div>
 
@@ -554,5 +575,33 @@ function FlowChart({ series }: { series: { label: string; inflow: number; outflo
         </div>
       ))}
     </div>
+  );
+}
+
+/** Taxas da maquininha (em %): débito, crédito de 1 a 6x e crédito de 7x em diante */
+function CardFeesEditor({ fees, onSave }: { fees: CardFees; onSave: (f: CardFees) => unknown }) {
+  const str = (n: number) => (n ? String(n).replace('.', ',') : '');
+  const num = (v: string) => Math.max(0, Number(v.replace(',', '.')) || 0);
+  const field = (label: string, key: keyof CardFees) => (
+    <label className="text-xs text-steel-500">{label}
+      <div className="flex items-center gap-1 mt-1">
+        <input className="input !py-1.5 text-right" inputMode="decimal" placeholder="0,00" defaultValue={str(fees[key])} key={`${key}-${fees[key]}`}
+          onBlur={e => { const v = num(e.target.value); if (v !== fees[key]) onSave({ ...fees, [key]: v }); }} />
+        <span className="text-steel-400">%</span>
+      </div>
+    </label>
+  );
+  return (
+    <details className="mt-3 rounded-xl border border-steel-200 px-3 py-2 group">
+      <summary className="cursor-pointer list-none text-xs font-semibold text-steel-600 flex items-center justify-between">
+        <span>⚙️ Taxas da maquininha</span><span className="text-steel-400 group-open:rotate-90 transition">›</span>
+      </summary>
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        {field('Débito', 'debit')}
+        {field('Crédito 1 a 6x', 'creditLow')}
+        {field('Crédito 7x ou mais', 'creditHigh')}
+      </div>
+      <p className="text-[11px] text-steel-400 mt-2">Custo estimado sobre os recebimentos em cartão do caixa. PIX e dinheiro não têm taxa. O valor real vem no extrato da maquininha.</p>
+    </details>
   );
 }
