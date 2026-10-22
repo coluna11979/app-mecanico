@@ -16,9 +16,10 @@ type Inputs = Awaited<ReturnType<typeof loadTeamCostInputs>>;
 /**
  * Custo da equipe de mecânicos no período escolhido no topo da Visão financeira, pelas horas trabalhadas.
  * Um dia = o dia; vários dias = a soma deles (dias futuros ficam de fora). Gerencial, só para o gestor.
- * Não entra no Resultado do período (que já conta salários/comissões pagos): ver lib/teamCost.ts.
+ * Carrega uma vez só (usado no Resultado do período e no card de detalhe): ver lib/teamCost.ts.
+ * `enabled` = false não consulta nada (quem não é gestor não vê custo da equipe).
  */
-export default function TeamCostDay({ wid, range, os, items }: { wid: string; range: { from: Date; to: Date }; os: PanelOs[]; items: PanelItem[] }) {
+export function useTeamCost(wid: string | null | undefined, range: { from: Date; to: Date }, enabled: boolean) {
   const todayKey = dayKey(new Date());
   // Dias do período (até hoje)
   const days = useMemo(() => {
@@ -33,39 +34,36 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
   const first = days[0], last = days[days.length - 1];
   const key = `${first}|${last}`;
 
-  /** Nasce recolhido; os dados só são buscados quando o gestor abre o card */
-  const [open, setOpen] = useState(false);
   const [data, setData] = useState<{ key: string; hd: HalfData; inp: Inputs } | null>(null);
-  /** Dia escolhido na lista "Dia a dia": mostra só o custo daquele dia */
-  const [focus, setFocus] = useState<string | null>(null);
-  useEffect(() => { setFocus(null); }, [key]);
   useEffect(() => {
-    if (!open || !first || tooLong) return;
+    if (!enabled || !wid || !first || tooLong) return;
     let alive = true;
     const from = new Date(`${first}T00:00:00`).toISOString();
     const to = new Date(new Date(`${last}T00:00:00`).getTime() + 86400000).toISOString();
     Promise.all([loadRangeData(wid, from, to), loadTeamCostInputs(wid, first, last)])
       .then(([hd, inp]) => { if (alive) setData({ key, hd, inp }); });
     return () => { alive = false; };
-  }, [wid, key, first, last, tooLong, open]);
+  }, [enabled, wid, key, first, last, tooLong]);
 
   const { settings, save } = useCostSettings(wid);
   const cfg = useMemo(() => cfgOf(settings ?? DEFAULT_SETTINGS), [settings]);
-  const all = useMemo(() => (data && data.key === key ? buildTeamCostRange(days, data.inp, data.hd, new Date(), cfg) : null), [data, key, days, cfg]);
-  const focused = focus && days.includes(focus) ? focus : null;
-  const cost = useMemo(() => (focused && data && data.key === key ? buildTeamCostRange([focused], data.inp, data.hd, new Date(), cfg) : all), [focused, all, data, key, cfg]);
+  const cost = useMemo(() => (enabled && data && data.key === key ? buildTeamCostRange(days, data.inp, data.hd, new Date(), cfg) : null), [enabled, data, key, days, cfg]);
+  return { days, first, last, tooLong, cost, cfg, settings, save };
+}
+export type TeamCostState = ReturnType<typeof useTeamCost>;
 
-  const single = !!focused || days.length === 1;
-  const title = focused ? brLong(focused) : single ? brLong(first) : first ? `${br(first)} a ${br(last)} · ${days.length} dias` : '';
+export default function TeamCostDay({ team, os, items }: { team: TeamCostState; os: PanelOs[]; items: PanelItem[] }) {
+  const { days, first, last, tooLong, cost, cfg, settings, save } = team;
+  const single = days.length === 1;
+  const title = single ? brLong(first) : first ? `${br(first)} a ${br(last)} · ${days.length} dias` : '';
   /** Estimativa pela tabela de referência (só enquanto o relógio das OS não é usado): serviços feitos × tempo de referência */
   const est = useMemo(() => {
-    const ds = focused ? [focused] : days;
-    if (!ds.length) return null;
-    const from = new Date(`${ds[0]}T00:00:00`);
-    const to = new Date(new Date(`${ds[ds.length - 1]}T00:00:00`).getTime() + 86400000);
+    if (!days.length) return null;
+    const from = new Date(`${days[0]}T00:00:00`);
+    const to = new Date(new Date(`${days[days.length - 1]}T00:00:00`).getTime() + 86400000);
     const rows = servicesExecuted(os, items, { from, to }, 100).rows;
     return { ...estimatedServiceMinutes(rows), rows };
-  }, [focused, days, os, items]);
+  }, [days, os, items]);
 
   // Valor/hora da plataforma no simulador: digita na hora e grava depois de uns instantes
   const [hourly, setHourly] = useState<number | null>(null);
@@ -80,18 +78,39 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
   const use = cost && cost.productiveMin != null && cost.workedMin > 0 ? (cost.productiveMin / cost.workedMin) * 100 : null;
 
   return (
-    <details className="card group" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
-      <summary className="cursor-pointer list-none flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">👷 Custo da equipe {single ? 'no dia' : 'no período'}</div>
-          <p className="text-[11px] text-steel-400">Mecânicos e quem ganha só a % do faturamento (ex.: gerente que atua na operação), pelas horas trabalhadas · segue o período escolhido no topo · informativo (não entra no Resultado)</p>
+    <details className="card group">
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">👷 Custo da equipe {single ? 'no dia' : 'no período'} × faturamento</div>
+            <p className="text-[11px] text-steel-400">Mecânicos e quem ganha só a % do faturamento (ex.: gerente que atua na operação), pelas horas trabalhadas · segue o período escolhido no topo · informativo (não entra no Resultado)</p>
+          </div>
+          <span className="text-steel-400 group-open:rotate-90 transition shrink-0">›</span>
         </div>
-        <span className="text-steel-400 group-open:rotate-90 transition shrink-0">›</span>
+        {/* Resumo sempre à vista, mesmo com o card fechado */}
+        {first && !tooLong && (cost ? (
+          <div className="mt-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <div className="text-[11px] text-steel-500">Faturado</div>
+                <div className="text-base sm:text-lg font-bold font-display tabular-nums">{brl(cost.revenue)}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-steel-500">Custo da equipe</div>
+                <div className="text-base sm:text-lg font-bold font-display tabular-nums">{brl(cost.total)}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-steel-500">% do faturado</div>
+                <div className="text-base sm:text-lg font-bold font-display tabular-nums">{pctOfRevenue != null ? `${pctOfRevenue.toFixed(0)}%` : '—'}</div>
+              </div>
+            </div>
+            <div className="h-2 rounded-full bg-steel-100 mt-2.5 overflow-hidden">
+              <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, pctOfRevenue ?? 0)}%` }} />
+            </div>
+          </div>
+        ) : <div className="h-16 bg-steel-50 rounded-xl animate-pulse mt-3" />)}
       </summary>
       <div className="mt-3">
-      {focused && (
-        <button onClick={() => setFocus(null)} className="text-xs font-semibold text-brand-700 hover:underline mb-1">‹ Voltar ao período {br(first)} a {br(last)}</button>
-      )}
       {title && <div className="text-sm font-semibold capitalize mb-3">{title}</div>}
 
       {tooLong ? (

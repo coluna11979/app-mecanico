@@ -14,7 +14,7 @@ import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/service
 import PeriodPicker, { PRESETS, PREV_LABEL, usePeriod, type Preset } from '@/components/PeriodPicker';
 import ReceivablesTab from '@/components/finance/ReceivablesTab';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
-import TeamCostDay from '@/components/finance/TeamCostDay';
+import TeamCostDay, { useTeamCost } from '@/components/finance/TeamCostDay';
 import { NO_FEES, cardFeesOf, hasFees, useCardFees, type CardFees } from '@/lib/cardFees';
 import { useTeamAccess } from '@/lib/teamAccess';
 import { ShopGoalCard } from '@/components/goals/Goals';
@@ -150,6 +150,8 @@ export default function Financeiro() {
     return () => { alive = false; };
   }, [wid, allowed, fromIso, toIso, curFromDay, curToDay, reloadKey]);
 
+  /** Custo da equipe do período (salários, encargos, benefícios e comissões): só o gestor vê; entra no Resultado */
+  const team = useTeamCost(wid, range, isGestor && allowed);
   const { fees, save: saveFees } = useCardFees(wid);
   const cardCfg = fees ?? NO_FEES;
 
@@ -214,12 +216,25 @@ export default function Financeiro() {
     );
   }
 
-  const { cur, deltas, alerts } = f;
+  const { cur, alerts } = f;
+  /**
+   * Gestor, com o período dentro do limite do custo da equipe: o Resultado troca as despesas pelo custo da equipe
+   * (salários, encargos, benefícios e comissões do período). As despesas ficam fora (vão para o DRE).
+   * O período anterior não carrega o custo da equipe, então nesse modo o resultado não tem comparação.
+   */
+  const withTeam = isGestor && !team.tooLong && !!team.first;
+  const teamCost = withTeam ? team.cost : null;
+  const teamLoading = withTeam && !teamCost;
+  const res = withTeam
+    ? operatingResult(cur.sales.revenue, cur.partsCost, (teamCost?.total ?? 0) + cur.card.total)
+    : cur.res;
+  const deltas = withTeam ? { ...f.deltas, result: null } : f.deltas;
   const prevLabel = PREV_LABEL[preset];
   const empty = cur.sales.count === 0 && cur.cash.inflow === 0 && cur.out.total === 0;
   const partial = cur.withParts > 0 && cur.costed < cur.withParts;
   /** Teve faturamento e nenhuma despesa lançada: o "resultado" é só receita − custo das peças, não lucro */
-  const noExpenses = cur.sales.revenue > 0 && cur.out.operating === 0;
+  const noExpenses = !withTeam && cur.sales.revenue > 0 && cur.out.operating === 0;
+  const resultLabel = withTeam ? 'Margem antes das despesas' : noExpenses ? 'Resultado parcial (sem despesas)' : 'Resultado operacional estimado';
   /** Tem custo de peça no resultado, mas nenhuma nota de compra no período: o custo vem do cadastro e pode ser estimado */
   const costUnproven = cur.partsCost > 0 && purchaseCount === 0;
   const hasAlerts = alerts.overduePay.n > 0 || alerts.weekPay.n > 0 || alerts.overdueRec.n > 0 || alerts.unpaidOs.n > 0 || alerts.divergences.length > 0;
@@ -292,10 +307,10 @@ export default function Financeiro() {
                 tip="OS concluídas com saldo em aberto (independe do período), contadas a partir do primeiro caixa aberto." />
               <Kpi label="Saídas" value={brl(cur.out.total)} delta={deltas.out} note={prevLabel} invert
                 tip="Despesas e vales do caixa + contas pagas no período. Sangria e suprimento não entram (só mudam o dinheiro de lugar)." />
-              <Kpi label={noExpenses ? 'Resultado parcial (sem despesas)' : 'Resultado operacional estimado'} value={brl(cur.res.result)} delta={deltas.result} note={prevLabel} highlight wide
-                tone={cur.res.result < 0 ? 'bad' : undefined}
-                sub={noExpenses ? 'despesas não lançadas: não é lucro' : cur.res.margin != null ? `margem estimada ${Math.round(cur.res.margin)}%` : undefined}
-                tip="Faturado − custo das peças vendidas − demais despesas do período. Estimativa: não é lucro contábil." />
+              <Kpi label={resultLabel} value={teamLoading ? '…' : brl(res.result)} delta={deltas.result} note={withTeam ? undefined : prevLabel} highlight wide
+                tone={!teamLoading && res.result < 0 ? 'bad' : undefined}
+                sub={withTeam ? 'ainda sem as despesas: não é lucro' : noExpenses ? 'despesas não lançadas: não é lucro' : res.margin != null ? `margem estimada ${Math.round(res.margin)}%` : undefined}
+                tip={withTeam ? 'Faturado − custo das peças vendidas − custo da equipe − taxas de cartão. Não inclui aluguel, contas e demais despesas: não é lucro.' : 'Faturado − custo das peças vendidas − demais despesas do período. Estimativa: não é lucro contábil.'} />
             </div>
             <p className="text-[11px] text-steel-400 -mt-2">
               ⓘ Faturado considera as OS concluídas no período. Recebido de clientes considera os pagamentos de OS efetivamente recebidos no período; entradas avulsas do caixa ficam em "outras entradas".
@@ -350,10 +365,24 @@ export default function Financeiro() {
                 <SectionTitle>Resultado do período</SectionTitle>
                 <Row label="Faturado" value={brl(cur.sales.revenue)} strong />
                 <Row label="(−) Custo das peças vendidas" value={brl(cur.partsCost)} />
-                <Row label="(−) Despesas do período" value={brl(cur.out.operating)} />
-                {cur.out.groups.map(g => (
-                  <Row key={g.key} label={`${g.icon} ${g.label}`} value={brl(g.total)} indent />
-                ))}
+                {withTeam ? (
+                  <>
+                    <Row label="(−) Custo da equipe no período" value={teamCost ? brl(teamCost.total) : '…'} />
+                    {teamCost && (
+                      <>
+                        <Row label="👷 Salários, encargos e benefícios" value={brl(teamCost.salaryCost + teamCost.encargosCost + teamCost.benefitsCost)} indent />
+                        <Row label="👷 Comissões" value={brl(teamCost.commission)} indent />
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Row label="(−) Despesas do período" value={brl(cur.out.operating)} />
+                    {cur.out.groups.map(g => (
+                      <Row key={g.key} label={`${g.icon} ${g.label}`} value={brl(g.total)} indent />
+                    ))}
+                  </>
+                )}
                 {hasFees(cardCfg) && (
                   <>
                     <Row label="(−) Taxas de cartão (estimadas)" value={brl(cur.card.total)} />
@@ -363,11 +392,17 @@ export default function Financeiro() {
                   </>
                 )}
                 <div className="flex items-baseline justify-between gap-3 pt-2.5 mt-1 border-t border-steel-200">
-                  <span className="font-bold">= {noExpenses ? 'Resultado parcial (sem despesas)' : 'Resultado operacional estimado'}</span>
-                  <span className={`text-lg font-bold font-display ${cur.res.result < 0 ? 'text-alert-600' : ''}`}>{brl(cur.res.result)}</span>
+                  <span className="font-bold">= {resultLabel}</span>
+                  <span className={`text-lg font-bold font-display ${!teamLoading && res.result < 0 ? 'text-alert-600' : ''}`}>{teamLoading ? '…' : brl(res.result)}</span>
                 </div>
-                {cur.res.margin != null && !noExpenses && <div className="text-right text-xs text-steel-500">margem estimada {Math.round(cur.res.margin)}%</div>}
+                {res.margin != null && !noExpenses && !teamLoading && <div className="text-right text-xs text-steel-500">margem estimada {Math.round(res.margin)}%</div>}
                 <div className="mt-3 space-y-1.5 text-[11px] text-steel-500 leading-snug">
+                  {withTeam && (
+                    <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
+                      <strong>Não é lucro.</strong> Esta margem é o faturado menos o custo das peças, o custo da equipe e as taxas de cartão.
+                      Aluguel, contas e demais despesas ficam de fora (vão para o DRE).
+                    </p>
+                  )}
                   {noExpenses && (
                     <p className="text-pending-800 bg-pending-50 rounded-lg px-2.5 py-1.5">
                       <strong>Não é lucro.</strong> Nenhuma despesa foi lançada neste período; este valor é só o faturado menos o custo das peças.
@@ -388,7 +423,9 @@ export default function Financeiro() {
                   {cur.out.partsPurchases > 0 && (
                     <p>Compras de peças pagas no período ({brl(cur.out.partsPurchases)}) não entram de novo aqui: a peça já conta pelo custo das peças vendidas.</p>
                   )}
-                  <p>Comissões, salários e vales entram quando já foram pagos ou lançados como despesa.
+                  <p>{withTeam
+                    ? 'Custo da equipe pelas horas trabalhadas: salários, encargos, benefícios e comissões do período (não é o que foi pago no caixa).'
+                    : 'Comissões, salários e vales entram quando já foram pagos ou lançados como despesa.'}
                     {canOpen('/oficina/comissoes') && <> <Link to="/oficina/comissoes" className="font-semibold text-brand-700">Ver comissões da equipe →</Link></>}
                   </p>
                 </div>
@@ -407,7 +444,7 @@ export default function Financeiro() {
               </div>
             </div>
 
-            {isGestor && wid && <TeamCostDay wid={wid} range={range} os={os} items={svcItems} />}
+            {isGestor && wid && <TeamCostDay team={team} os={os} items={svcItems} />}
 
             {/* Origem do faturamento + recebimentos */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
