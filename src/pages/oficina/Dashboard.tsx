@@ -17,6 +17,7 @@ import type { Job } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
+import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
 import { MechanicCarousel, PlatformHero, StatusCounters } from '@/components/marketplace/PlatformHome';
@@ -103,6 +104,8 @@ export default function WorkshopDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
   const hasPendingFees = usePendingFees(currentWorkshop?.id ?? null);
+  /** Aguardando aceite fica recolhido (a oficina abre quando quiser) */
+  const [waitingOpen, toggleWaiting] = useStoredOpen(currentWorkshop?.id ? `oficina_aguardando_open:${currentWorkshop.id}` : null);
   // Oficina "Só mecânicos": pode informar quanto vai cobrar do cliente (quem tem OS tem o valor pela OS)
   const platformOnly = useWorkshopModules(s => s.loaded && isPlatformOnly(s.off));
   /** Valor cobrado do cliente digitado no formulário (null = não informou) */
@@ -615,7 +618,8 @@ export default function WorkshopDashboard() {
       {!firstTime && <div className="lg:hidden">{counters()}</div>}
 
       {/* Atalhos dos serviços mais pedidos (um toque abre a demanda pronta) */}
-      <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact />
+      <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact
+        storageKey={currentWorkshop?.id ? `oficina_atalhos_open:${currentWorkshop.id}` : null} />
 
       {/* Quem está disponível agora: foto, nota, especialidades */}
       <div className="lg:hidden"><MechanicCarousel mechanics={mechanics} /></div>
@@ -827,6 +831,32 @@ export default function WorkshopDashboard() {
             {ACTIVE_GROUPS.map(g => {
               const jobs = buckets[g.key];
               if (jobs.length === 0) return null;
+              // Aguardando aceite: recolhido, a oficina abre quando quiser (como o Histórico)
+              if (g.key === 'waiting') {
+                const late = jobs.filter(j => waitingNoAccept(j)).length;
+                return (
+                  <section key={g.key} className="mb-6">
+                    <button type="button" onClick={toggleWaiting} aria-expanded={waitingOpen}
+                      className="w-full rounded-2xl bg-white ring-1 ring-steel-200/70 px-4 py-3.5 flex items-center gap-3 text-left hover:bg-steel-50 transition">
+                      <span className="text-xl shrink-0" aria-hidden>📢</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="flex items-center gap-2">
+                          <span className="font-bold text-steel-900">Aguardando aceite</span>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{jobs.length}</span>
+                        </span>
+                        <span className={`block text-xs mt-0.5 ${late ? 'text-pending-700 font-semibold' : 'text-steel-500'}`}>
+                          {late
+                            ? `⏳ ${late === 1 ? '1 sem aceite há muito tempo' : `${late} sem aceite há muito tempo`}: aumentar o valor costuma resolver`
+                            : 'Publicadas para os mecânicos, esperando alguém aceitar'}
+                        </span>
+                      </span>
+                      <span className="text-xs font-semibold text-brand-600 shrink-0">{waitingOpen ? 'Ocultar' : 'Ver'}</span>
+                      <span className={`text-steel-400 text-xs transition-transform ${waitingOpen ? 'rotate-180' : ''}`}>▼</span>
+                    </button>
+                    {waitingOpen && <div className="grid md:grid-cols-2 gap-3 mt-2.5">{jobs.map(renderCard)}</div>}
+                  </section>
+                );
+              }
               return (
                 <section key={g.key} className="mb-6">
                   <div className="flex items-center gap-2 mb-2.5">

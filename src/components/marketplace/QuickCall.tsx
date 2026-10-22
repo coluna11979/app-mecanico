@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { formatBRL } from '@/lib/payment';
 
 /** Mecânico disponível agora (mesmo formato da lista de Demandas) */
@@ -40,14 +41,19 @@ export const estimatePrice = (rate: number, hours: number) => Math.max(5, Math.r
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('');
 
 /** Topo das Demandas: quem está disponível agora + atalhos dos serviços mais pedidos */
-export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
+export function QuickCall({ mechanics, disabled, onShortcut, compact, storageKey }: {
   mechanics: AvailableMechanic[];
   disabled?: boolean;
   /** Abre a Nova demanda com os serviços marcados (um ou vários: um mecânico faz todos) */
   onShortcut: (list: ServiceShortcut[]) => void;
   /** Só os atalhos (quem está disponível aparece no cartão principal e no carrossel) */
   compact?: boolean;
+  /** Com chave, os atalhos ficam recolhidos e a oficina abre quando quiser (lembra a escolha) */
+  storageKey?: string | null;
 }) {
+  const collapsible = storageKey !== undefined;
+  const [stored, toggleOpen] = useStoredOpen(storageKey ?? null);
+  const open = !collapsible || stored;
   const rate = medianRate(mechanics);
   const rates = mechanics.map(m => Number(m.hourly_rate)).filter(r => r > 0);
   const rated = mechanics.filter(m => m.rating > 0);
@@ -95,10 +101,24 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
       </div>
       )}
 
+      {collapsible && (
+        <button type="button" onClick={toggleOpen} aria-expanded={open}
+          className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-steel-50 transition">
+          <span className="text-xl shrink-0" aria-hidden>🧰</span>
+          <span className="flex-1 min-w-0">
+            <span className="block font-bold text-steel-900">Do que você precisa?</span>
+            <span className="block text-xs text-steel-500 mt-0.5">Atalhos dos serviços mais pedidos: a demanda já vem escrita</span>
+          </span>
+          <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Ocultar' : 'Ver atalhos'}</span>
+          <span className={`text-steel-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        </button>
+      )}
+
       {/* Atalhos: toque para marcar (um ou vários) e "Continuar" abre a demanda pronta */}
-      <div className="px-4 pt-3 pb-4">
-        <div className="flex items-baseline justify-between gap-2 mb-2">
-          <div className="text-[11px] font-bold uppercase tracking-widest text-steel-500">Do que você precisa?</div>
+      {open && (
+      <div className={`px-4 pb-4 ${collapsible ? 'pt-1 border-t border-steel-100' : 'pt-3'}`}>
+        <div className={`flex items-baseline gap-2 mb-2 ${collapsible ? 'justify-end pt-2' : 'justify-between'}`}>
+          {!collapsible && <div className="text-[11px] font-bold uppercase tracking-widest text-steel-500">Do que você precisa?</div>}
           <div className="text-[11px] text-steel-500">{picked.length ? `${picked.length} marcado${picked.length > 1 ? 's' : ''}` : 'marque um ou vários'}</div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -143,6 +163,7 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact }: {
           </div>
         )}
       </div>
+      )}
     </section>
   );
 }
