@@ -19,18 +19,20 @@ export default {
           900: '#7A2400',
         },
         // Steel: aço — confiança, profissionalismo, neutralidade técnica
+        // Valores em globals.css (--steel-*): o painel do mecânico no modo claro inverte a escala
         steel: {
-          50:  '#F5F7FA',
-          100: '#E8ECF1',
-          200: '#CBD3DD',
-          300: '#9AA6B6',
-          400: '#6B7889',
-          500: '#475567',
-          600: '#33414F',
-          700: '#222C37',
-          800: '#151C24',
-          900: '#0B1117', // base do dark mode
+          50:  'rgb(var(--steel-50) / <alpha-value>)',
+          100: 'rgb(var(--steel-100) / <alpha-value>)',
+          200: 'rgb(var(--steel-200) / <alpha-value>)',
+          300: 'rgb(var(--steel-300) / <alpha-value>)',
+          400: 'rgb(var(--steel-400) / <alpha-value>)',
+          500: 'rgb(var(--steel-500) / <alpha-value>)',
+          600: 'rgb(var(--steel-600) / <alpha-value>)',
+          700: 'rgb(var(--steel-700) / <alpha-value>)',
+          800: 'rgb(var(--steel-800) / <alpha-value>)',
+          900: 'rgb(var(--steel-900) / <alpha-value>)', // base do dark mode
         },
+        white: 'rgb(var(--white) / <alpha-value>)',
         // Verde-sinal: ações positivas, disponível, confirmar
         // (escalas completas: o código usa 50–900; antes só 500/600 existiam e o resto saía sem cor)
         signal: {
