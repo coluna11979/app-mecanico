@@ -18,14 +18,17 @@ export type QuoteCustomer = {
 };
 type QuoteItem = {
   id: string; kind: 'labor' | 'part'; description: string; quantity: number; unit_price: number;
-  stacked_at: string | null; platform_job_id: string | null;
+  stacked_at: string | null; platform_job_id: string | null; position?: number;
 };
 type Quote = {
   id: string; number: number | null; title: string; status: string; quote_status: string | null; price: number; created_at: string;
   customer_id: string | null; vehicle_id: string | null; items: QuoteItem[];
 };
-/** Linha do orçamento sendo montado */
-type Line = { key: string; kind: 'labor' | 'part'; description: string; qty: string; price: string; partId?: string; cost?: number };
+/** Linha do orçamento sendo montado. itemId = item já salvo (editar); locked = já foi para uma demanda */
+type Line = {
+  key: string; kind: 'labor' | 'part'; description: string; qty: string; price: string; partId?: string; cost?: number;
+  itemId?: string; locked?: boolean;
+};
 
 const QUOTE_STATUSES = ['awaiting_approval', 'approved', 'cancelled'];
 const num = (n: number | null, id: string) => (n != null ? String(n).padStart(4, '0') : id.slice(0, 6));
@@ -46,12 +49,12 @@ export default function QuotesTab({ wid, customers, startWith, onStarted }: {
   onStarted: () => void;
 }) {
   const [list, setList] = useState<Quote[] | null>(null);
-  const [editor, setEditor] = useState<{ customerId: string | null; vehicleId: string | null } | null>(null);
+  const [editor, setEditor] = useState<{ customerId: string | null; vehicleId: string | null; quote?: Quote } | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
   async function load() {
     const { data, error } = await supabase.from('service_orders')
-      .select('id, number, title, status, quote_status, price, created_at, customer_id, vehicle_id, items:service_order_items(id, kind, description, quantity, unit_price, stacked_at, platform_job_id)')
+      .select('id, number, title, status, quote_status, price, created_at, customer_id, vehicle_id, items:service_order_items(id, kind, description, quantity, unit_price, stacked_at, platform_job_id, position)')
       .eq('workshop_id', wid).in('status', QUOTE_STATUSES).order('created_at', { ascending: false }).limit(200);
     if (error) { toast.error('Não foi possível carregar os orçamentos: ' + error.message); return; }
     // "cancelled" só conta como orçamento quando foi recusado pelo cliente
@@ -106,20 +109,21 @@ export default function QuotesTab({ wid, customers, startWith, onStarted }: {
       )}
 
       {editor && (
-        <QuoteEditor wid={wid} customers={customers} initial={editor}
+        <QuoteEditor wid={wid} customers={customers} initial={editor} quote={editor.quote ?? null}
           onClose={() => setEditor(null)} onSaved={id => { setEditor(null); load().then(() => setOpenId(id)); }} />
       )}
       {current && !editor && (
         <QuoteSheet wid={wid} q={current} customer={current.customer_id ? byId.get(current.customer_id) ?? null : null}
-          onClose={() => setOpenId(null)} onChanged={load} />
+          onClose={() => setOpenId(null)} onChanged={load}
+          onEdit={() => setEditor({ customerId: current.customer_id, vehicleId: current.vehicle_id, quote: current })} />
       )}
     </div>
   );
 }
 
 /** Orçamento aberto: enviar no WhatsApp, aprovado / não aprovado e chamar o mecânico */
-function QuoteSheet({ wid, q, customer, onClose, onChanged }: {
-  wid: string; q: Quote; customer: QuoteCustomer | null; onClose: () => void; onChanged: () => void;
+function QuoteSheet({ wid, q, customer, onClose, onChanged, onEdit }: {
+  wid: string; q: Quote; customer: QuoteCustomer | null; onClose: () => void; onChanged: () => void; onEdit: () => void;
 }) {
   const nav = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -198,7 +202,12 @@ function QuoteSheet({ wid, q, customer, onClose, onChanged }: {
             <h2 className="text-lg font-bold text-steel-900 break-words">{customer?.full_name ?? 'Sem cliente'}</h2>
             {car && <div className="text-sm text-steel-600">🚗 {carText(car)}</div>}
           </div>
-          <span className={`shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+          <div className="shrink-0 flex flex-col items-end gap-1.5">
+            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+            {q.status !== 'cancelled' && (
+              <button type="button" onClick={onEdit} className="h-9 px-3 rounded-lg border border-steel-200 text-xs font-bold text-steel-700">✏️ Editar</button>
+            )}
+          </div>
         </div>
 
         <ul className="rounded-xl ring-1 ring-steel-200 divide-y divide-steel-100">
@@ -248,15 +257,23 @@ function QuoteSheet({ wid, q, customer, onClose, onChanged }: {
 }
 
 /** Montar o orçamento: cliente/carro, toque nos serviços e peças salvos (ou digite um item) e o total soma */
-function QuoteEditor({ wid, customers, initial, onClose, onSaved }: {
+function QuoteEditor({ wid, customers, initial, quote, onClose, onSaved }: {
   wid: string; customers: QuoteCustomer[]; initial: { customerId: string | null; vehicleId: string | null };
+  /** Editar este orçamento (null = novo) */
+  quote: Quote | null;
   onClose: () => void; onSaved: (id: string) => void;
 }) {
   const [customerId, setCustomerId] = useState(initial.customerId ?? '');
   const [vehicleId, setVehicleId] = useState(initial.vehicleId ?? '');
   const [services, setServices] = useState<CatalogItem[]>([]);
   const [parts, setParts] = useState<CatalogItem[]>([]);
-  const [lines, setLines] = useState<Line[]>([]);
+  const [lines, setLines] = useState<Line[]>(() => (quote?.items ?? [])
+    .slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    .map(i => ({
+      key: i.id, itemId: i.id, kind: i.kind, description: i.description,
+      qty: String(Number(i.quantity)).replace('.', ','), price: moneyStr(Number(i.unit_price)),
+      locked: !!i.platform_job_id,
+    })));
   const [pick, setPick] = useState<'labor' | 'part'>('labor');
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -292,6 +309,7 @@ function QuoteEditor({ wid, customers, initial, onClose, onSaved }: {
     setBusy(true);
     const labor = valid.filter(l => l.kind === 'labor');
     const title = (labor[0] ?? valid[0]).description.trim() + (valid.length > 1 ? ` + ${valid.length - 1}` : '');
+    if (quote) return saveEdit(valid, title);
     const { data: os, error } = await supabase.from('service_orders').insert({
       workshop_id: wid, customer_id: customerId || null, vehicle_id: vehicleId || null,
       title: title.slice(0, 120), status: 'awaiting_approval', approval_requested_at: new Date().toISOString(), price: 0,
@@ -308,11 +326,42 @@ function QuoteEditor({ wid, customers, initial, onClose, onSaved }: {
     onSaved(os.id);
   }
 
+  /** Editar: cliente/carro/título no orçamento; itens tirados saem, os mantidos atualizam, os novos entram.
+   *  Itens que já foram para uma demanda não mudam. O total o banco recalcula. */
+  async function saveEdit(valid: Line[], title: string) {
+    const q = quote!;
+    const fail = (msg: string) => { setBusy(false); toast.error('Não foi possível salvar: ' + msg); };
+    const { error } = await supabase.from('service_orders')
+      .update({ customer_id: customerId || null, vehicle_id: vehicleId || null, title: title.slice(0, 120) })
+      .eq('id', q.id).eq('workshop_id', wid);
+    if (error) return fail(error.message);
+    const keep = new Set(valid.filter(l => l.itemId).map(l => l.itemId!));
+    const removed = q.items.filter(i => !i.platform_job_id && !keep.has(i.id)).map(i => i.id);
+    if (removed.length) {
+      const { error: delErr } = await supabase.from('service_order_items').delete().in('id', removed).eq('workshop_id', wid);
+      if (delErr) return fail(delErr.message);
+    }
+    for (const [i, l] of valid.entries()) {
+      if (l.locked) continue;
+      const row = { description: l.description.trim(), quantity: parseMoney(l.qty), unit_price: parseMoney(l.price || '0'), position: i };
+      const { error: e } = l.itemId
+        ? await supabase.from('service_order_items').update(row).eq('id', l.itemId).eq('workshop_id', wid)
+        : await supabase.from('service_order_items').insert({
+          ...row, service_order_id: q.id, workshop_id: wid, kind: l.kind,
+          ...(l.partId ? { part_id: l.partId, unit_cost: l.cost ?? null } : {}),
+        });
+      if (e) return fail(e.message);
+    }
+    setBusy(false);
+    toast.success('Orçamento atualizado');
+    onSaved(q.id);
+  }
+
   return (
     <div className="fixed inset-0 z-[60] bg-steel-900/70 flex items-end sm:items-center justify-center sm:p-4" onClick={() => !busy && onClose()}>
       <div onClick={e => e.stopPropagation()} className="w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[94vh] flex flex-col">
         <div className="p-5 pb-3 space-y-3 overflow-y-auto">
-          <h2 className="text-lg font-bold text-steel-900">Novo orçamento</h2>
+          <h2 className="text-lg font-bold text-steel-900">{quote ? `Editar orçamento nº ${num(quote.number, quote.id)}` : 'Novo orçamento'}</h2>
 
           <div className="grid grid-cols-2 gap-2">
             <select className="input" value={customerId} onChange={e => setCustomerId(e.target.value)}>
@@ -332,13 +381,16 @@ function QuoteEditor({ wid, customers, initial, onClose, onSaved }: {
                 <li key={l.key} className="rounded-xl ring-1 ring-steel-200 p-2.5">
                   <div className="flex items-center gap-2">
                     <span className="shrink-0" aria-hidden>{l.kind === 'labor' ? '🔧' : '📦'}</span>
-                    <input className="input !py-1.5 text-sm flex-1" value={l.description} onChange={e => upd(l.key, { description: e.target.value })} />
-                    <button type="button" onClick={() => setLines(ls => ls.filter(x => x.key !== l.key))} aria-label="Remover item"
-                      className="h-9 w-9 shrink-0 rounded-lg text-steel-400 hover:text-alert-600">✕</button>
+                    <input className="input !py-1.5 text-sm flex-1" value={l.description} disabled={l.locked} onChange={e => upd(l.key, { description: e.target.value })} />
+                    {!l.locked && (
+                      <button type="button" onClick={() => setLines(ls => ls.filter(x => x.key !== l.key))} aria-label="Remover item"
+                        className="h-9 w-9 shrink-0 rounded-lg text-steel-400 hover:text-alert-600">✕</button>
+                    )}
                   </div>
+                  {l.locked && <div className="mt-1 text-[11px] text-steel-500">⚡ Já foi para um mecânico: não dá para mudar</div>}
                   <div className="mt-2 grid grid-cols-[70px_1fr_auto] gap-2 items-center">
-                    <input className="input !py-1.5 text-sm" inputMode="decimal" value={l.qty} onChange={e => upd(l.key, { qty: e.target.value })} aria-label="Quantidade" />
-                    <input className="input !py-1.5 text-sm" inputMode="decimal" placeholder="Valor (R$)" value={l.price} onChange={e => upd(l.key, { price: e.target.value })} aria-label="Valor unitário" />
+                    <input className="input !py-1.5 text-sm" inputMode="decimal" value={l.qty} disabled={l.locked} onChange={e => upd(l.key, { qty: e.target.value })} aria-label="Quantidade" />
+                    <input className="input !py-1.5 text-sm" inputMode="decimal" placeholder="Valor (R$)" value={l.price} disabled={l.locked} onChange={e => upd(l.key, { price: e.target.value })} aria-label="Valor unitário" />
                     <span className="text-sm font-semibold text-steel-800 min-w-[80px] text-right">{brl(parseMoney(l.qty || '0') * parseMoney(l.price || '0'))}</span>
                   </div>
                 </li>
