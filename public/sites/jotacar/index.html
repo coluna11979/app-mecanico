@@ -24,6 +24,11 @@
 <meta name="theme-color" content="#141619">
 <link rel="canonical" href="https://jotacar.mecanicoapp.com.br/">
 <meta property="og:url" content="https://jotacar.mecanicoapp.com.br/">
+<meta property="og:image" content="https://www.mecanicoapp.com.br/sites/jotacar/fotos/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Fachada da Jota Car Serviços Automotivo, Estrada do M'Boi Mirim, 9000">
+<meta name="twitter:card" content="summary_large_image">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="pt_BR">
 <meta property="og:site_name" content="Jota Car Serviços Automotivos">
@@ -33,7 +38,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://images.unsplash.com" crossorigin>
-<link rel="preload" as="image" href="https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=1600&q=70&auto=format&fit=crop" imagesrcset="https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=800&q=62&auto=format&fit=crop 800w, https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=1600&q=70&auto=format&fit=crop 1600w, https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=2200&q=70&auto=format&fit=crop 2200w" imagesizes="100vw">
+<link rel="preload" as="image" href="/sites/jotacar/fotos/hero.webp" imagesrcset="/sites/jotacar/fotos/hero-900.webp 900w, /sites/jotacar/fotos/hero.webp 1672w" imagesizes="(min-width:1101px) 56vw, 100vw">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
 <script type="application/ld+json">
@@ -50,6 +55,7 @@
     {"@type": "OpeningHoursSpecification", "dayOfWeek": "Saturday", "opens": "08:00", "closes": "14:00"}
   ],
   "url": "https://jotacar.mecanicoapp.com.br/",
+  "image": "https://www.mecanicoapp.com.br/sites/jotacar/fotos/fachada.webp",
   "sameAs": ["https://www.instagram.com/jotacar9000/"]
 }
 </script>
@@ -157,7 +163,7 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
    ===================================================================== */
 .hero{position:relative;min-height:min(100svh,920px);display:flex;align-items:flex-end;color:var(--white);background:var(--ink);overflow:hidden;isolation:isolate}
 .hero-media{position:absolute;inset:0;z-index:-2;overflow:hidden}
-.hero-media img{width:100%;height:115%;object-fit:cover;object-position:30% 35%;will-change:transform;transform:scale(1.08);animation:heroImg 1.8s var(--ease) .1s backwards}
+.hero-media img{width:100%;height:115%;object-fit:cover;object-position:50% 30%;will-change:transform;transform:scale(1.08);animation:heroImg 1.8s var(--ease) .1s backwards}
 @keyframes heroImg{from{transform:scale(1.18);filter:brightness(.4)}to{transform:scale(1.08);filter:none}}
 .hero::before{content:"";position:absolute;inset:0;z-index:-1;background:
   linear-gradient(90deg,rgba(20,22,25,.94) 0%,rgba(20,22,25,.78) 38%,rgba(20,22,25,.25) 72%,rgba(20,22,25,.45) 100%),
@@ -195,6 +201,17 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
 .scroll-cue i{width:2px;height:56px;background:rgba(255,255,255,.15);position:relative;overflow:hidden;border-radius:2px}
 .scroll-cue i::after{content:"";position:absolute;left:0;top:-40%;width:100%;height:40%;background:var(--yellow);animation:cue 2s var(--ease) infinite}
 @keyframes cue{to{top:100%}}
+
+@media (min-width:1101px){
+  .hero-media{left:auto;width:58%}
+  .hero-media img{height:106%;object-position:58% 20%}
+  .hero-grid{grid-template-columns:minmax(0,640px) 1fr}
+  .hero-media::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,var(--ink) 0,rgba(20,22,25,.55) 14%,rgba(20,22,25,0) 34%),linear-gradient(0deg,rgba(20,22,25,.55) 0,rgba(20,22,25,0) 30%),linear-gradient(180deg,rgba(20,22,25,.75) 0,rgba(20,22,25,0) 130px)}
+  .hero::before{background:linear-gradient(90deg,var(--ink) 0,var(--ink) 44%,rgba(20,22,25,0) 46%)}
+  .hero-lines{display:none}
+  .hero h1{font-size:clamp(48px,5.4vw,80px)}
+  .scroll-cue{display:none}
+}
 
 /* =====================================================================
    02 · Serviços essenciais
@@ -329,6 +346,10 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
 .about-photo{position:relative;border-radius:var(--r-lg);overflow:hidden;aspect-ratio:4/5;background:var(--carbon)}
 .about-photo img{width:100%;height:100%;object-fit:cover;transform:scale(1.12);transition:transform 1.6s var(--ease)}
 .about-photo.in img{transform:scale(1)}
+.about-photo.real img{object-position:36% 50%}
+.about-photo.real .about-tag{top:auto;bottom:16px}
+@media (max-width:640px){ .about-photo.real .tag-long{display:none} }
+@media (max-width:1100px){ .about-photo.real{aspect-ratio:4/3} .about-photo.real img{object-position:40% 45%} }
 .about-tag{position:absolute;left:18px;top:18px;z-index:3;display:flex;align-items:center;gap:10px;background:rgba(20,22,25,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:var(--white);padding:10px 14px;border-radius:14px;font-size:14px;font-weight:600}
 .about-tag svg{width:18px;height:18px;color:var(--yellow)}
 .why{margin-top:36px;display:grid;gap:4px}
@@ -494,11 +515,11 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
   .section{padding-block:64px}
   /* Topo: foto aparece de verdade (faixa superior), texto entra logo abaixo */
   .hero{display:block;min-height:0}
-  .hero-media{position:relative;inset:auto;height:min(52vh,340px);z-index:-2}
-  .hero-media img{height:120%;object-position:35% 30%}
-  .hero::before{background:linear-gradient(180deg,rgba(20,22,25,.55) 0,rgba(20,22,25,.05) 90px,rgba(20,22,25,.15) 170px,rgba(20,22,25,.92) calc(min(52vh,340px) - 30px),var(--ink) min(52vh,340px))}
-  .hero > .illus{top:calc(var(--header-h) + 6px);bottom:auto}
-  .hero .wrap{position:relative;margin-top:-56px;padding-top:0;padding-bottom:40px}
+  .hero-media{position:relative;inset:auto;height:250px;margin-top:var(--header-h);z-index:-2}
+  .hero-media img{height:100%;object-position:50% 18%;transform:none!important;animation:none}
+  .hero::before{background:linear-gradient(180deg,rgba(20,22,25,0) 0,rgba(20,22,25,0) 240px,rgba(20,22,25,.92) 300px,var(--ink) 314px)}
+  .hero > .illus{top:calc(var(--header-h) + 8px);bottom:auto;right:10px;font-size:11px;padding:3px 8px}
+  .hero .wrap{position:relative;margin-top:-30px;padding-top:0;padding-bottom:40px}
   .promo-pill{width:100%;justify-content:space-between;flex-wrap:nowrap;gap:10px;padding:8px 8px 8px 14px;font-size:14px}
   .promo-pill .pp-long{display:none}
   .promo-pill .pp-txt{flex:1;min-width:0}
@@ -607,9 +628,7 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
 <!-- ================= 01 · HERO ================= -->
 <section class="hero" id="topo" aria-labelledby="hero-title">
   <div class="hero-media" aria-hidden="true">
-    <img id="heroImg" src="https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=1600&q=70&auto=format&fit=crop"
-         srcset="https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=800&q=62&auto=format&fit=crop 800w, https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=1600&q=70&auto=format&fit=crop 1600w, https://images.unsplash.com/photo-1625047509248-ec889cbff17f?w=2200&q=70&auto=format&fit=crop 2200w"
-         sizes="100vw" width="1600" height="900" alt="" fetchpriority="high" decoding="async">
+    <img id="heroImg" src="/sites/jotacar/fotos/hero.webp" srcset="/sites/jotacar/fotos/hero-900.webp 900w, /sites/jotacar/fotos/hero.webp 1672w" sizes="(min-width:1101px) 56vw, 100vw" width="1672" height="941" alt="Fachada da Jota Car Serviços Automotivo, nº 9000 (imagem ilustrativa)" fetchpriority="high" decoding="async">
   </div>
   <div class="hero-lines" aria-hidden="true"></div>
   <div class="hero-curtain" aria-hidden="true"></div>
@@ -630,6 +649,7 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
           <li><svg aria-hidden="true"><use href="#i-pin"/></svg>Estrada do M'Boi Mirim, 9000 · Zona Sul de SP</li>
           <li><svg aria-hidden="true"><use href="#i-clock"/></svg>Segunda a sábado</li>
           <li><svg aria-hidden="true"><use href="#i-chip"/></svg>Diagnóstico computadorizado</li>
+          <li data-confirmar="parcelamento"><svg aria-hidden="true"><use href="#i-check"/></svg>Parcele em até 10x sem juros</li>
         </ul>
       </div>
       <a class="scroll-cue fade-up d4" href="#servicos" aria-label="Rolar para os serviços"><i></i>Role</a>
@@ -786,7 +806,7 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
   <div class="wrap about">
     <figure class="about-photo mask" id="aboutPhoto" style="margin:0">
       <img id="aboutImg" src="https://images.unsplash.com/photo-1728474751252-9c085659f6ab?w=1000&q=68&auto=format&fit=crop" srcset="https://images.unsplash.com/photo-1728474751252-9c085659f6ab?w=640&q=64&auto=format&fit=crop 640w, https://images.unsplash.com/photo-1728474751252-9c085659f6ab?w=1000&q=68&auto=format&fit=crop 1000w" sizes="(max-width:1100px) 100vw, 600px" width="1000" height="1250" loading="lazy" decoding="async" alt="Mãos de mecânico trabalhando embaixo de um carro">
-      <span class="about-tag"><svg aria-hidden="true"><use href="#i-pin"/></svg>Estrada do M'Boi Mirim, 9000</span>
+      <span class="about-tag"><svg aria-hidden="true"><use href="#i-pin"/></svg><span id="aboutTag">Estrada do M'Boi Mirim, 9000</span></span>
       <span class="illus" id="aboutIllus">Imagem ilustrativa</span>
     </figure>
     <div>
@@ -904,10 +924,10 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
     // [abre, fecha] em horas; null = fechado. Índice 0 = domingo.
     horario: [null,[8,18],[8,18],[8,18],[8,18],[8,18],[8,14]],
     // Itens liberados após confirmação do dono: "nota", "depoimentos", "parcelamento", "acessibilidade", "cep", "autorizacao"
-    confirmados: ["autorizacao"],
+    confirmados: ["autorizacao", "parcelamento"],   // 10x: anunciado na fachada da oficina
     // Fotos REAIS da oficina: a primeira substitui a foto ilustrativa de "Sobre nós".
     // Ex.: { src: "/sites/jotacar/fotos/fachada.jpg", alt: "Fachada da Jota Car na Estrada do M'Boi Mirim" }
-    fotos: [],
+    fotos: [{ src: "/sites/jotacar/fotos/fachada.webp", alt: "Fachada da Jota Car Serviços Automotivo na Estrada do M'Boi Mirim, 9000, com carros nos elevadores" }],
     // Marcas que a loja trabalha DE VERDADE (só nomes). Aparecem sozinhas quando houver itens.
     marcas: [],
     // Ofertas com preço. Só aparecem até a "validade" (AAAA-MM-DD). Preço anunciado obriga a loja (CDC art. 30).
@@ -1125,7 +1145,10 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
   if (CONFIG.fotos.length){
     var ai = document.getElementById("aboutImg");
     ai.removeAttribute("srcset"); ai.src = CONFIG.fotos[0].src; ai.alt = CONFIG.fotos[0].alt || "Jota Car";
+    ai.width = 1360; ai.height = 1020;
     document.getElementById("aboutIllus").remove();
+    document.getElementById("aboutPhoto").classList.add("real");
+    document.getElementById("aboutTag").innerHTML = "Nossa oficina<span class=\"tag-long\"> · Estrada do M'Boi Mirim, 9000</span>";
   }
 
   // ================= MENU MOBILE =================
