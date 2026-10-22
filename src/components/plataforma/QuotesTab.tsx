@@ -131,6 +131,7 @@ function QuoteSheet({ wid, q, customer, onClose, onChanged, onEdit }: {
   const st = statusOf(q);
   const items = [...q.items].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'labor' ? -1 : 1));
   const labor = items.filter(i => i.kind === 'labor');
+  const parts = items.filter(i => i.kind === 'part');
   const phone = onlyDigits(customer?.phone ?? '');
   /** Serviços que ainda não foram para uma demanda */
   const free = labor.filter(i => !i.platform_job_id);
@@ -180,6 +181,7 @@ function QuoteSheet({ wid, q, customer, onClose, onChanged, onEdit }: {
     const description = [
       'Serviços a realizar:',
       ...labor.map(i => `• ${i.description}${Number(i.quantity) > 1 ? ` (${Number(i.quantity)}x)` : ''}`),
+      parts.length ? `Peças (a oficina fornece): ${parts.map(p => `${Number(p.quantity) !== 1 ? `${String(Number(p.quantity)).replace('.', ',')}x ` : ''}${p.description}`).join(', ')}` : '',
       '',
       car ? `Veículo: ${carText(car)}` : '',
       `Referência: Orçamento nº ${num(q.number, q.id)}`,
@@ -351,6 +353,13 @@ function QuoteEditor({ wid, customers, initial, quote, onClose, onSaved }: {
           ...(l.partId ? { part_id: l.partId, unit_cost: l.cost ?? null } : {}),
         });
       if (e) return fail(e.message);
+    }
+    // Estava nos Empilhados: os serviços novos entram na pilha junto
+    if (q.items.some(i => i.kind === 'labor' && i.stacked_at && !i.platform_job_id)) {
+      const { data: free } = await supabase.from('service_order_items').select('id')
+        .eq('service_order_id', q.id).eq('workshop_id', wid).eq('kind', 'labor').is('platform_job_id', null).is('stacked_at', null);
+      const ids = ((free ?? []) as { id: string }[]).map(i => i.id);
+      if (ids.length) await markPlatformItems(wid, [q.id], ids, { stack: true });
     }
     setBusy(false);
     toast.success('Orçamento atualizado');

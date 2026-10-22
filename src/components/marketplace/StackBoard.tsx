@@ -18,7 +18,13 @@ type Card = {
   items: { id: string; description: string; quantity: number; amount: number }[];
   /** OS: soma da mão de obra (o pagamento sai da sugestão). Avulso: o valor que a oficina definiu */
   labor: number; free?: FreeItem;
+  /** Peças da OS/orçamento (a oficina fornece): o mecânico precisa saber o que vai trocar */
+  parts: string[];
 };
+
+/** "2x Bucha de bandeja" */
+const partText = (p: { description: string; quantity: number }) =>
+  `${Number(p.quantity) !== 1 ? `${String(Number(p.quantity)).replace('.', ',')}x ` : ''}${p.description.trim()}`;
 
 const osNum = (n: number | null, id: string) => (n != null ? String(n).padStart(4, '0') : id.slice(0, 8));
 const amt = (i: StackItem) => Math.round(Number(i.quantity) * Number(i.unit_price) * 100) / 100;
@@ -32,6 +38,8 @@ const amt = (i: StackItem) => Math.round(Number(i.quantity) * Number(i.unit_pric
 export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string; reloadKey: number; onGenerate: () => void }) {
   const [items, setItems] = useState<StackItem[] | null>(null);
   const [free, setFree] = useState<FreeItem[]>([]);
+  /** Peças das OS empilhadas, por OS */
+  const [partsByOs, setPartsByOs] = useState<Map<string, string[]>>(new Map());
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   /** Lista aberta (fechada = só o resumo) */
@@ -55,7 +63,18 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
     ]);
     if (os.error) console.warn('[StackBoard]', os.error.message);
     if (av.error) console.warn('[StackBoard] avulsos', av.error.message);
-    setItems(((os.data ?? []) as unknown as StackItem[]).filter(i => i.order && i.order.status !== 'cancelled'));
+    const stackItems = ((os.data ?? []) as unknown as StackItem[]).filter(i => i.order && i.order.status !== 'cancelled');
+    setItems(stackItems);
+    const osIds = [...new Set(stackItems.map(i => i.service_order_id))];
+    if (osIds.length) {
+      const { data: parts } = await supabase.from('service_order_items').select('service_order_id, description, quantity')
+        .eq('workshop_id', wid).eq('kind', 'part').in('service_order_id', osIds).order('position');
+      const m = new Map<string, string[]>();
+      for (const p of (parts ?? []) as { service_order_id: string; description: string; quantity: number }[]) {
+        m.set(p.service_order_id, [...(m.get(p.service_order_id) ?? []), partText(p)]);
+      }
+      setPartsByOs(m);
+    } else setPartsByOs(new Map());
     setFree(((av.data ?? []) as FreeItem[]).map(f => ({
       ...f, total: Number(f.total), hours: f.hours != null ? Number(f.hours) : null,
       customer_charge: f.customer_charge != null ? Number(f.customer_charge) : null,
@@ -70,7 +89,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
       const c = m.get(o.id) ?? {
         key: `os:${o.id}`, kind: 'os' as const, osId: o.id, number: o.number, title: o.title,
         car: [[o.vehicle?.make, o.vehicle?.model].filter(Boolean).join(' '), o.vehicle?.plate].filter(Boolean).join(' · '),
-        items: [], labor: 0,
+        items: [], labor: 0, parts: partsByOs.get(o.id) ?? [],
       };
       c.items.push({ id: i.id, description: i.description, quantity: Number(i.quantity), amount: amt(i) });
       c.labor += amt(i);
@@ -78,10 +97,10 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
     }
     const freeCards: Card[] = free.map(f => ({
       key: `free:${f.id}`, kind: 'free', osId: null, number: null, title: f.title, car: f.vehicle?.trim() ?? '',
-      items: [{ id: f.id, description: f.title, quantity: 1, amount: f.total }], labor: f.total, free: f,
+      items: [{ id: f.id, description: f.title, quantity: 1, amount: f.total }], labor: f.total, free: f, parts: [],
     }));
     return [...m.values(), ...freeCards];
-  }, [items, free]);
+  }, [items, free, partsByOs]);
 
   const inStack = cards.filter(c => !picked.has(c.key));
   const inSearch = cards.filter(c => picked.has(c.key));
@@ -147,6 +166,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
         : [
             many ? `\nVeículo${c.car ? `: ${c.car}` : ''} (${osWord} nº ${osNum(c.number, c.osId!)})` : '',
             ...c.items.map(i => `• ${i.description.trim()}${i.quantity > 1 ? ` (${i.quantity}x)` : ''}`),
+            c.parts.length ? `Peças (a oficina fornece)${many && c.car ? ` — ${c.car.split(' · ')[0]}` : ''}: ${c.parts.join(', ')}` : '',
           ])),
       !many && osCards.length === 1 && osCards[0].car ? `\nVeículo: ${osCards[0].car}` : '',
       !many && osCards.length === 1 ? `Referência: ${osWord} nº ${osNum(osCards[0].number, osCards[0].osId!)}` : '',
@@ -208,7 +228,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
                 ? (c.items.length === 1 ? c.items[0].description : `${c.items[0].description} + ${c.items.length - 1}`)
                 : c.title;
               const sub = [brl(c.labor), ...(c.kind === 'os'
-                ? [`${osWord} nº ${osNum(c.number, c.osId!)}`, c.car]
+                ? [`${osWord} nº ${osNum(c.number, c.osId!)}`, c.car, c.parts.length ? `+ ${c.parts.length} ${c.parts.length === 1 ? 'peça' : 'peças'}` : '']
                 : [c.car ? `🚗 ${c.car}` : '', c.free!.hours ? `~${String(c.free!.hours).replace('.', ',')}h` : ''])].filter(Boolean).join(' · ');
               return (
                 <li key={c.key} className={`flex items-center gap-3 px-4 py-3 ${on ? 'bg-brand-50/60' : ''}`}>
