@@ -76,29 +76,6 @@ export const FONTS = [
   { name: 'Inter',         weight: 'Regular a Bold (400–700)', use: 'Textos corridos, listas, rodapés', url: 'https://fonts.google.com/specimen/Inter' },
 ];
 
-export const FLYER_COPY: Record<Audience, { kicker: string; title: [string, string]; bullets: string[]; cta: string }> = {
-  mecanico: {
-    kicker: 'PARA MECÂNICOS',
-    title: ['Ganhe mais usando a', 'experiência que você já tem.'],
-    bullets: [
-      'Receba serviços de oficinas da sua região',
-      'Trabalhe nos horários que você tem livres',
-      'Você escolhe o que aceita',
-    ],
-    cta: 'Aponte a câmera e faça seu cadastro',
-  },
-  oficina: {
-    kicker: 'PARA OFICINAS',
-    title: ['A mão de obra que sua oficina', 'precisa, quando precisa.'],
-    bullets: [
-      'Reforço nos dias de pico e nas faltas',
-      'Mecânicos verificados na sua região',
-      'Monte sua rede de profissionais de confiança',
-    ],
-    cta: 'Aponte a câmera e cadastre sua oficina',
-  },
-};
-
 export const PHRASES: { text: string; use: string }[] = [
   { text: 'Não somos um aplicativo. Somos a infraestrutura da nova mecânica brasileira.', use: 'Institucional: bio, apresentação, imprensa' },
   { text: 'Você não precisa investir em ferramenta. Só no seu talento.', use: 'Mecânico: anúncio e chamada de cadastro' },
@@ -198,7 +175,7 @@ export function canvasToBlob(c: HTMLCanvasElement): Promise<Blob> {
 }
 
 /** Desenha o ícone (SVG sem texto) num canvas. */
-async function drawIcon(ctx: CanvasRenderingContext2D, v: IconVariant, x: number, y: number, size: number) {
+export async function drawIcon(ctx: CanvasRenderingContext2D, v: IconVariant, x: number, y: number, size: number) {
   const img = await loadImage(svgDataUrl(iconSvg(v)));
   ctx.drawImage(img, x, y, size, size);
 }
@@ -286,97 +263,9 @@ export async function palettePng() {
   return canvasToBlob(c);
 }
 
-// ── Panfleto A5 ─────────────────────────────────────────────────────────────
-
-/** A5 (148×210 mm) + 3 mm de sangria em cada lado, a 300 dpi. */
-export const FLYER_MM = { w: 148, h: 210, bleed: 3 };
-const DPI = 300;
-const mm = (v: number) => Math.round((v / 25.4) * DPI);
-
-export async function flyerCanvas(a: Audience, tracked: boolean, scale = 1) {
-  await ensureFonts();
-  const copy = FLYER_COPY[a];
-  const B = mm(FLYER_MM.bleed) * scale;
-  const W = (mm(FLYER_MM.w) + 2 * mm(FLYER_MM.bleed)) * scale;
-  const H = (mm(FLYER_MM.h) + 2 * mm(FLYER_MM.bleed)) * scale;
-  const u = (v: number) => mm(v) * scale; // milímetros → px
-  const L = B + u(12);                    // margem segura de 12 mm
-
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d')!;
-
-  // Fundo grafite com brilho laranja no canto
-  ctx.fillStyle = '#0B1117'; ctx.fillRect(0, 0, W, H);
-  const glow = ctx.createRadialGradient(W * 0.9, H * 0.08, 0, W * 0.9, H * 0.08, W * 0.8);
-  glow.addColorStop(0, 'rgba(255,92,10,0.35)'); glow.addColorStop(1, 'rgba(255,92,10,0)');
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
-
-  // Logo
-  const logoH = u(12);
-  await drawIcon(ctx, 'app', L, B + u(12), logoH);
-  ctx.font = `700 ${u(7)}px "Space Grotesk"`;
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#FFFFFF';
-  const lx = L + logoH + u(3), ly = B + u(12) + logoH / 2;
-  ctx.fillText('Mecânico', lx, ly);
-  ctx.fillStyle = '#FF5C0A';
-  ctx.fillText('App', lx + ctx.measureText('Mecânico').width, ly);
-
-  // Chamada
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#FF7A38';
-  ctx.font = `700 ${u(4)}px "Inter"`;
-  ctx.fillText(copy.kicker, L, B + u(42));
-
-  ctx.font = `700 ${u(10)}px "Space Grotesk"`;
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(copy.title[0], L, B + u(56), W - 2 * L);
-  ctx.fillStyle = '#FF5C0A';
-  ctx.fillText(copy.title[1], L, B + u(68), W - 2 * L);
-
-  // Benefícios
-  ctx.font = `500 ${u(5)}px "Inter"`;
-  copy.bullets.forEach((t, i) => {
-    const y = B + u(84 + i * 10);
-    ctx.fillStyle = '#FF5C0A';
-    ctx.beginPath(); ctx.arc(L + u(2), y - u(1.7), u(1.6), 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#E8ECF1';
-    ctx.fillText(t, L + u(7), y, W - L - u(7) - B - u(12));
-  });
-
-  // Cartão branco com o QR
-  const cardY = B + u(118), cardH = u(78), cardX = L, cardW = W - 2 * L;
-  ctx.fillStyle = '#FFFFFF';
-  roundRect(ctx, cardX, cardY, cardW, cardH, u(5)); ctx.fill();
-  const qrSize = cardH - u(12);
-  const qr = await qrCanvas(signupUrl(a, tracked), Math.round(qrSize));
-  ctx.drawImage(qr, cardX + u(6), cardY + u(6), qrSize, qrSize);
-
-  const tx = cardX + u(6) + qrSize + u(6);
-  const tw = cardX + cardW - u(6) - tx;
-  ctx.fillStyle = '#0B1117';
-  ctx.font = `700 ${u(6.2)}px "Space Grotesk"`;
-  wrapText(ctx, copy.cta, tx, cardY + u(22), tw, u(7.5));
-  ctx.fillStyle = '#E64500';
-  ctx.font = `600 ${u(3.8)}px "Inter"`;
-  ctx.fillText(`${DISPLAY_DOMAIN}${SIGNUP_PATH[a]}`, tx, cardY + cardH - u(10), tw);
-
-  // Rodapé
-  ctx.fillStyle = '#6B7889';
-  ctx.font = `500 ${u(3.6)}px "Inter"`;
-  ctx.fillText(DISPLAY_DOMAIN, L, H - B - u(8));
-
-  return c;
-}
-
-export async function flyerPng(a: Audience, tracked: boolean) {
-  return canvasToBlob(await flyerCanvas(a, tracked));
-}
-
 // ── Utilitários ─────────────────────────────────────────────────────────────
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+export function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -384,19 +273,6 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
-}
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lineH: number) {
-  let line = '';
-  let yy = y;
-  for (const word of text.split(' ')) {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > maxW && line) {
-      ctx.fillText(line, x, yy);
-      line = word; yy += lineH;
-    } else line = test;
-  }
-  if (line) ctx.fillText(line, x, yy);
 }
 
 export function download(name: string, data: Blob | string, type = 'image/svg+xml') {
@@ -426,7 +302,8 @@ PASTAS
   02-logotipo    Logo horizontal: fundo claro, fundo escuro, 1 cor preto, 1 cor branco (SVG + PNG transparente).
   03-icone       Só o símbolo: app (fundo grafite), laranja, branco, preto (SVG + PNG 2048 px).
   04-cores       Paleta em imagem + este resumo.
-  05-panfletos   Panfletos A5 prontos (oficina e mecânico), PNG 300 dpi com 3 mm de sangria (154 x 216 mm).
+  05-panfletos   Panfletos A5 prontos (oficina e mecânico, 4 temas), PNG 300 dpi com 3 mm de sangria (154 x 216 mm).
+                 Mais mensagens e formatos de rede social: painel admin > Kit da marca > Panfletos e posts.
   06-textos      Frases da marca e textos dos panfletos.
 
 CORES
@@ -484,17 +361,32 @@ export async function buildKitZip(tracked: boolean, onProgress?: (step: string) 
   co.file('cores.txt', COLORS.flatMap(g => g.colors).map(c => `${c.name}: ${c.hex} | ${rgbText(c.hex)} | ${cmykText(c.hex)}`).join('\n'));
 
   step('panfletos');
+  const { MESSAGES, THEMES, renderPiecePng, pieceFileName } = await import('./brandPieces');
   const p = zip.folder('05-panfletos')!;
-  p.file('panfleto-a5-oficina.png', await flyerPng('oficina', tracked));
-  p.file('panfleto-a5-mecanico.png', await flyerPng('mecanico', tracked));
+  for (const id of ['ofi-mao-de-obra', 'mec-experiencia']) {
+    const message = MESSAGES.find(m => m.id === id)!;
+    for (const theme of Object.keys(THEMES) as (keyof typeof THEMES)[]) {
+      p.file(pieceFileName({ message, theme, format: 'a5' }), await renderPiecePng({ message, theme, format: 'a5', tracked }));
+    }
+  }
 
   step('textos');
-  zip.folder('06-textos')!.file('frases-e-textos.txt',
-    `FRASES DA MARCA\n\n${PHRASES.map(f => `"${f.text}"\n  Uso: ${f.use}`).join('\n\n')}\n\n` +
-    (['oficina', 'mecanico'] as Audience[]).map(a => {
-      const c = FLYER_COPY[a];
-      return `PANFLETO ${a.toUpperCase()}\n  ${c.kicker}\n  ${c.title.join(' ')}\n${c.bullets.map(b => `  • ${b}`).join('\n')}\n  ${c.cta}`;
-    }).join('\n\n'));
+  const msgText = (m: (typeof MESSAGES)[number]) => [
+    `[${m.audience === 'oficina' ? 'OFICINA' : 'MECÂNICO'}] ${m.name}`,
+    `  ${m.kicker}`,
+    `  ${m.title} ${m.highlight}`,
+    ...m.bullets.map(b => `  • ${b}`),
+    `  QR: ${m.cta}`,
+    '',
+    '  Legenda:',
+    ...m.caption.split('\n').map(l => `  ${l}`),
+  ].join('\n');
+  zip.folder('06-textos')!.file('frases-e-textos.txt', [
+    'FRASES DA MARCA', '',
+    PHRASES.map(f => `"${f.text}"\n  Uso: ${f.use}`).join('\n\n'), '',
+    'MENSAGENS DAS PEÇAS (panfletos e posts)', '',
+    MESSAGES.map(msgText).join('\n\n'),
+  ].join('\n'));
 
   zip.file('LEIA-ME.txt', readme(tracked));
 

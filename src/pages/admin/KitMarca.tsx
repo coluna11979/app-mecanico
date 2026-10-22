@@ -1,10 +1,11 @@
 import { ReactNode, useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { toast } from '@/components/ui/Toast';
+import PiecesStudio from '@/components/admin/marketing/PiecesStudio';
 import {
-  type Audience, type IconVariant, COLORS, DISPLAY_DOMAIN, FLYER_COPY, FLYER_MM, FONTS, LANDING_PATH,
-  LOGO_VARIANTS, PHRASES, PUBLIC_URL, SIGNUP_PATH, buildKitZip, canvasToBlob, cmykText, download,
-  flyerCanvas, flyerPng, iconPng, iconSvg, logoPng, logoSvg, palettePng, qrPng, qrSvg, rgbText, signupUrl,
+  type Audience, type IconVariant, COLORS, DISPLAY_DOMAIN, FONTS, LANDING_PATH,
+  LOGO_VARIANTS, PHRASES, PUBLIC_URL, SIGNUP_PATH, buildKitZip, cmykText, download,
+  iconPng, iconSvg, logoPng, logoSvg, palettePng, qrPng, qrSvg, rgbText, signupUrl,
 } from '@/lib/brandKit';
 
 const SECTIONS = [
@@ -13,7 +14,7 @@ const SECTIONS = [
   { id: 'icone',     label: 'Ícone' },
   { id: 'cores',     label: 'Cores' },
   { id: 'fontes',    label: 'Fontes' },
-  { id: 'panfletos', label: 'Panfletos' },
+  { id: 'pecas',     label: 'Panfletos e posts' },
   { id: 'textos',    label: 'Frases e textos' },
 ];
 
@@ -90,7 +91,7 @@ export default function AdminKitMarca() {
         <IconSection />
         <ColorsSection />
         <FontsSection />
-        <FlyersSection tracked={tracked} />
+        <PiecesSection tracked={tracked} />
         <TextsSection />
       </div>
     </AdminLayout>
@@ -294,41 +295,14 @@ function FontsSection() {
   );
 }
 
-// ── 06 Panfletos ────────────────────────────────────────────────────────────
+// ── 06 Panfletos e posts ────────────────────────────────────────────────────
 
-function FlyersSection({ tracked }: { tracked: boolean }) {
+function PiecesSection({ tracked }: { tracked: boolean }) {
   return (
-    <Section id="panfletos" n={6} title="Panfletos prontos (A5)"
-      subtitle={`${FLYER_MM.w} × ${FLYER_MM.h} mm com ${FLYER_MM.bleed} mm de sangria, 300 dpi. Pode mandar direto ou usar de base para a gráfica criar o seu.`}>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {AUD.map(({ a, emoji }) => <FlyerCard key={a} a={a} emoji={emoji} tracked={tracked} />)}
-      </div>
+    <Section id="pecas" n={6} title="Panfletos e posts"
+      subtitle="Escolha a mensagem e o formato, compare os 4 temas e baixe. Panfleto A5 vai com QR code; post e story vão com legenda pronta.">
+      <PiecesStudio tracked={tracked} />
     </Section>
-  );
-}
-
-function FlyerCard({ a, emoji, tracked }: { a: Audience; emoji: string; tracked: boolean }) {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    let url: string | null = null;
-    flyerCanvas(a, tracked, 0.35).then(canvasToBlob).then(b => {
-      url = URL.createObjectURL(b);
-      if (alive) setSrc(url);
-    });
-    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
-  }, [a, tracked]);
-
-  return (
-    <div className="border border-steel-200 rounded-2xl p-3">
-      <div className="aspect-[154/216] bg-steel-100 rounded-xl overflow-hidden grid place-items-center">
-        {src ? <img src={src} alt={`Panfleto ${a}`} className="w-full h-full object-contain" /> : <span className="text-steel-400 text-sm">Gerando…</span>}
-      </div>
-      <div className="flex items-center justify-between gap-2 mt-3 flex-wrap">
-        <div className="font-semibold text-steel-900 text-sm">{emoji} {FLYER_COPY[a].kicker.toLowerCase().replace(/^./, c => c.toUpperCase())}</div>
-        <DlButton onClick={async () => download(`panfleto-a5-${a}.png`, await flyerPng(a, tracked))}>Baixar PNG 300 dpi</DlButton>
-      </div>
-    </div>
   );
 }
 
