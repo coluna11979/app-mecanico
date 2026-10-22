@@ -96,6 +96,8 @@ import AdminEmbaixadores from './pages/admin/Embaixadores';
 import AdminModulos from './pages/admin/Modulos';
 import AdminAgentes from './pages/admin/Agentes';
 import AdminMarketing from './pages/admin/Marketing';
+import AdminKitMarca from './pages/admin/KitMarca';
+import AdminMaterialGrafico from './pages/admin/MaterialGrafico';
 import CampaignLink from './pages/public/CampaignLink';
 import Unsubscribe from './pages/public/Unsubscribe';
 
@@ -212,6 +214,8 @@ export default function App() {
       <Route path="/admin/modulos" element={<ProtectedRoute allow={['admin']}><AdminModulos /></ProtectedRoute>} />
       <Route path="/admin/agentes" element={<ProtectedRoute allow={['admin']}><AdminAgentes /></ProtectedRoute>} />
       <Route path="/admin/marketing" element={<ProtectedRoute allow={['admin']}><AdminMarketing /></ProtectedRoute>} />
+      <Route path="/admin/kit-marca" element={<ProtectedRoute allow={['admin']}><AdminKitMarca /></ProtectedRoute>} />
+      <Route path="/admin/material-grafico" element={<ProtectedRoute allow={['admin']}><AdminMaterialGrafico /></ProtectedRoute>} />
       <Route path="/admin/usuario/:id"   element={<ProtectedRoute allow={['admin']}><AdminUserDetail /></ProtectedRoute>} />
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
