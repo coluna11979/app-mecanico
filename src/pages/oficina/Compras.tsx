@@ -35,13 +35,27 @@ export function invoiceStatus(n: Pick<PurchaseInvoice, 'status'> & { payables: P
   return open.some(p => p.due_date < todayISO()) ? 'vencida' : 'aberto';
 }
 
-type Period = 'mes' | '90' | 'ano' | 'tudo';
-const PERIODS: { value: Period; label: string }[] = [
-  { value: 'mes', label: 'Este mês' }, { value: '90', label: 'Últimos 90 dias' }, { value: 'ano', label: 'Este ano' }, { value: 'tudo', label: 'Todo o período' },
+type Period = 'hoje' | 'ontem' | '7' | '30' | 'mes' | 'tudo' | 'datas';
+const PERIODS: [Period, string][] = [
+  ['tudo', 'Todo período'], ['hoje', 'Hoje'], ['ontem', 'Ontem'], ['7', '7 dias'], ['30', '30 dias'], ['mes', 'Este mês'], ['datas', '📅 Escolher datas'],
 ];
-const periodStart = (p: Period) => {
+/** Período em dias AAAA-MM-DD, os dois inclusivos ('' = sem limite) */
+function periodRange(p: Period, from: string, to: string): [string, string] {
   const t = todayISO();
-  return p === 'mes' ? `${t.slice(0, 7)}-01` : p === '90' ? addDaysISO(t, -90) : p === 'ano' ? `${t.slice(0, 4)}-01-01` : '';
+  switch (p) {
+    case 'hoje':  return [t, t];
+    case 'ontem': { const y = addDaysISO(t, -1); return [y, y]; }
+    case '7':     return [addDaysISO(t, -6), ''];
+    case '30':    return [addDaysISO(t, -29), ''];
+    case 'mes':   return [`${t.slice(0, 7)}-01`, ''];
+    case 'datas': return [from, to];
+    default:      return ['', ''];
+  }
+}
+/** Dia local (AAAA-MM-DD) de um timestamp */
+const localDay = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 export default function Compras() {
@@ -56,6 +70,10 @@ export default function Compras() {
   const [q, setQ] = useState('');
   const [supplierF, setSupplierF] = useState(params.get('fornecedor') ?? '');
   const [period, setPeriod] = useState<Period>('tudo');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  /** Filtrar pela data impressa na nota ou pelo dia em que foi lançada no sistema */
+  const [by, setBy] = useState<'nota' | 'lancamento'>('nota');
   const [statusF, setStatusF] = useState<InvoiceStatus | ''>('');
 
   const load = useCallback(async () => {
@@ -76,10 +94,12 @@ export default function Compras() {
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
-    const from = periodStart(period);
-    return (list ?? []).filter(n => (!supplierF || n.supplier_id === supplierF) && (!from || n.issue_date >= from)
+    const [a, b] = periodRange(period, from, to);
+    const dateOf = (n: Row) => (by === 'nota' ? n.issue_date : localDay(n.created_at));
+    return (list ?? []).filter(n => (!supplierF || n.supplier_id === supplierF)
+      && (!a || dateOf(n) >= a) && (!b || dateOf(n) <= b)
       && (!t || n.number?.toLowerCase().includes(t) || n.supplier?.name.toLowerCase().includes(t) || n.notes?.toLowerCase().includes(t)));
-  }, [list, q, supplierF, period]);
+  }, [list, q, supplierF, period, from, to, by]);
 
   const byStatus = useMemo(() => {
     const c: Record<InvoiceStatus, number> = { paga: 0, aberto: 0, vencida: 0, estornada: 0 };
@@ -119,10 +139,29 @@ export default function Compras() {
                   <option value="">Todos os fornecedores</option>
                   {suppliers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                 </select>
-                <select className="input !py-2 flex-1 sm:!w-auto text-sm" value={period} onChange={e => setPeriod(e.target.value as Period)}>
-                  {PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
               </div>
+            </div>
+            {/* Período (igual às outras telas) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <select className="input !py-1 !px-2 !text-xs !w-auto font-semibold" value={by} onChange={e => setBy(e.target.value as 'nota' | 'lancamento')}>
+                <option value="nota">Data da nota</option>
+                <option value="lancamento">Data de lançamento</option>
+              </select>
+              {PERIODS.map(([k, l]) => (
+                <button key={k} onClick={() => setPeriod(k)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+                    period === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200 hover:border-steel-300'}`}>
+                  {l}
+                </button>
+              ))}
+              {period === 'datas' && (
+                <div className="flex items-center gap-1.5 text-xs text-steel-500">
+                  <input type="date" className="input !py-1.5 !text-xs !w-auto" value={from}
+                    onChange={e => { setFrom(e.target.value); if (!to || to < e.target.value) setTo(e.target.value); }} />
+                  até
+                  <input type="date" className="input !py-1.5 !text-xs !w-auto" value={to} onChange={e => setTo(e.target.value)} />
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
