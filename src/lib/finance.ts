@@ -61,6 +61,49 @@ export function byMethod(entries: FinEntry[], r: Range) {
   return [...rows.values()].sort((a, b) => b.total - a.total);
 }
 
+export type PayMixRow = {
+  key: string; label: string; total: number; count: number;
+  /** Detalhe curto sob a linha (ex.: "3x R$ 900 · 10x R$ 1.370") */
+  detail?: string;
+};
+
+/**
+ * Como o período foi pago: dinheiro, PIX, débito, crédito à vista, crédito parcelado e "pagar depois".
+ * Os recebimentos vêm do caixa; "pagar depois" é o saldo ainda aberto das OS concluídas no período.
+ */
+export function paymentMixOf(entries: FinEntry[], os: FinOs[], r: Range, firstOpen: string | null) {
+  const acc = {
+    dinheiro: { total: 0, count: 0 }, pix: { total: 0, count: 0 }, debito: { total: 0, count: 0 },
+    avista: { total: 0, count: 0 }, parcelado: { total: 0, count: 0 }, outros: { total: 0, count: 0 },
+  };
+  const byParcelas = new Map<number, number>();
+  for (const x of entries) {
+    if (x.kind !== 'recebimento' || !inRange(x.created_at, r)) continue;
+    const v = Number(x.amount);
+    const n = Number(x.installments) || 1;
+    const bucket = x.method === 'credito' ? (n > 1 ? acc.parcelado : acc.avista)
+      : x.method === 'dinheiro' || x.method === 'pix' || x.method === 'debito' ? acc[x.method] : acc.outros;
+    bucket.total += v; bucket.count += 1;
+    if (x.method === 'credito' && n > 1) byParcelas.set(n, (byParcelas.get(n) ?? 0) + v);
+  }
+  const fmt = (n: number) => `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const parcDetail = [...byParcelas.entries()].sort((a, b) => a[0] - b[0]).map(([n, v]) => `${n}x ${fmt(round2(v))}`).join(' · ');
+
+  const later = receivables(os, firstOpen).rows.filter(x => inRange(x.os.completed_at, r));
+  const laterTotal = round2(sum(later, x => x.open));
+
+  const rows: PayMixRow[] = [
+    { key: 'dinheiro', label: '💵 Dinheiro', ...acc.dinheiro },
+    { key: 'pix', label: '⚡ PIX', ...acc.pix },
+    { key: 'debito', label: '💳 Débito', ...acc.debito },
+    { key: 'avista', label: '💳 Crédito à vista', ...acc.avista },
+    { key: 'parcelado', label: '💳 Crédito parcelado', ...acc.parcelado, detail: parcDetail || undefined },
+    { key: 'outros', label: 'Outros', ...acc.outros },
+    { key: 'depois', label: '🕒 Pagar depois', total: laterTotal, count: later.length },
+  ].filter(x => x.total > 0.009).map(x => ({ ...x, total: round2(x.total) }));
+  return { rows, total: round2(sum(rows, x => x.total)) };
+}
+
 /** Despesas do caixa por categoria */
 export function expensesByCategory(entries: FinEntry[], r: Range) {
   const rows = new Map<string, { category: string; total: number; count: number }>();
