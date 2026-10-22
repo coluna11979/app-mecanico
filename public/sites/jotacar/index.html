@@ -75,6 +75,7 @@
   --ease:cubic-bezier(.22,.8,.2,1);
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html{scroll-behavior:smooth;scroll-padding-top:calc(var(--header-h) + 12px);-webkit-text-size-adjust:100%}
 body{margin:0;font-family:var(--f-text);font-size:17px;line-height:1.6;color:var(--text);background:var(--warm);-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-wrap:break-word}
 img,svg,iframe{display:block;max-width:100%}
@@ -82,7 +83,8 @@ a{color:inherit}
 button{font:inherit;color:inherit}
 h1,h2,h3{font-family:var(--f-title);margin:0;letter-spacing:-.03em;line-height:1.06;text-wrap:balance}
 p{margin:0}
-ul.clean,ol.clean{list-style:none;margin:0;padding:0}
+ul.clean,ol.clean{list-style:none;padding:0}
+:where(ul.clean,ol.clean){margin:0}
 .wrap{width:100%;max-width:var(--wrap);margin-inline:auto;padding-inline:var(--gutter)}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
 :focus-visible{outline:3px solid var(--yellow);outline-offset:3px;border-radius:8px}
@@ -207,6 +209,7 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
 .svc-ico{width:64px;height:64px;border-radius:20px;background:var(--ink);color:var(--yellow);display:grid;place-items:center;margin:28px 0 auto;transition:transform .5s var(--ease)}
 .svc-ico svg{width:30px;height:30px}
 .svc:hover .svc-ico{transform:rotate(-8deg) scale(1.06)}
+.svc > div{position:relative}
 .svc h3{position:relative;font-size:22px;font-weight:700;color:var(--ink);margin-top:28px}
 .svc p{position:relative;font-size:15px;color:var(--muted);margin-top:8px}
 .svc .link{position:relative;margin-top:16px;color:var(--ink)}
@@ -408,7 +411,7 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
 .footer nav{display:flex;flex-wrap:wrap;gap:4px 20px}
 .footer nav a{color:#C9CCD0;text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
 .footer nav a:hover{color:var(--yellow)}
-.footer-legal{border-top:1px solid var(--line-dark);padding-block:18px;font-size:12px;color:#6F747A}
+.footer .footer-legal{display:block;border-top:1px solid var(--line-dark);padding-block:18px;font-size:12px;color:#6F747A}
 
 /* Barra fixa no celular */
 .mbar{display:none}
@@ -487,7 +490,52 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
   body.typing .mbar{transform:translateY(160%)}
   body.has-mbar{padding-bottom:84px}
 }
-@media (max-width:370px){ .chips{grid-template-columns:1fr} .logo{font-size:17px} }
+@media (max-width:640px){
+  .section{padding-block:64px}
+  /* Topo: foto aparece de verdade (faixa superior), texto entra logo abaixo */
+  .hero{display:block;min-height:0}
+  .hero-media{position:relative;inset:auto;height:min(52vh,340px);z-index:-2}
+  .hero-media img{height:120%;object-position:35% 30%}
+  .hero::before{background:linear-gradient(180deg,rgba(20,22,25,.55) 0,rgba(20,22,25,.05) 90px,rgba(20,22,25,.15) 170px,rgba(20,22,25,.92) calc(min(52vh,340px) - 30px),var(--ink) min(52vh,340px))}
+  .hero > .illus{top:calc(var(--header-h) + 6px);bottom:auto}
+  .hero .wrap{position:relative;margin-top:-56px;padding-top:0;padding-bottom:40px}
+  .promo-pill{width:100%;justify-content:space-between;flex-wrap:nowrap;gap:10px;padding:8px 8px 8px 14px;font-size:14px}
+  .promo-pill .pp-long{display:none}
+  .promo-pill .pp-txt{flex:1;min-width:0}
+  .promo-pill .go{width:32px;height:32px;padding:0;justify-content:center;flex:none}
+  .hero h1{font-size:40px;margin-top:20px;max-width:none}
+  .hero-sub{margin-top:16px}
+  .hero-ctas{margin-top:24px;gap:10px}
+  .hero-ctas .btn{min-height:54px}
+  .hero-cred{margin-top:22px;flex-direction:column;gap:8px}
+  /* Serviços: linhas compactas, o card inteiro é o botão */
+  .svc-head{margin-bottom:28px}
+  .svc-head .lead{margin-top:0}
+  .svc{grid-template-columns:52px 1fr 20px;align-items:center;padding:16px 16px 16px 16px;border-radius:20px}
+  .svc-ico{grid-row:auto;width:52px;height:52px}
+  .svc > div{min-width:0}
+  .svc h3{font-size:18px}
+  .svc p{margin-top:2px;font-size:14px}
+  .svc .link{margin:0;min-height:0;justify-self:end}
+  .svc .link span{display:none}
+  .svc .link svg{color:var(--yellow-2)}
+  .all-svc summary{padding:16px 18px}
+  .all-svc ul{padding:0 18px 18px}
+  .all-svc .foot{padding:14px 18px 18px}
+  /* Check-up */
+  .diag .lead{margin-top:14px}
+  .mini-steps{margin-top:28px;gap:16px}
+  .diag .btn{width:100%;margin-top:28px}
+  .diag-grid{gap:40px}
+  /* Sobre e como funciona */
+  .about{gap:32px}
+  .why{margin-top:24px}
+  .how-head{margin-bottom:36px}
+  .trust-note{margin-top:32px;background:var(--white);border:1px solid var(--line)}
+  .faq{margin-top:40px}
+  .addr strong{font-size:19px}
+}
+@media (max-width:370px){ .chips{grid-template-columns:1fr} .logo{font-size:17px} .hero h1{font-size:36px} }
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation:none!important;transition:none!important}
@@ -570,7 +618,7 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
     <div class="hero-grid">
       <div>
         <a class="promo-pill fade-up" id="promo" data-wa-msg="Olá, Jota Car! Vim pelo site e quero agendar o check-up grátis." data-track="wa_promo_checkup" href="https://wa.me/5511934182002?text=Ol%C3%A1%2C%20Jota%20Car!%20Vim%20pelo%20site%20e%20quero%20agendar%20o%20check-up%20gr%C3%A1tis." target="_blank" rel="noopener">
-          <span class="dot" aria-hidden="true"></span><span><strong>Semana do Check-up Grátis</strong> · por tempo limitado, horários limitados por dia</span><span class="go">Quero o meu<svg aria-hidden="true"><use href="#i-arrow"/></svg></span>
+          <span class="dot" aria-hidden="true"></span><span class="pp-txt"><strong>Semana do Check-up Grátis</strong><span class="pp-long"> · por tempo limitado, horários limitados por dia</span></span><span class="go"><span class="pp-long">Quero o meu</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></span>
         </a>
         <h1 id="hero-title"><span class="ln"><span>Seu carro em boas mãos.</span></span><span class="ln"><span><em>Você sem preocupação.</em></span></span></h1>
         <p class="hero-sub fade-up d1">Manutenção, diagnóstico e serviços automotivos com a confiança e a atenção que você merece.</p>
@@ -602,22 +650,22 @@ html.revisao [data-confirmar]::after{content:"A CONFIRMAR · " attr(data-confirm
     <div class="svc-grid">
       <a class="svc rv" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de revisão e troca de óleo." data-track="wa_servico_revisao" target="_blank" rel="noopener">
         <span class="svc-num">01</span><span class="svc-ico" aria-hidden="true"><svg><use href="#i-oil"/></svg></span>
-        <h3>Revisão e óleo</h3><p>Óleo e filtros no prazo, motor protegido.</p>
+        <div><h3>Revisão e óleo</h3><p>Óleo e filtros no prazo, motor protegido.</p></div>
         <span class="link"><span>Solicitar atendimento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></span>
       </a>
       <a class="svc rv" data-d="1" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de freios e suspensão." data-track="wa_servico_freios" target="_blank" rel="noopener">
         <span class="svc-num">02</span><span class="svc-ico" aria-hidden="true"><svg><use href="#i-brake"/></svg></span>
-        <h3>Freios e suspensão</h3><p>Segurança e conforto em cada frenagem.</p>
+        <div><h3>Freios e suspensão</h3><p>Segurança e conforto em cada frenagem.</p></div>
         <span class="link"><span>Solicitar atendimento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></span>
       </a>
       <a class="svc rv" data-d="2" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um diagnóstico / injeção eletrônica." data-track="wa_servico_injecao" target="_blank" rel="noopener">
         <span class="svc-num">03</span><span class="svc-ico" aria-hidden="true"><svg><use href="#i-chip"/></svg></span>
-        <h3>Injeção e diagnóstico</h3><p>Scanner para achar a falha sem chute.</p>
+        <div><h3>Injeção e diagnóstico</h3><p>Scanner para achar a falha sem chute.</p></div>
         <span class="link"><span>Solicitar atendimento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></span>
       </a>
       <a class="svc rv" data-d="3" href="https://wa.me/5511934182002" data-wa-msg="Olá, Jota Car! Vim pelo site e quero um orçamento de pneus, alinhamento e balanceamento." data-track="wa_servico_pneus" target="_blank" rel="noopener">
         <span class="svc-num">04</span><span class="svc-ico" aria-hidden="true"><svg><use href="#i-tire"/></svg></span>
-        <h3>Pneus e alinhamento</h3><p>Direção firme e pneus gastando por igual.</p>
+        <div><h3>Pneus e alinhamento</h3><p>Direção firme e pneus gastando por igual.</p></div>
         <span class="link"><span>Solicitar atendimento</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></span>
       </a>
     </div>
