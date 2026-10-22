@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
+import { PLATFORM_FEE, jobGross, jobHours } from '@/lib/payment';
 
 interface RepasseRow {
   job_id: string;
@@ -22,7 +23,7 @@ interface RepasseRow {
   stripe_payment_intent_id: string | null;
 }
 
-const FEE = 0.18; // 18% taxa plataforma
+const FEE = PLATFORM_FEE;
 
 export default function AdminRepasses() {
   const [rows, setRows]       = useState<RepasseRow[]>([]);
@@ -46,10 +47,12 @@ export default function AdminRepasses() {
         repasse_valor,
         actual_hours,
         max_hours,
+        estimated_hours,
+        pricing,
         price_per_hour,
         price,
         stripe_payment_intent_id,
-        mechanic:mechanics!inner(
+        mechanic:mechanics!jobs_mechanic_id_fkey!inner(
           pix_key,
           profile:profiles!inner(full_name, phone)
         ),
@@ -61,8 +64,8 @@ export default function AdminRepasses() {
 
     if (data) {
       setRows(data.map((j: any) => {
-        // price já é o valor fechado (price_per_hour × max_hours), salvo na criação da demanda
-        const total = j.price ?? 0;
+        // Valor fechado = o que a oficina pagou (price_per_hour × max_hours)
+        const total = jobGross(j);
         const mechAmount = parseFloat((total * (1 - FEE)).toFixed(2));
         return {
           job_id:                  j.id,
@@ -72,7 +75,7 @@ export default function AdminRepasses() {
           repasse_pago_at:         j.repasse_pago_at,
           repasse_valor:           j.repasse_valor,
           actual_hours:            j.actual_hours,
-          max_hours:               j.max_hours,
+          max_hours:               jobHours(j), // demanda pelo serviço: tempo previsto informado
           price_per_hour:          j.price_per_hour,
           price:                   total,
           platform_fee_pct:        FEE * 100,

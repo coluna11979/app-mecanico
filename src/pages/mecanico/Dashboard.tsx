@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { jobSummary } from '@/lib/jobDescription';
+import { raisedFrom } from '@/lib/jobRaise';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
@@ -6,9 +8,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet } from '@/lib/payment';
+import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
+import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
+import { PushAlertCard } from '@/components/mecanico/PushAlertCard';
+import { declineInvite, isPendingInvite } from '@/lib/jobInvite';
 import type { Job, Mechanic, Workshop } from '@/types/database';
+import {
+  IconAlert, IconBuilding, IconCalendar, IconChevronDown, IconChevronRight, IconClock, IconDollar,
+  IconGift, IconInfo, IconMap, IconMapPin, IconNavigation, IconStar, IconWrench, IconX,
+} from '@/components/mecanico/icons';
 
 type Toast = { id: string; job: Job };
 
@@ -47,9 +56,6 @@ export default function MechanicDashboard() {
   const [submitting, setSubmitting]       = useState(false);
   const [toasts, setToasts]               = useState<Toast[]>([]);
   const toastTimer = useRef<Record<string, number>>({});
-  const [showEarnings, setShowEarnings]   = useState(() =>
-    localStorage.getItem('mec_earnings_dismissed') !== '1'
-  );
 
   useEffect(() => { if (user) load(); }, [user]);
 
@@ -150,8 +156,13 @@ export default function MechanicDashboard() {
   }
 
   /* Jobs decorados com distância (quando há posição) e ordenados por proximidade */
+  // Convites diretos pra mim ficam numa seção própria (Aceitar / Recusar)
+  const invites = useMemo(
+    () => openJobs.filter(j => isPendingInvite(j) && !!me && j.invited_mechanic_id === me.id),
+    [openJobs, me],
+  );
   const decoratedJobs = useMemo(() => {
-    const withDist = openJobs.map(j => {
+    const withDist = openJobs.filter(j => j.audience !== 'invite').map(j => {
       const ws = j.workshop;
       const km = (userPos && ws?.lat != null && ws?.lng != null)
         ? distKm(userPos[0], userPos[1], ws.lat, ws.lng)
@@ -166,343 +177,423 @@ export default function MechanicDashboard() {
         return a.km - b.km;
       });
     }
-    return withDist;
+    // Valor aumentou: sobe para o topo
+    return withDist.sort((a, b) => Number(raisedFrom(b.job) != null) - Number(raisedFrom(a.job) != null));
   }, [openJobs, userPos]);
+
+  async function declineJob(job: Job) {
+    if (!confirm(`Recusar o convite "${capitalize(job.title)}"? A oficina será avisada para escolher outro mecânico.`)) return;
+    setAccepting(job.id);
+    const { error } = await declineInvite(job.id);
+    setAccepting(null);
+    if (error) { alert('Erro ao recusar: ' + error.message); return; }
+    setOpenJobs(prev => prev.filter(j => j.id !== job.id));
+  }
 
   async function acceptJob(job: Job) {
     if (!me) return;
     setAccepting(job.id);
     const scheduled = isScheduled(job);
     const enRoute = scheduled ? null : new Date().toISOString();
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('jobs')
       .update({ mechanic_id: me.id, status: 'assigned', en_route_at: enRoute })
-      .eq('id', job.id).eq('status', 'open');
-    if (!error) {
+      .eq('id', job.id).eq('status', 'open')
+      .select('id');
+    if (!error && !updated?.length) {
+      // Outro mecânico aceitou antes, ou a oficina cancelou o convite
+      setOpenJobs(prev => prev.filter(j => j.id !== job.id));
+      alert(job.audience === 'invite' ? 'Esse convite não está mais disponível.' : 'Esse job já foi aceito por outro mecânico.');
+    } else if (!error) {
       setOpenJobs(prev => prev.filter(j => j.id !== job.id));
       if (scheduled) {
         nav('/mecanico/agenda');
       } else {
-        setActiveJobs(prev => [{ ...job, mechanic_id: me.id, status: 'assigned', en_route_at: enRoute }, ...prev]);
+        setActiveJobs(prev => [{
+          ...job, mechanic_id: me.id, status: 'assigned', en_route_at: enRoute,
+          accepted_at: new Date().toISOString(), // o banco grava o mesmo via trigger
+        }, ...prev]);
       }
     }
     setAccepting(null);
   }
 
+
+  const online = !!me?.is_available;
+  const missingPix = !!me && !(me as any).pix_key;
+
   return (
     <MechanicLayout>
       {/* ── Toasts de novo job ── */}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-sm px-4 pointer-events-none">
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-sm px-3 pointer-events-none">
         {toasts.map(t => {
           const cap = (t.job.price_per_hour ?? 0) * (t.job.max_hours ?? 1);
           return (
             <div
               key={t.id}
-              className="pointer-events-auto bg-brand-500 text-white rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-3 animate-slide-down"
+              role="status"
+              className="pointer-events-auto bg-brand-500 text-white rounded-2xl pl-4 pr-1 py-2 shadow-2xl flex items-center gap-3 animate-slide-down"
             >
-              <span className="text-2xl shrink-0">🔧</span>
+              <IconWrench className="w-6 h-6 shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">Nova demanda!</div>
-                <div className="font-bold truncate">{t.job.title}</div>
-                <div className="text-xs opacity-80">
-                  R$ {cap.toFixed(0)} fechado · {t.job.max_hours ?? '—'}h previstas
+                <div className="text-xs font-bold uppercase tracking-wide opacity-90">
+                  {t.job.audience === 'invite' ? 'Convite para você' : 'Nova demanda'}
+                </div>
+                <div className="font-bold truncate">{capitalize(t.job.title)}</div>
+                <div className="text-xs opacity-90">
+                  R$ {formatMoney(mechanicNet(cap))} no seu PIX · {previstas(t.job)}
                 </div>
               </div>
               <button
                 onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
-                className="opacity-60 hover:opacity-100 text-lg leading-none shrink-0"
-              >✕</button>
+                aria-label="Fechar aviso"
+                className="h-11 w-11 grid place-items-center shrink-0 opacity-80 active:opacity-100"
+              >
+                <IconX className="w-5 h-5" />
+              </button>
             </div>
           );
         })}
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="px-4 pt-4 space-y-5">
 
-        {/* 🚨 Sem chave PIX cadastrada — bloqueador pra receber pagamento */}
-        {me && !(me as any).pix_key && (
-          <Link to="/mecanico/perfil" className="block">
-            <div className="bg-gradient-to-r from-alert-500/20 to-alert-600/10 border-2 border-alert-500/50 rounded-2xl p-4 hover:border-alert-500 transition">
-              <div className="flex items-start gap-3">
-                <div className="text-3xl shrink-0 animate-pulse">⚠️</div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-white text-base leading-tight">
-                    Cadastre sua chave PIX agora
-                  </h3>
-                  <p className="text-xs text-steel-300 mt-1 leading-relaxed">
-                    Sem chave PIX cadastrada, você <strong className="text-alert-300">não recebe</strong> o repasse dos jobs.
-                    Toque pra cadastrar (leva 30 segundos).
-                  </p>
-                  <span className="inline-block mt-2 bg-alert-500 text-white text-xs font-bold rounded-lg px-3 py-1">
-                    Cadastrar chave PIX →
-                  </span>
-                </div>
-              </div>
+        {/* ── Status: a ação mais importante do dia, compacta e sempre no topo ── */}
+        <div className={`rounded-2xl border px-4 py-3 flex items-center gap-3 transition-colors ${
+          online ? 'bg-signal-500/10 border-signal-500/30' : 'bg-steel-800 border-steel-700'
+        }`}>
+          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${online ? 'bg-signal-500' : 'bg-steel-400'}`} />
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-white leading-tight">{online ? 'Você está online' : 'Você está offline'}</div>
+            <div className="text-xs text-steel-300 mt-0.5">
+              {online ? 'Recebendo novos jobs' : 'Fique online para ver e aceitar jobs'}
             </div>
-          </Link>
-        )}
-
-        {/* Toggle disponibilidade */}
-        <div className="card !bg-steel-800 border border-steel-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs text-steel-400 uppercase tracking-wider">Status</div>
-              <div className="text-2xl font-bold">{me?.is_available ? 'Você está online' : 'Você está offline'}</div>
-              {!me?.is_available && (
-                <div className="text-xs text-steel-400 mt-1">Fique online para ver e aceitar jobs</div>
-              )}
-            </div>
-            <button onClick={toggleAvailable}
-              className={`relative w-16 h-9 rounded-full transition ${me?.is_available ? 'bg-signal-500' : 'bg-steel-600'}`}>
-              <span className={`absolute top-1 left-1 h-7 w-7 rounded-full bg-white transition-transform ${me?.is_available ? 'translate-x-7' : ''}`} />
-            </button>
           </div>
+          <button
+            onClick={toggleAvailable}
+            role="switch"
+            aria-checked={online}
+            aria-label="Disponível para jobs"
+            className={`relative w-14 h-8 rounded-full shrink-0 transition ${online ? 'bg-signal-500' : 'bg-steel-600'}`}
+          >
+            <span className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${online ? 'translate-x-6' : ''}`} />
+          </button>
         </div>
 
-        {/* 🌟 Painel de Embaixador — só aparece se for embaixador */}
-        {(me as any)?.is_embaixador && (
-          <Link
-            to="/mecanico/embaixador"
-            className="block relative rounded-2xl overflow-hidden bg-gradient-to-br from-brand-500 to-brand-700 border border-brand-400/40 p-4 hover:from-brand-400 hover:to-brand-600 transition active:scale-[0.99] group"
-          >
-            <div className="absolute -top-8 -right-8 w-40 h-40 bg-white/10 rounded-full pointer-events-none" />
-            <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-black/10 rounded-full pointer-events-none" />
-            <div className="relative flex items-center justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-100 flex items-center gap-1.5">
-                  <span className="text-base">🌟</span> Painel de indicações
-                </div>
-                <div className="font-bold text-white text-lg leading-tight mt-1">
-                  Minhas Indicações e Comissões
-                </div>
-                <div className="text-xs text-brand-100 mt-0.5 leading-tight">
-                  Toque pra ver quem você indicou e quanto já ganhou
-                </div>
-              </div>
-              <span className="text-white text-3xl shrink-0 group-hover:translate-x-1 transition">→</span>
+        {/* ── Alerta no celular (push) ── */}
+        <PushAlertCard />
+
+        {/* ── Bloqueador: sem PIX não recebe ── */}
+        {missingPix && (
+          <Link to="/mecanico/perfil"
+            className="flex items-center gap-3 rounded-2xl border border-alert-500/50 bg-alert-500/10 p-4 active:bg-alert-500/20 transition">
+            <span className="h-10 w-10 rounded-xl bg-alert-500/20 text-alert-500 grid place-items-center shrink-0">
+              <IconAlert className="w-5 h-5" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-white leading-tight">Cadastre sua chave PIX</div>
+              <div className="text-xs text-steel-300 mt-0.5">Sem ela você não recebe o repasse dos jobs.</div>
             </div>
+            <IconChevronRight className="w-5 h-5 text-steel-300 shrink-0" />
           </Link>
         )}
 
-        {/* ── Card: Como você recebe (aparece 1 vez, dismissível) ── */}
-        {showEarnings && (
-          <div className="card !bg-gradient-to-br from-brand-600 to-brand-700 border border-brand-500/40 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-10 translate-x-10 pointer-events-none" />
-            <button
-              onClick={() => { setShowEarnings(false); localStorage.setItem('mec_earnings_dismissed', '1'); }}
-              className="absolute top-3 right-3 text-white/50 hover:text-white text-lg leading-none"
-              aria-label="Fechar"
-            >✕</button>
-            <div className="relative">
-              <div className="text-xs font-bold uppercase tracking-widest text-brand-200 mb-2">💰 Como você recebe</div>
-              <p className="text-white text-sm leading-relaxed mb-4">
-                Cada job mostra o valor que cai no <strong>seu PIX</strong> — sem matemática,
-                sem letra miúda. A oficina paga antes do serviço começar; quando ela confirma a conclusão,
-                seu PIX é liberado em até 24h.
-              </p>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                {[
-                  ['1', 'Aceita o job', 'no valor que aparece'],
-                  ['2', 'Faz o serviço', 'pagamento garantido em escrow'],
-                  ['3', 'Recebe no PIX', 'em até 24h'],
-                ].map(([n, l, s]) => (
-                  <div key={l} className="bg-white/10 rounded-xl py-2 px-1">
-                    <div className="text-white font-bold text-base leading-none">{n}</div>
-                    <div className="text-brand-200 text-[10px] mt-1 leading-tight">{l}</div>
-                    <div className="text-white/60 text-[10px]">{s}</div>
-                  </div>
-                ))}
-              </div>
-              <p className="text-brand-200 text-xs mt-3">
-                ✓ Sem mensalidade · ✓ Sem multa · ✓ PIX rápido
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Jobs em andamento */}
-        {activeJobs.length > 0 && (
-          <section>
-            <h2 className="text-sm font-bold text-steel-400 uppercase tracking-wider mb-2">Em andamento</h2>
-            <div className="space-y-2">
-              {activeJobs.map(j => (
-                <Link key={j.id} to={`/mecanico/job/${j.id}/tracking`} className="card !bg-brand-500 !text-white block">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm opacity-80">{j.status === 'assigned' ? 'A caminho' : 'Em serviço'}</div>
-                      <div className="font-bold text-lg truncate">{j.title}</div>
-                      <div className="text-xs opacity-70 mt-0.5">
-                        {j.max_hours ?? 1}h previstas
+        {/* ── Convites diretos: a oficina escolheu você ── */}
+        {invites.length > 0 && (
+          <section className="space-y-2">
+            <SectionTitle>{invites.length === 1 ? 'Convite para você' : `${invites.length} convites para você`}</SectionTitle>
+            {invites.map(j => {
+              const net = mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1));
+              const ws = j.workshop;
+              return (
+                <article key={j.id} className="rounded-2xl bg-steel-800 border-2 border-brand-500/60 overflow-hidden">
+                  <Link to={`/mecanico/job/${j.id}`} className="block p-4 active:bg-steel-700/60 transition">
+                    <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs font-bold px-2 py-0.5 rounded-full">
+                      <IconStar className="w-3 h-3" filled /> {ws?.business_name ?? 'Uma oficina'} escolheu você
+                    </div>
+                    <div><RaisedBadge j={j} /></div>
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-white leading-snug line-clamp-2">{capitalize(j.title)}</div>
+                        {j.description && <div className="text-sm text-steel-300 line-clamp-2 mt-1">{jobSummary(j.description) ?? j.description}</div>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-signal-500 font-bold font-display text-2xl leading-tight">R$ {formatMoney(net)}</div>
+                        <div className="text-xs text-steel-300">no seu PIX</div>
                       </div>
                     </div>
-                    <div className="text-right shrink-0 ml-3">
-                      <div className="text-xs opacity-70">você recebe</div>
-                      <span className="text-2xl font-bold font-display">R$ {mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1)).toFixed(0)}</span>
+                    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-xs text-steel-300">
+                      {ws && (
+                        <span className="inline-flex items-center gap-1">
+                          <IconMapPin className="w-3.5 h-3.5" /> {ws.city}{ws.state ? `/${ws.state}` : ''}
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-1"><IconClock className="w-3.5 h-3.5" /> {previstas(j)}</span>
+                      {j.scheduled_at && (
+                        <span className="inline-flex items-center gap-1"><IconCalendar className="w-3.5 h-3.5" /> {formatScheduled(j.scheduled_at)}</span>
+                      )}
+                    </div>
+                  </Link>
+                  <div className="px-4 pb-4 space-y-2">
+                    <AcceptDeadlineHint job={j} />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => declineJob(j)} disabled={accepting === j.id}
+                        className="btn-ghost h-12 text-base disabled:opacity-50">
+                        Recusar
+                      </button>
+                      <button onClick={() => acceptJob(j)} disabled={accepting === j.id}
+                        className="btn-primary h-12 text-base disabled:opacity-50">
+                        {accepting === j.id ? '…' : 'Aceitar'}
+                      </button>
                     </div>
                   </div>
-                  <div className="mt-2 text-xs opacity-80">Toque para ver mapa →</div>
+                </article>
+              );
+            })}
+          </section>
+        )}
+
+        {/* ── Em andamento ── */}
+        {activeJobs.length > 0 && (
+          <section className="space-y-2">
+            <SectionTitle>Em andamento</SectionTitle>
+            {activeJobs.map(j => {
+              const enRoute = j.status === 'assigned';
+              return (
+                <Link key={j.id} to={`/mecanico/job/${j.id}/tracking`}
+                  className="block rounded-2xl bg-brand-500 text-white p-4 shadow-brand active:scale-[0.99] transition">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-white/20 rounded-full px-2.5 py-1">
+                        {enRoute ? <IconNavigation className="w-3.5 h-3.5" /> : <IconWrench className="w-3.5 h-3.5" />}
+                        {enRoute ? 'A caminho' : 'Em serviço'}
+                      </span>
+                      <div className="font-bold text-lg leading-snug mt-2 line-clamp-2">{capitalize(j.title)}</div>
+                      <div className="text-sm text-white/80 mt-1 flex items-center gap-1">
+                        <IconClock className="w-3.5 h-3.5" /> {previstas(j)}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs text-white/80">você recebe</div>
+                      <div className="text-2xl font-bold font-display leading-tight">
+                        R$ {formatMoney(mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1)))}
+                      </div>
+                    </div>
+                  </div>
+                  <ArrivalCountdown job={j} tone="onBrand" className="mt-3" />
+                  <div className="mt-3 pt-3 border-t border-white/20 flex items-center justify-between text-sm font-semibold">
+                    Abrir mapa e chat
+                    <IconChevronRight className="w-5 h-5" />
+                  </div>
                 </Link>
+              );
+            })}
+          </section>
+        )}
+
+        {/* ── Avaliações pendentes ── */}
+        {pendingRatings.length > 0 && (
+          <section className="space-y-2">
+            <SectionTitle>
+              {pendingRatings.length === 1 ? 'Avalie a oficina' : `${pendingRatings.length} oficinas para avaliar`}
+            </SectionTitle>
+            <div className="rounded-2xl bg-steel-800 border border-steel-700 divide-y divide-steel-700">
+              {pendingRatings.map(j => (
+                <button
+                  key={j.id}
+                  onClick={() => { setRatingJob(j); setStars(0); setRatingNote(''); }}
+                  className="w-full min-h-[56px] px-4 py-3 flex items-center gap-3 text-left active:bg-steel-700 transition first:rounded-t-2xl last:rounded-b-2xl"
+                >
+                  <IconBuilding className="w-5 h-5 text-steel-300 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm text-white truncate">{j.workshop_name ?? 'Oficina'}</div>
+                    <div className="text-xs text-steel-300 truncate">{capitalize(j.title)}</div>
+                  </div>
+                  <span className="inline-flex items-center gap-1 text-brand-400 text-sm font-bold shrink-0">
+                    <IconStar className="w-4 h-4" /> Avaliar
+                  </span>
+                </button>
               ))}
             </div>
           </section>
         )}
 
-        {/* 🔔 Avaliações pendentes — destaque alto */}
-        {pendingRatings.length > 0 && (
-          <section>
-            <div className="bg-gradient-to-r from-brand-500/20 to-brand-600/10 border-2 border-brand-500/50 rounded-2xl p-4">
-              <div className="flex items-start gap-3 mb-3">
-                <div className="text-2xl shrink-0 animate-pulse">🔔</div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-white text-base leading-tight">
-                    {pendingRatings.length === 1
-                      ? 'Avalie a oficina'
-                      : `${pendingRatings.length} oficinas pra avaliar`}
-                  </h3>
-                  <p className="text-xs text-steel-300 mt-0.5">
-                    Pagamento já liberado — sua avaliação fecha o ciclo.
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {pendingRatings.map(j => (
-                  <button
-                    key={j.id}
-                    onClick={() => { setRatingJob(j); setStars(0); setRatingNote(''); }}
-                    className="w-full bg-steel-800/80 hover:bg-steel-800 rounded-xl px-3 py-2.5 transition flex items-center justify-between gap-3 border border-steel-700"
-                  >
-                    <div className="flex-1 min-w-0 text-left">
-                      <div className="font-semibold text-sm text-white truncate">{j.title}</div>
-                      <div className="text-xs text-steel-400 mt-0.5">🏭 {j.workshop_name ?? 'Oficina'}</div>
-                    </div>
-                    <span className="bg-brand-500 text-white text-xs font-bold rounded-lg px-3 py-1.5 shrink-0">
-                      ★ Avaliar
-                    </span>
-                  </button>
-                ))}
+        {/* ── Jobs disponíveis ── */}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <SectionTitle>
+              Jobs disponíveis{!loading && decoratedJobs.length > 0 ? ` · ${decoratedJobs.length}` : ''}
+            </SectionTitle>
+            {/* Lista ↔ Mapa (o Mapa saiu da barra de baixo) */}
+            <div className="flex rounded-xl bg-steel-800 border border-steel-700 p-0.5 text-sm font-semibold">
+              <span className="h-9 px-3 rounded-lg bg-steel-700 text-white grid place-items-center">Lista</span>
+              <Link to="/mecanico/mapa" className="h-9 px-3 rounded-lg text-steel-300 flex items-center gap-1.5 active:bg-steel-700">
+                <IconMap className="w-4 h-4" /> Mapa
+              </Link>
+            </div>
+          </div>
+
+          {loading ? <Skeleton /> : decoratedJobs.length === 0 ? (
+            <div className="rounded-2xl bg-steel-800 border border-steel-700 text-center px-6 py-10">
+              <IconWrench className="w-8 h-8 text-steel-400 mx-auto" />
+              <div className="font-semibold text-white mt-3">Nenhum job aberto agora</div>
+              <div className="text-sm text-steel-300 mt-1">
+                {online
+                  ? 'Quando chegar um novo, avisamos aqui e no seu celular, mesmo com o app fechado.'
+                  : 'Fique online para ser avisado quando chegar um novo.'}
               </div>
             </div>
-          </section>
-        )}
-
-        {/* Jobs disponíveis */}
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-bold text-steel-400 uppercase tracking-wider">Jobs disponíveis</h2>
-            <Link to="/mecanico/mapa" className="text-xs font-semibold text-brand-400 hover:text-brand-300 transition flex items-center gap-1">
-              🗺️ Ver no mapa
-            </Link>
-          </div>
-          {loading ? <Skeleton /> : decoratedJobs.length === 0 ? (
-            <div className="card !bg-steel-800 text-center text-steel-400 py-10">Nenhum job aberto agora.</div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {decoratedJobs.map(({ job: j, km }) => {
                 const gross = (j.price_per_hour ?? 0) * (j.max_hours ?? 1);
                 const net = mechanicNet(gross);
                 const ws = j.workshop;
                 const region = ws ? `${ws.city}${ws.state ? `/${ws.state}` : ''}` : null;
                 return (
-                  <div key={j.id} className="card !bg-steel-800 hover:!bg-steel-700 transition">
-                    {j.audience === 'favorites' && (
-                      <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        ⭐ Convite preferido
+                  <article key={j.id} className="rounded-2xl bg-steel-800 border border-steel-700 overflow-hidden">
+                    <Link to={`/mecanico/job/${j.id}`} className="block p-4 active:bg-steel-700/60 transition">
+                      <div className="flex flex-wrap gap-1.5">
+                        {j.audience === 'favorites' && (
+                          <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs font-bold px-2 py-0.5 rounded-full">
+                            <IconStar className="w-3 h-3" filled /> Convite preferido
+                          </div>
+                        )}
+                        <RaisedBadge j={j} />
                       </div>
-                    )}
-                    <div className="flex justify-between items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold truncate">{j.title}</div>
-                        <div className="text-sm text-steel-400 line-clamp-2 mt-0.5">{j.description}</div>
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-white leading-snug line-clamp-2">{capitalize(j.title)}</div>
+                          {j.description && (
+                            <div className="text-sm text-steel-300 line-clamp-2 mt-1">{jobSummary(j.description) ?? j.description}</div>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-signal-500 font-bold font-display text-2xl leading-tight">R$ {formatMoney(net)}</div>
+                          <div className="text-xs text-steel-300">no seu PIX</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-xs text-steel-300">
                         {region && (
-                          <div className="text-xs text-steel-500 mt-1 flex items-center gap-1.5">
-                            <span>📍 {region}</span>
-                            {km != null && (
-                              <>
-                                <span className="text-steel-700">·</span>
-                                <span className="text-brand-400 font-semibold">~{formatDistance(km)}</span>
-                              </>
-                            )}
-                          </div>
+                          <span className="inline-flex items-center gap-1">
+                            <IconMapPin className="w-3.5 h-3.5" /> {region}
+                            {km != null && <strong className="text-brand-400 font-semibold">· {formatDistance(km)}</strong>}
+                          </span>
                         )}
+                        <span className="inline-flex items-center gap-1">
+                          <IconClock className="w-3.5 h-3.5" /> {previstas(j)}
+                        </span>
                         {ws && (ws.rating > 0 || ws.total_jobs > 0) && (
-                          <div className="text-xs text-steel-500 mt-1 flex items-center gap-1.5">
-                            <span className="text-pending-400">★ {ws.rating.toFixed(1)}</span>
-                            <span className="text-steel-700">·</span>
-                            <span>{ws.total_jobs} {ws.total_jobs === 1 ? 'serviço concluído' : 'serviços concluídos'}</span>
-                          </div>
-                        )}
-                        {j.scheduled_at && (
-                          isScheduled(j) ? (
-                            <div className="text-xs mt-1 inline-flex items-center gap-1 bg-pending-500/15 text-pending-300 font-semibold px-2 py-0.5 rounded-full">
-                              📅 Agendado: {formatScheduled(j.scheduled_at)}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-steel-500 mt-1">
-                              📅 {formatScheduled(j.scheduled_at)}
-                            </div>
-                          )
+                          <span className="inline-flex items-center gap-1">
+                            <IconStar className="w-3.5 h-3.5 text-pending-500" filled /> {ws.rating.toFixed(1)}
+                            <span className="text-steel-400">({ws.total_jobs})</span>
+                          </span>
                         )}
                       </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-signal-400 font-bold font-display text-2xl">
-                          R$ {net.toFixed(0)}
+
+                      {j.scheduled_at && (
+                        <div className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                          isScheduled(j) ? 'bg-pending-500/15 text-pending-500' : 'bg-steel-700 text-steel-300'
+                        }`}>
+                          <IconCalendar className="w-3.5 h-3.5" />
+                          {isScheduled(j) ? 'Agendado: ' : ''}{formatScheduled(j.scheduled_at)}
                         </div>
-                        <div className="text-[10px] text-steel-500 uppercase tracking-wider">no seu PIX</div>
-                        <div className="text-xs text-steel-400 mt-0.5">
-                          {j.max_hours ?? 1}h previstas
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex flex-col gap-2">
+                      )}
+                    </Link>
+                    <div className="px-4 pb-4 space-y-2">
+                      <AcceptDeadlineHint job={j} />
                       <button
                         onClick={() => acceptJob(j)}
-                        disabled={accepting === j.id || !me?.is_available}
-                        className="btn-primary w-full text-sm py-2.5 disabled:opacity-50"
+                        disabled={accepting === j.id || !online}
+                        className="btn-primary w-full h-12 text-base disabled:opacity-50"
                       >
-                        {accepting === j.id ? 'Aceitando…' : !me?.is_available ? 'Fique online para aceitar' : '✓ Aceitar job'}
+                        {accepting === j.id ? 'Aceitando…' : !online ? 'Fique online para aceitar' : 'Aceitar job'}
                       </button>
-                      <Link
-                        to={`/mecanico/job/${j.id}`}
-                        className="text-xs text-steel-400 hover:text-steel-200 text-center underline-offset-2 hover:underline"
-                      >
-                        Ver detalhes
-                      </Link>
                     </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
           )}
         </section>
 
-        {/* Stats */}
-        <div className="card !bg-steel-800 grid grid-cols-3 text-center">
-          <Stat n={me?.total_jobs ?? 0} l="Jobs" />
-          <Stat n={(me?.rating ?? 0).toFixed(1)} l="★ Nota" />
-          <Stat n={`R$${me?.hourly_rate?.toFixed(0) ?? 0}`} l="/hora" />
+        {/* ── Seu desempenho ── */}
+        <section className="space-y-2">
+          <SectionTitle>Seu desempenho</SectionTitle>
+          <div className="rounded-2xl bg-steel-800 border border-steel-700 grid grid-cols-3 divide-x divide-steel-700 py-3">
+            <Stat n={me?.total_jobs ?? 0} l="Jobs feitos" />
+            <Stat n={(me?.rating ?? 0).toFixed(1)} l="Sua nota" />
+            <Stat n={`R$ ${me?.hourly_rate?.toFixed(0) ?? 0}`} l="Por hora" />
+          </div>
+        </section>
+
+        {/* ── Atalhos secundários: indicações + como você recebe ── */}
+        <div className="rounded-2xl bg-steel-800 border border-steel-700 divide-y divide-steel-700">
+          {(me as any)?.is_embaixador && (
+            <Link to="/mecanico/embaixador"
+              className="min-h-[56px] px-4 py-3 flex items-center gap-3 active:bg-steel-700 transition rounded-t-2xl">
+              <span className="h-9 w-9 rounded-xl bg-brand-500/15 text-brand-400 grid place-items-center shrink-0">
+                <IconGift className="w-5 h-5" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm text-white">Minhas indicações</div>
+                <div className="text-xs text-steel-300">Quem você indicou e quanto já ganhou</div>
+              </div>
+              <IconChevronRight className="w-5 h-5 text-steel-400 shrink-0" />
+            </Link>
+          )}
+          <details className="group">
+            <summary className="min-h-[56px] px-4 py-3 flex items-center gap-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span className="h-9 w-9 rounded-xl bg-signal-500/15 text-signal-500 grid place-items-center shrink-0">
+                <IconInfo className="w-5 h-5" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm text-white">Como você recebe</div>
+                <div className="text-xs text-steel-300">No seu PIX, depois que a oficina confirma</div>
+              </div>
+              <IconChevronDown className="w-5 h-5 text-steel-400 shrink-0 transition-transform group-open:rotate-180" />
+            </summary>
+            <ol className="px-4 pb-4 space-y-3">
+              {[
+                ['Aceita o job', 'O valor mostrado é o que cai no seu PIX — sem letra miúda.'],
+                ['Faz o serviço', 'O pagamento da oficina passa pela plataforma — você não precisa cobrar ninguém.'],
+                ['Recebe no PIX', 'Depois que a oficina confirma a conclusão, o valor vai para a sua chave PIX.'],
+              ].map(([t, d], i) => (
+                <li key={t} className="flex gap-3">
+                  <span className="h-6 w-6 rounded-full bg-steel-700 text-white text-xs font-bold grid place-items-center shrink-0">{i + 1}</span>
+                  <div>
+                    <div className="text-sm font-semibold text-white">{t}</div>
+                    <div className="text-xs text-steel-300">{d}</div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </details>
         </div>
       </div>
+
       {/* Modal "Você ganhou R$ X" pós-finalização */}
       {justEarned && (
-        <div className="fixed inset-0 bg-steel-900/85 grid place-items-center p-4 z-50">
-          <div className="bg-gradient-to-b from-signal-500/20 to-steel-800 border border-signal-500/40 rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
-            <div className="text-5xl">💰</div>
+        <div className="fixed inset-0 bg-steel-900/85 flex items-end sm:items-center justify-center p-4 z-50">
+          <div className="bg-steel-800 border border-signal-500/40 rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
+            <span className="h-14 w-14 rounded-full bg-signal-500/15 text-signal-500 grid place-items-center mx-auto">
+              <IconDollar className="w-7 h-7" />
+            </span>
             <div>
-              <div className="text-[11px] uppercase tracking-widest text-signal-400 font-bold">Serviço concluído</div>
+              <div className="text-xs uppercase tracking-wide text-signal-500 font-bold">Serviço concluído</div>
               <div className="text-sm text-steel-300 mt-1 line-clamp-2">{justEarned.jobTitle}</div>
             </div>
-            <div className="bg-steel-900/60 rounded-xl py-4 border border-steel-700/50">
-              <div className="text-[10px] uppercase tracking-wider text-steel-500 font-bold">Seu repasse</div>
-              <div className="text-4xl font-bold text-signal-400 font-display mt-1">
+            <div className="bg-steel-900/60 rounded-xl py-4 border border-steel-700">
+              <div className="text-xs uppercase tracking-wide text-steel-300 font-bold">Seu repasse</div>
+              <div className="text-4xl font-bold text-signal-500 font-display mt-1">
                 + R$ {justEarned.net.toFixed(2).replace('.', ',')}
               </div>
-              <div className="text-xs text-steel-500 mt-1">crédito disponível no app</div>
+              <div className="text-xs text-steel-300 mt-1">crédito disponível no app</div>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setJustEarned(null)} className="btn-ghost flex-1 text-sm">
-                Fechar
-              </button>
-              <Link to="/mecanico/ganhos" onClick={() => setJustEarned(null)} className="btn-primary flex-1 text-sm">
+              <button onClick={() => setJustEarned(null)} className="btn-ghost flex-1 h-12">Fechar</button>
+              <Link to="/mecanico/ganhos" onClick={() => setJustEarned(null)} className="btn-primary flex-1 h-12">
                 Ver ganhos
               </Link>
             </div>
@@ -510,40 +601,41 @@ export default function MechanicDashboard() {
         </div>
       )}
 
-      {/* Modal avaliação oficina */}
+      {/* Modal avaliação oficina — abre de baixo, perto do polegar */}
       {ratingJob && (
-        <div className="fixed inset-0 bg-steel-900/80 grid place-items-center p-4 z-50">
+        <div className="fixed inset-0 bg-steel-900/80 flex items-end sm:items-center justify-center p-4 z-50">
           <div className="bg-steel-800 border border-steel-700 rounded-2xl p-6 max-w-sm w-full space-y-5">
             <div>
-              <h3 className="text-lg font-bold">Como foi a oficina?</h3>
-              <p className="text-sm text-steel-400 mt-1">{ratingJob.workshop_name ?? 'Oficina'} · {ratingJob.title}</p>
+              <h3 className="text-lg font-bold text-white">Como foi a oficina?</h3>
+              <p className="text-sm text-steel-300 mt-1">{ratingJob.workshop_name ?? 'Oficina'} · {ratingJob.title}</p>
             </div>
-            <div className="flex gap-2 justify-center">
-              {[1,2,3,4,5].map(n => (
+            <div className="flex justify-center gap-1" role="radiogroup" aria-label="Nota">
+              {[1, 2, 3, 4, 5].map(n => (
                 <button key={n} type="button"
-                  onMouseEnter={() => setHovered(n)}
-                  onMouseLeave={() => setHovered(0)}
+                  role="radio" aria-checked={stars === n} aria-label={`${n} estrela${n > 1 ? 's' : ''}`}
                   onClick={() => setStars(n)}
-                  className="text-3xl transition hover:scale-110">
-                  {n <= (hovered || stars) ? '★' : '☆'}
+                  className={`h-12 w-12 grid place-items-center rounded-xl active:scale-90 transition ${
+                    n <= stars ? 'text-pending-500' : 'text-steel-500'
+                  }`}>
+                  <IconStar className="w-8 h-8" filled={n <= stars} />
                 </button>
               ))}
             </div>
             {stars > 0 && (
               <p className="text-center text-sm font-semibold text-brand-400">
-                {['','Ruim','Regular','Bom','Ótimo','Excelente'][stars]}
+                {['', 'Ruim', 'Regular', 'Bom', 'Ótimo', 'Excelente'][stars]}
               </p>
             )}
             <textarea
-              className="input !bg-steel-900 !text-white !border-steel-600 resize-none text-sm"
+              className="input !bg-steel-900 !text-white !border-steel-600 resize-none text-base"
               rows={2} placeholder="Comentário opcional…"
               value={ratingNote} onChange={e => setRatingNote(e.target.value)}
             />
             <div className="flex gap-3">
-              <button onClick={() => setRatingJob(null)} className="btn-ghost flex-1 text-sm">Agora não</button>
+              <button onClick={() => setRatingJob(null)} className="btn-ghost flex-1 h-12">Agora não</button>
               <button onClick={submitRating} disabled={submitting || stars === 0}
-                className="btn-primary flex-1 disabled:opacity-50">
-                {submitting ? '…' : 'Enviar'}
+                className="btn-primary flex-1 h-12 disabled:opacity-50">
+                {submitting ? 'Enviando…' : 'Enviar'}
               </button>
             </div>
           </div>
@@ -553,18 +645,42 @@ export default function MechanicDashboard() {
   );
 }
 
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-sm font-bold text-steel-200">{children}</h2>;
+}
+
 function Stat({ n, l }: { n: string | number; l: string }) {
   return (
-    <div>
-      <div className="text-xl font-bold font-display">{n}</div>
-      <div className="text-[11px] text-steel-400 uppercase tracking-wider">{l}</div>
+    <div className="text-center px-2">
+      <div className="text-xl font-bold font-display text-white">{n}</div>
+      <div className="text-xs text-steel-300 mt-0.5">{l}</div>
     </div>
   );
 }
 function Skeleton() {
   return (
-    <div className="space-y-2">
-      {[1, 2, 3].map(i => <div key={i} className="card !bg-steel-800 h-20 animate-pulse-soft" />)}
+    <div className="space-y-3">
+      {[1, 2, 3].map(i => <div key={i} className="rounded-2xl bg-steel-800 border border-steel-700 h-40 animate-pulse-soft" />)}
+    </div>
+  );
+}
+
+/** Oficina às vezes digita tudo minúsculo — "fazer motor…" vira "Fazer motor…" */
+function capitalize(s: string | null | undefined) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+}
+/** "2h previstas" — ou "Preço fechado" na demanda pelo serviço sem tempo informado */
+function previstas(j: Parameters<typeof hoursLabel>[0]) {
+  return hoursLabel(j) ?? 'Preço fechado';
+}
+
+/** A oficina aumentou o valor (24 h): mostra quanto era, no líquido que o mecânico recebe */
+function RaisedBadge({ j }: { j: Job }) {
+  const from = raisedFrom(j);
+  if (from == null) return null;
+  return (
+    <div className="mb-2 inline-flex items-center gap-1 bg-signal-500/15 text-signal-400 text-xs font-bold px-2 py-0.5 rounded-full">
+      💰 Valor aumentou · era R$ {formatMoney(mechanicNet(from))}
     </div>
   );
 }

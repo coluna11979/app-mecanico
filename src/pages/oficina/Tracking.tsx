@@ -10,6 +10,9 @@ import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
+import { formatBRL, pricingLabel } from '@/lib/payment';
+import NextpayPayment from '@/components/payment/NextpayPayment';
+import { CustomerChargeCard } from '@/components/marketplace/CustomerCharge';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -46,6 +49,10 @@ export default function WorkshopTracking() {
   const [mech, setMech]             = useState<(Mechanic & { profile: Profile }) | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [tab, setTab]               = useState<Tab>('progresso');
+
+  /* Gateway do pagamento (Configurações → payment_gateway) e taxa do cartão */
+  const [gateway, setGateway]       = useState<'stripe' | 'nextpay' | null>(null);
+  const [feeCfg, setFeeCfg]         = useState({ passthrough: false, percent: 4.2 });
 
   /* Método de pagamento: cartão (padrão) ou PIX */
   const [payMethod, setPayMethod]   = useState<PayMethod>('card');
@@ -99,8 +106,21 @@ export default function WorkshopTracking() {
     setTimeout(() => setToast(null), 6000);
   }
 
+  useEffect(() => {
+    (async () => {
+      const [g, pass, pct] = await Promise.all([
+        getSetting('payment_gateway', 'stripe'),
+        getSetting('card_fee_passthrough', 'false'),
+        getSetting('card_fee_percent', '4.20'),
+      ]);
+      setGateway(g.trim() === 'nextpay' ? 'nextpay' : 'stripe');
+      setFeeCfg({ passthrough: pass.trim() === 'true', percent: Number(pct.replace(',', '.')) || 0 });
+    })();
+  }, []);
+
   /* Carrega Stripe.js — tenta env var primeiro, depois app_settings */
   useEffect(() => {
+    if (gateway !== 'stripe') return;
     (async () => {
       const cfg = await getPublicStripeConfig();
       const envKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string;
@@ -110,7 +130,7 @@ export default function WorkshopTracking() {
       const s = await loadStripe(key);
       setStripe(s);
     })();
-  }, []);
+  }, [gateway]);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -142,11 +162,15 @@ export default function WorkshopTracking() {
   /* Polling fallback — garante atualização mesmo se realtime cair */
   useEffect(() => {
     if (!id) return;
-    const poll = setInterval(async () => {
+    // A cada 5 s com a aba visível (pausa em segundo plano) e atualiza na hora ao voltar
+    const refresh = async () => {
       const { data } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
       if (data) setJob(data as Job);
-    }, 5000);
-    return () => clearInterval(poll);
+    };
+    const poll = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
   }, [id]);
 
   /* Detecta mudanças de status e dispara toast.
@@ -429,11 +453,11 @@ export default function WorkshopTracking() {
 
   /* Dispara carregamento conforme método selecionado */
   useEffect(() => {
-    if (!showPixModal || !job?.id) return;
+    if (!showPixModal || !job?.id || gateway !== 'stripe') return;
     if (payMethod === 'card') loadCardSecret(job.id);
     if (payMethod === 'pix')  loadPixPayment(job.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPixModal, job?.id, payMethod]);
+  }, [showPixModal, job?.id, payMethod, gateway]);
 
   /** Confirma a conclusão do serviço (sem rating obrigatório) */
   async function confirmJob() {
@@ -526,6 +550,34 @@ export default function WorkshopTracking() {
         )}
       </div>
 
+      {/* ── Sem posição do mecânico (ou posição velha): explica em vez de mostrar o mapa vazio ── */}
+      {job?.status === 'assigned' && job.en_route_at && !job.arrived_at && (() => {
+        const ageMin = live ? Math.floor((Date.now() - new Date(live.at).getTime()) / 60000) : null;
+        if (ageMin !== null && ageMin < 3) return null;
+        return (
+          <div className="absolute top-16 left-3 right-3 z-10 flex justify-center pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-md bg-white/95 backdrop-blur rounded-2xl shadow-xl ring-1 ring-steel-200 px-4 py-3 flex items-center gap-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-pending-500 animate-pulse-soft shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold text-steel-900">
+                  {ageMin === null ? 'Aguardando a localização do mecânico' : `Última posição de ${ageMin} min atrás`}
+                </div>
+                <div className="text-xs text-steel-500 leading-snug">
+                  {ageMin === null
+                    ? 'Ela aparece aqui quando ele abre o app com o GPS ligado.'
+                    : 'O app dele pode estar fechado ou sem sinal.'}
+                </div>
+              </div>
+              {mech?.profile.phone && (
+                <a href={`tel:${mech.profile.phone}`} className="shrink-0 h-9 px-3 rounded-lg bg-steel-900 text-white text-xs font-semibold grid place-items-center">
+                  Ligar
+                </a>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Mapa ── */}
       <div className="flex-1">
         <MapView
@@ -589,8 +641,8 @@ export default function WorkshopTracking() {
 
             {job && (
               <div className="flex items-center justify-between text-sm py-2 border-b border-steel-100">
-                <span className="text-steel-500">{job.max_hours}h × R$ {job.price_per_hour?.toFixed(0)}/h</span>
-                <span className="font-bold text-signal-600">R$ {cap.toFixed(2)} fechado</span>
+                <span className="text-steel-500">{pricingLabel(job)}</span>
+                <span className="font-bold text-signal-600">R$ {formatBRL(cap)} fechado</span>
               </div>
             )}
 
@@ -663,6 +715,11 @@ export default function WorkshopTracking() {
                       {confirming ? '…' : '✅ Confirmar conclusão'}
                     </button>
                   </div>
+                )}
+
+                {/* Quanto a oficina cobrou do cliente (só ela vê) — demanda sem OS; com OS o valor sai da própria OS */}
+                {job?.status === 'completed' && job.workshop_confirmed_at && !job.service_order_id && (
+                  <CustomerChargeCard workshopId={job.workshop_id} jobId={job.id} paid={Number(job.price)} userId={user?.id} />
                 )}
 
                 {/* Step 2 — Avaliação opcional (após confirmação, sem pressa) */}
@@ -748,12 +805,12 @@ export default function WorkshopTracking() {
                     )}
                     {job.cancellation_fee != null && Number(job.cancellation_fee) > 0 && (
                       <p className="text-xs text-pending-700 mt-1">
-                        Multa registrada: R$ {Number(job.cancellation_fee).toFixed(2)}
+                        Multa registrada: R$ {formatBRL(Number(job.cancellation_fee))}
                       </p>
                     )}
                     {job.cancellation_refund != null && Number(job.cancellation_refund) > 0 && (
                       <p className="text-xs text-signal-600 mt-1">
-                        Estorno aplicado: R$ {Number(job.cancellation_refund).toFixed(2)}
+                        Estorno aplicado: R$ {formatBRL(Number(job.cancellation_refund))}
                       </p>
                     )}
                   </div>
@@ -795,16 +852,16 @@ export default function WorkshopTracking() {
               <div className="bg-pending-500/10 border border-pending-300 rounded-xl px-4 py-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-steel-700">Valor original</span>
-                  <span className="font-semibold">R$ {cap.toFixed(2)}</span>
+                  <span className="font-semibold">R$ {formatBRL(cap)}</span>
                 </div>
                 <div className="flex items-center justify-between text-alert-700 font-semibold mt-1">
                   <span>Multa de cancelamento (30%)</span>
-                  <span>− R$ {(cancellation.fee ?? 0).toFixed(2)}</span>
+                  <span>− R$ {formatBRL((cancellation.fee ?? 0))}</span>
                 </div>
                 {(cancellation.refund ?? 0) > 0 && (
                   <div className="flex items-center justify-between text-signal-700 font-bold mt-2 pt-2 border-t border-pending-300">
                     <span>Você recebe (estorno)</span>
-                    <span>R$ {(cancellation.refund ?? 0).toFixed(2)}</span>
+                    <span>R$ {formatBRL((cancellation.refund ?? 0))}</span>
                   </div>
                 )}
               </div>
@@ -874,15 +931,22 @@ export default function WorkshopTracking() {
             {/* Valor */}
             <div className="bg-brand-50 border border-brand-200 rounded-2xl p-4 text-center">
               <div className="text-xs text-brand-600 uppercase tracking-widest font-bold mb-1">Valor a pagar</div>
-              <div className="text-4xl font-bold font-display text-brand-700">R$ {cap.toFixed(2)}</div>
+              <div className="text-4xl font-bold font-display text-brand-700">R$ {formatBRL(cap)}</div>
               <div className="text-xs text-brand-500 mt-1">
-                Pacote fechado · {job?.max_hours}h × R$ {job?.price_per_hour?.toFixed(0)}/h
+                Pacote fechado · {job ? pricingLabel(job) : ''}
               </div>
               <div className="text-[11px] text-steel-500 mt-1">
                 Valor não muda se o mecânico terminar antes ou levar mais tempo
               </div>
             </div>
 
+            {gateway === null ? (
+              <div className="flex justify-center py-6">
+                <div className="h-8 w-8 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
+              </div>
+            ) : gateway === 'nextpay' && job ? (
+              <NextpayPayment request={{ fn: 'nextpay-charge', body: { job_id: job.id } }} service={cap} feePassthrough={feeCfg.passthrough} feePercent={feeCfg.percent} />
+            ) : (<>
             {/* Abas de método de pagamento */}
             <div className="flex gap-1 bg-steel-100 rounded-2xl p-1">
               <button
@@ -1016,6 +1080,7 @@ export default function WorkshopTracking() {
                 )}
               </div>
             )}
+            </>)}
           </div>
         </div>
       )}

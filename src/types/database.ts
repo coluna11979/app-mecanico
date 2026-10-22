@@ -3,6 +3,59 @@ export type ProfileStatus = 'pending' | 'under_review' | 'approved' | 'rejected'
 export type JobStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'disputed' | 'cancelled';
 export type TxStatus = 'held' | 'released' | 'refunded';
 
+export type LeadStatus =
+  | 'lead_novo'
+  | 'contato_feito'
+  | 'interessado'
+  | 'cadastro_iniciado'
+  | 'convertido'
+  | 'perdido';
+
+export type LeadOrigem =
+  | 'formulario_site'
+  | 'indicacao'
+  | 'instagram'
+  | 'facebook'
+  | 'google_ads'
+  | 'google_maps'
+  | 'whatsapp'
+  | 'importado_csv'
+  | 'link_convite'
+  | 'evento'
+  | 'outro';
+
+export type LeadIntent = 'mechanic' | 'workshop';
+
+export interface Lead {
+  id: string;
+  // Colunas originais do formulário público
+  name: string;
+  email: string;
+  phone: string;
+  intent: LeadIntent;
+  consent: boolean;
+  user_agent: string | null;
+  referrer: string | null;
+  // Pipeline
+  cidade: string | null;
+  estado: string | null;
+  status: LeadStatus;
+  origem: LeadOrigem;
+  responsavel_id: string | null;
+  proxima_acao: string | null;
+  data_proxima_acao: string | null;
+  notas: string | null;
+  tags: string[];
+  converted_profile_id: string | null;
+  converted_at: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  last_contact_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Profile {
   id: string;
   role: Role;
@@ -71,6 +124,11 @@ export interface Mechanic {
   city: string | null;
   state: string | null;
   work_reference: string | null;
+  birth_date: string | null;
+  mother_name: string | null;
+  address: string | null;
+  address_number: string | null;
+  address_complement: string | null;
   // Programa de embaixador
   is_embaixador: boolean;
   codigo_indicacao: string | null;
@@ -104,6 +162,8 @@ export interface Job {
   max_hours: number;
   actual_hours: number | null;
   scheduled_at: string | null;
+  /** Quando o mecânico aceitou (preenchido por trigger no banco) */
+  accepted_at?: string | null;
   en_route_at: string | null;
   started_at: string | null;
   completed_at: string | null;
@@ -122,7 +182,23 @@ export interface Job {
   cancellation_fee: number | null;
   cancellation_refund: number | null;
   stripe_refund_id: string | null;
-  audience: 'public' | 'favorites';
+  audience: 'public' | 'favorites' | 'invite';
+  /** Convite direto: mecânico convidado. Só vira mechanic_id quando ele aceita. */
+  invited_mechanic_id?: string | null;
+  /** OS de onde a demanda saiu ("Chamar mecânico" no Caixa) */
+  service_order_id?: string | null;
+  /** Forma de preço (0109): hour = valor/hora × horas; fixed = preço pelo serviço (price_per_hour = total, max_hours = 1) */
+  pricing?: 'hour' | 'fixed';
+  /** Tempo previsto da demanda de preço fechado (só informação) */
+  estimated_hours?: number | null;
+  /** Pagamento da oficina (0108): gateway, meio, valor pago e taxa do cartão repassada */
+  payment_gateway?: 'stripe' | 'nextpay' | null;
+  payment_method?: 'card' | 'pix' | null;
+  paid_amount?: number | null;
+  card_fee_amount?: number | null;
+  /** Valor aumentou (0130): quando subiu e o total bruto de antes */
+  raised_at?: string | null;
+  raised_from?: number | null;
   created_at: string;
 }
 
@@ -161,7 +237,8 @@ export interface AppSetting {
   updated_by: string | null;
 }
 
-export type OsStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+/** Aberta → Aguardando aprovação → Aprovada → Em andamento → Concluída (ou Cancelada) */
+export type OsStatus = 'open' | 'awaiting_approval' | 'approved' | 'in_progress' | 'completed' | 'cancelled';
 
 export interface Customer {
   id: string;
@@ -174,6 +251,12 @@ export interface Customer {
   city: string | null;
   birth_date: string | null;
   created_at: string;
+  /** LGPD: cliente pediu para não receber contato */
+  contact_opt_out?: boolean;
+  last_contacted_at?: string | null;
+  /** Observações internas (só a oficina vê) */
+  notes?: string | null;
+  source?: string | null;
 }
 
 export interface Vehicle {
@@ -195,6 +278,8 @@ export interface ServiceOrder {
   vehicle_id: string | null;
   customer_id: string | null;
   workshop_mechanic_id: string | null;
+  /** Quem executou: equipe da loja ou mecânico da plataforma (null = ainda não informado) */
+  executor?: 'workshop' | 'platform' | null;
   title: string;
   description: string | null;
   mechanic_name: string | null;
@@ -210,6 +295,133 @@ export interface ServiceOrder {
   km_reading: number | null;
   parts_cost: number | null;
   labor_cost: number | null;
+  /** Número sequencial por oficina (OS nº 0001). Preenchido por trigger. */
+  number: number | null;
+  discount: number;
+  /** 'declined' = orçamento que o cliente não aprovou (status fica 'cancelled') */
+  quote_status?: 'declined' | null;
+  /** 'app' | 'paper_import' */
+  source?: string;
+  /** Orçamento enviado ao cliente para aprovação */
+  approval_requested_at?: string | null;
+  /** Cliente aprovou o orçamento */
+  approved_at?: string | null;
+  /** Como o cliente aprovou: whatsapp | telefone | presencial */
+  approval_channel?: string | null;
+  /** Retorno/garantia: OS original que "voltou" */
+  rework_of_id?: string | null;
+  /** execution | diagnosis contam contra o mecânico; part | customer | other não */
+  rework_cause?: ReworkCause | null;
+  /** Mecânico responsável pelo serviço original (preenchido por trigger) */
+  rework_mechanic_id?: string | null;
+  rework_notes?: string | null;
+  /** Caixa: quanto já foi recebido, desconto dado no balcão e quando foi quitada */
+  paid_amount?: number;
+  counter_discount?: number;
+  paid_at?: string | null;
+  /** Cliente trouxe a peça: a mão de obra paga a % própria de comissão */
+  customer_brought_parts?: boolean;
+}
+
+export type ReworkCause = 'execution' | 'diagnosis' | 'part' | 'customer' | 'other';
+
+export type OsItemKind = 'part' | 'labor';
+
+/** Item da OS — peça ou serviço. Totais da OS são recalculados por trigger. */
+export interface ServiceOrderItem {
+  id: string;
+  service_order_id: string;
+  workshop_id: string;
+  kind: OsItemKind;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  /** Custo de compra no momento (só peças; null = não informado) */
+  unit_cost?: number | null;
+  /** Peça do cadastro de onde veio */
+  part_id?: string | null;
+  /** Quem fez este item (comissão); null = responsável da OS */
+  workshop_mechanic_id?: string | null;
+  /** 'platform' = feito por mecânico da plataforma (sem comissão da equipe) */
+  executor?: 'workshop' | 'platform' | null;
+  /** Só peças: serviço (item da OS) em que foi usada — a comissão da peça segue quem fez esse serviço */
+  used_in_item_id?: string | null;
+  /** Só serviços: 'servico' (leva peças → 4% sobre serviço + peças) · 'mao_de_obra' (sem peça → 10%) */
+  service_type?: 'servico' | 'mao_de_obra' | null;
+  /** Só serviços: comissão em R$ definida na OS para quem fez (substitui a regra deste serviço); null = regra */
+  commission_amount?: number | null;
+  /** Demanda da plataforma em que este serviço foi publicado (o mecânico dela é quem fez) */
+  platform_job_id?: string | null;
+  /** Empilhado: marcado para o mecânico da plataforma, ainda sem demanda */
+  stacked_at?: string | null;
+  position: number;
+  created_at: string;
+}
+
+/** Dados lidos pela IA na foto de um orçamento em papel (formato da Edge Function read-paper-quote) */
+export interface PaperQuoteExtracted {
+  legivel: boolean;
+  cliente: { nome: string | null; telefone: string | null; cpf: string | null; endereco: string | null };
+  veiculo: { marca: string | null; modelo: string | null; placa: string | null; ano: number | null; cor: string | null; km: number | null };
+  data: string | null;
+  numero_documento: string | null;
+  servico_resumo: string | null;
+  observacoes: string | null;
+  /** Serviços recomendados para o futuro (base do módulo de reativação) */
+  recomendacoes?: string[];
+  itens: { tipo: OsItemKind; descricao: string; quantidade: number; valor_unitario: number | null; valor_total_item?: number | null }[];
+  desconto: number | null;
+  total: number | null;
+  /** Como foi pago, se escrito na nota (leituras antigas não têm) */
+  pagamentos?: { forma: 'dinheiro' | 'pix' | 'debito' | 'credito' | 'depois'; valor: number | null; parcelas: number }[];
+  /** Mecânico/responsável escrito na nota */
+  mecanico?: string;
+  campos_incertos: string[];
+}
+
+export type PaperImportStatus = 'pending' | 'processing' | 'extracted' | 'confirmed' | 'failed' | 'discarded';
+
+export interface PaperImport {
+  id: string;
+  workshop_id: string;
+  image_path: string;
+  status: PaperImportStatus;
+  extracted: PaperQuoteExtracted | null;
+  error: string | null;
+  service_order_id: string | null;
+  customer_id: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_by: string | null;
+  created_at: string;
+  processed_at: string | null;
+  confirmed_at: string | null;
+}
+
+/** Pausa no serviço (ex.: aguardando peça). ended_at null = pausa em andamento */
+export interface ServiceOrderPause {
+  id: string;
+  service_order_id: string;
+  workshop_id: string;
+  reason: string;
+  started_at: string;
+  ended_at: string | null;
+  created_at: string;
+}
+
+/** Serviço recomendado para o futuro ("avaliar bieletas na próxima revisão") */
+export interface ServiceRecommendation {
+  id: string;
+  workshop_id: string;
+  customer_id: string | null;
+  vehicle_id: string | null;
+  service_order_id: string | null;
+  description: string;
+  status: 'pending' | 'done' | 'dismissed';
+  source: string;
+  recommended_at: string;
+  created_at: string;
 }
 
 export interface WorkshopMechanic {
@@ -219,6 +431,71 @@ export interface WorkshopMechanic {
   specialty: string | null;
   skills: string[];
   active: boolean;
+  created_at: string;
+  /** Comissão: % sobre a mão de obra das OS concluídas por ele */
+  commission_percent?: number;
+  /** % sobre as peças dos itens que ele fez */
+  commission_parts_percent?: number;
+  /** % sobre o faturamento total da loja (ex.: gerente) */
+  commission_revenue_percent?: number;
+  /** % sobre a mão de obra quando o cliente traz a peça; null = igual à de serviços */
+  commission_own_parts_percent?: number | null;
+  /** Salário fixo: não recebe comissão */
+  no_commission?: boolean | null;
+  /** Só recebe a % do faturamento da loja (sem 4%/10% na OS) */
+  commission_revenue_only?: boolean | null;
+  photo_url?: string | null;
+  phone?: string | null;
+  /** Função: mecânico, eletricista, auxiliar… */
+  role_title?: string | null;
+  employment_type?: EmploymentType | null;
+  hired_at?: string | null;
+  work_schedule?: string | null;
+  status?: TeamStatus;
+  terminated_at?: string | null;
+  cnh_category?: string | null;
+  cnh_expires_at?: string | null;
+  notes?: string | null;
+}
+
+export type EmploymentType = 'clt' | 'pj' | 'autonomo' | 'comissionado';
+export type TeamStatus = 'active' | 'away' | 'terminated';
+
+/** Dados sensíveis do colaborador (LGPD) — só o dono da oficina acessa */
+export interface MechanicPrivate {
+  mechanic_id: string;
+  workshop_id: string;
+  cpf: string | null;
+  rg: string | null;
+  birth_date: string | null;
+  email: string | null;
+  address: string | null;
+  emergency_name: string | null;
+  emergency_phone: string | null;
+  salary: number | null;
+  pix_key: string | null;
+  bank_name: string | null;
+  bank_agency: string | null;
+  bank_account: string | null;
+}
+
+export interface MechanicCertification {
+  id: string;
+  mechanic_id: string;
+  workshop_id: string;
+  name: string;
+  issued_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface MechanicDocument {
+  id: string;
+  mechanic_id: string;
+  workshop_id: string;
+  kind: string;
+  file_path: string;
+  file_name: string | null;
   created_at: string;
 }
 

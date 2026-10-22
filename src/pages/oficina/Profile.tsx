@@ -3,6 +3,8 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AvatarUpload } from '@/components/AvatarUpload';
+import ShowcaseEditor from '@/components/showcase/ShowcaseEditor';
+import { isPlatformOnly, useWorkshopModules } from '@/lib/modules';
 import type { Workshop } from '@/types/database';
 
 export default function WorkshopProfile() {
@@ -15,6 +17,8 @@ export default function WorkshopProfile() {
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError]     = useState('');
   const [retrying, setRetrying]     = useState(false);
+  // Pacote "Só mecânicos": a vitrine (divulgação para clientes) não faz sentido
+  const platformOnly = useWorkshopModules(s => isPlatformOnly(s.disabled));
 
   // O loading é derivado: enquanto auth tá carregando OU enquanto não tem workshop selecionada
   const loading = authLoading;
@@ -143,9 +147,11 @@ export default function WorkshopProfile() {
   return (
     <WorkshopLayout>
       <h1 className="text-3xl font-bold tracking-tight mb-2">Perfil da oficina</h1>
-      <p className="text-steel-500 text-sm mb-8">Gerencie as informações da sua oficina.</p>
+      <p className="text-steel-500 text-sm mb-8">
+        {platformOnly ? 'Dados cadastrais e o endereço que os mecânicos veem.' : 'Dados cadastrais e a vitrine usada para divulgar sua oficina.'}
+      </p>
 
-      <div className="max-w-2xl space-y-6">
+      <div className="max-w-3xl space-y-6">
 
         {/* Hero card */}
         <div className="card flex items-center gap-5">
@@ -170,9 +176,12 @@ export default function WorkshopProfile() {
           </div>
         </div>
 
+        {/* Vitrine para divulgação (tudo opcional) */}
+        {!platformOnly && <ShowcaseEditor workshopId={shop.id} userId={user!.id} />}
+
         {/* Form */}
         <form onSubmit={save} className="card space-y-5">
-          <h3 className="font-bold text-steel-800">Informações da oficina</h3>
+          <h3 className="font-bold text-steel-800">Dados cadastrais</h3>
 
           <div>
             <label className="label">Nome fantasia / Razão social</label>

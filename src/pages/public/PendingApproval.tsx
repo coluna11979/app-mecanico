@@ -77,7 +77,7 @@ export default function PendingApproval() {
   useEffect(() => {
     if (profile?.status === 'approved') {
       if (profile.role === 'mechanic') nav('/mecanico/dashboard', { replace: true });
-      else if (profile.role === 'workshop') nav('/oficina/dashboard', { replace: true });
+      else if (profile.role === 'workshop') nav('/oficina/painel', { replace: true });
     }
   }, [profile?.status]);
 

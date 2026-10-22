@@ -82,8 +82,66 @@
 
   .section { @apply max-w-7xl mx-auto px-5 lg:px-8; }
 
+  /* ───── Admin "Linear denso" ─────
+     Classes utilitárias para o painel admin: tipografia tight,
+     tabular-nums, cards compactos, hierarquia por peso. */
+  .admin-h1    { @apply text-2xl font-bold tracking-[-0.02em] text-steel-900 dark:text-white; }
+  .admin-h2    { @apply text-base font-semibold tracking-tight text-steel-800 dark:text-steel-100; }
+  .admin-label { @apply text-[11px] font-semibold uppercase tracking-wider text-steel-500 dark:text-steel-400; }
+  .admin-num   { @apply font-display tracking-tight; font-variant-numeric: tabular-nums; }
+
+  .admin-card  { @apply rounded-xl bg-white border border-steel-200 dark:bg-steel-800 dark:border-steel-700; }
+  .admin-card-pad { @apply admin-card p-4; }
+
+  .admin-pill  { @apply inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold tracking-tight; }
+  .admin-pill-neutral { @apply admin-pill; background:#F5F7FA; color:#33414F; border-color:#CBD3DD; }
+  .admin-pill-success { @apply admin-pill; background:rgba(42,207,128,.1); color:#1F7A4D; border-color:#8FE8C1; }
+  .admin-pill-alert   { @apply admin-pill; background:#FEF2F2; color:#B91C1C; border-color:#FECACA; }
+  .admin-pill-brand   { @apply admin-pill; background:#FFF4ED; color:#BF3700; border-color:#FFC9A8; }
+  .admin-pill-warn    { @apply admin-pill; background:rgba(245,165,36,.1); color:#A86C0B; border-color:#F9C059; }
+
+  .admin-dot   { @apply inline-block h-1.5 w-1.5 rounded-full; }
+
+  /* Divisor sutil entre blocos */
+  .admin-divider { @apply border-t border-steel-200 dark:border-steel-700; }
+
   /* Bottom nav safe area for iPhone home indicator */
   .safe-area-inset-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
+
+/* Slider da home: trilho grosso e polegar grande, fácil de tocar no celular */
+.range-touch {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 44px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.range-touch::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, #FF5C0A var(--fill, 0%), #E8ECF1 var(--fill, 0%));
+}
+.range-touch::-moz-range-track { height: 8px; border-radius: 9999px; background: #E8ECF1; }
+.range-touch::-moz-range-progress { height: 8px; border-radius: 9999px; background: #FF5C0A; }
+.range-touch::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px; height: 28px; margin-top: -10px;
+  border-radius: 9999px; background: #fff;
+  border: 3px solid #FF5C0A;
+  box-shadow: 0 2px 8px rgba(11, 17, 23, 0.18);
+  transition: transform 150ms;
+}
+.range-touch::-moz-range-thumb {
+  width: 22px; height: 22px;
+  border-radius: 9999px; background: #fff;
+  border: 3px solid #FF5C0A;
+  box-shadow: 0 2px 8px rgba(11, 17, 23, 0.18);
+}
+.range-touch:active::-webkit-slider-thumb { transform: scale(1.12); }
+.range-touch:focus-visible { outline: none; }
+.range-touch:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(255, 92, 10, 0.3); }
+.range-touch:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 4px rgba(255, 92, 10, 0.3); }

@@ -42,9 +42,11 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,      // novo SW assume controle imediatamente
         clientsClaim: true,     // SW toma controle de todas as abas abertas
+        importScripts: ['push-sw.js'], // notificação push de nova demanda (public/push-sw.js)
         globPatterns: ['**/*.{js,css,html,ico,svg,woff2}'],
         navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/sites\//],
+        globIgnores: ['sites/**'],   // sites das oficinas não entram no cache do app
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MB (Mapbox GL é grande)
         runtimeCaching: [
           {

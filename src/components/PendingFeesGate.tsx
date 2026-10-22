@@ -2,12 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getSetting } from '@/lib/settings';
 import { getPublicStripeConfig } from '@/lib/stripeConfig';
+import { formatBRL } from '@/lib/payment';
+import NextpayPayment from '@/components/payment/NextpayPayment';
 
 interface PendingFees {
   total: number;
   count_jobs: number;
   job_ids: string[];
 }
+
+/** Evento global disparado quando as multas pendentes mudam (ex.: foram pagas) */
+const PENDING_FEES_CHANGED = 'pending-fees-changed';
 
 interface Props {
   workshopId: string | null;
@@ -18,7 +23,8 @@ interface Props {
 /**
  * Banner permanente no Dashboard da oficina que aparece quando há multas
  * pendentes de cancelamento. Bloqueia ações como publicar nova demanda
- * até que as multas sejam pagas. Provê fluxo de pagamento via Stripe.
+ * até que as multas sejam pagas. Paga pela Stripe ou pela NextPay, conforme
+ * Configurações → Pagamentos (payment_gateway).
  *
  * Use em conjunto com `usePendingFees` pra controlar o botão "+ Nova demanda".
  */
@@ -45,11 +51,11 @@ export function PendingFeesBanner({ workshopId, onPaid }: Props) {
         <div className="text-3xl shrink-0 animate-pulse">⚠️</div>
         <div className="flex-1 min-w-0">
           <h3 className="font-bold text-alert-700">
-            Multa pendente: R$ {pending.total.toFixed(2)}
+            Multa pendente: R$ {formatBRL(pending.total)}
           </h3>
           <p className="text-sm text-steel-700 mt-1 leading-relaxed">
             Você tem {pending.count_jobs === 1 ? '1 cancelamento' : `${pending.count_jobs} cancelamentos`} com multa em aberto.
-            Para publicar novas demandas, é necessário quitar.
+            Para publicar demandas ou contratar mecânicos, é necessário quitar.
           </p>
           <button
             onClick={() => setOpen(true)}
@@ -70,6 +76,7 @@ export function PendingFeesBanner({ workshopId, onPaid }: Props) {
             setPending(null);
             onPaid?.();
             loadPending();
+            window.dispatchEvent(new Event(PENDING_FEES_CHANGED));
           }}
         />
       )}
@@ -86,11 +93,18 @@ export function usePendingFees(workshopId: string | null) {
 
   useEffect(() => {
     if (!workshopId) { setHasPending(false); return; }
-    supabase.functions.invoke('pay-cancellation-fees', {
-      body: { workshop_id: workshopId, action: 'check' },
-    }).then(({ data }) => {
-      setHasPending(!!data && data.total > 0);
-    });
+    let alive = true;
+    const check = () => {
+      supabase.functions.invoke('pay-cancellation-fees', {
+        body: { workshop_id: workshopId, action: 'check' },
+      }).then(({ data }) => {
+        if (alive) setHasPending(!!data && data.total > 0);
+      });
+    };
+    check();
+    // Reconsulta quando a multa é paga pelo banner (sem precisar recarregar a página)
+    window.addEventListener(PENDING_FEES_CHANGED, check);
+    return () => { alive = false; window.removeEventListener(PENDING_FEES_CHANGED, check); };
   }, [workshopId]);
 
   return hasPending;
@@ -98,7 +112,80 @@ export function usePendingFees(workshopId: string | null) {
 
 /* ──────────────── Modal de pagamento da multa ──────────────── */
 
-function PayFeeModal({
+type FeeModalProps = { workshopId: string; pending: PendingFees; onClose: () => void; onPaid: () => void };
+
+/** Escolhe o gateway (Configurações → Pagamentos) */
+function PayFeeModal(props: FeeModalProps) {
+  const [cfg, setCfg] = useState<{ gateway: 'stripe' | 'nextpay'; passthrough: boolean; percent: number } | null>(null);
+  useEffect(() => {
+    Promise.all([
+      getSetting('payment_gateway', 'stripe'),
+      getSetting('card_fee_passthrough', 'false'),
+      getSetting('card_fee_percent', '4.20'),
+    ]).then(([g, pass, pct]) => setCfg({
+      gateway: g.trim() === 'nextpay' ? 'nextpay' : 'stripe',
+      passthrough: pass.trim() === 'true',
+      percent: Number(pct.replace(',', '.')) || 0,
+    }));
+  }, []);
+  if (!cfg) return null;
+  if (cfg.gateway === 'nextpay') return <NextpayFeeModal {...props} passthrough={cfg.passthrough} percent={cfg.percent} />;
+  return <StripeFeeModal {...props} />;
+}
+
+/** Multa pela NextPay: PIX (recomendado) ou cartão no checkout. A baixa vem do webhook;
+ *  aqui só reconsulta as multas em aberto até zerarem. */
+function NextpayFeeModal({ workshopId, pending, onClose, onPaid, passthrough, percent }: FeeModalProps & { passthrough: boolean; percent: number }) {
+  const [paid, setPaid] = useState(false);
+
+  useEffect(() => {
+    if (paid) return;
+    const check = async () => {
+      if (document.hidden) return;
+      const { data } = await supabase.functions.invoke('pay-cancellation-fees', {
+        body: { workshop_id: workshopId, action: 'check' },
+      });
+      if (data && !(data.total > 0)) { setPaid(true); setTimeout(onPaid, 1500); }
+    };
+    const t = setInterval(check, 5000);
+    return () => clearInterval(t);
+  }, [workshopId, paid, onPaid]);
+
+  return (
+    <div className="fixed inset-0 bg-steel-900/85 grid place-items-end sm:place-items-center p-0 sm:p-4 z-[60]" onClick={() => !paid && onClose()}>
+      <div onClick={e => e.stopPropagation()} className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-6 space-y-4 shadow-2xl max-h-[95vh] overflow-y-auto">
+        <div className="flex items-start gap-3">
+          <span className="text-3xl shrink-0">💳</span>
+          <div className="flex-1">
+            <h3 className="text-xl font-bold text-steel-900">Pagar multa de cancelamento</h3>
+            <p className="text-sm text-steel-600 mt-1">
+              {pending.count_jobs === 1 ? '1 cancelamento com multa em aberto' : `${pending.count_jobs} cancelamentos com multa em aberto`}
+            </p>
+          </div>
+          {!paid && <button onClick={onClose} className="text-steel-400 hover:text-steel-700 text-2xl leading-none" aria-label="Fechar">×</button>}
+        </div>
+
+        <div className="bg-alert-50 border border-alert-200 rounded-2xl px-4 py-3 text-center">
+          <div className="text-xs text-alert-600 uppercase tracking-widest font-bold">Total a pagar</div>
+          <div className="text-3xl font-bold font-display text-alert-700 mt-1">R$ {formatBRL(pending.total)}</div>
+        </div>
+
+        {paid ? (
+          <div className="bg-signal-500/10 rounded-2xl p-6 text-center">
+            <div className="text-5xl">✅</div>
+            <p className="text-lg font-bold text-signal-700 mt-2">Multa quitada!</p>
+            <p className="text-sm text-signal-600 mt-1">Agora você pode publicar novas demandas.</p>
+          </div>
+        ) : (
+          <NextpayPayment request={{ fn: 'nextpay-fee-charge', body: { workshop_id: workshopId } }}
+            service={pending.total} feePassthrough={passthrough} feePercent={percent} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StripeFeeModal({
   workshopId, pending, onClose, onPaid,
 }: {
   workshopId: string;
@@ -206,7 +293,7 @@ function PayFeeModal({
         <div className="bg-alert-50 border border-alert-200 rounded-2xl px-4 py-3 text-center">
           <div className="text-xs text-alert-600 uppercase tracking-widest font-bold">Total a pagar</div>
           <div className="text-3xl font-bold font-display text-alert-700 mt-1">
-            R$ {pending.total.toFixed(2)}
+            R$ {formatBRL(pending.total)}
           </div>
         </div>
 

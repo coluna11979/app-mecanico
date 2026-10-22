@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,9 +7,12 @@ import { getSetting } from '@/lib/settings';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet } from '@/lib/payment';
+import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { isScheduled } from '@/lib/scheduling';
+import { AcceptDeadlineHint } from '@/components/ArrivalDeadline';
+import { IconMapPin } from '@/components/mecanico/icons';
 import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 
 type JobWithShop = Job & { workshop: Workshop | null };
@@ -180,7 +183,7 @@ export default function MechanicMapa() {
       const ws = job.workshop;
       if (!ws?.lat || !ws?.lng) return;
       const gross = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
-      const net = mechanicNet(gross).toFixed(0);
+      const net = formatMoney(mechanicNet(gross));
 
       const el = document.createElement('div');
       el.style.cssText = 'cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px;';
@@ -237,7 +240,9 @@ export default function MechanicMapa() {
       <div className="relative overflow-hidden" style={{ height: 'calc(100dvh - 56px - 64px)' }}>
 
         {/* Mapbox canvas */}
-        <div ref={mapRef} className="absolute inset-0" />
+        {/* Posição inline: o mapbox-gl.css põe `position: relative` em .mapboxgl-map
+            e derrubava o `absolute inset-0` — o mapa virava uma faixa de ~40px */}
+        <div ref={mapRef} style={{ position: 'absolute', inset: 0 }} />
 
         {/* Top badge */}
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
@@ -250,6 +255,11 @@ export default function MechanicMapa() {
               Você está offline
             </div>
           )}
+        </div>
+        {/* Lista ↔ Mapa — mesmo seletor da tela de Jobs */}
+        <div className="absolute top-3 right-3 z-10 flex rounded-xl bg-steel-900/90 backdrop-blur border border-steel-700 p-0.5 text-sm font-semibold">
+          <Link to="/mecanico/dashboard" className="h-9 px-3 rounded-lg text-steel-300 grid place-items-center active:bg-steel-700">Lista</Link>
+          <span className="h-9 px-3 rounded-lg bg-steel-700 text-white grid place-items-center">Mapa</span>
         </div>
         {/* Selected job bottom sheet */}
         {selected && (
@@ -289,14 +299,14 @@ export default function MechanicMapa() {
               <div>
                 <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Pacote fechado</div>
                 <div className="text-sm text-steel-300 font-semibold mt-0.5">
-                  {selected.max_hours}h previstas
+                  {hoursLabel(selected) ?? 'Preço fechado'}
                 </div>
               </div>
               <div className="w-px h-10 bg-steel-700" />
               <div className="text-right">
                 <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Você recebe</div>
-                <div className="text-2xl font-bold text-signal-400 font-display leading-none mt-0.5">R$ {selectedNet.toFixed(0)}</div>
-                <div className="text-xs text-steel-600 mt-1">no PIX em até 24h</div>
+                <div className="text-2xl font-bold text-signal-400 font-display leading-none mt-0.5">R$ {formatMoney(selectedNet)}</div>
+                <div className="text-xs text-steel-600 mt-1">no seu PIX</div>
               </div>
             </div>
 
@@ -312,6 +322,8 @@ export default function MechanicMapa() {
                 </span>
               </div>
             )}
+
+            <AcceptDeadlineHint job={selected} />
 
             {/* Actions */}
             <div className="flex gap-3">
@@ -341,11 +353,11 @@ export default function MechanicMapa() {
 
         {/* Empty state */}
         {jobs.length === 0 && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center">
+          <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
             <div className="bg-steel-900/90 backdrop-blur border border-steel-800 rounded-2xl px-6 py-5 text-center max-w-xs">
-              <div className="text-3xl mb-2">🔍</div>
+              <IconMapPin className="w-7 h-7 text-steel-400 mx-auto mb-2" />
               <div className="font-bold text-white">Nenhum job no momento</div>
-              <div className="text-sm text-steel-400 mt-1">Novos jobs aparecerão aqui em tempo real.</div>
+              <div className="text-sm text-steel-300 mt-1">Novos jobs aparecerão aqui em tempo real.</div>
             </div>
           </div>
         )}

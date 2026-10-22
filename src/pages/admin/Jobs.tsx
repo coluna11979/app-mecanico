@@ -38,7 +38,7 @@ export default function AdminJobs() {
   useEffect(() => {
     let q = supabase
       .from('jobs')
-      .select('id, title, status, price, created_at, workshop:workshops(business_name), mechanic:mechanics(profile:profiles(full_name))')
+      .select('id, title, status, price, created_at, workshop:workshops(business_name), mechanic:mechanics!jobs_mechanic_id_fkey(profile:profiles(full_name))')
       .order('created_at', { ascending: false })
       .limit(200);
     if (filter) q = q.eq('status', filter);

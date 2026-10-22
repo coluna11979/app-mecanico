@@ -21,6 +21,10 @@
     }
   ],
   "rewrites": [
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "jotacar.mecanicoapp.com.br" }], "destination": "/sites/jotacar/index.html" },
+    { "source": "/sites/jotacar", "destination": "/sites/jotacar/index.html" },
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "checkall.mecanicoapp.com.br" }], "destination": "/sites/checkall/index.html" },
+    { "source": "/sites/checkall", "destination": "/sites/checkall/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

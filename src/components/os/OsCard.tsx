@@ -1,30 +1,37 @@
 import { MouseEvent } from 'react';
-import type { ServiceOrder, Customer, Vehicle, WorkshopMechanic, OsStatus } from '@/types/database';
+import type { ServiceOrder, Customer, Vehicle, WorkshopMechanic, OsStatus, ServiceOrderPause } from '@/types/database';
 import LicensePlate from './LicensePlate';
+import ServiceTimer from './ServiceTimer';
 import {
-  osLabel, osColor, osBorder,
-  durationMin, fmtDur, fmtDate, fmtBRL,
-  shortOsId, waNumber,
+  osStatusLabel, osStatusColor, osBorder,
+  durationMin, fmtDate, fmtBRL,
+  osNumber, waNumber, fmtPhone,
 } from './osHelpers';
 
 export type OsRow = ServiceOrder & {
   customer: Customer | null;
   vehicle: Vehicle | null;
   mechanic: WorkshopMechanic | null;
+  /** Pausas do serviço (ex.: aguardando peça) */
+  pauses?: ServiceOrderPause[];
 };
 
 interface OsCardProps {
   os: OsRow;
   onClick: () => void;
-  onChangeStatus?: (status: OsStatus) => void;
+  onChangeStatus?: (status: OsStatus, opts?: { declined?: boolean }) => void;
   onCopyLink?: () => void;
+  /** Mecânico no modo balcão: sem valores, sem contato do cliente e sem ações comerciais */
+  mechanicView?: boolean;
+  /** Mecânico: comissão dele nesta OS (só serviços finalizados) */
+  myCommission?: number;
 }
 
-export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCardProps) {
+export default function OsCard({ os, onClick, onChangeStatus, onCopyLink, mechanicView, myCommission }: OsCardProps) {
   const dur = durationMin(os.started_at, os.completed_at);
-  const wa = waNumber(os.customer?.phone);
-  const tel = os.customer?.phone?.replace(/\D/g, '') ?? null;
-  const isScheduledFuture = os.scheduled_at && os.status === 'open';
+  const wa = mechanicView ? null : waNumber(os.customer?.phone);
+  const tel = mechanicView ? null : os.customer?.phone?.replace(/\D/g, '') ?? null;
+  const isScheduledFuture = os.scheduled_at && ['open', 'awaiting_approval', 'approved'].includes(os.status);
 
   // Evita propagar click pro card principal
   const stop = (e: MouseEvent) => e.stopPropagation();
@@ -47,10 +54,10 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
         <div className="flex-1 min-w-0">
           {/* linha 1: número + data + status + categoria */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            <span className="font-mono font-bold text-steel-700">#{shortOsId(os.id)}</span>
+            <span className="font-mono font-bold text-steel-700">OS {osNumber(os)}</span>
             <span className="text-steel-400">·</span>
             <span className="text-steel-500">{fmtDate(os.created_at)}</span>
-            <span className={`badge ${osColor(os.status)}`}>{osLabel(os.status)}</span>
+            <span className={`badge ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>
             {os.category && (
               <span className="badge bg-steel-100 text-steel-600">{os.category}</span>
             )}
@@ -80,7 +87,7 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
                   className="inline-flex items-center gap-1 text-steel-600 hover:text-brand-600 hover:underline"
                   title="Ligar"
                 >
-                  📞 {os.customer?.phone}
+                  📞 {fmtPhone(os.customer?.phone)}
                 </a>
               )}
               {wa && (
@@ -114,37 +121,73 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
           )}
 
           {/* linha 5: breakdown peças/MO */}
-          {(os.parts_cost != null || os.labor_cost != null) && (
+          {mechanicView && myCommission != null && myCommission > 0 && (
+            <div className="text-[11px] text-signal-700 font-semibold mt-1">💰 Sua comissão: {fmtBRL(myCommission)}</div>
+          )}
+          {!mechanicView && (os.parts_cost != null || os.labor_cost != null) && (
             <div className="text-[11px] text-steel-500 mt-1 flex flex-wrap gap-x-3">
               {os.parts_cost != null && <span>Peças <strong className="text-steel-700">{fmtBRL(os.parts_cost)}</strong></span>}
               {os.labor_cost != null && <span>Mão de obra <strong className="text-steel-700">{fmtBRL(os.labor_cost)}</strong></span>}
             </div>
           )}
 
-          {/* duração total se concluído */}
-          {dur !== null && (
-            <div className="text-[11px] text-steel-400 mt-1">⏱ {fmtDur(dur)}</div>
+          {/* Tempo de serviço: ao vivo em andamento, total quando concluída */}
+          {(os.status === 'in_progress' || (os.status === 'completed' && dur !== null)) && (
+            <div className="mt-1">
+              <ServiceTimer compact startedAt={os.started_at} pauses={os.pauses}
+                completedAt={os.status === 'completed' ? os.completed_at : null} />
+            </div>
           )}
         </div>
 
         {/* Total à direita */}
-        <div className="text-right shrink-0">
+        {!mechanicView && <div className="text-right shrink-0">
           <div className="text-[10px] text-steel-400 uppercase tracking-wider">Total</div>
           <div className="text-lg sm:text-xl font-bold font-display text-steel-900">
             {fmtBRL(os.price)}
           </div>
-        </div>
+          {Number(os.paid_amount ?? 0) > 0 && (
+            Number(os.price) - Number(os.counter_discount ?? 0) - Number(os.paid_amount) > 0.009
+              ? <span className="badge bg-pending-100 text-pending-800 text-[10px]">Pago em parte</span>
+              : <span className="badge bg-signal-100 text-signal-700 text-[10px]">✓ Paga</span>
+          )}
+        </div>}
       </div>
 
       {/* Ações rápidas */}
-      {(onChangeStatus || onCopyLink) && os.status !== 'cancelled' && (
+      {(onChangeStatus || onCopyLink) && os.status !== 'cancelled'
+        && (!mechanicView || os.status === 'approved' || os.status === 'in_progress') && (
         <div className="mt-3 pt-3 border-t border-steel-100 flex flex-wrap gap-2">
-          {os.status === 'open' && onChangeStatus && (
+          {os.status === 'open' && !mechanicView && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onClick(); }}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition"
+            >
+              📋 Montar orçamento
+            </button>
+          )}
+          {os.status === 'awaiting_approval' && onChangeStatus && !mechanicView && (
+            <>
+              <button
+                onClick={handleQuick('approved')}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-signal-50 text-signal-700 hover:bg-signal-100 border border-signal-200 transition"
+              >
+                ✅ Aprovado
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); if (confirm('O cliente não aprovou o orçamento?')) onChangeStatus('cancelled', { declined: true }); }}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white text-steel-600 hover:bg-steel-50 border border-steel-200 transition"
+              >
+                ✕ Não aprovou
+              </button>
+            </>
+          )}
+          {os.status === 'approved' && onChangeStatus && (
             <button
               onClick={handleQuick('in_progress')}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition"
             >
-              ▶ Iniciar
+              ▶ Iniciar serviço
             </button>
           )}
           {os.status === 'in_progress' && onChangeStatus && (
@@ -155,15 +198,15 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink }: OsCa
               ✓ Concluir
             </button>
           )}
-          {onCopyLink && (
+          {onCopyLink && !mechanicView && (
             <button
               onClick={(e) => { e.stopPropagation(); onCopyLink(); }}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-steel-50 text-steel-700 hover:bg-steel-100 border border-steel-200 transition"
             >
-              📋 Copiar link
+              🔗 Copiar link
             </button>
           )}
-          {os.status !== 'completed' && onChangeStatus && (
+          {os.status !== 'completed' && onChangeStatus && !mechanicView && (
             <button
               onClick={handleQuick('cancelled')}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white text-alert-600 hover:bg-alert-50 border border-steel-200 transition ml-auto"

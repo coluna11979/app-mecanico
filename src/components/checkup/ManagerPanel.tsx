@@ -1,0 +1,642 @@
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import LicensePlate from '@/components/os/LicensePlate';
+import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
+import { CHECKUP_MODELS, CHECKUP_TEMPLATE, itemQuote, mechanicWhatsappLink, modelItemKeys, modelLabel, modelOf, publicReportUrl } from '@/lib/checkup';
+import { systemsOf } from '@/lib/checkupStatus';
+import {
+  ACTION_LABEL, attentionOf, kpisOf, rowOf, sinceLabel,
+  type Action, type Attention, type PanelCheckup, type Row, type ScheduledOs,
+} from '@/lib/checkupPanel';
+import type { Situation } from '@/lib/checkupStatus';
+import type { WorkshopMechanic } from '@/types/database';
+import { useModuleAllows } from '@/lib/modules';
+
+/* Painel do gestor: Painel · Inspeções · Histórico · Modelos.
+   Um botão principal por card/linha; tudo calculado em lib/checkupPanel. */
+
+export type Tab = 'painel' | 'inspecoes' | 'historico' | 'modelos';
+type Filter = 'todos' | 'agendados' | 'andamento' | 'aguardando' | 'finalizados' | 'aprovados';
+
+const TAB_LABEL: Record<Tab, string> = { painel: 'Painel', inspecoes: 'Inspeções', historico: 'Histórico', modelos: 'Modelos' };
+const FILTER_LABEL: Record<Exclude<Filter, 'aprovados'>, string> = {
+  todos: 'Todos', agendados: 'Agendados', andamento: 'Em andamento', aguardando: 'Aguardando cliente', finalizados: 'Finalizados',
+};
+const PANEL_LIMIT = 12;
+
+const SITUATION_PILL: Record<Situation, { label: string; cls: string }> = {
+  nao_iniciado:  { label: 'Não iniciado',          cls: 'bg-steel-100 text-steel-600' },
+  inspecionando: { label: 'Em inspeção',           cls: 'bg-brand-50 text-brand-700' },
+  falta_enviar:  { label: 'Pronto · falta enviar', cls: 'bg-pending-500/15 text-pending-700' },
+  enviado:       { label: 'Enviado ao cliente',    cls: 'bg-sky-50 text-sky-700' },
+  cliente_viu:   { label: 'Cliente viu',           cls: 'bg-sky-50 text-sky-700' },
+  aprovado:      { label: 'Aprovado',              cls: 'bg-signal-100 text-signal-800' },
+  respondido:    { label: 'Respondido',            cls: 'bg-steel-100 text-steel-600' },
+  refeito:       { label: 'Refeito',               cls: 'bg-steel-100 text-steel-500' },
+};
+
+const carOf = (v: { make: string | null; model: string | null; year: number | null } | null) =>
+  v ? [v.make, v.model, v.year].filter(Boolean).join(' ') || 'Veículo' : 'Veículo';
+
+export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, workshopName, onStartOs, onSchedule, onNew }: {
+  tab: Tab; onTab: (t: Tab) => void;
+  /** null = carregando */
+  list: PanelCheckup[] | null;
+  scheduled: ScheduledOs[];
+  mechanics: Pick<WorkshopMechanic, 'id' | 'name'>[];
+  workshopName?: string;
+  onStartOs: (osId: string) => void;
+  onSchedule: () => void;
+  onNew: () => void;
+}) {
+  // Abas desligadas no superadmin (módulos por oficina) não aparecem
+  const routeOk = useModuleAllows();
+  const navigate = useNavigate();
+  const [filter, setFilter] = useState<Filter>('todos');
+  const [period, setPeriod] = useState<7 | 30>(7);
+  const [search, setSearch] = useState('');
+  const [mechFilter, setMechFilter] = useState('');
+  const [wa, setWa] = useState<Row | null>(null);
+  const [starting, setStarting] = useState<string | null>(null);
+  // Painel em lista ou em colunas (só no computador); fica guardado no aparelho
+  const [view, setViewState] = useState<'lista' | 'colunas'>(() => {
+    try { return localStorage.getItem('checkup_view') === 'colunas' ? 'colunas' : 'lista'; } catch { return 'lista'; }
+  });
+  const setView = (v: 'lista' | 'colunas') => { setViewState(v); try { localStorage.setItem('checkup_view', v); } catch { /* sem localStorage */ } };
+  const wide = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
+
+  const rows = useMemo(() => (list ?? []).map(rowOf), [list]);
+  const k = useMemo(() => kpisOf(rows, scheduled, period), [rows, scheduled, period]);
+  const attention = useMemo(() => attentionOf(rows, scheduled), [rows, scheduled]);
+
+  function act(action: Action, row?: Row, os?: ScheduledOs) {
+    if (action === 'iniciar' && os) { setStarting(os.id); onStartOs(os.id); return; }
+    if (!row) return;
+    const c = row.c;
+    if ((action === 'abrir_os' || action === 'definir_responsavel') && c.sale_os_id) { navigate(`/oficina/os/${c.sale_os_id}`); return; }
+    if (action === 'abrir_novo' && c.replaced_by) { navigate(`/oficina/checkup/${c.replaced_by}`); return; }
+    if (action === 'whatsapp') { setWa(row); return; }
+    if (action === 'cobrar_mecanico') {
+      const valid = c.mechanic_token && c.mechanic_token_expires_at && new Date(c.mechanic_token_expires_at) > new Date();
+      if (valid) {
+        window.open(mechanicWhatsappLink(c, { token: c.mechanic_token!, mechanic_name: c.mechanic?.name ?? null, mechanic_phone: c.mechanic?.phone ?? null }), '_blank', 'noopener');
+        return;
+      }
+      // Link vencido: reenviar pela tela do check-up (gera um novo)
+    }
+    navigate(`/oficina/checkup/${c.id}`);
+  }
+
+  function waText(r: Row) {
+    const c = r.c;
+    const first = c.customer_name?.trim().split(' ')[0];
+    const car = `${carOf(c)}${c.plate ? ` (${c.plate})` : ''}`;
+    const hasQuote = c.items.some(i => itemQuote(i) > 0);
+    return `Olá${first ? ` ${first}` : ''}! Aqui é da ${workshopName || 'oficina'}. ` +
+      (hasQuote
+        ? `Conseguiu ver o orçamento do check-up do ${car}? Pelo link você aprova o que quiser e já escolhe o horário: `
+        : `Conseguiu ver o relatório do check-up do ${car}? Qualquer dúvida é só me chamar: `) +
+      publicReportUrl(c.public_token);
+  }
+
+  const loading = list === null;
+
+  return (
+    <div className="space-y-5">
+      {/* Abas do módulo */}
+      <div className="flex gap-1 border-b border-steel-200 overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
+        {(Object.keys(TAB_LABEL) as Tab[]).filter(t => routeOk(t === 'painel' ? '/oficina/checkup' : `/oficina/checkup/${t}`)).map(t => (
+          <button key={t} onClick={() => onTab(t)}
+            className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition ${
+              tab === t ? 'border-brand-500 text-steel-900' : 'border-transparent text-steel-500 hover:text-steel-800'}`}>
+            {TAB_LABEL[t]}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="card text-center text-steel-500 text-sm py-10">Carregando…</div>
+      ) : tab === 'painel' ? (
+        <>
+          {/* KPIs — clicar filtra a lista */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Kpi label="Agendados hoje" value={k.agendadosHoje} active={filter === 'agendados'} onClick={() => setFilter('agendados')} />
+            <Kpi label="Em andamento" value={k.andamento} active={filter === 'andamento'} onClick={() => setFilter('andamento')} />
+            <Kpi label="Aguardando cliente" value={k.aguardando} active={filter === 'aguardando'} onClick={() => setFilter('aguardando')} />
+            <Kpi label={`Aprovados (${period} dias)`} value={k.aprovados} active={filter === 'aprovados'} onClick={() => setFilter('aprovados')}
+              extra={
+                <span className="inline-flex rounded-lg bg-steel-100 p-0.5 text-[10px] font-bold" onClick={e => e.stopPropagation()}>
+                  {([7, 30] as const).map(p => (
+                    <button key={p} onClick={() => setPeriod(p)}
+                      className={`px-1.5 py-0.5 rounded-md ${period === p ? 'bg-white text-steel-800 shadow-sm' : 'text-steel-500'}`}>{p}d</button>
+                  ))}
+                </span>
+              } />
+          </div>
+
+          {/* Atenção agora */}
+          {attention.length > 0 && (
+            <section className="card !p-0 overflow-hidden border-pending-200">
+              <div className="px-5 py-3 bg-pending-50 border-b border-pending-200 flex items-center justify-between">
+                <h2 className="text-xs font-bold uppercase tracking-widest text-pending-800">⚠️ Atenção agora</h2>
+                {attention.length > 5 && <span className="text-xs text-pending-800">mostrando 5 de {attention.length}</span>}
+              </div>
+              <ul className="divide-y divide-steel-100">
+                {attention.slice(0, 5).map(a => <AttentionRow key={a.key} a={a} busy={starting === a.os?.id} onAct={() => act(a.action, a.row, a.os)} />)}
+              </ul>
+            </section>
+          )}
+
+          <div className="hidden md:flex justify-end -mb-1">
+            <div className="flex rounded-xl border border-steel-200 bg-white p-0.5">
+              {(['lista', 'colunas'] as const).map(v => (
+                <button key={v} type="button" onClick={() => setView(v)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${view === v ? 'bg-steel-900 text-white' : 'text-steel-600 hover:bg-steel-50'}`}>
+                  {v === 'lista' ? '☰ Lista' : '▥ Colunas'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {view === 'colunas' && wide ? (
+            <CheckupBoard rows={rows} scheduled={scheduled} starting={starting} onAct={act} onMore={() => onTab('inspecoes')} />
+          ) : (
+            <CheckupList rows={rows} scheduled={scheduled} filter={filter} onFilter={setFilter}
+              approvedIds={k.approvedIds} period={period} limit={PANEL_LIMIT} starting={starting}
+              onAct={act} onMore={() => onTab('inspecoes')} onSchedule={onSchedule} onNew={onNew} />
+          )}
+        </>
+      ) : tab === 'inspecoes' ? (
+        <>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input className="input sm:max-w-xs" placeholder="Buscar placa, carro ou cliente…" value={search} onChange={e => setSearch(e.target.value)} />
+            <select className="input sm:max-w-[14rem]" value={mechFilter} onChange={e => setMechFilter(e.target.value)}>
+              <option value="">Todos os mecânicos</option>
+              <option value="-">Sem responsável</option>
+              {mechanics.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+          <CheckupList rows={rows} scheduled={scheduled} filter={filter} onFilter={setFilter}
+            approvedIds={k.approvedIds} period={period} starting={starting} search={search} mechFilter={mechFilter}
+            onAct={act} onSchedule={onSchedule} onNew={onNew} />
+        </>
+      ) : tab === 'historico' ? (
+        <History rows={rows} onAct={act} />
+      ) : (
+        <ModelsSoon />
+      )}
+
+      {wa && (
+        <SendWhatsAppModal phone={wa.c.customer_phone} customerId={wa.c.customer_id} customerName={wa.c.customer_name} sectorKind="comercial"
+          messages={[{ key: 'retorno', label: 'Retorno do check-up', text: waText(wa) }]}
+          onClose={() => setWa(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ─── KPI ─────────────────────────────────────────────────── */
+function Kpi({ label, value, active, onClick, extra }: {
+  label: string; value: number; active: boolean; onClick: () => void; extra?: React.ReactNode;
+}) {
+  return (
+    <div role="button" tabIndex={0} onClick={onClick} onKeyDown={e => e.key === 'Enter' && onClick()}
+      className={`card !p-4 text-left cursor-pointer transition hover:shadow-md ${active ? 'ring-2 ring-brand-500' : ''}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-steel-500">{label}</span>
+        {extra}
+      </div>
+      <div className="text-3xl font-bold font-display text-steel-900 mt-1">{value}</div>
+    </div>
+  );
+}
+
+/* ─── Atenção agora: uma linha, um botão ───────────────────── */
+function AttentionRow({ a, busy, onAct }: { a: Attention; busy: boolean; onAct: () => void }) {
+  const c = a.row?.c;
+  const plate = c ? c.plate : a.os?.vehicle?.plate ?? null;
+  const car = c ? carOf(c) : carOf(a.os?.vehicle ?? null);
+  const who = c ? c.customer_name : a.os?.customer?.full_name;
+  return (
+    <li className="px-5 py-3 flex flex-col sm:grid sm:grid-cols-[minmax(0,34rem)_auto] sm:justify-start sm:items-center gap-2 sm:gap-6">
+      <div className="min-w-0 space-y-0.5">
+        <div className="flex items-center gap-2 min-w-0">
+          {plate && <LicensePlate plate={plate} size="sm" />}
+          <span className="text-sm font-semibold text-steel-800 truncate">{car}{who && <span className="font-normal text-steel-500"> · {who}</span>}</span>
+        </div>
+        <div className="text-xs text-pending-800">{a.reason}</div>
+      </div>
+      <button onClick={onAct} disabled={busy}
+        className={`text-sm !py-2 sm:min-w-40 ${a.action === 'whatsapp' ? 'btn-primary !bg-[#25D366]' : 'btn-primary'}`}>
+        {busy ? 'Abrindo…' : `${ACTION_LABEL[a.action]} →`}
+      </button>
+    </li>
+  );
+}
+
+/* ─── Lista com filtros (Painel e Inspeções) ───────────────── */
+function CheckupList({ rows, scheduled, filter, onFilter, approvedIds, period, limit, starting, search = '', mechFilter = '', onAct, onMore, onSchedule, onNew }: {
+  rows: Row[]; scheduled: ScheduledOs[]; filter: Filter; onFilter: (f: Filter) => void;
+  approvedIds: Set<string>; period: number; limit?: number; starting: string | null;
+  search?: string; mechFilter?: string;
+  onAct: (a: Action, r?: Row, os?: ScheduledOs) => void; onMore?: () => void; onSchedule: () => void; onNew: () => void;
+}) {
+  const q = search.trim().toLowerCase();
+  const matchText = (vals: (string | null | undefined)[]) => !q || vals.some(v => v?.toLowerCase().includes(q));
+  const byMech = (id: string | null) => !mechFilter || (mechFilter === '-' ? !id : id === mechFilter);
+
+  const fRows = rows.filter(r => matchText([r.c.plate, r.c.make, r.c.model, r.c.customer_name, r.c.mechanic?.name]) && byMech(r.c.workshop_mechanic_id));
+  const fSched = scheduled.filter(o => matchText([o.vehicle?.plate, o.vehicle?.make, o.vehicle?.model, o.customer?.full_name, o.mechanic?.name])
+    && byMech(o.workshop_mechanic_id));
+
+  const count = (f: Exclude<Filter, 'aprovados'>) =>
+    f === 'todos' ? fRows.length + fSched.length
+    : f === 'agendados' ? fSched.length
+    : fRows.filter(r => r.bucket === (f === 'finalizados' ? 'finalizado' : f)).length;
+
+  const showSched = filter === 'todos' || filter === 'agendados';
+  const shownRows = filter === 'agendados' ? []
+    : filter === 'todos' ? fRows
+    : filter === 'aprovados' ? fRows.filter(r => approvedIds.has(r.c.id))
+    : fRows.filter(r => r.bucket === (filter === 'finalizados' ? 'finalizado' : filter));
+  // Aberto primeiro (andamento → aguardando), depois finalizados; dentro de cada um, o mais recente primeiro
+  const order = { andamento: 0, aguardando: 1, finalizado: 2 } as const;
+  const sorted = [...shownRows].sort((a, b) => order[a.bucket] - order[b.bucket] || b.since.localeCompare(a.since));
+  const sched = showSched ? fSched : [];
+  const total = sched.length + sorted.length;
+  const cut = limit && total > limit;
+  const schedShown = cut ? sched.slice(0, limit) : sched;
+  const rowsShown = cut ? sorted.slice(0, Math.max(0, limit! - schedShown.length)) : sorted;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {(Object.keys(FILTER_LABEL) as Exclude<Filter, 'aprovados'>[]).map(f => (
+          <button key={f} onClick={() => onFilter(f)}
+            className={`px-3.5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition ${filter === f ? 'bg-steel-900 text-white' : 'bg-white border border-steel-200 text-steel-600 hover:bg-steel-50'}`}>
+            {FILTER_LABEL[f]} <span className="opacity-60">({count(f)})</span>
+          </button>
+        ))}
+        {filter === 'aprovados' && (
+          <button onClick={() => onFilter('todos')} className="px-3.5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap bg-signal-600 text-white">
+            Aprovados ({period} dias) ✕
+          </button>
+        )}
+      </div>
+
+      {total === 0 ? (
+        <div className="card text-center py-10 space-y-3">
+          {rows.length + scheduled.length === 0 ? (
+            <>
+              <div className="text-4xl">🩺</div>
+              <div className="font-bold text-steel-800">Nenhum check-up ainda</div>
+              <p className="text-sm text-steel-500 max-w-md mx-auto">
+                Agende ou crie o primeiro. O mecânico faz a inspeção (aqui ou pelo celular), você coloca os valores e o cliente aprova pelo link.
+              </p>
+              <div className="flex gap-2 justify-center">
+                <button onClick={onSchedule} className="btn-ghost text-sm border border-steel-200">📅 Agendar</button>
+                <button onClick={onNew} className="btn-primary text-sm">+ Novo check-up</button>
+              </div>
+            </>
+          ) : <div className="text-sm text-steel-500">Nada por aqui.</div>}
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {schedShown.map(o => <ScheduledCard key={o.id} o={o} busy={starting === o.id} onStart={() => onAct('iniciar', undefined, o)} />)}
+          {rowsShown.map(r => <CheckupCard key={r.c.id} r={r} onAct={a => onAct(a, r)} />)}
+        </div>
+      )}
+
+      {cut && onMore && (
+        <div className="text-center">
+          <button onClick={onMore} className="text-sm font-semibold text-brand-600 hover:underline">Ver todos em Inspeções ({total}) →</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ─── Card de check-up ─────────────────────────────────────── */
+function CheckupCard({ r, onAct, replacedOn }: {
+  r: Row; onAct: (a: Action) => void;
+  /** Refeito: data do check-up novo (null = não carregado) */
+  replacedOn?: string | null;
+}) {
+  const { c, counts } = r;
+  const pill = SITUATION_PILL[r.situation];
+  const draft = c.status === 'draft';
+  return (
+    <div className="card !p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2 min-w-0">
+            {c.plate && <LicensePlate plate={c.plate} size="sm" />}
+            <span className="font-semibold text-steel-800 truncate">{carOf(c)}</span>
+          </div>
+          <div className="text-xs text-steel-500 truncate">
+            {[c.customer_name, c.mechanic?.name ? `🔧 ${c.mechanic.name}` : '🔧 sem responsável'].filter(Boolean).join(' · ')}
+          </div>
+          {c.template_key && (
+            <div className="text-[11px] font-semibold text-steel-600 truncate">{modelOf(c.template_key).icon} {modelLabel(c.template_key, systemsOf(c.items))}</div>
+          )}
+        </div>
+        <span className={`text-[10px] font-bold uppercase tracking-wide rounded-md px-2 py-1 shrink-0 ${pill.cls}`}>{pill.label}</span>
+      </div>
+
+      <div className="space-y-1.5">
+        {draft && (
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 flex-1 rounded-full bg-steel-100 overflow-hidden">
+              <div className="h-full bg-brand-500" style={{ width: `${counts.progress}%` }} />
+            </div>
+            <span className="text-[11px] font-semibold text-steel-600 shrink-0">{counts.answered} de {counts.total} itens</span>
+          </div>
+        )}
+        <div className="text-xs text-steel-600 flex flex-wrap gap-x-3">
+          <span>🟢 {counts.ok} OK</span>
+          <span>🟡 {counts.warn} Atenção</span>
+          <span>🔴 {counts.urgent} Urgente</span>
+        </div>
+      </div>
+
+      <div className="mt-auto space-y-2">
+        <div className={`text-[11px] ${r.situation === 'falta_enviar' && r.noPrice ? 'text-pending-700 font-semibold' : 'text-steel-400'}`}>
+          {r.situation === 'refeito'
+            ? `Substituído pelo check-up${replacedOn ? ` de ${new Date(replacedOn).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}` : ' novo'}`
+            : <>{sinceLabel(r)}{r.situation === 'falta_enviar' && r.noPrice > 0 && ` · ${r.noPrice} sem preço`}</>}
+        </div>
+        <button onClick={() => onAct(r.action)}
+          className={`w-full text-sm !py-2 ${r.action === 'whatsapp' ? 'btn-primary !bg-[#25D366]'
+            : r.action === 'ver' || r.action === 'abrir_os' || r.action === 'abrir_novo' ? 'btn-ghost border border-steel-300 bg-white font-semibold' : 'btn-primary'}`}>
+          {ACTION_LABEL[r.action]} →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ScheduledCard({ o, busy, onStart }: { o: ScheduledOs; busy: boolean; onStart: () => void }) {
+  const when = new Date(o.scheduled_at);
+  const today = new Date().toDateString() === when.toDateString();
+  const late = when.getTime() < Date.now();
+  return (
+    <div className="card !p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2 min-w-0">
+            {o.vehicle?.plate && <LicensePlate plate={o.vehicle.plate} size="sm" />}
+            <span className="font-semibold text-steel-800 truncate">{carOf(o.vehicle)}</span>
+          </div>
+          <div className="text-xs text-steel-500 truncate">
+            {[o.customer?.full_name, o.mechanic?.name ? `🔧 ${o.mechanic.name}` : '🔧 sem responsável'].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+        <span className="text-[10px] font-bold uppercase tracking-wide rounded-md px-2 py-1 shrink-0 bg-steel-100 text-steel-600">Agendado</span>
+      </div>
+      <div className={`text-xs font-semibold ${late ? 'text-alert-600' : today ? 'text-brand-600' : 'text-steel-600'}`}>
+        📅 {today ? 'Hoje' : when.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}
+        {' às '}{when.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{late && ' · atrasado'}
+        <span className="font-normal text-steel-400"> · OS nº {String(o.number ?? '').padStart(4, '0')}</span>
+      </div>
+      <button onClick={onStart} disabled={busy} className="btn-primary w-full text-sm !py-2 mt-auto">{busy ? 'Abrindo…' : 'Iniciar →'}</button>
+    </div>
+  );
+}
+
+/* ─── Histórico: finalizados e resultado no período ────────── */
+function History({ rows, onAct }: { rows: Row[]; onAct: (a: Action, r?: Row) => void }) {
+  const [days, setDays] = useState<30 | 90 | 365>(30);
+  const from = Date.now() - days * 86400000;
+  const done = rows.filter(r => r.bucket === 'finalizado' && new Date(r.since).getTime() >= from)
+    .sort((a, b) => b.since.localeCompare(a.since));
+  // Refeito fica na lista, mas não conta no resultado (quem conta é o check-up novo)
+  const answered = done.filter(r => r.situation !== 'refeito');
+  const approved = answered.filter(r => r.situation === 'aprovado').length;
+  const remind = answered.filter(r => r.situation === 'respondido' && r.c.items.some(i => i.customer_decision === 'remind')).length;
+  const declined = answered.length - approved - remind;
+  const byId = new Map(rows.map(r => [r.c.id, r.c]));
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="text-sm text-steel-600">
+          {answered.length === 0 ? 'Nenhum cliente respondeu no período.' : (
+            <><strong className="text-steel-900">{approved} de {answered.length}</strong> clientes aprovaram
+              {remind > 0 && <> · {remind} pediram para lembrar depois</>}
+              {declined > 0 && <> · {declined} não aprovaram agora</>}</>
+          )}
+        </div>
+        <div className="inline-flex rounded-xl bg-steel-100 p-1 text-xs font-semibold self-start">
+          {([30, 90, 365] as const).map(d => (
+            <button key={d} onClick={() => setDays(d)}
+              className={`px-3 py-1.5 rounded-lg ${days === d ? 'bg-white text-steel-900 shadow-sm' : 'text-steel-500'}`}>
+              {d === 365 ? '12 meses' : `${d} dias`}
+            </button>
+          ))}
+        </div>
+      </div>
+      {done.length > 0 && (
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {done.map(r => <CheckupCard key={r.c.id} r={r} onAct={a => onAct(a, r)}
+            replacedOn={r.c.replaced_by ? byId.get(r.c.replaced_by)?.created_at ?? null : undefined} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ─── Modelos: o que cada tipo de check-up verifica ────────── */
+function ModelsSoon() {
+  return (
+    <section className="space-y-3">
+      <p className="text-sm text-steel-500">
+        Escolha o tipo na hora de criar o check-up. Check-up de uma OS já sugere o tipo pelo serviço (ex.: freio → Freios e suspensão),
+        e dá para trocar antes de começar. O mecânico sempre pode incluir um item fora do modelo.
+      </p>
+      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {CHECKUP_MODELS.map(m => {
+          const keys = m.key === 'custom' ? [] : modelItemKeys(m.key);
+          const systems = CHECKUP_TEMPLATE.filter(s => s.items.some(i => keys.includes(i.key))).map(s => s.system);
+          return (
+            <div key={m.key} className="card !p-4 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-steel-800">{m.icon} {m.label}</span>
+                <span className="text-xs font-semibold text-steel-500">{m.key === 'custom' ? 'você escolhe' : `${keys.length} itens`}</span>
+              </div>
+              <div className="text-xs text-steel-500">{m.desc}</div>
+              {systems.length > 0 && <div className="text-[11px] text-steel-400">{systems.join(' · ')}</div>}
+              {m.partial && <div className="text-[11px] text-pending-700">Relatório do cliente: “estado dos itens verificados”</div>}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-steel-400">Modelos criados pela própria oficina (com itens seus): em breve.</p>
+    </section>
+  );
+}
+
+/* ─── Quadro em colunas (como o Comercial): do agendamento à resposta do cliente ── */
+
+type ColKey = 'agendados' | 'rampa' | 'enviar' | 'aguardando' | 'finalizados';
+const BOARD_COLS: { key: ColKey; title: string; bar: string; empty: string; situations?: Situation[] }[] = [
+  { key: 'agendados',   title: '📅 Agendados',         bar: 'bg-steel-400',   empty: 'Nenhum check-up agendado' },
+  { key: 'rampa',       title: '🔧 Na rampa',          bar: 'bg-brand-500',   empty: 'Nenhum carro em inspeção', situations: ['nao_iniciado', 'inspecionando'] },
+  { key: 'enviar',      title: '📝 Falta enviar',      bar: 'bg-pending-500', empty: 'Nada esperando envio',     situations: ['falta_enviar'] },
+  { key: 'aguardando',  title: '⏳ Aguardando cliente', bar: 'bg-sky-500',     empty: 'Ninguém aguardando',       situations: ['enviado', 'cliente_viu'] },
+  { key: 'finalizados', title: '✅ Finalizados',       bar: 'bg-signal-500',  empty: 'Nenhum finalizado',        situations: ['aprovado', 'respondido'] },
+];
+/** Finalizados são muitos: mostra os mais recentes e o resto fica em Inspeções/Histórico */
+const DONE_SHOWN = 15;
+
+/** Valor orçado (itens 🟡/🔴) e aprovado pelo cliente */
+function quoteOf(r: Row) {
+  const flagged = r.c.items.filter(i => i.status === 'warn' || i.status === 'urgent');
+  const quoted = flagged.reduce((a, i) => a + itemQuote(i), 0);
+  const approved = flagged.filter(i => i.customer_decision === 'approve').reduce((a, i) => a + itemQuote(i), 0);
+  return { quoted, approved };
+}
+const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function CheckupBoard({ rows, scheduled, starting, onAct, onMore }: {
+  rows: Row[]; scheduled: ScheduledOs[]; starting: string | null;
+  onAct: (a: Action, r?: Row, os?: ScheduledOs) => void; onMore: () => void;
+}) {
+  return (
+    <div className="grid grid-flow-col auto-cols-[minmax(196px,1fr)] gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+      {BOARD_COLS.map(col => {
+        if (col.key === 'agendados') {
+          const list = [...scheduled].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+          return (
+            <BoardColumn key={col.key} title={col.title} bar={col.bar} n={list.length} empty={col.empty}>
+              {list.map(o => <BoardScheduled key={o.id} o={o} busy={starting === o.id} onStart={() => onAct('iniciar', undefined, o)} />)}
+            </BoardColumn>
+          );
+        }
+        const all = rows.filter(r => col.situations!.includes(r.situation))
+          .sort((a, b) => col.key === 'finalizados' ? b.since.localeCompare(a.since) : a.since.localeCompare(b.since));
+        const shown = col.key === 'finalizados' ? all.slice(0, DONE_SHOWN) : all;
+        const value = col.key === 'aguardando' ? all.reduce((s, r) => s + quoteOf(r).quoted, 0)
+          : col.key === 'finalizados' ? shown.reduce((s, r) => s + quoteOf(r).approved, 0) : null;
+        return (
+          <BoardColumn key={col.key} title={col.title} bar={col.bar} n={all.length} empty={col.empty}
+            value={value} valueHint={col.key === 'aguardando' ? 'orçado' : col.key === 'finalizados' ? 'aprovado' : undefined}>
+            {shown.map(r => <BoardCard key={r.c.id} r={r} onAct={a => onAct(a, r)} />)}
+            {all.length > shown.length && (
+              <button type="button" onClick={onMore} className="w-full py-2 text-xs font-semibold text-steel-500 hover:text-steel-800">
+                + {all.length - shown.length} — ver em Inspeções
+              </button>
+            )}
+          </BoardColumn>
+        );
+      })}
+    </div>
+  );
+}
+
+function BoardColumn({ title, bar, n, empty, value, valueHint, children }: {
+  title: string; bar: string; n: number; empty: string; value?: number | null; valueHint?: string; children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col rounded-2xl bg-steel-100/70 h-[calc(100vh-450px)] min-h-[340px] overflow-hidden">
+      <div className={`h-1 ${bar}`} />
+      <header className="px-3.5 pt-3 pb-2.5">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-bold text-steel-800 truncate">{title}</h3>
+          <span className="ml-auto h-5 min-w-5 px-1.5 rounded-full bg-white text-[11px] font-bold text-steel-600 grid place-items-center shadow-sm">{n}</span>
+        </div>
+        {value != null && (
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-base font-bold text-steel-900 tabular-nums">{brl(value)}</span>
+            <span className="text-[10px] text-steel-400">{valueHint}</span>
+          </div>
+        )}
+      </header>
+      <div className="flex-1 min-h-0 px-2 pb-2 space-y-2 overflow-y-auto [scrollbar-width:thin]">
+        {n === 0 ? (
+          <div className="h-20 rounded-xl border-2 border-dashed border-steel-200 grid place-items-center px-3 text-center">
+            <span className="text-xs text-steel-400">{empty}</span>
+          </div>
+        ) : children}
+      </div>
+    </section>
+  );
+}
+
+const boardCard = 'rounded-xl bg-white border border-steel-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-steel-300 hover:shadow-md transition';
+
+function BoardCard({ r, onAct }: { r: Row; onAct: (a: Action) => void }) {
+  const { c, counts } = r;
+  const draft = c.status === 'draft';
+  const q = quoteOf(r);
+  const strong = r.action !== 'ver' && r.action !== 'abrir_os' && r.action !== 'abrir_novo';
+  return (
+    <div className={boardCard}>
+      <button type="button" onClick={() => onAct(r.action === 'whatsapp' ? 'ver' : r.action)} className="block w-full text-left p-3">
+        <div className="flex items-start gap-2">
+          <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{carOf(c)}</p>
+          {c.plate && <span className="shrink-0 text-[10px] font-bold tracking-wide px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">{c.plate}</span>}
+        </div>
+        <p className="text-xs text-steel-500 truncate mt-0.5">
+          {[c.customer_name, c.mechanic?.name ? `🔧 ${c.mechanic.name.split(' ')[0]}` : '🔧 sem responsável'].filter(Boolean).join(' · ')}
+        </p>
+        {draft ? (
+          <div className="flex items-center gap-2 mt-2">
+            <div className="h-1.5 flex-1 rounded-full bg-steel-100 overflow-hidden">
+              <div className="h-full bg-brand-500" style={{ width: `${counts.progress}%` }} />
+            </div>
+            <span className="text-[10px] font-semibold text-steel-500 shrink-0">{counts.answered}/{counts.total}</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <span className="text-[11px] text-steel-600 flex gap-2">
+              <span title="OK">🟢 {counts.ok}</span><span title="Atenção">🟡 {counts.warn}</span><span title="Urgente">🔴 {counts.urgent}</span>
+            </span>
+            {(r.situation === 'aprovado' ? q.approved : q.quoted) > 0 && (
+              <span className="text-sm font-bold text-steel-900 tabular-nums">{brl(r.situation === 'aprovado' ? q.approved : q.quoted)}</span>
+            )}
+          </div>
+        )}
+        <p className={`text-[10px] mt-1.5 ${r.situation === 'falta_enviar' && r.noPrice ? 'text-pending-700 font-semibold' : 'text-steel-400'}`}>
+          {sinceLabel(r)}{r.situation === 'falta_enviar' && r.noPrice > 0 ? ` · ${r.noPrice} sem preço` : ''}
+        </p>
+      </button>
+      {strong && (
+        <div className="border-t border-steel-100 px-2 py-1.5 flex justify-end">
+          <button type="button" onClick={() => onAct(r.action)}
+            className={`text-[11px] font-bold px-2.5 py-1 rounded-md transition ${r.action === 'whatsapp'
+              ? 'text-emerald-700 hover:bg-emerald-50' : 'text-brand-700 hover:bg-brand-50'}`}>
+            {r.action === 'whatsapp' ? '💬 ' : ''}{ACTION_LABEL[r.action]} →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BoardScheduled({ o, busy, onStart }: { o: ScheduledOs; busy: boolean; onStart: () => void }) {
+  const when = new Date(o.scheduled_at);
+  const today = new Date().toDateString() === when.toDateString();
+  const late = when.getTime() < Date.now();
+  return (
+    <div className={boardCard}>
+      <div className="p-3">
+        <div className="flex items-start gap-2">
+          <p className="text-sm font-semibold text-steel-900 leading-tight flex-1 min-w-0 truncate">{carOf(o.vehicle)}</p>
+          {o.vehicle?.plate && <span className="shrink-0 text-[10px] font-bold tracking-wide px-1.5 py-0.5 rounded bg-steel-100 text-steel-600">{o.vehicle.plate}</span>}
+        </div>
+        <p className="text-xs text-steel-500 truncate mt-0.5">
+          {[o.customer?.full_name, o.mechanic?.name ? `🔧 ${o.mechanic.name.split(' ')[0]}` : '🔧 sem responsável'].filter(Boolean).join(' · ')}
+        </p>
+        <p className={`text-xs font-semibold mt-2 ${late ? 'text-alert-600' : today ? 'text-brand-600' : 'text-steel-600'}`}>
+          📅 {today ? 'Hoje' : when.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+          {' às '}{when.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{late && ' · atrasado'}
+        </p>
+      </div>
+      <div className="border-t border-steel-100 px-2 py-1.5 flex justify-end">
+        <button type="button" onClick={onStart} disabled={busy}
+          className="text-[11px] font-bold px-2.5 py-1 rounded-md text-brand-700 hover:bg-brand-50 disabled:opacity-50">
+          {busy ? 'Abrindo…' : 'Iniciar →'}
+        </button>
+      </div>
+    </div>
+  );
+}

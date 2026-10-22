@@ -3,13 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGeoBroadcast } from '@/hooks/useGeoBroadcast';
+import { GeoPill, GeoProblemBanner } from '@/components/mecanico/GeoStatus';
 import { getSetting } from '@/lib/settings';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { distKm, etaLabel } from '@/lib/geo';
-import { mechanicNet } from '@/lib/payment';
+import { formatBRL, mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
+import { ArrivalCountdown } from '@/components/ArrivalDeadline';
 import type { Job, Workshop } from '@/types/database';
 
 export default function MechanicTracking() {
@@ -93,11 +95,15 @@ export default function MechanicTracking() {
   /* ── Polling fallback: garante atualização mesmo se realtime cair ── */
   useEffect(() => {
     if (!id) return;
-    const poll = setInterval(async () => {
+    // A cada 5 s com a aba visível (pausa em segundo plano) e atualiza na hora ao voltar
+    const refresh = async () => {
       const { data } = await supabase.from('jobs').select('*').eq('id', id).maybeSingle();
       if (data) setJob(data as Job);
-    }, 5000);
-    return () => clearInterval(poll);
+    };
+    const poll = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
   }, [id]);
 
   /* ── Detecta mudanças de status e dispara toast ── */
@@ -151,7 +157,7 @@ export default function MechanicTracking() {
     setTimeout(() => setToast(null), 5000);
   }
 
-  useGeoBroadcast({
+  const geo = useGeoBroadcast({
     enabled: !!job && (job.status === 'assigned' || job.status === 'in_progress'),
     jobId: job?.id ?? null,
     mechanicId,
@@ -298,12 +304,16 @@ export default function MechanicTracking() {
               </span>
             )}
           </button>
-          <div className="bg-brand-500 text-white text-xs font-semibold rounded-full px-3 py-2 flex items-center gap-2 shadow-brand">
-            <span className="h-2 w-2 rounded-full bg-white animate-pulse-soft" />
-            📍 Ao vivo
-          </div>
+          <GeoPill state={geo.state} />
         </div>
       </div>
+
+      {/* GPS com problema: a oficina não está vendo o mecânico no mapa */}
+      {(geo.state === 'denied' || geo.state === 'unavailable' || geo.state === 'unsupported') && (
+        <div className="absolute top-16 left-3 right-3 z-10">
+          <GeoProblemBanner state={geo.state} className="bg-steel-900/95 backdrop-blur" />
+        </div>
+      )}
 
       {/* Mapa */}
       <div className="flex-1">
@@ -325,7 +335,9 @@ export default function MechanicTracking() {
         {shop && (
           <div>
             <div className="text-xs text-brand-400 uppercase tracking-wider font-bold mb-1">
-              {job?.status === 'in_progress'
+              {job?.status === 'completed'
+                ? (job.workshop_confirmed_at ? '✅ Serviço concluído' : '⏳ Aguardando a oficina confirmar')
+                : job?.status === 'in_progress'
                 ? '🔧 Em serviço'
                 : arrived && !pixPaid
                   ? '⏳ Aguardando pagamento'
@@ -346,7 +358,7 @@ export default function MechanicTracking() {
               )}
             </div>
             <div className="text-xs text-steel-500 mt-1">
-              Pacote: {job?.max_hours ?? '—'}h previstas · <span className="text-signal-400 font-bold">você recebe R$ {netCap.toFixed(0)}</span>
+              {job && hoursLabel(job) ? `Pacote: ${hoursLabel(job)} · ` : 'Preço fechado · '}<span className="text-signal-400 font-bold">você recebe R$ {formatMoney(netCap)}</span>
             </div>
           </div>
         )}
@@ -354,6 +366,7 @@ export default function MechanicTracking() {
         {/* Ações por estado */}
         {job?.status === 'assigned' && !arrived && (
           <div className="space-y-2">
+            <ArrivalCountdown job={job} className="!text-sm" />
             <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full">
               {busy ? '…' : '📍 Confirmar chegada'}
             </button>
@@ -420,7 +433,7 @@ export default function MechanicTracking() {
               <div className="text-3xl mb-1">⏳</div>
               <div className="text-pending-300 font-bold text-base">Aguardando confirmação da oficina</div>
               <div className="text-xs text-steel-400 mt-1">
-                Notificação enviada — assim que confirmarem, seu PIX de <strong>R$ {netCap.toFixed(2)}</strong> é liberado.
+                Notificação enviada — assim que confirmarem, seu PIX de <strong>R$ {formatBRL(netCap)}</strong> é liberado.
               </div>
             </div>
             <div className="bg-steel-900/60 rounded-xl py-2 text-center">

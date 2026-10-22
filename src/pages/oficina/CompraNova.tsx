@@ -1,0 +1,644 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import WorkshopLayout from '@/components/layout/WorkshopLayout';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/Toast';
+import { canDo, useOperator } from '@/lib/operators';
+import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
+import {
+  DEFAULT_MARGIN, UNITS, fmtQty, loadAllParts, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
+} from '@/lib/parts';
+import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
+import { Restricted, SupplierForm } from './Fornecedores';
+import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '@/lib/invoiceImport';
+import { BUCKET, mergePages, type PurchaseImport } from '@/lib/purchaseImports';
+
+/** code: código do produto do fornecedor (vem da nota; vai para a peça) */
+type Row = { key: string; part_id: string | null; code: string; name: string; unit: string; quantity: string; unit_cost: string };
+type Inst = { due_date: string; amount: string };
+
+let seq = 0;
+const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, code: '', name: '', unit: 'un', quantity: '1', unit_cost: '' });
+const num = (s: string) => { const n = parseMoney(s); return Number.isFinite(n) ? n : 0; };
+/** Custo unitário com até 4 casas (nota de autopeças costuma ter centavos quebrados) */
+const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
+/** "10190 SILENCIOSO INT." com código 10190 → "SILENCIOSO INT." (a leitura às vezes repete o código no nome) */
+const stripCode = (name: string, code: string) => {
+  const c = code.trim();
+  return c && name.trim().startsWith(`${c} `) ? name.trim().slice(c.length).trim() : name.trim();
+};
+
+export default function CompraNova() {
+  const { currentWorkshop } = useAuth();
+  const wid = currentWorkshop?.id ?? null;
+  const { balcao, session } = useOperator();
+  const allowed = canDo(session, balcao, 'compras');
+  const nav = useNavigate();
+  const [params] = useSearchParams();
+
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [parts, setParts]         = useState<WorkshopPart[]>([]);
+  const [margin, setMargin]       = useState(DEFAULT_MARGIN);
+  const [supplierId, setSupplierId] = useState(params.get('fornecedor') ?? '');
+  const [number, setNumber]       = useState('');
+  const [date, setDate]           = useState(todayISO());
+  const [freight, setFreight]     = useState('');
+  const [discount, setDiscount]   = useState('');
+  const [notes, setNotes]         = useState('');
+  const [rows, setRows]           = useState<Row[]>([newRow()]);
+  const [count, setCount]         = useState(1);
+  const [firstDue, setFirstDue]   = useState(todayISO());
+  const [insts, setInsts]         = useState<Inst[]>([]);
+  const [newSupplier, setNewSupplier] = useState(false);
+  const [saving, setSaving]       = useState(false);
+  /** Somar as peças no estoque? (por oficina, lembra a última escolha) */
+  const stockKey = `compra-soma-estoque:${wid ?? ''}`;
+  const [addStock, setAddStock] = useState(() => { try { return localStorage.getItem(stockKey) !== 'nao'; } catch { return true; } });
+  const toggleStock = (v: boolean) => { setAddStock(v); try { localStorage.setItem(stockKey, v ? 'sim' : 'nao'); } catch { /* ignora */ } };
+  // Importar arquivo da nota (XML sem IA; PDF com IA, se liberado)
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [reading, setReading]     = useState<null | 'xml' | 'ia'>(null);
+  const [imported, setImported]   = useState<InvoiceData | null>(null);
+  const [missingSupplier, setMissingSupplier] = useState<InvoiceData['supplier'] | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  /** Parcelas que vieram na nota — usadas enquanto batem com o total e o 1º vencimento */
+  const importedInsts = useRef<{ due: string; amount: number }[] | null>(null);
+  /** Conferência de nota da fila de fotos (/oficina/compras/importar) */
+  const importId = params.get('importacao');
+  const [loaded, setLoaded] = useState(false);
+  /** Uma ou mais fotos (páginas) da mesma nota */
+  const [queued, setQueued] = useState<{ imp: PurchaseImport; url: string | null }[] | null>(null);
+
+  useEffect(() => {
+    if (!wid || !allowed) return;
+    (async () => {
+      const [s, p, m] = await Promise.all([
+        supabase.from('suppliers').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
+        loadAllParts(wid).then(data => ({ data })),
+        loadDefaultMargin(wid),
+      ]);
+      setSuppliers((s.data as Supplier[]) ?? []);
+      setParts((p.data as WorkshopPart[]) ?? []);
+      setMargin(m);
+      // "Comprar" do estoque: já começa com a peça na nota (custo da última compra)
+      const pre = ((p.data as WorkshopPart[]) ?? []).find(x => x.id === params.get('peca'));
+      if (pre) setRows([{ ...newRow(), part_id: pre.id, name: pre.name, unit: pre.unit, unit_cost: Number(pre.cost) > 0 ? costInput(Number(pre.cost)) : '' }]);
+      setLoaded(true);
+    })();
+    hasAiInvoice(wid).then(setAiEnabled);
+  }, [wid, allowed]);
+
+  const supplier = suppliers.find(s => s.id === supplierId) ?? null;
+  const byName = useMemo(() => new Map(parts.map(p => [p.name.trim().toLowerCase(), p])), [parts]);
+  const byId = useMemo(() => new Map(parts.map(p => [p.id, p])), [parts]);
+
+  // Acordo com o fornecedor: o custo digitado é o da nota; entra com o desconto do acordo
+  const agreement = Number(supplier?.discount_percent ?? 0);
+  const netCost = (r: Row) => Math.round(num(r.unit_cost) * (1 - agreement / 100) * 10000) / 10000;
+  const grossItems = rows.reduce((a, r) => a + num(r.quantity) * num(r.unit_cost), 0);
+  const itemsTotal = rows.reduce((a, r) => a + num(r.quantity) * netCost(r), 0);
+  const total = Math.round((itemsTotal + num(freight) - num(discount)) * 100) / 100;
+
+  // Vencimento sugerido pelo prazo do fornecedor — a não ser que a nota já traga os vencimentos
+  useEffect(() => {
+    const fromNote = importedInsts.current;
+    setFirstDue(fromNote?.length ? fromNote[0].due : addDaysISO(date, supplier?.payment_days ?? 0));
+  }, [date, supplier?.payment_days]);
+  // Parcelas refeitas quando muda total, quantidade ou 1º vencimento
+  useEffect(() => {
+    const fromNote = importedInsts.current;
+    // Vencimentos da nota: valem enquanto a quantidade e o 1º vencimento forem os dela.
+    // Se a soma das parcelas não bater com o total (ex.: imposto rateado nos itens), mantém as datas
+    // e acerta os valores na proporção (a última absorve os centavos).
+    if (fromNote && fromNote.length === count && fromNote[0]?.due === firstDue && total > 0) {
+      const sum = fromNote.reduce((a, i) => a + i.amount, 0);
+      const cents = Math.round(total * 100);
+      let used = 0;
+      const amounts = Math.abs(sum - total) < 0.011 ? fromNote.map(i => i.amount) : fromNote.map((i, k) => {
+        if (k === fromNote.length - 1) return (cents - used) / 100;
+        const c = Math.round((sum > 0 ? i.amount / sum : 1 / fromNote.length) * cents);
+        used += c;
+        return c / 100;
+      });
+      setInsts(fromNote.map((i, k) => ({ due_date: i.due, amount: moneyInput(amounts[k]) })));
+      return;
+    }
+    setInsts(total > 0
+      ? splitInstallments(total, count, firstDue).map(i => ({ due_date: i.due_date, amount: moneyInput(i.amount) }))
+      : []);
+  }, [total, count, firstDue]);
+
+  const instTotal = insts.reduce((a, i) => a + num(i.amount), 0);
+  const instOk = insts.length > 0 && Math.abs(instTotal - total) < 0.01;
+
+  // O que falta para poder lançar (texto do botão enquanto não dá)
+  const missing = !supplierId ? 'Escolha o fornecedor'
+    : !rows.some(r => r.name.trim()) ? 'Adicione as peças da nota'
+    : total <= 0 ? 'Informe o custo das peças'
+    : '';
+  const ready = !missing;
+
+  // Categoria que a peça nova vai ganhar — a mesma regra do banco (guess_part_category)
+  const [guess, setGuess] = useState<Record<string, PartCategory>>({});
+  const newNames = rows.filter(r => !r.part_id && r.name.trim().length >= 3).map(r => r.name.trim());
+  const pending = newNames.filter(n => !(n in guess)).join('\n');
+  useEffect(() => {
+    if (!pending) return;
+    const t = setTimeout(async () => {
+      const found: Record<string, PartCategory> = {};
+      await Promise.all(pending.split('\n').map(async n => {
+        const { data } = await supabase.rpc('guess_part_category', { p_name: n });
+        if (data) found[n] = data as PartCategory;
+      }));
+      setGuess(g => ({ ...g, ...found }));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [pending]);
+
+  function update(key: string, patch: Partial<Row>) {
+    setRows(rs => rs.map(r => {
+      if (r.key !== key) return r;
+      const next = { ...r, ...patch };
+      if (patch.name !== undefined) {
+        const p = byName.get(patch.name.trim().toLowerCase());
+        if (p) {
+          next.part_id = p.id;
+          next.unit = p.unit;
+          if (!r.unit_cost) next.unit_cost = moneyInput(Number(p.cost));
+        } else {
+          next.part_id = null;
+        }
+      }
+      return next;
+    }));
+  }
+
+  /** Preenche a tela com o que veio do arquivo da nota */
+  function applyInvoice(d: InvoiceData) {
+    // Fornecedor: pelo CNPJ; senão pelo nome (parecido); não achou → cadastra sozinho com o que veio da nota
+    const cnpj = onlyDigits(d.supplier.cnpj);
+    const key = (v: string) => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const nk = key(d.supplier.name);
+    const sup = (cnpj && suppliers.find(s => onlyDigits(s.cnpj) === cnpj))
+      || (nk && suppliers.find(s => key(s.name) === nk))
+      || (nk.length >= 6 && suppliers.find(s => { const k = key(s.name); return k.length >= 6 && (k.includes(nk) || nk.includes(k)); }));
+    if (sup) {
+      setSupplierId(sup.id); setMissingSupplier(null);
+      // Completa o CNPJ/telefone que faltava no cadastro
+      if ((!sup.cnpj && cnpj) || (!sup.phone && d.supplier.phone)) {
+        supabase.from('suppliers').update({ cnpj: sup.cnpj || cnpj || null, phone: sup.phone || onlyDigits(d.supplier.phone) || null }).eq('id', sup.id).then(() => {});
+      }
+    } else if (d.supplier.name.trim()) {
+      setSupplierId(''); setMissingSupplier(d.supplier);
+      autoCreateSupplier(d.supplier);
+    } else {
+      setSupplierId(''); setMissingSupplier(null);
+    }
+    if (d.number) setNumber(d.number);
+    if (d.date) setDate(d.date);
+    // Peças: pelo código do fornecedor; senão pelo nome; senão peça nova
+    const byCode = new Map(parts.filter(p => p.code).map(p => [p.code!.trim().toLowerCase(), p]));
+    setRows(d.items.length ? d.items.map(it => {
+      const p = (it.code && byCode.get(it.code.trim().toLowerCase())) || byName.get(stripCode(it.name, it.code).toLowerCase()) || byName.get(it.name.toLowerCase());
+      return {
+        key: `r${++seq}`, part_id: p?.id ?? null, code: it.code || p?.code || '', name: p ? p.name : stripCode(it.name, it.code), unit: p ? p.unit : it.unit,
+        quantity: String(it.qty).replace('.', ','), unit_cost: costInput(it.unitCost),
+      };
+    }) : [newRow()]);
+    setFreight(d.freight ? moneyInput(d.freight) : '');
+    setDiscount(d.discount ? moneyInput(d.discount) : '');
+    if (d.installments.length) {
+      importedInsts.current = d.installments;
+      setCount(Math.min(12, d.installments.length));
+      setFirstDue(d.installments[0].due);
+    } else {
+      importedInsts.current = null;
+    }
+    setImported(d);
+  }
+
+  // Nota da fila: preenche com o que foi lido e mostra o arquivo para conferir
+  useEffect(() => {
+    if (!loaded || !importId) return;
+    (async () => {
+      // ?importacao=id ou id1,id2 (páginas da mesma nota, na ordem em que foram enviadas)
+      const ids = importId.split(',').filter(Boolean);
+      const { data } = await supabase.from('purchase_imports').select('*').in('id', ids).order('created_at');
+      const imps = ((data as PurchaseImport[]) ?? []).filter(i => i.extracted);
+      if (!imps.length) return toast.error('Nota da fila não encontrada');
+      if (imps.some(i => i.status === 'confirmed')) toast.error('Esta nota da fila já foi lançada');
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrls(imps.map(i => i.file_path), 60 * 60);
+      const byPath = new Map((signed ?? []).map(x => [x.path, x.signedUrl]));
+      setQueued(imps.map(imp => ({ imp, url: byPath.get(imp.file_path) ?? null })));
+      applyInvoice(mergePages(imps.map(i => i.extracted!)));
+      if (imps.length > 1) toast.success(`${imps.length} páginas da mesma nota juntadas ✓ — confira os itens`);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, importId]);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !wid) return;
+    const isXml = file.name.toLowerCase().endsWith('.xml') || file.type.includes('xml');
+    try {
+      if (isXml) {
+        setReading('xml');
+        const d = parseNfeXml(await file.text());
+        if (!d) throw new Error('Este XML não parece uma NF-e. Confira se é o XML da nota do fornecedor.');
+        applyInvoice(d);
+        toast.success(`Nota importada do XML ✓ ${d.items.length} ite${d.items.length === 1 ? 'm' : 'ns'} — confira e lance`);
+      } else {
+        if (!aiEnabled) throw new Error('A leitura do PDF com IA não está liberada para esta loja. Use o arquivo XML da nota.');
+        setReading('ia');
+        const d = await readInvoiceWithAi(wid, file);
+        applyInvoice(d);
+        toast.success(`Nota lida pela IA ✓ ${d.items.length} ite${d.items.length === 1 ? 'm' : 'ns'} — confira antes de lançar`);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Não foi possível ler o arquivo');
+    } finally {
+      setReading(null);
+    }
+  }
+
+  /** Depois de lançar: marca a nota da fila e volta para a próxima; sem fila, abre a nota lançada */
+  async function finishQueued(invoiceId: string) {
+    if (queued) {
+      await supabase.from('purchase_imports')
+        .update({ status: 'confirmed', invoice_id: invoiceId, confirmed_at: new Date().toISOString() }).in('id', queued.map(q => q.imp.id));
+      nav('/oficina/compras/importar');
+    } else {
+      nav(`/oficina/compras?nota=${invoiceId}`);
+    }
+  }
+
+  /** Fornecedor da nota que ainda não está cadastrado: cadastra e já usa */
+  async function autoCreateSupplier(sp: InvoiceData['supplier']) {
+    if (!wid) return;
+    const { data, error } = await supabase.from('suppliers').insert({
+      workshop_id: wid, name: sp.name.trim(), cnpj: onlyDigits(sp.cnpj) || null, phone: onlyDigits(sp.phone) || null,
+    }).select('*').single();
+    if (error) return; // fica o botão "+ Cadastrar e usar"
+    const s = data as Supplier;
+    setSuppliers(xs => [...xs, s].sort((a, b) => a.name.localeCompare(b.name)));
+    setSupplierId(s.id);
+    setMissingSupplier(null);
+    toast.success(`Fornecedor ${s.name} cadastrado ✓`);
+  }
+
+  async function createMissingSupplier() {
+    if (!wid || !missingSupplier) return;
+    const { data, error } = await supabase.from('suppliers').insert({
+      workshop_id: wid, name: missingSupplier.name, cnpj: missingSupplier.cnpj || null, phone: missingSupplier.phone || null,
+    }).select('*').single();
+    if (error) return toast.error('Não foi possível cadastrar o fornecedor: ' + error.message);
+    const s = data as Supplier;
+    setSuppliers(xs => [...xs, s].sort((a, b) => a.name.localeCompare(b.name)));
+    setSupplierId(s.id);
+    setMissingSupplier(null);
+    toast.success(`Fornecedor ${s.name} cadastrado ✓`);
+  }
+
+  async function save() {
+    if (!supplierId) return toast.error('Escolha o fornecedor');
+    const items = rows.filter(r => r.name.trim());
+    if (!items.length) return toast.error('Adicione ao menos uma peça');
+    for (const [i, r] of items.entries()) {
+      if (!(num(r.quantity) > 0)) return toast.error(`Item ${i + 1}: quantidade inválida`);
+      if (!Number.isFinite(parseMoney(r.unit_cost || '0')) || num(r.unit_cost) < 0) return toast.error(`Item ${i + 1}: custo inválido`);
+    }
+    if (total <= 0) return toast.error('O total da nota precisa ser maior que zero');
+    if (!instOk) return toast.error(`As parcelas somam ${fmtBRL(instTotal)} e a nota dá ${fmtBRL(total)}`);
+
+    // Mesma nota (nº + fornecedor) já lançada?
+    if (number.trim()) {
+      const { data: same } = await supabase.from('purchase_invoices').select('id').eq('workshop_id', wid!)
+        .eq('supplier_id', supplierId).eq('number', number.trim()).eq('status', 'posted').limit(1);
+      if (same?.length && !confirm(`A nota nº ${number.trim()} deste fornecedor já foi lançada. Lançar de novo vai duplicar a compra e as contas a pagar. Lançar mesmo assim?`)) return;
+    }
+
+    setSaving(true);
+    const { data, error } = await supabase.rpc('purchase_post', {
+      p_workshop: wid, p_supplier: supplierId, p_number: number, p_issue_date: date,
+      p_freight: num(freight), p_discount: num(discount),
+      p_items: items.map(r => ({ part_id: r.part_id, code: r.code.trim() || null, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: netCost(r) })),
+      p_installments: insts.map(i => ({ due_date: i.due_date, amount: num(i.amount) })),
+      p_notes: addStock ? notes : [notes.trim(), NO_STOCK_NOTE].filter(Boolean).join(' · '),
+    });
+    if (error) { setSaving(false); return toast.error(error.message); }
+    if (!addStock) {
+      // Devolve o que a nota somou: as peças ficam cadastradas com o custo, o estoque fica como estava
+      const { data: its } = await supabase.from('purchase_items').select('part_id, quantity').eq('invoice_id', data as string);
+      const byPart = new Map<string, number>();
+      for (const it of (its ?? []) as { part_id: string; quantity: number }[]) byPart.set(it.part_id, (byPart.get(it.part_id) ?? 0) + Number(it.quantity));
+      let failed = 0;
+      for (const [partId, q] of byPart) {
+        const { data: p } = await supabase.from('workshop_parts').select('stock_qty').eq('id', partId).single();
+        const counted = Number((p as { stock_qty: number } | null)?.stock_qty ?? 0) - q;
+        const { error: e2 } = await supabase.rpc('stock_adjust', { p_part: partId, p_counted: Math.max(0, counted), p_note: `Nota ${number.trim() || 's/ nº'}: só cadastro e financeiro` });
+        if (e2) failed++;
+      }
+      setSaving(false);
+      if (failed) toast.error(`Nota lançada, mas ${failed} peça(s) ficaram somadas no estoque. Ajuste em Peças.`);
+      else toast.success('Nota lançada ✓ Peças cadastradas e contas a pagar criadas (estoque não mexido)');
+      await finishQueued(data as string);
+      return;
+    }
+    setSaving(false);
+    toast.success('Nota lançada ✓ Estoque e contas a pagar atualizados');
+    await finishQueued(data as string);
+  }
+
+  if (!allowed) return <Restricted />;
+
+  return (
+    <WorkshopLayout>
+      <div className="max-w-4xl mx-auto space-y-5">
+        <div>
+          <Link to="/oficina/compras" className="text-sm text-steel-500 hover:text-steel-700">← Notas de compra</Link>
+          <h1 className="text-3xl font-bold tracking-tight mt-1">🧾 Lançar nota de compra</h1>
+          <p className="text-sm text-steel-500 mt-1">Ao lançar, o custo das peças é atualizado e as parcelas vão para as contas a pagar. Somar no estoque é opcional (no fim da tela).</p>
+        </div>
+
+        {queued && (
+          <div className="card !p-3 flex flex-wrap items-center gap-3 border border-brand-200">
+            <div className="flex gap-2 shrink-0">
+              {queued.map((q, i) => q.url && q.imp.media_type.startsWith('image/')
+                ? <a key={q.imp.id} href={q.url} target="_blank" rel="noreferrer" title={`Página ${i + 1}`}><img src={q.url} alt={`Página ${i + 1}`} className="h-20 w-16 object-cover rounded-lg border border-steel-200" /></a>
+                : <a key={q.imp.id} href={q.url ?? undefined} target="_blank" rel="noreferrer" className="h-20 w-16 rounded-lg bg-steel-100 grid place-items-center text-2xl">{q.imp.media_type.includes('xml') ? '🧾' : '📄'}</a>)}
+            </div>
+            <div className="min-w-0 flex-1 text-sm">
+              <div className="font-semibold">{queued.length > 1 ? `Conferindo nota de ${queued.length} páginas (juntadas)` : 'Conferindo nota da fila de fotos'}</div>
+              <div className="text-xs text-steel-500">Toque na foto para abrir em tela cheia. Compare e corrija o que precisar. Ao lançar, volta para a próxima nota.</div>
+            </div>
+            <Link to="/oficina/compras/importar" className="btn-ghost text-sm shrink-0">Voltar à fila</Link>
+          </div>
+        )}
+
+        {/* Importar arquivo da nota */}
+        {!queued && <div className="card flex flex-col sm:flex-row sm:items-center gap-3 !bg-brand-50/60 border border-brand-100">
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-steel-900">📎 Importar arquivo da nota</div>
+            <p className="text-xs text-steel-600 mt-0.5">
+              <strong>XML</strong> da NF-e (o fornecedor manda por e-mail): preenche tudo, exato.
+              {aiEnabled
+                ? <> <strong>PDF</strong> (DANFE) ou foto: a <strong>IA ✨</strong> lê e preenche — confira antes de lançar.</>
+                : <> Leitura de PDF com IA: peça para liberar na sua loja.</>}
+            </p>
+          </div>
+          <input ref={fileRef} type="file" className="hidden" onChange={onFile}
+            accept={aiEnabled ? '.xml,text/xml,application/xml,.pdf,application/pdf,image/*' : '.xml,text/xml,application/xml'} />
+          <button type="button" className="btn-primary shrink-0" disabled={!!reading} onClick={() => fileRef.current?.click()}>
+            {reading === 'ia' ? '✨ Lendo a nota com IA…' : reading === 'xml' ? 'Lendo XML…' : aiEnabled ? 'Escolher XML ou PDF' : 'Escolher XML'}
+          </button>
+        </div>}
+
+        {imported && (
+          <ImportSummary d={imported} itemsTotal={grossItems} freight={num(freight)} discount={num(discount)} agreement={agreement} />
+        )}
+        {missingSupplier && (
+          <div className="rounded-xl bg-pending-50 border border-pending-200 px-4 py-3 text-sm flex flex-wrap items-center gap-3">
+            <span className="flex-1 min-w-0">
+              Fornecedor da nota não está cadastrado: <strong>{missingSupplier.name}</strong>
+              {missingSupplier.cnpj && <span className="text-steel-500"> · CNPJ {missingSupplier.cnpj}</span>}
+            </span>
+            <button type="button" className="btn-primary !py-1.5 text-sm" onClick={createMissingSupplier}>+ Cadastrar e usar</button>
+          </div>
+        )}
+
+        {/* Fornecedor e nota */}
+        <div className="card grid sm:grid-cols-4 gap-3">
+          <div className="sm:col-span-2">
+            <label className="label">Fornecedor *</label>
+            <div className="flex gap-2">
+              <select className="input" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+                <option value="">Escolha…</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <button type="button" className="btn-ghost border border-steel-200 shrink-0" onClick={() => setNewSupplier(true)}>+ Novo</button>
+            </div>
+            {supplier && <p className="text-[11px] text-steel-400 mt-1">{supplier.payment_days ? `Prazo de ${supplier.payment_days} dias` : 'Pagamento à vista'}</p>}
+          </div>
+          <div>
+            <label className="label">Nº da nota</label>
+            <input className="input" placeholder="Ex.: 12345" value={number} onChange={e => setNumber(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Data da nota</label>
+            <input type="date" className="input" value={date} onChange={e => setDate(e.target.value || todayISO())} />
+          </div>
+        </div>
+
+        {/* Itens */}
+        <div className="card !p-0 overflow-hidden">
+          <div className="px-5 pt-5 pb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-lg">Peças da nota</h2>
+              <p className="text-xs text-steel-500">
+                Comece a digitar e escolha da lista. Peça que ainda não existe? Digite o nome completo — ela é
+                <strong className="text-brand-700"> cadastrada automaticamente</strong> ao lançar a nota.
+              </p>
+            </div>
+            <button type="button" onClick={() => setRows(rs => [...rs, newRow()])}
+              className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700">+ Peça</button>
+          </div>
+          <datalist id="compra-pecas">
+            {parts.map(p => <option key={p.id} value={p.name}>{`estoque ${fmtQty(p.stock_qty)} ${p.unit} · custo ${fmtBRL(p.cost)}`}</option>)}
+          </datalist>
+          <div className="hidden md:grid grid-cols-12 gap-2 px-5 py-2 bg-steel-50 border-y border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
+            <div className="col-span-5">Peça</div>
+            <div className="col-span-2 text-right">Qtd</div>
+            <div className="col-span-2 text-right">Custo unit.</div>
+            <div className="col-span-2 text-right">Total</div>
+            <div className="col-span-1" />
+          </div>
+          <div className="divide-y divide-steel-100">
+            {rows.map(r => {
+              const part = r.part_id ? byId.get(r.part_id) : undefined;
+              const newCost = num(r.unit_cost);
+              const costChanged = part && r.unit_cost && Math.abs(newCost - Number(part.cost)) > 0.001;
+              return (
+                <div key={r.key} className="px-5 py-3 grid grid-cols-12 gap-2 items-center">
+                  <div className="col-span-12 md:col-span-5">
+                    <input className="input !py-2 text-sm" list="compra-pecas" placeholder="Nome da peça (do cadastro ou uma nova)"
+                      value={r.name} onChange={e => update(r.key, { name: e.target.value })} />
+                    {r.code && <div className="text-[11px] text-steel-400 mt-0.5 pl-1">Cód. fornecedor: {r.code}</div>}
+                  </div>
+                  <div className="col-span-4 md:col-span-2 flex gap-1">
+                    <input className="input !py-2 text-sm text-right" inputMode="decimal" value={r.quantity}
+                      onChange={e => update(r.key, { quantity: e.target.value })} />
+                    {!r.part_id && r.name.trim() && (
+                      <select className="input !py-2 !px-1 text-xs !w-16" value={r.unit} onChange={e => update(r.key, { unit: e.target.value })}>
+                        {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <div className="col-span-4 md:col-span-2 relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+                    <input className="input !py-2 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={r.unit_cost}
+                      onChange={e => update(r.key, { unit_cost: e.target.value })}
+                      onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) update(r.key, { unit_cost: moneyInput(v) }); }} />
+                  </div>
+                  <div className="col-span-3 md:col-span-2 text-right text-sm font-bold">{fmtBRL(num(r.quantity) * num(r.unit_cost))}</div>
+                  <div className="col-span-1 flex justify-end">
+                    <button type="button" onClick={() => setRows(rs => rs.length > 1 ? rs.filter(x => x.key !== r.key) : [newRow()])}
+                      className="h-8 w-8 rounded-lg grid place-items-center text-xs bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600" title="Remover">✕</button>
+                  </div>
+                  {r.name.trim() && (
+                    <div className="col-span-12 text-xs -mt-1">
+                      {part ? (
+                        <span className="text-steel-500">
+                          🔩 Estoque {fmtQty(part.stock_qty)} → <strong className="text-steel-700">{fmtQty(Number(part.stock_qty) + num(r.quantity))} {part.unit}</strong>
+                          {costChanged && (
+                            <> · custo {fmtBRL(part.cost)} → <strong className={newCost > Number(part.cost) ? 'text-alert-600' : 'text-signal-700'}>{fmtBRL(newCost)}</strong>
+                              {priceModeOf(part) !== 'fixed' && <> · venda passa a {fmtBRL(salePriceOf({ ...part, cost: newCost }, margin))}</>}
+                            </>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-brand-700">
+                          ✨ <strong>Peça nova</strong> — será cadastrada
+                          {guess[r.name.trim()] && <> em <strong>{partCategory(guess[r.name.trim()]).icon} {partCategory(guess[r.name.trim()]).label}</strong></>}
+                          {' '}com a margem padrão ({margin}%) → venda {fmtBRL(salePriceOf({ cost: newCost, margin_percent: null, sale_price: null }, margin))}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="bg-steel-50 border-t border-steel-100 px-5 py-4">
+            <div className="ml-auto max-w-xs space-y-1.5 text-sm">
+              {agreement > 0 ? (
+                <>
+                  <div className="flex justify-between text-steel-600"><span>Peças (como na nota)</span><span>{fmtBRL(grossItems)}</span></div>
+                  <div className="flex justify-between text-signal-700"><span>Acordo com o fornecedor ({agreement}%)</span><span>− {fmtBRL(grossItems - itemsTotal)}</span></div>
+                  <div className="flex justify-between text-steel-600"><span>Peças com desconto</span><span>{fmtBRL(itemsTotal)}</span></div>
+                </>
+              ) : (
+                <div className="flex justify-between text-steel-600"><span>Peças</span><span>{fmtBRL(itemsTotal)}</span></div>
+              )}
+              <MoneyLine label="Frete" value={freight} onChange={setFreight} />
+              <MoneyLine label="Desconto" value={discount} onChange={setDiscount} minus />
+              <div className="flex justify-between pt-2 border-t border-steel-200">
+                <span className="font-bold">Total da nota</span>
+                <span className="font-bold font-display text-xl">{fmtBRL(total)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Pagamento */}
+        <div className="card space-y-4">
+          <h2 className="font-bold text-lg">Pagamento</h2>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="label">Parcelas</label>
+              <select className="input !w-auto" value={count} onChange={e => setCount(Number(e.target.value))}>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n === 1 ? '1× (à vista / boleto único)' : `${n}×`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">{count === 1 ? 'Vencimento' : '1º vencimento'}</label>
+              <input type="date" className="input !w-auto" value={firstDue} onChange={e => setFirstDue(e.target.value || todayISO())} />
+            </div>
+            {count > 1 && <p className="text-xs text-steel-500 pb-3">As demais a cada 30 dias. Dá para ajustar abaixo.</p>}
+          </div>
+          {insts.length > 0 && (
+            <div className="space-y-2">
+              {insts.map((i, idx) => (
+                <div key={idx} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="w-12 text-steel-500">{count > 1 ? `${idx + 1}/${count}` : 'Única'}</span>
+                  <input type="date" className="input !py-1.5 !w-auto text-sm" value={i.due_date}
+                    onChange={e => setInsts(xs => xs.map((x, j) => j === idx ? { ...x, due_date: e.target.value } : x))} />
+                  <div className="relative w-36">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
+                    <input className="input !py-1.5 !pl-8 text-sm text-right" inputMode="decimal" value={i.amount}
+                      onChange={e => setInsts(xs => xs.map((x, j) => j === idx ? { ...x, amount: e.target.value } : x))} />
+                  </div>
+                  <span className="text-xs text-steel-400">{fmtDate(i.due_date)}</span>
+                </div>
+              ))}
+              {!instOk && <p className="text-xs text-alert-600">As parcelas somam {fmtBRL(instTotal)} e a nota dá {fmtBRL(total)}.</p>}
+            </div>
+          )}
+          <div>
+            <label className="label">Observações</label>
+            <input className="input" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)} />
+          </div>
+        </div>
+
+        <label className={`card flex items-start gap-3 cursor-pointer !py-3 ${addStock ? '' : '!bg-pending-50 border border-pending-200'}`}>
+          <input type="checkbox" className="mt-1" checked={addStock} onChange={e => toggleStock(e.target.checked)} />
+          <span className="text-sm">
+            <strong>Somar as peças no estoque</strong>
+            <span className="block text-xs text-steel-500">
+              {addStock
+                ? 'As quantidades da nota entram na prateleira.'
+                : 'Desmarcado: as peças são cadastradas com o custo da nota e as parcelas vão para contas a pagar, mas o estoque não muda. Use enquanto o controle de estoque não começou.'}
+            </span>
+          </span>
+        </label>
+
+        <div className="flex justify-end gap-2 pb-6">
+          <Link to="/oficina/compras" className="btn-ghost">Cancelar</Link>
+          <button className="btn-primary" onClick={save} disabled={saving || !ready} title={ready ? undefined : missing}>
+            {saving ? 'Lançando…' : ready ? `✓ Lançar nota de ${fmtBRL(total)}` : missing}
+          </button>
+        </div>
+      </div>
+
+      {newSupplier && wid && (
+        <SupplierForm wid={wid} supplier={null} onClose={() => setNewSupplier(false)}
+          onSaved={s => { setSuppliers(xs => [...xs, s].sort((a, b) => a.name.localeCompare(b.name))); setSupplierId(s.id); setNewSupplier(false); }} />
+      )}
+    </WorkshopLayout>
+  );
+}
+
+function MoneyLine({ label, value, onChange, minus }: { label: string; value: string; onChange: (v: string) => void; minus?: boolean }) {
+  return (
+    <div className="flex justify-between items-center text-steel-600">
+      <span>{label}</span>
+      <div className="relative w-32">
+        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">{minus ? '− R$' : 'R$'}</span>
+        <input className={`input !py-1.5 ${minus ? '!pl-11' : '!pl-8'} text-sm text-right`} inputMode="decimal" placeholder="0,00" value={value}
+          onChange={e => onChange(e.target.value)}
+          onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) onChange(v ? moneyInput(v) : ''); }} />
+      </div>
+    </div>
+  );
+}
+
+/** Resumo do que veio do arquivo: confere a soma com o total impresso na nota */
+function ImportSummary({ d, itemsTotal, freight, discount, agreement = 0 }: { d: InvoiceData; itemsTotal: number; freight: number; discount: number; agreement?: number }) {
+  const formTotal = Math.round((itemsTotal + freight - discount) * 100) / 100;
+  const diff = d.total != null ? Math.round((d.total - formTotal) * 100) / 100 : 0;
+  const ok = d.total == null || Math.abs(diff) < 0.05;
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm space-y-1 ${ok ? 'bg-signal-50 border-signal-200' : 'bg-pending-50 border-pending-200'}`}>
+      <div className="font-semibold">
+        {d.source === 'xml' ? '✓ Nota importada do XML' : '✨ Nota lida pela IA — confira os itens'}
+        {' · '}{d.items.length} ite{d.items.length === 1 ? 'm' : 'ns'}
+        {d.installments.length > 0 && ` · ${d.installments.length} parcela${d.installments.length === 1 ? '' : 's'}`}
+      </div>
+      {d.total != null && (
+        ok
+          ? <div className="text-steel-600">Total da nota {fmtBRL(d.total)} confere com a soma lançada.</div>
+          : <div className="text-pending-800">
+              ⚠️ Total impresso na nota {fmtBRL(d.total)}, soma lançada {fmtBRL(formTotal)} (diferença {fmtBRL(diff)}).
+              Confira quantidades e valores{d.source === 'ia' ? ' — IPI ou ST podem estar fora dos itens' : ''}.
+            </div>
+      )}
+      {agreement > 0 && <div className="text-xs text-signal-700">Acordo de {agreement}% com este fornecedor: o custo das peças e as contas a pagar entram com o desconto.</div>}
+      {d.source === 'xml' && <div className="text-xs text-steel-500">IPI, ST e outras despesas da nota já estão no custo de cada peça.</div>}
+      {d.uncertain.length > 0 && (
+        <div className="text-xs text-pending-800">A IA ficou em dúvida em: {d.uncertain.join(', ')}.</div>
+      )}
+    </div>
+  );
+}

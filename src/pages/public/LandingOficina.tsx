@@ -2,40 +2,24 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 
-// Multiplicador médio de encargos CLT no Brasil (INSS patronal + FGTS + provisão de
-// férias/13o + verbas rescisórias). Conservador.
-const CLT_LOAD_FACTOR = 1.7;
-// Horas contratadas no mês: 44h/semana × 4,33 semanas/mês (jornada legal CLT)
-const HOURS_PAID_PER_MONTH = 190;
-// Valor de referência da hora do mecânico no app (faixa SP 80–150, base conservadora)
-const APP_HOURLY_BRL = 80;
+// Semanas médias por mês (52 / 12)
+const WEEKS_PER_MONTH = 4.3;
 
 /**
  * Landing de captura — APENAS para oficina.
- * Estilo claro, alto contraste, gatilhos pesados.
+ * Foco: capacidade sob demanda + rede própria de mecânicos preferidos.
+ * Evita promessas de prazo e o enquadramento "troque CLT pelo app".
  */
 export default function LandingOficina() {
-  const [mechanicsCount, setMechanicsCount] = useState(3);
-  const [avgSalary, setAvgSalary]           = useState(3000);
-  // Tempo do mecânico que efetivamente vira faturamento ("wrench time" / utilização).
-  // Mercado brasileiro de pequenas oficinas costuma rodar entre 30–60%.
-  const [productivity, setProductivity]     = useState(0.50);
+  const [refusedPerWeek, setRefusedPerWeek] = useState(3);
+  const [avgTicket, setAvgTicket]           = useState(400);
 
-  const monthlyCLT = mechanicsCount * avgSalary * CLT_LOAD_FACTOR;
-  const yearlyCLT  = monthlyCLT * 12;
-  // Horas pagas no total (todos os mecânicos)
-  const totalPaidHours       = mechanicsCount * HOURS_PAID_PER_MONTH;
-  // Horas que realmente geram faturamento (após ociosidade)
-  const totalProductiveHours = Math.round(totalPaidHours * productivity);
-  // Custo real por hora produtiva — o número que o dono não enxergava
-  const costPerProductiveHour = totalProductiveHours > 0 ? monthlyCLT / totalProductiveHours : 0;
-  // Quanto custaria comprar essas mesmas horas produtivas no app
-  const appEquivalentCost = totalProductiveHours * APP_HOURLY_BRL;
-  // Economia mensal (negativa = app fica mais caro nesse cenário)
-  const monthlySavings = monthlyCLT - appEquivalentCost;
+  const monthlyLost = refusedPerWeek * avgTicket * WEEKS_PER_MONTH;
+  const yearlyLost  = monthlyLost * 12;
+  const brl = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
   return (
-    <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden">
+    <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden pb-20 md:pb-0">
 
       {/* ── NAV ── */}
       <header className="fixed top-0 inset-x-0 z-50 bg-white/90 backdrop-blur-xl border-b border-steel-100">
@@ -46,8 +30,8 @@ export default function LandingOficina() {
               Entrar
             </Link>
             <Link to="/cadastro/oficina"
-              className="bg-brand-500 text-white text-sm font-bold rounded-xl px-4 py-2 hover:bg-brand-600 transition shadow-sm">
-              Cadastrar
+              className="bg-brand-500 text-white text-sm font-bold rounded-xl px-4 py-2 hover:bg-brand-600 transition shadow-sm whitespace-nowrap">
+              Cadastrar<span className="hidden sm:inline"> oficina</span>
             </Link>
           </div>
         </div>
@@ -63,103 +47,76 @@ export default function LandingOficina() {
         <div className="relative max-w-5xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
 
-            {/* Coluna esquerda — texto */}
             <div>
               <div className="inline-flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-3 py-1 text-xs font-bold text-brand-700 tracking-wider uppercase">
                 Para donos de oficina
               </div>
 
               <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] text-steel-900">
-                Mecânico <span className="text-brand-500">em 1 hora.</span><br />
-                Sem CLT. Sem encargos.
+                A mão de obra que sua oficina precisa, <span className="text-brand-500">quando precisa.</span>
               </h1>
 
               <p className="mt-6 text-lg text-steel-600 leading-relaxed">
-                Sua oficina nunca mais para por falta de mão de obra.<br />
-                <strong className="text-steel-900">Pague só quando precisar</strong> — e ainda receba de bandeja
-                um sistema de OS, controle de clientes e gestão multi-loja. <span className="text-brand-600 font-semibold">Tudo grátis.</span>
+                Reforce sua equipe nos dias de pico, nas faltas e nos serviços que não cabem na agenda.
+                Encontre mecânicos verificados na sua região e, com o tempo,{' '}
+                <strong className="text-steel-900">monte a sua própria rede de profissionais de confiança.</strong>
               </p>
 
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
                 <Link to="/cadastro/oficina"
                   className="bg-brand-500 text-white font-bold rounded-2xl px-6 py-4 hover:bg-brand-600 transition flex items-center justify-center gap-2 shadow-xl shadow-brand-500/30">
-                  Cadastrar oficina grátis
+                  Cadastrar minha oficina grátis
                   <span>→</span>
                 </Link>
-                <Link to="/login" state={{ fresh: true }}
-                  className="text-sm font-semibold text-steel-700 hover:text-steel-900 px-4 py-4 transition flex items-center justify-center">
-                  Já sou cadastrado
-                </Link>
+                <a href="#como-funciona"
+                  className="text-sm font-semibold text-steel-700 hover:text-steel-900 border border-steel-200 hover:border-steel-300 rounded-2xl px-5 py-4 transition flex items-center justify-center">
+                  Ver como funciona
+                </a>
               </div>
 
               <div className="mt-6 flex items-center gap-4 text-xs text-steel-500 flex-wrap">
-                <span className="flex items-center gap-1.5"><span className="text-signal-500">✓</span> 100% gratuito</span>
+                <span className="flex items-center gap-1.5"><span className="text-signal-500">✓</span> Cadastro gratuito</span>
                 <span className="flex items-center gap-1.5"><span className="text-signal-500">✓</span> Sem mensalidade</span>
-                <span className="flex items-center gap-1.5"><span className="text-signal-500">✓</span> Multi-loja inclusa</span>
+                <span className="flex items-center gap-1.5"><span className="text-signal-500">✓</span> Sem exclusividade</span>
               </div>
             </div>
 
-            {/* Coluna direita — mock visual painel */}
+            {/* Mock: pedido indo primeiro para os preferidos */}
             <div className="relative">
               <div className="bg-white rounded-3xl p-5 shadow-2xl border border-steel-100">
-                {/* mini topbar */}
                 <div className="flex items-center justify-between pb-3 border-b border-steel-100">
                   <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-brand-500 grid place-items-center text-white font-bold text-sm">★</div>
+                    <div className="h-8 w-8 rounded-lg bg-brand-500 grid place-items-center text-white font-bold text-sm">O</div>
                     <div>
                       <div className="text-xs font-bold text-steel-900 leading-tight">Sua Oficina</div>
-                      <div className="text-[9px] text-steel-500">São Paulo/SP</div>
+                      <div className="text-[9px] text-steel-500">Novo pedido de reforço</div>
                     </div>
                   </div>
                   <div className="text-[9px] text-steel-400">Painel</div>
                 </div>
 
-                {/* OS card */}
                 <div className="mt-3 p-3 bg-steel-50 rounded-xl">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">Em andamento</span>
-                    <span className="text-[10px] text-steel-400">há 12 min</span>
-                  </div>
-                  <div className="mt-1 font-bold text-steel-900 text-sm">Troca de embreagem</div>
-                  <div className="text-[11px] text-steel-500 mt-0.5">Mecânico aceito · 4.9</div>
-                </div>
-
-                {/* Active mechanic card */}
-                <div className="mt-2 p-3 bg-brand-50 border border-brand-200 rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <div className="h-8 w-8 rounded-full bg-brand-500 grid place-items-center text-white font-bold text-xs">●</div>
-                      <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-signal-500 border-2 border-white animate-pulse" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-xs font-bold text-steel-900">Mecânico a caminho</div>
-                      <div className="text-[10px] text-steel-500">Chega em ~14 min</div>
-                    </div>
-                    <div className="text-[10px] font-bold text-brand-600">2.3 km</div>
+                  <div className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">Pedido publicado</div>
+                  <div className="mt-1 font-bold text-steel-900 text-sm">Suspensão dianteira · Gol 2015</div>
+                  <div className="text-[11px] text-steel-500 mt-0.5">Hoje à tarde · valor combinado pelo serviço</div>
+                  <div className="mt-2 inline-flex items-center gap-1 bg-brand-50 border border-brand-200 text-brand-700 rounded-full px-2 py-0.5 text-[10px] font-bold">
+                    ★ Enviado para seus preferidos (4)
                   </div>
                 </div>
 
-                {/* Stats */}
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-steel-50 rounded-lg py-2">
-                    <div className="text-[9px] text-steel-500 uppercase tracking-wider">Hoje</div>
-                    <div className="text-sm font-bold text-steel-900 mt-0.5">8 OS</div>
-                  </div>
-                  <div className="bg-steel-50 rounded-lg py-2">
-                    <div className="text-[9px] text-steel-500 uppercase tracking-wider">Ativos</div>
-                    <div className="text-sm font-bold text-brand-500 mt-0.5">3</div>
-                  </div>
-                  <div className="bg-signal-50 border border-signal-200 rounded-lg py-2">
-                    <div className="text-[9px] text-signal-700 uppercase tracking-wider">Faturado</div>
-                    <div className="text-sm font-bold text-signal-700 mt-0.5">R$ 2.4k</div>
-                  </div>
+                <div className="mt-3 text-[10px] font-bold text-steel-500 uppercase tracking-widest">2 respostas</div>
+                <MockMechanic initials="CS" name="Carlos S." meta="★ 4,9 · 37 serviços" preferred />
+                <MockMechanic initials="RM" name="Rafael M." meta="★ 4,8 · 21 serviços · Suspensão" preferred />
+
+                <div className="mt-3 flex items-center gap-2 p-2.5 rounded-xl bg-signal-50 border border-signal-200 text-[11px] text-signal-800">
+                  <span>🔒</span>
+                  <span>Pagamento protegido até você confirmar o serviço</span>
                 </div>
               </div>
 
-              {/* Floating tag */}
-              <div className="absolute -top-3 -right-3 bg-signal-500 text-white rounded-2xl px-4 py-2 shadow-xl rotate-[3deg]">
-                <div className="text-[10px] font-bold uppercase tracking-widest opacity-90">Ao vivo</div>
-                <div className="text-sm font-bold">Mecânico chegou</div>
+              <div className="absolute -top-3 -right-3 bg-steel-900 text-white rounded-2xl px-4 py-2 shadow-xl rotate-[3deg]">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-300">Sua rede</div>
+                <div className="text-sm font-bold">★ Quem você já confia</div>
               </div>
             </div>
           </div>
@@ -170,327 +127,293 @@ export default function LandingOficina() {
       <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
-            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">A realidade da maioria das oficinas</div>
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">A rotina de quem toca oficina</div>
             <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight text-steel-900">
-              Reconhece esses problemas?
+              Quando falta gente, a oficina inteira sente.
             </h2>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <Pain title="Mecânico bom é raro — e some"
-              desc="Você treina, ensina, dá oportunidade. Quando ele fica bom mesmo, pede demissão e abre concorrência." />
-            <Pain title="CLT pesa toda hora"
-              desc="Salário, INSS, FGTS, férias, 13º. Mesmo no mês mais fraco, a folha vence. E não tem como cortar." />
-            <Pain title="Falta gente, perde cliente"
-              desc='"Posso deixar amanhã?" — "Vou ter que ver, mestre". Cliente vai embora pra concorrência mais ágil.' />
-            <Pain title="OS no caderninho"
-              desc="Anotação no papel, perde história, perde garantia, perde cliente que não volta. Receita escapa." />
-            <Pain title="Sem controle real"
-              desc="Quanto cada serviço dá de margem? Quem é seu melhor cliente? Quanto fatura por mecânico? Não sabe." />
-            <Pain title="Marketing? Esquece"
-              desc="Você sabe consertar carro. Mas não sabe achar cliente novo. E ninguém na oficina sabe também." />
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Pain title="Serviço recusado"
+              desc='"Posso deixar pra semana que vem?" O cliente não espera, e vai pra outra oficina.' />
+            <Pain title="Carro parado no box"
+              desc="Um serviço travado ocupa o espaço de outros três. O pátio enche e o faturamento não sai." />
+            <Pain title="Equipe no limite"
+              desc="Nos dias de pico, todo mundo vira hora extra. Cai a qualidade, sobe o retrabalho, e o cansaço cobra a conta." />
+            <Pain title="Contratar é difícil"
+              desc="Achar mecânico bom leva semanas. E quando aparece, nem sempre a demanda justifica mais uma pessoa fixa." />
+            <Pain title="Alguém faltou"
+              desc="Atestado, férias, imprevisto. A agenda era pra quatro e só tem três." />
+            <Pain title="Serviço fora da especialidade"
+              desc="Chegou uma injeção eletrônica ou um câmbio automático e ninguém da equipe domina. Recusar é perder o cliente." />
           </div>
+
+          <p className="mt-12 text-center text-xl lg:text-2xl font-bold text-steel-900">
+            Não é falta de cliente. É falta de <span className="text-brand-500">mãos na hora certa.</span>
+          </p>
         </div>
       </section>
 
-      {/* ── CALCULADORA DE ECONOMIA ── */}
+      {/* ── CALCULADORA DE PERDA ── */}
       <section className="py-20 lg:py-28 px-5 lg:px-8">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10 max-w-3xl mx-auto">
-            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Calcule sua folha CLT</div>
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Simulação rápida</div>
             <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
-              Quanto sua oficina paga<br />
-              <span className="text-brand-500">só em mão de obra fixa?</span>
+              Quanto a falta de mão de obra <span className="text-brand-500">pode estar custando?</span>
             </h2>
-            <p className="mt-4 text-base text-steel-600">
-              Salário é só a ponta. Encargos, férias, 13º, FGTS e provisões pesam ~70% em cima.
+            <p className="mt-4 text-base lg:text-lg text-steel-600 leading-relaxed">
+              Responda duas perguntas e veja uma estimativa do faturamento que sua oficina deixa
+              de realizar quando precisa adiar ou recusar serviços.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-6 items-center bg-white rounded-3xl p-6 lg:p-8 shadow-xl border border-steel-100">
-            {/* Inputs */}
-            <div className="space-y-6">
-              <div>
-                <div className="flex items-baseline justify-between mb-2">
-                  <span className="text-xs font-bold text-steel-500 uppercase tracking-wider">Mecânicos CLT hoje</span>
-                  <span className="text-3xl font-bold text-brand-500 font-display">{mechanicsCount}</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={mechanicsCount}
-                  onChange={e => setMechanicsCount(Number(e.target.value))}
-                  className="w-full accent-brand-500 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-steel-400 font-semibold mt-1">
-                  <span>1</span><span>5</span><span>10+</span>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-baseline justify-between mb-2">
-                  <span className="text-xs font-bold text-steel-500 uppercase tracking-wider">Salário médio mensal</span>
-                  <span className="text-3xl font-bold text-brand-500 font-display">R$ {avgSalary.toLocaleString('pt-BR')}</span>
-                </div>
-                <input
-                  type="range"
-                  min={1500}
-                  max={6000}
-                  step={100}
-                  value={avgSalary}
-                  onChange={e => setAvgSalary(Number(e.target.value))}
-                  className="w-full accent-brand-500 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-steel-400 font-semibold mt-1">
-                  <span>R$ 1.500</span><span>R$ 3.500</span><span>R$ 6.000</span>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-baseline justify-between mb-2">
-                  <span className="text-xs font-bold text-steel-500 uppercase tracking-wider">
-                    Tempo realmente produtivo
-                  </span>
-                  <span className="text-3xl font-bold text-brand-500 font-display">{Math.round(productivity * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={30}
-                  max={80}
-                  step={5}
-                  value={Math.round(productivity * 100)}
-                  onChange={e => setProductivity(Number(e.target.value) / 100)}
-                  className="w-full accent-brand-500 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-steel-500 font-semibold uppercase tracking-wider mt-1">
-                  <button type="button" onClick={() => setProductivity(0.30)} className="hover:text-brand-600 text-left">
-                    30%<br /><span className="font-normal normal-case tracking-normal text-steel-400">Oficina lenta</span>
-                  </button>
-                  <button type="button" onClick={() => setProductivity(0.50)} className="hover:text-brand-600 font-bold text-brand-600">
-                    50%<br /><span className="font-normal normal-case tracking-normal text-steel-400">Média do setor</span>
-                  </button>
-                  <button type="button" onClick={() => setProductivity(0.70)} className="hover:text-brand-600 text-right">
-                    70%<br /><span className="font-normal normal-case tracking-normal text-steel-400">Bem gerida</span>
-                  </button>
-                </div>
-                <p className="mt-2 text-[11px] text-steel-500 leading-snug">
-                  Mecânico CLT trabalha 44h/sem (~190h/mês), mas raramente produz tudo isso —
-                  espera de peça, falta de cliente, diagnóstico não cobrado, etc.
-                </p>
-              </div>
+          <div className="grid md:grid-cols-2 gap-6 lg:gap-8 items-stretch bg-white rounded-3xl p-5 lg:p-8 shadow-xl border border-steel-100">
+            {/* Perguntas */}
+            <div className="flex flex-col justify-center gap-6">
+              <CalcQuestion
+                n={1}
+                question="Quantos serviços sua oficina adia ou recusa por semana?"
+                hint="Conte os que você não conseguiu atender na hora por falta de gente."
+                value={refusedPerWeek} display={`${refusedPerWeek} ${refusedPerWeek === 1 ? 'serviço' : 'serviços'}`}
+                min={1} max={20} step={1} onChange={setRefusedPerWeek}
+                ticks={['1', '10', '20']}
+              />
+              <CalcQuestion
+                n={2}
+                question="Qual é o ticket médio desses serviços?"
+                hint="Valor médio cobrado do cliente por serviço."
+                value={avgTicket} display={`R$ ${brl(avgTicket)}`}
+                min={100} max={3000} step={50} onChange={setAvgTicket}
+                ticks={['R$ 100', 'R$ 1.500', 'R$ 3.000']}
+              />
             </div>
 
             {/* Resultado */}
-            <div className="bg-gradient-to-br from-steel-900 to-steel-800 rounded-2xl p-6 text-white shadow-xl">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">Sua folha CLT estimada</div>
-              <div className="mt-1 text-4xl lg:text-5xl font-bold font-display leading-none text-white">
-                R$ {monthlyCLT.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+            <div className="bg-steel-900 rounded-2xl p-6 lg:p-7 text-white flex flex-col">
+              <div className="text-sm font-semibold text-steel-300">Estimativa de faturamento perdido</div>
+              <div className="mt-2 flex items-baseline gap-2 flex-wrap">
+                <span className="text-5xl lg:text-6xl font-bold font-display leading-none text-brand-400">
+                  R$ {brl(monthlyLost)}
+                </span>
+                <span className="text-lg text-steel-300">por mês</span>
               </div>
-              <div className="text-sm text-steel-300 mt-1">por mês — fixo, vence todo dia 5</div>
-
-              {/* Quebra: horas pagas vs. horas produtivas */}
-              <div className="mt-5 pt-5 border-t border-white/10 space-y-1.5">
-                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
-                  <span>Horas pagas / mês</span>
-                  <span className="font-semibold text-steel-200">{totalPaidHours.toLocaleString('pt-BR')}h</span>
-                </div>
-                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
-                  <span>Horas realmente produtivas</span>
-                  <span className="font-semibold text-steel-200">{totalProductiveHours.toLocaleString('pt-BR')}h</span>
-                </div>
+              <div className="mt-3 text-base text-steel-200">
+                Cerca de <strong className="text-white">R$ {brl(yearlyLost)}</strong> por ano
               </div>
 
-              {/* Destaque: o custo REAL por hora produtiva */}
-              <div className="mt-3 p-3 rounded-xl bg-brand-500/15 border border-brand-400/30">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-300">
-                  Sua hora produtiva custa
-                </div>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <span className="text-3xl font-bold font-display text-brand-300">
-                    R$ {costPerProductiveHour.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[11px] text-steel-300">/ hora real</span>
-                </div>
+              <div className="mt-5 rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-xs text-steel-300 leading-relaxed">
+                <div className="font-semibold text-steel-200">Como calculamos</div>
+                {refusedPerWeek} {refusedPerWeek === 1 ? 'serviço' : 'serviços'} × R$ {brl(avgTicket)} × 4,3 semanas no mês
               </div>
 
-              <div className="mt-3 pt-3 border-t border-white/10 space-y-1">
-                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
-                  <span>≈ por ano</span>
-                  <span className="font-semibold text-white">R$ {yearlyCLT.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-                </div>
-                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
-                  <span>Salário bruto</span>
-                  <span>R$ {(mechanicsCount * avgSalary).toLocaleString('pt-BR')}</span>
-                </div>
-                <div className="flex items-baseline justify-between text-[11px] text-steel-400">
-                  <span>+ Encargos (~70%)</span>
-                  <span>R$ {(monthlyCLT - mechanicsCount * avgSalary).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-                </div>
-              </div>
+              <p className="mt-5 text-sm text-white/85 leading-relaxed">
+                É faturamento que deixa de entrar no caixa, não lucro. Com reforço de mão de obra quando
+                precisar, sua oficina consegue aceitar mais desses serviços.
+              </p>
 
-              {/* Comparação direta com o app */}
-              <div className="mt-5 pt-5 border-t border-white/10">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-300">No app, esse mesmo trabalho</div>
-                <div className="mt-2 flex items-baseline justify-between">
-                  <span className="text-sm text-white/80">{totalProductiveHours}h × R$ {APP_HOURLY_BRL}/h</span>
-                  <span className="text-2xl font-bold font-display text-white">
-                    R$ {appEquivalentCost.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-                  </span>
-                </div>
-                {monthlySavings > 0 ? (
-                  <div className="mt-2 inline-flex items-center gap-1.5 bg-signal-500/20 border border-signal-400/30 text-signal-300 rounded-lg px-2.5 py-1 text-xs font-bold">
-                    ↓ Economia de R$ {monthlySavings.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} / mês
-                  </div>
-                ) : (
-                  <p className="mt-2 text-[11px] text-steel-400 leading-relaxed">
-                    Nesse cenário o CLT compensa — mas só se a oficina tem demanda cheia o ano inteiro
-                    pra justificar o custo fixo. No mês fraco, a folha vence igual.
-                  </p>
-                )}
-                <p className="mt-2 text-[11px] text-white/70 leading-relaxed">
-                  <strong className="text-brand-300">Zero custo fixo.</strong> Sem férias, sem 13º, sem FGTS,
-                  sem rescisão. Mês sem demanda = R$ 0 de mão de obra.
-                </p>
+              <div className="mt-auto pt-6">
+                <Link to="/cadastro/oficina"
+                  className="w-full bg-brand-500 text-white font-bold rounded-xl px-5 py-3.5 hover:bg-brand-600 transition flex items-center justify-center gap-2">
+                  Quero atender mais serviços →
+                </Link>
+                <p className="mt-2 text-center text-[11px] text-steel-400">Cadastro gratuito · Sem mensalidade</p>
               </div>
             </div>
           </div>
 
           <p className="mt-5 text-center text-xs text-steel-500 max-w-2xl mx-auto leading-relaxed">
-            ℹ️ Cálculo conservador: encargos = salário × 1,7 (INSS patronal, FGTS, férias/13º, rescisão).
-            Horas pagas = 44h × 4,33 sem/mês. Produtividade real ajustável — pequenas oficinas costumam
-            rodar entre 30–60%. Comparação no app usa R$ {APP_HOURLY_BRL}/h (faixa média SP). Não substitui consultoria contábil.
+            Simulação com base nos números que você informou. Considera o valor cobrado do cliente, sem descontar
+            peças e custos, e não é garantia de resultado.
           </p>
         </div>
       </section>
 
       {/* ── SOLUÇÃO ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8">
+      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
-            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">O que muda com o app</div>
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Como o MecânicoApp ajuda</div>
             <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
-              Tudo que falta. <span className="text-brand-500">Em um único painel.</span>
+              Reforço sob demanda, <span className="text-brand-500">sem complicar sua rotina.</span>
             </h2>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Win title="Mecânico sob demanda"
-              desc="Publica a demanda, mecânico aceita em minutos. Pronto, qualificado, com CPF e CNH validados." />
-            <Win title="Pague só pela hora trabalhada"
-              desc="Sem CLT, sem encargos, sem mensalidade. Cobrou 2h? Você paga 2h. Cobrou 0? Não paga nada." />
-            <Win title="Pagamento intermediado"
-              desc="Você paga via cartão ou PIX antes do mecânico começar. Fica retido em escrow e só vai pro mecânico depois que você confirma a conclusão." />
-            <Win title="OS digital grátis"
-              desc="Cadastro de cliente, veículo, histórico, agendamento, mecânico interno. Adeus caderninho." />
-            <Win title="Multi-loja na mesma conta"
-              desc="Tem 2, 3, 5 oficinas? Gerencia tudo no mesmo login, troca entre lojas com 1 clique." />
-            <Win title="Rastreamento ao vivo"
-              desc="Acompanha o mecânico no mapa em tempo real. ETA preciso, confirmação automática de chegada — sem ligar pra perguntar 'onde tá'." />
-            <Win title="Reputação atrai os melhores"
-              desc="Cada serviço bem feito vira nota da sua oficina dentro da plataforma. Quanto melhor sua reputação, mais mecânicos top aceitam trabalhar pra você." />
-            <Win title="Gestão visível"
-              desc="OS por status, faturamento, mecânicos ativos, clientes recorrentes. Tudo no painel, em tempo real." />
+            <Win title="Mais capacidade nos picos"
+              desc="Entrou mais serviço do que a equipe dá conta? Publique o pedido e receba mecânicos interessados da sua região." />
+            <Win title="Cobertura para faltas"
+              desc="Alguém faltou ou está de férias? Chame um reforço para o dia, sem refazer a agenda inteira." />
+            <Win title="Especialistas quando precisar"
+              desc="Ache profissionais com experiência no serviço que sua equipe não faz no dia a dia." />
+            <Win title="Pague pelo serviço, não pela ociosidade"
+              desc="Você combina o valor do serviço e paga por ele. Sem mensalidade e sem custo quando não usa." />
+          </div>
+        </div>
+      </section>
+
+      {/* ── REDE DE CONFIANÇA (destaque) ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-900 text-white relative overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-brand-500/15 blur-3xl pointer-events-none" />
+        <div className="relative max-w-5xl mx-auto">
+          <div className="text-center mb-14 max-w-3xl mx-auto">
+            <div className="text-xs font-bold text-brand-300 uppercase tracking-widest">O diferencial</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight">
+              Comece conhecendo.<br />
+              <span className="text-brand-400">Termine com uma equipe de confiança.</span>
+            </h2>
+            <p className="mt-5 text-lg text-steel-300 leading-relaxed">
+              Todo mecânico que trabalha bem na sua oficina pode entrar na sua lista de{' '}
+              <strong className="text-white">★ Preferidos</strong>. Na próxima vez que faltar gente, você manda o
+              pedido primeiro para eles, que já conhecem seu jeito de trabalhar.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-4">
+            <NetworkStep n={1} title="Conheça"
+              desc="Publique para a região e receba profissionais verificados, com nota e histórico." />
+            <NetworkStep n={2} title="Avalie"
+              desc="Depois do serviço, dê sua nota. Gostou do trabalho? Salve nos preferidos." />
+            <NetworkStep n={3} title="Chame de novo"
+              desc="Publique pedidos só para a sua rede. Quem já conhece sua oficina responde primeiro." />
+          </div>
+
+          <div className="mt-12 text-center">
+            <p className="text-xl font-bold">É como ter uma equipe extra, que você chama só quando precisa.</p>
+            <Link to="/cadastro/oficina"
+              className="inline-flex items-center gap-2 mt-6 bg-brand-500 text-white font-bold rounded-2xl px-6 py-4 hover:bg-brand-600 transition shadow-xl shadow-brand-500/30">
+              Começar minha rede →
+            </Link>
           </div>
         </div>
       </section>
 
       {/* ── COMO FUNCIONA ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
+      <section id="como-funciona" className="py-20 lg:py-28 px-5 lg:px-8 scroll-mt-16">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-14">
             <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Como funciona</div>
             <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
-              4 passos. Sua oficina rodando.
+              Do pedido ao serviço pronto, em 4 passos.
             </h2>
           </div>
 
           <div className="space-y-3">
-            <FlowStep n={1} title="Cadastra a oficina"
-              desc="2 minutos. CNPJ, endereço, dados básicos. Aprovação em até 24h." />
-            <FlowStep n={2} title="Publica demanda quando faltar gente"
-              desc="Define o serviço, valor por hora, teto de horas. Marketplace dispara alerta pra mecânicos da região." />
-            <FlowStep n={3} title="Mecânico aceita e executa"
-              desc="Você acompanha o trajeto no mapa. Quando ele chega, você paga via app (cartão ou PIX). Aí o serviço começa." />
-            <FlowStep n={4} title="Avalia e libera"
-              desc="Confirma o serviço, dá nota. Plataforma libera o pagamento. Tudo registrado no histórico." />
+            <FlowStep n={1} title="Cadastre sua oficina"
+              desc="Leva poucos minutos. Nossa equipe confere os dados e libera seu acesso." />
+            <FlowStep n={2} title="Publique o que precisa"
+              desc="Serviço, dia, valor e prazo. Escolha: só para seus preferidos ou para mecânicos verificados da região." />
+            <FlowStep n={3} title="Escolha quem vai"
+              desc="Veja nota, histórico e especialidades antes de confirmar. O pagamento fica protegido na plataforma." />
+            <FlowStep n={4} title="Confirme e avalie"
+              desc="Serviço feito, você confirma e o pagamento é liberado. Gostou? Salve nos preferidos." />
           </div>
         </div>
       </section>
 
-      {/* ── OBJEÇÕES / FAQ ── */}
+      {/* ── SEGURANÇA ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-14">
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Confiança em cada etapa</div>
+            <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
+              Você sabe quem está entrando na sua oficina.
+            </h2>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Trust icon="🪪" title="Cadastro verificado"
+              desc="Todo mecânico passa por análise de documentos antes de ser aprovado." />
+            <Trust icon="★" title="Reputação real"
+              desc="Cada serviço gera uma avaliação. Você vê nota, número de serviços e especialidades." />
+            <Trust icon="🔒" title="Pagamento protegido"
+              desc="O valor fica guardado na plataforma e só é liberado depois que você confirma a conclusão." />
+            <Trust icon="📋" title="Tudo registrado"
+              desc="Histórico de cada serviço: quem fez, quanto custou e como foi avaliado." />
+          </div>
+        </div>
+      </section>
+
+      {/* ── GESTÃO INTEGRADA ── */}
+      <section className="py-20 lg:py-28 px-5 lg:px-8">
+        <div className="max-w-5xl mx-auto grid lg:grid-cols-2 gap-10 items-center">
+          <div>
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">De bônus</div>
+            <h2 className="mt-3 text-3xl lg:text-4xl font-bold tracking-tight leading-tight text-steel-900">
+              O reforço entra direto na rotina da oficina.
+            </h2>
+            <p className="mt-4 text-base text-steel-600 leading-relaxed">
+              Além da mão de obra, sua oficina ganha um sistema de gestão gratuito. O serviço feito pelo
+              profissional de fora fica no mesmo histórico da OS, do cliente e do veículo.
+            </p>
+          </div>
+          <ul className="space-y-3">
+            {[
+              'Ordens de serviço, clientes e veículos',
+              'Agenda e histórico de cada carro',
+              'Várias lojas no mesmo login',
+              'Comece só com o reforço de mão de obra e adote a gestão no seu ritmo',
+            ].map(item => (
+              <li key={item} className="flex items-start gap-3 bg-white border border-steel-200 rounded-xl p-4 shadow-sm">
+                <span className="text-signal-500 font-bold">✓</span>
+                <span className="text-sm text-steel-700">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
       <section className="py-20 lg:py-28 px-5 lg:px-8 bg-steel-50">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">"Mas e se..."</div>
+            <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Dúvidas frequentes</div>
             <h2 className="mt-3 text-3xl lg:text-5xl font-bold tracking-tight leading-tight text-steel-900">
-              Toda objeção que você está pensando agora.
+              Perguntas de quem toca oficina.
             </h2>
           </div>
 
           <div className="space-y-3">
-            <Faq
-              q="E se o mecânico não chegar ou for ruim?"
-              a="CPF e CNH são validados manualmente antes da aprovação. Cada mecânico tem nota pública e histórico de jobs visíveis. Você acompanha a chegada no mapa em tempo real e só libera o pagamento depois de confirmar que o serviço ficou bom — se algo der errado, não paga."
-            />
-            <Faq
-              q="Como o pagamento ao mecânico funciona?"
-              a="Você paga via cartão ou PIX direto na plataforma quando o mecânico chega — antes do serviço começar. O valor fica retido em escrow e só é liberado pra ele depois que você confirma a conclusão do serviço. Você protege seu dinheiro; ele tem garantia de que vai receber."
-            />
-            <Faq
-              q="Tem mensalidade ou taxa de cadastro?"
-              a="Não. Zero. O cadastro da oficina é gratuito, o sistema de OS/clientes/veículos é gratuito, multi-loja é gratuito. Você só desembolsa quando precisa contratar mão de obra sob demanda — e nesse caso, paga o valor que combinou com o mecânico."
-            />
-            <Faq
-              q="Posso continuar com meus mecânicos CLT?"
-              a="Pode. O app é complementar — você usa quando precisar de reforço, quando alguém faltar, quando a demanda subir, ou quando quiser testar antes de contratar. Não exige exclusividade."
-            />
-            <Faq
-              q="O que muda na minha rotina hoje?"
-              a="Quase nada no começo. Você cadastra a oficina (2 min), aprova em 24h, e usa o painel quando precisar de mecânico extra. O sistema de gestão de OS você adota no seu ritmo — pode começar só com o marketplace."
-            />
-            <Faq
-              q="Como sei que o mecânico é qualificado?"
-              a="Toda aprovação é manual: validamos CPF, CNH, especialidades declaradas e checamos o histórico. Mecânicos novos começam com nota 0 e ganham reputação serviço a serviço. Você vê o ranking, as avaliações, e escolhe quem chamar."
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ── NÚMEROS ── */}
-      <section className="py-20 lg:py-28 px-5 lg:px-8">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard n="Sem CLT" label="zero encargos trabalhistas" />
-            <StatCard n="24h" label="aprovação do cadastro" />
-            <StatCard n="100%" label="pagamentos pré-pagos (escrow)" />
-            <StatCard n="Grátis" label="OS, clientes e veículos no painel" />
+            <Faq q="Preciso pagar para me cadastrar?"
+              a="Não. O cadastro e o sistema de gestão são gratuitos, sem mensalidade. Você só paga pelos serviços que contratar." />
+            <Faq q="Posso continuar com minha equipe atual?"
+              a="Pode, e é para isso que o app existe. O MecânicoApp complementa sua equipe nos picos, nas faltas e em serviços específicos. Não tem exclusividade nem fidelidade." />
+            <Faq q="Como sei se o mecânico é bom?"
+              a="Todo profissional passa por análise de cadastro antes de ser aprovado. Cada serviço gera uma avaliação, e você vê nota, quantidade de serviços e especialidades antes de escolher." />
+            <Faq q="O que são os mecânicos preferidos?"
+              a="É a sua lista pessoal de profissionais de confiança. Gostou de um trabalho? Salve o mecânico. Depois, você pode publicar pedidos só para essa lista." />
+            <Faq q="Como funciona o pagamento?"
+              a="O valor combinado fica protegido na plataforma e só é liberado ao mecânico depois que você confirma que o serviço foi concluído." />
+            <Faq q="Quanto tempo leva para achar um mecânico?"
+              a="Depende da sua região, do dia e do tipo de serviço. Publicar com antecedência e ter uma lista de preferidos ajuda bastante. Quem já conhece sua oficina costuma responder primeiro." />
+            <Faq q="O mecânico vira funcionário da minha oficina?"
+              a="Não. Ele é um profissional independente que presta um serviço pontual pela plataforma. Para dúvidas trabalhistas do seu caso específico, consulte seu contador." />
+            <Faq q="Atendem minha cidade?"
+              a="Estamos crescendo região por região. Cadastre sua oficina e avisamos quando houver profissionais disponíveis perto de você." />
           </div>
         </div>
       </section>
 
       {/* ── CTA FINAL ── */}
-      <section className="py-24 lg:py-32 px-5 lg:px-8 bg-gradient-to-b from-white to-brand-50/30">
+      <section className="py-24 lg:py-32 px-5 lg:px-8 bg-gradient-to-b from-white to-brand-50/40">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Comece sem custo. Sem risco.</div>
+          <div className="text-xs font-bold text-brand-600 uppercase tracking-widest">Comece hoje, use quando precisar</div>
           <h2 className="mt-3 text-4xl lg:text-6xl font-bold tracking-tight leading-tight text-steel-900">
-            Cadastre sua oficina.<br />
-            <span className="text-brand-500">Hoje. Em 2 minutos.</span>
+            Na próxima vez que faltar gente,<br />
+            <span className="text-brand-500">você já sabe quem chamar.</span>
           </h2>
           <p className="mt-6 text-lg text-steel-600">
-            Você ganha um sistema de gestão completo, marketplace de mecânicos
-            e pagamento intermediado. <strong className="text-steel-900">Sem pagar nada.</strong>
+            Cadastre sua oficina de graça. Não tem mensalidade nem exclusividade, e você só paga pelo serviço que contratar.
           </p>
 
           <Link to="/cadastro/oficina"
             className="inline-flex items-center gap-2 mt-10 bg-brand-500 text-white font-bold rounded-2xl px-8 py-5 text-lg hover:bg-brand-600 transition shadow-2xl shadow-brand-500/30">
-            Cadastrar oficina grátis
+            Cadastrar minha oficina grátis
             <span>→</span>
           </Link>
 
           <p className="mt-4 text-xs text-steel-500">
-            Validamos seu CNPJ · Aprovação em até 24h
+            Conferimos os dados de cada oficina antes de liberar o acesso.
           </p>
         </div>
       </section>
@@ -502,7 +425,7 @@ export default function LandingOficina() {
             <div>
               <Logo />
               <p className="mt-3 text-xs text-steel-500 leading-relaxed max-w-[220px]">
-                Mão de obra sob demanda + gestão de oficina, num único painel.
+                Mão de obra sob demanda e gestão para oficinas, num só lugar.
               </p>
             </div>
 
@@ -518,7 +441,6 @@ export default function LandingOficina() {
             <div>
               <div className="text-xs font-bold text-steel-900 uppercase tracking-widest mb-3">Plataforma</div>
               <ul className="space-y-2 text-sm text-steel-600">
-                <li><Link to="/brandbook" className="hover:text-brand-600 transition">Brandbook</Link></li>
                 <li><Link to="/termos" className="hover:text-brand-600 transition">Termos de uso</Link></li>
                 <li><Link to="/privacidade" className="hover:text-brand-600 transition">Privacidade</Link></li>
               </ul>
@@ -527,9 +449,9 @@ export default function LandingOficina() {
             <div>
               <div className="text-xs font-bold text-steel-900 uppercase tracking-widest mb-3">Confiança</div>
               <ul className="space-y-2 text-sm text-steel-600">
-                <li>CPF e CNH verificados</li>
-                <li>Pagamento em escrow</li>
-                <li>Avaliações públicas</li>
+                <li>Cadastro verificado</li>
+                <li>Pagamento protegido</li>
+                <li>Avaliações reais</li>
                 <li>Suporte por chat</li>
               </ul>
             </div>
@@ -543,11 +465,62 @@ export default function LandingOficina() {
           </div>
         </div>
       </footer>
+
+      {/* ── CTA FIXO NO CELULAR ── */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur border-t border-steel-200 p-3">
+        <Link to="/cadastro/oficina"
+          className="w-full bg-brand-500 text-white font-bold rounded-xl px-5 py-3.5 flex items-center justify-center gap-2 shadow-lg shadow-brand-500/30">
+          Cadastrar minha oficina grátis →
+        </Link>
+      </div>
     </div>
   );
 }
 
 /* ─── Componentes auxiliares ─── */
+
+function MockMechanic({ initials, name, meta, preferred }: { initials: string; name: string; meta: string; preferred?: boolean }) {
+  return (
+    <div className="mt-2 p-3 bg-white border border-steel-200 rounded-xl flex items-center gap-3">
+      <div className="h-9 w-9 rounded-full bg-steel-800 grid place-items-center text-white font-bold text-xs shrink-0">{initials}</div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-bold text-steel-900 flex items-center gap-1.5">
+          {name}
+          {preferred && <span className="text-[9px] font-bold text-brand-600 bg-brand-50 rounded px-1.5 py-0.5">★ Preferido</span>}
+        </div>
+        <div className="text-[10px] text-steel-500 truncate">{meta}</div>
+      </div>
+      <div className="text-[10px] font-bold text-white bg-brand-500 rounded-lg px-2.5 py-1.5">Escolher</div>
+    </div>
+  );
+}
+
+function CalcQuestion({ n, question, hint, value, display, min, max, step, onChange, ticks }: {
+  n: number; question: string; hint: string; value: number; display: string;
+  min: number; max: number; step: number; onChange: (v: number) => void; ticks: string[];
+}) {
+  return (
+    <div className="rounded-2xl bg-steel-50 border border-steel-100 p-4 lg:p-5">
+      <div className="flex items-start gap-3">
+        <div className="h-7 w-7 rounded-full bg-steel-900 text-white grid place-items-center text-xs font-bold shrink-0">{n}</div>
+        <div>
+          <div className="font-bold text-steel-900 leading-snug">{question}</div>
+          <div className="mt-0.5 text-xs text-steel-500 leading-snug">{hint}</div>
+        </div>
+      </div>
+      <div className="mt-4 text-2xl font-bold text-steel-900 font-display">{display}</div>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        aria-label={question}
+        className="mt-2 w-full accent-brand-500 cursor-pointer"
+      />
+      <div className="flex justify-between text-[10px] text-steel-400 font-semibold mt-1">
+        {ticks.map(t => <span key={t}>{t}</span>)}
+      </div>
+    </div>
+  );
+}
 
 function Pain({ title, desc }: { title: string; desc: string }) {
   return (
@@ -569,6 +542,16 @@ function Win({ title, desc }: { title: string; desc: string }) {
   );
 }
 
+function NetworkStep({ n, title, desc }: { n: number; title: string; desc: string }) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+      <div className="h-10 w-10 rounded-full bg-brand-500 grid place-items-center font-bold text-lg text-white">{n}</div>
+      <h3 className="mt-4 font-bold text-xl">{title}</h3>
+      <p className="mt-2 text-sm text-steel-300 leading-relaxed">{desc}</p>
+    </div>
+  );
+}
+
 function FlowStep({ n, title, desc }: { n: number; title: string; desc: string }) {
   return (
     <div className="flex items-start gap-4 bg-white border border-steel-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-brand-200 transition">
@@ -583,11 +566,12 @@ function FlowStep({ n, title, desc }: { n: number; title: string; desc: string }
   );
 }
 
-function StatCard({ n, label }: { n: string; label: string }) {
+function Trust({ icon, title, desc }: { icon: string; title: string; desc: string }) {
   return (
-    <div className="bg-gradient-to-br from-brand-50 to-white border-2 border-brand-100 rounded-2xl p-5 text-center shadow-sm">
-      <div className="text-3xl lg:text-4xl font-bold text-brand-500 font-display leading-none">{n}</div>
-      <div className="mt-2 text-xs text-steel-600 font-medium leading-snug">{label}</div>
+    <div className="bg-white border border-steel-200 rounded-2xl p-5 shadow-sm">
+      <div className="h-10 w-10 rounded-xl bg-brand-50 grid place-items-center text-lg text-brand-600">{icon}</div>
+      <h3 className="mt-3 font-bold text-base text-steel-900">{title}</h3>
+      <p className="mt-1.5 text-sm text-steel-600 leading-relaxed">{desc}</p>
     </div>
   );
 }

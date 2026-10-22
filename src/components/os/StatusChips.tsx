@@ -11,7 +11,9 @@ interface StatusChipsProps {
 
 const ITEMS: Array<{ value: StatusValue; label: string; dot: string; active: string }> = [
   { value: 'all',         label: 'Todas',         dot: 'bg-steel-400',   active: 'bg-steel-800 text-white border-steel-800' },
-  { value: 'open',        label: 'Abertas',       dot: 'bg-pending-500', active: 'bg-pending-100 text-pending-800 border-pending-300' },
+  { value: 'open',        label: 'Abertas',       dot: 'bg-steel-400',   active: 'bg-steel-200 text-steel-800 border-steel-300' },
+  { value: 'awaiting_approval', label: 'Aguardando aprovação', dot: 'bg-pending-500', active: 'bg-pending-100 text-pending-800 border-pending-300' },
+  { value: 'approved',    label: 'Aprovadas',     dot: 'bg-blue-500',    active: 'bg-blue-100 text-blue-800 border-blue-300' },
   { value: 'in_progress', label: 'Em andamento',  dot: 'bg-brand-500',   active: 'bg-brand-100 text-brand-800 border-brand-300' },
   { value: 'completed',   label: 'Concluídas',    dot: 'bg-signal-500',  active: 'bg-signal-100 text-signal-800 border-signal-300' },
   { value: 'cancelled',   label: 'Canceladas',    dot: 'bg-steel-400',   active: 'bg-steel-200 text-steel-700 border-steel-300' },
