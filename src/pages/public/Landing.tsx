@@ -38,7 +38,7 @@ export default function Landing() {
     <div className="min-h-screen bg-white text-steel-900 overflow-x-hidden">
 
       {/* ── NAV ── */}
-      <header className={`fixed top-0 inset-x-0 z-50 transition-all ${
+      <header className={`fixed top-0 inset-x-0 z-50 pt-[env(safe-area-inset-top)] transition-all ${
         scrolled ? 'bg-white/95 backdrop-blur-xl shadow-sm border-b border-steel-100' : 'bg-white/80 backdrop-blur-sm'
       }`}>
         <div className="max-w-6xl mx-auto px-5 lg:px-8 h-16 flex items-center justify-between">
@@ -64,7 +64,7 @@ export default function Landing() {
       </header>
 
       {/* ── HERO ── */}
-      <section className="relative pt-28 pb-20 lg:pt-36 lg:pb-24 px-5 lg:px-8 overflow-hidden">
+      <section className="relative pt-[calc(7rem+env(safe-area-inset-top))] pb-20 lg:pt-[calc(9rem+env(safe-area-inset-top))] lg:pb-24 px-5 lg:px-8 overflow-hidden">
         {/* Glow soft */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[900px] h-[900px] rounded-full bg-brand-500/10 blur-3xl" />

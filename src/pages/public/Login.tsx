@@ -169,7 +169,7 @@ export default function Login() {
         <div className="text-xs text-steel-500">© MecânicoApp {new Date().getFullYear()}</div>
       </aside>
 
-      <main className="flex flex-col justify-center p-6 lg:p-16 bg-white">
+      <main className="flex flex-col justify-center p-6 pt-[calc(1.5rem+env(safe-area-inset-top))] lg:p-16 bg-white">
         <div className="lg:hidden mb-8"><Logo /></div>
         <div className="max-w-sm w-full mx-auto">
           <h1 className="text-3xl font-bold tracking-tight">Entrar</h1>
