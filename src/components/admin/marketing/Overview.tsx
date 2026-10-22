@@ -17,7 +17,7 @@ interface DayRow { day: string; clicks: number; leads: number; signups: number }
 const SOURCE_LABEL: Record<string, string> = {
   direto: 'Direto / orgânico', indicacao: 'Indicação', instagram: 'Instagram', facebook: 'Facebook',
   google_ads: 'Google Ads', google_maps: 'Google Maps', whatsapp: 'WhatsApp', importado_csv: 'Importado (CSV)',
-  link_convite: 'Link de convite', evento: 'Evento', outro: 'Outro', google: 'Google',
+  link_convite: 'Link de convite', evento: 'Evento', outro: 'Outro', google: 'Google', impresso: 'Impresso (panfleto / QR)',
 };
 
 const STAGES = [

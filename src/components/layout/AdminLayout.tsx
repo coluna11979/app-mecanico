@@ -21,6 +21,8 @@ const NAV_GROUPS: NavGroup[] = [
   { label: 'Captação', items: [
     { to: '/admin/leads', label: 'Leads', icon: IconTarget,
       badge: b => b.leadsEmPipeline, badgeTone: 'neutral' },
+     { to: '/admin/marketing', label: 'Marketing',     icon: IconMegaphone },
+    { to: '/admin/kit-marca', label: 'Kit da marca', icon: IconPalette },
   ]},
   { label: 'Crescimento', items: [
     { to: '/admin/crescimento/radar', label: 'Radar',  icon: IconRadar },
@@ -77,7 +79,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         fixed top-0 left-0 h-full w-60 bg-steel-900 text-white z-40 flex flex-col
         transition-transform duration-200
         ${open ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:static lg:z-auto lg:shrink-0
+        lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:z-auto lg:shrink-0
         border-r border-steel-800
       `}>
         {/* Logo */}
@@ -197,4 +199,5 @@ function IconLogout(p: IP)    { return <Svg {...p}><path d="M9 21H5a2 2 0 01-2-2
 function IconMenu(p: IP)      { return <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16" /></Svg>; }
 function IconRadar(p: IP)     { return <Svg {...p}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2" /></Svg>; }
 function IconFlag(p: IP)      { return <Svg {...p}><path d="M4 22V4M4 15h11l-2-5 2-5H4" /></Svg>; }
+function IconPalette(p: IP)   { return <Svg {...p}><path d="M12 3a9 9 0 100 18c1 0 1.5-.7 1.5-1.5 0-.4-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.8.7-1.4 1.5-1.4H16a5 5 0 005-5c0-4.4-4-8-9-8z" /><circle cx="7.5" cy="11.5" r="1" /><circle cx="10.5" cy="7.5" r="1" /><circle cx="15.5" cy="8.5" r="1" /></Svg>; }
 function IconFunnel(p: IP)    { return <Svg {...p}><path d="M3 4h18l-7 10v6l-4-2v-4L3 4z" /></Svg>; }
