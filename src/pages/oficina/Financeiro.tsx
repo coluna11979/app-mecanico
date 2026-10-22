@@ -20,8 +20,8 @@ import { useTeamAccess } from '@/lib/teamAccess';
 import { ShopGoalCard } from '@/components/goals/Goals';
 import CompletedOsList from '@/components/finance/CompletedOsList';
 import {
-  cashFlowOf, closings, flowSeriesFull, operatingResult, outflowsOf, receivables, receivedGroups,
-  type FinEntry, type FinOs, type FinPayable, type FinPayment, type FinRegister,
+  cashFlowOf, closings, flowSeriesFull, operatingResult, outflowsOf, paymentMixOf, receivables, receivedGroups,
+  type FinEntry, type FinOs, type FinPayable, type FinPayment, type FinRegister, type PayMixRow,
 } from '@/lib/finance';
 
 const FIN_OS_COLS = 'id, number, title, status, quote_status, price, parts_cost, labor_cost, paid_amount, counter_discount, pay_later_due, pay_later_note, created_at, started_at, completed_at, estimated_hours, workshop_mechanic_id, customer_id, customer:customers(id, full_name, phone, created_at), vehicle:vehicles(make, model, plate)';
@@ -193,6 +193,7 @@ export default function Financeiro() {
         divergences: closes.rows.filter(c => Math.abs(c.diff) >= 0.01),
       },
       received: receivedGroups(entries, range),
+      payMix: paymentMixOf(entries, os, range, firstOpen),
       series: flowSeriesFull(entries, payables, range),
     };
   }, [entries, payments, regs, os, range, prev, firstOpen, costItems, payables, cardCfg]);
@@ -402,6 +403,7 @@ export default function Financeiro() {
                   </div>
                 </div>
                 <FlowChart series={f.series} />
+                <PaymentMix mix={f.payMix} />
               </div>
             </div>
 
@@ -574,6 +576,31 @@ function FlowChart({ series }: { series: { label: string; inflow: number; outflo
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Como o período foi pago: dinheiro, PIX, débito, crédito (à vista e parcelado) e pagar depois */
+function PaymentMix({ mix }: { mix: { rows: PayMixRow[]; total: number } }) {
+  return (
+    <div className="mt-4 pt-4 border-t border-steel-100">
+      <SectionTitle>Como foi pago</SectionTitle>
+      {mix.rows.length === 0 ? <p className="text-sm text-steel-400">Nenhum pagamento no período.</p> : (
+        <ul className="divide-y divide-steel-100">
+          {mix.rows.map(x => (
+            <li key={x.key} className="py-2 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm text-steel-700">{x.label}</div>
+                <div className="text-[11px] text-steel-400 leading-snug">
+                  {x.count} {x.key === 'depois' ? 'OS a receber' : x.count === 1 ? 'pagamento' : 'pagamentos'}
+                  {x.detail ? ` · ${x.detail}` : ''}
+                </div>
+              </div>
+              <span className={`text-sm font-bold shrink-0 tabular-nums ${x.key === 'depois' ? 'text-pending-700' : ''}`}>{brl(x.total)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
