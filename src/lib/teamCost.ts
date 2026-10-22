@@ -18,6 +18,11 @@ import type { CostCfg } from '@/lib/costSettings';
 const norm = (s?: string | null) => (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 /** "Mecânico", "Mecânico chefe"… (eletricista, alinhador, auxiliar, gerente e administrativo ficam de fora) */
 export const isMechanicRole = (role?: string | null) => norm(role).includes('mecanic');
+/**
+ * Quem entra no custo da equipe: os mecânicos e quem ganha só a % do faturamento da loja
+ * (ex.: o gerente que atua na operação — salário, encargos e a comissão dele contam).
+ */
+const inTeamCost = (m: Pick<CostMech, 'role_title' | 'commission_revenue_only'>) => isMechanicRole(m.role_title) || !!m.commission_revenue_only;
 
 export type CostMech = {
   id: string; name: string; active: boolean; status?: string | null; role_title: string | null; work_schedule: string | null;
@@ -52,7 +57,7 @@ export async function loadTeamCostInputs(wid: string, fromDay: string, toDay: st
     supabase.from('workshop_mechanic_private').select('mechanic_id, salary').eq('workshop_id', wid),
     supabase.from('workshop_mechanic_absences').select('*').eq('workshop_id', wid).lte('started_on', toDay),
   ]);
-  const team = ((mechs.data ?? []) as CostMech[]).filter(m => isMechanicRole(m.role_title) && !m.commission_revenue_only && m.status !== 'terminated');
+  const team = ((mechs.data ?? []) as CostMech[]).filter(m => inTeamCost(m) && m.status !== 'terminated');
   const ids = team.map(m => m.id);
   const logs = ids.length
     ? await supabase.from('service_order_work_logs').select('workshop_mechanic_id, started_at, ended_at')
