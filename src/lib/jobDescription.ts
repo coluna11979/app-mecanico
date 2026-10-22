@@ -81,3 +81,20 @@ export function jobSummary(text: string | null | undefined): string | null {
   if (cars > 1) return `${cars} carros · ${services.length} serviço${services.length === 1 ? '' : 's'}: ${services.join(' · ')}`;
   return services.join(' · ');
 }
+
+/**
+ * Desfaz o que a Nova demanda junta ao publicar: o carro vai no fim do título (" — Cross Fox")
+ * e no fim da descrição ("Veículo: Cross Fox · ABC1D23"). Volta serviço, detalhes e carro separados,
+ * para editar, repetir ou empilhar sem o carro ficar misturado no texto.
+ */
+export function splitJobVehicle(rawTitle: string, rawDescription: string | null | undefined) {
+  let description = (rawDescription ?? '').trim();
+  const v = description.match(/\n*Ve[ií]culo:\s*([^\n]+)$/i);
+  const vehicle = v ? v[1].trim() : null;
+  if (v) description = description.slice(0, v.index).trim();
+  let title = rawTitle.trim();
+  const model = vehicle?.split('·')[0].trim();
+  if (model && title.toLowerCase().endsWith(` — ${model.toLowerCase()}`)) title = title.slice(0, -(model.length + 3)).trim();
+  if (description === title) description = '';
+  return { title, description, vehicle };
+}

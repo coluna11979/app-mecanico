@@ -17,6 +17,7 @@ import type { Job } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
+import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
 import { MechanicCarousel, PlatformHero, StatusCounters } from '@/components/marketplace/PlatformHome';
 import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
@@ -198,8 +199,10 @@ export default function WorkshopDashboard() {
     ]);
     setActive((a as Job[]) ?? []);
     setHistory((h as Job[]) ?? []);
-    const invited = [...new Set([...(a ?? []), ...(h ?? [])]
-      .map(j => (j as Job).invited_mechanic_id).filter((x): x is string => !!x))];
+    const invited = [...new Set([
+      ...(a ?? []).map(j => (j as Job).invited_mechanic_id),
+      ...(h ?? []).flatMap(j => [(j as Job).invited_mechanic_id, (j as Job).mechanic_id]),
+    ].filter((x): x is string => !!x))];
     if (invited.length) {
       const { data: ms } = await supabase.from('mechanics')
         .select('id, profile:profiles(full_name)').in('id', invited);
@@ -326,15 +329,32 @@ export default function WorkshopDashboard() {
   function openEditModal(j: Job) {
     setEditingId(j.id);
     setDraftRestored(false);
+    const t = splitJobVehicle(j.title, j.description);
     setForm({
-      title: j.title,
-      description: j.description,
-      ...(j.pricing === 'fixed'
-        ? { pricing: 'fixed' as const, total: String(j.price_per_hour ?? ''), price_per_hour: '', max_hours: j.estimated_hours != null ? String(j.estimated_hours) : '' }
-        : { pricing: 'hour' as const, total: '', price_per_hour: String(j.price_per_hour ?? ''), max_hours: String(j.max_hours ?? '1') }),
+      ...EMPTY,
+      title: t.title,
+      description: t.description,
+      vehicle: t.vehicle ?? '',
+      ...priceForm(j),
       scheduled_at: j.scheduled_at ? new Date(j.scheduled_at).toISOString().slice(0, 16) : '',
     });
     setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
+    setModal(true);
+  }
+
+  /**
+   * Histórico: abre uma demanda nova com o mesmo serviço e valor de uma antiga. O carro fica em branco
+   * (repetir é quase sempre o mesmo serviço em outro carro). Com `sameMechanic`, vira convite direto
+   * para quem fez da outra vez.
+   */
+  function openRepeat(j: Job, sameMechanic = false) {
+    if (hasPendingFees) return;
+    const t = splitJobVehicle(j.title, j.description);
+    const next: NewJob = { ...EMPTY, title: t.title, description: t.description, ...priceForm(j) };
+    setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
+    setForm(next); persistDraft(next);
+    const mech = sameMechanic ? j.mechanic_id ?? '' : '';
+    setMode(mech ? 'direct' : 'open'); setPickedMechanic(mech); setMechSearch('');
     setModal(true);
   }
 
@@ -380,9 +400,11 @@ export default function WorkshopDashboard() {
 
     if (editingId) {
       // Edição: só campos editáveis. Status, workshop_id e mechanic_id ficam intocados.
+      // O carro volta a ir junto no título e na descrição, como na criação
+      const text = withVehicle(form);
       const updatePayload: Record<string, unknown> = {
-        title:          form.title.trim(),
-        description:    form.description.trim() || form.title.trim(),
+        title:          text.title,
+        description:    text.description,
         price_per_hour: pph,
         max_hours:      mh,
         price:          pph * mh,
@@ -742,6 +764,13 @@ export default function WorkshopDashboard() {
                 <Link to="/oficina/buscar" className="font-bold underline">chamar outro mecânico</Link>.
               </div>
             )}
+            {waitingNoAccept(j) && (
+              <div className="mt-2 flex items-center justify-between gap-3 text-[12px] text-pending-800 bg-pending-50 border border-pending-200 rounded-lg px-2.5 py-2 leading-snug">
+                <span>⏳ Ninguém aceitou há <strong>{waitedLabel(j)}</strong>. Aumentar o valor costuma resolver.</span>
+                <button type="button" onClick={() => openEditModal(j)}
+                  className="shrink-0 h-9 px-3 rounded-lg bg-brand-500 text-white text-xs font-bold active:scale-95">Aumentar valor</button>
+              </div>
+            )}
             {j.scheduled_at && (
               <div className="text-xs text-steel-500 mt-1.5">📅 {formatScheduled(j.scheduled_at)}</div>
             )}
@@ -813,7 +842,8 @@ export default function WorkshopDashboard() {
       })()}
 
       {/* Histórico — fechado por padrão; a oficina escolhe abrir */}
-      <div id="historico" className="scroll-mt-4"><HistorySection history={history} workshopId={currentWorkshop?.id ?? null} /></div>
+      <div id="historico" className="scroll-mt-4"><HistorySection history={history} workshopId={currentWorkshop?.id ?? null}
+        names={inviteNames} onRepeat={hasPendingFees ? undefined : openRepeat} /></div>
       </div>
 
       {/* Coluna lateral (só no computador) */}
@@ -1104,6 +1134,12 @@ export default function WorkshopDashboard() {
                   <label className="label">Escolher mecânico *</label>
                   <input className="input mb-2" placeholder="Buscar por nome…"
                     value={mechSearch} onChange={e => setMechSearch(e.target.value)} />
+                  {pickedMechanic && !filteredMechanics.some(m => m.id === pickedMechanic) && (
+                    <div className="mb-2 rounded-xl border-2 border-brand-500 bg-brand-50 p-3">
+                      <div className="font-semibold text-sm">✓ {inviteNames[pickedMechanic] ?? 'Mecânico escolhido'}</div>
+                      <div className="text-xs text-steel-600">fez esse serviço com você · recebe o convite direto</div>
+                    </div>
+                  )}
                   <div className="space-y-2 max-h-44 overflow-y-auto">
                     {filteredMechanics.length === 0 ? (
                       <div className="text-sm text-steel-400 text-center py-4">
@@ -1262,7 +1298,13 @@ function ArrivalInfo({ j }: { j: Job }) {
 type HistTab = 'completed' | 'cancelled';
 const HIST_PAGE = 10;
 
-function HistorySection({ history, workshopId }: { history: Job[]; workshopId: string | null }) {
+function HistorySection({ history, workshopId, names, onRepeat }: {
+  history: Job[]; workshopId: string | null;
+  /** id do mecânico → nome */
+  names: Record<string, string>;
+  /** Repetir a demanda (com o mesmo mecânico, se `same`) */
+  onRepeat?: (j: Job, same?: boolean) => void;
+}) {
   const openKey = workshopId ? `oficina_hist_open:${workshopId}` : null;
   const [open, setOpen] = useState(false);
   const [tab, setTab]   = useState<HistTab>('completed');
@@ -1339,7 +1381,7 @@ function HistorySection({ history, workshopId }: { history: Job[]; workshopId: s
             </div>
           ) : (
             <div className="divide-y divide-steel-100">
-              {visible.map(j => <HistoryRow key={j.id} j={j} />)}
+              {visible.map(j => <HistoryRow key={j.id} j={j} mechName={j.mechanic_id ? names[j.mechanic_id] : undefined} onRepeat={onRepeat} />)}
             </div>
           )}
 
@@ -1358,7 +1400,7 @@ function HistorySection({ history, workshopId }: { history: Job[]; workshopId: s
   );
 }
 
-function HistoryRow({ j }: { j: Job }) {
+function HistoryRow({ j, mechName, onRepeat }: { j: Job; mechName?: string; onRepeat?: (j: Job, same?: boolean) => void }) {
   const isCancelled = j.status === 'cancelled';
   const fee  = Number(j.cancellation_fee ?? 0);
   const date = isCancelled ? (j.cancelled_at ?? j.created_at) : j.completed_at;
@@ -1376,6 +1418,21 @@ function HistoryRow({ j }: { j: Job }) {
           Pacote: {pricingLabel(j)}
           {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
         </div>
+        {/* Serviço que se repete: chama de novo sem digitar tudo */}
+        {onRepeat && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={() => onRepeat(j)}
+              className="h-9 px-3 rounded-lg border border-brand-300 bg-white text-brand-700 text-xs font-bold active:scale-95 hover:bg-brand-50">
+              🔁 Repetir
+            </button>
+            {!isCancelled && j.mechanic_id && (
+              <button type="button" onClick={() => onRepeat(j, true)}
+                className="h-9 px-3 rounded-lg border border-steel-200 bg-white text-steel-800 text-xs font-bold active:scale-95 hover:bg-steel-50 max-w-full truncate">
+                🎯 Chamar {mechName ? firstName(mechName) : 'o mesmo mecânico'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div className="text-right shrink-0">
         {isCancelled ? (
@@ -1421,6 +1478,27 @@ function statusLabel(j: Job): string {
   if (!j.pix_paid_at)             return 'Mecânico chegou — aguarda pagamento';
   if (!j.started_at)              return '✅ Pago — aguardando início do serviço';
   return 'Em serviço';
+}
+
+/** Valor da demanda no formato do formulário (pelo serviço ou por hora) */
+function priceForm(j: Job): Pick<NewJob, 'pricing' | 'total' | 'price_per_hour' | 'max_hours'> {
+  return j.pricing === 'fixed'
+    ? { pricing: 'fixed', total: String(j.price_per_hour ?? ''), price_per_hour: '', max_hours: j.estimated_hours != null ? String(j.estimated_hours) : '' }
+    : { pricing: 'hour', total: '', price_per_hour: String(j.price_per_hour ?? ''), max_hours: String(j.max_hours ?? '1') };
+}
+
+/** Demanda aberta (não convite) sem aceite há tempo demais: 20 min, ou 2 h se for agendada */
+const NO_ACCEPT_MS = 20 * 60 * 1000;
+const NO_ACCEPT_SCHEDULED_MS = 2 * 60 * 60 * 1000;
+function waitingNoAccept(j: Job, now = Date.now()): boolean {
+  if (j.status !== 'open' || j.mechanic_id || j.audience === 'invite') return false;
+  return now - new Date(j.created_at).getTime() > (j.scheduled_at ? NO_ACCEPT_SCHEDULED_MS : NO_ACCEPT_MS);
+}
+function waitedLabel(j: Job, now = Date.now()): string {
+  const min = Math.floor((now - new Date(j.created_at).getTime()) / 60000);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return h >= 24 ? `${Math.floor(h / 24)} dia${h >= 48 ? 's' : ''}` : m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
 }
 
 function firstName(name: string): string {
