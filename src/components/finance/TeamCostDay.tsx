@@ -82,7 +82,7 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
   return (
     <div className="card">
       <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">👷 Custo da equipe {single ? 'no dia' : 'no período'}</div>
-      <p className="text-[11px] text-steel-400 mb-2">Só mecânicos, pelas horas trabalhadas · segue o período escolhido no topo · informativo (não entra no Resultado)</p>
+      <p className="text-[11px] text-steel-400 mb-2">Mecânicos e quem ganha só a % do faturamento (ex.: gerente que atua na operação), pelas horas trabalhadas · segue o período escolhido no topo · informativo (não entra no Resultado)</p>
       {focused && (
         <button onClick={() => setFocus(null)} className="text-xs font-semibold text-brand-700 hover:underline mb-1">‹ Voltar ao período {br(first)} a {br(last)}</button>
       )}
