@@ -14,7 +14,6 @@ import { partsSharePct, revenueByService, servicesExecuted } from '@/lib/service
 import PeriodPicker, { PRESETS, PREV_LABEL, usePeriod, type Preset } from '@/components/PeriodPicker';
 import ReceivablesTab from '@/components/finance/ReceivablesTab';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
-import TeamCostDay from '@/components/finance/TeamCostDay';
 import { NO_FEES, cardFeesOf, hasFees, useCardFees, type CardFees } from '@/lib/cardFees';
 import { useTeamAccess } from '@/lib/teamAccess';
 import { ShopGoalCard } from '@/components/goals/Goals';
@@ -406,8 +405,6 @@ export default function Financeiro() {
                 <PaymentMix mix={f.payMix} />
               </div>
             </div>
-
-            {isGestor && wid && <TeamCostDay wid={wid} range={range} os={os} items={svcItems} />}
 
             {/* Origem do faturamento + recebimentos */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
