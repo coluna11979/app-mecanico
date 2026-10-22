@@ -41,6 +41,9 @@ type NewJob = {
   vehicle?: string;
   /** Quanto a oficina vai cobrar do cliente (só ela vê; oficina "Só mecânicos") */
   customer_charge?: string;
+  /** Veio de Meus clientes ("Chamar mecânico para este carro"): de quem é a demanda */
+  customer_id?: string | null;
+  vehicle_id?: string | null;
 };
 type MechanicOption = {
   id: string; name: string; rating: number; total_jobs: number; hourly_rate: number;
@@ -68,7 +71,8 @@ function loadDraft(workshopId: string): NewJob | null {
     const raw = localStorage.getItem(draftKey(workshopId));
     if (!raw) return null;
     const d = JSON.parse(raw) as Partial<NewJob>;
-    const hasContent = !!(d.title?.trim() || d.description?.trim() || d.price_per_hour || d.total || d.scheduled_at);
+    const hasContent = !!(d.title?.trim() || d.description?.trim() || d.price_per_hour || d.total || d.scheduled_at
+      || d.vehicle?.trim() || d.customer_id);
     if (!hasContent) return null;
     // Rascunho antigo (antes do "pelo serviço") era sempre por hora
     return { ...EMPTY, ...d, pricing: d.pricing ?? 'hour' };
@@ -469,6 +473,7 @@ export default function WorkshopDashboard() {
         : { status: 'open', mechanic_id: null, audience: isFavorites ? 'favorites' : 'public' }),
     };
     if (form.service_order_id) payload.service_order_id = form.service_order_id;
+    if (form.customer_id) { payload.customer_id = form.customer_id; payload.vehicle_id = form.vehicle_id ?? null; }
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
     const { data: ins, error: insErr } = await supabase.from('jobs').insert(payload).select('id').single();
     setSaving(false);

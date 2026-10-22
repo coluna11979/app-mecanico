@@ -184,6 +184,8 @@ export const FEATURES: Partial<Record<ModuleKey, Feature[]>> = {
     { key: 'plataforma.buscar',    label: 'Buscar mecânicos', routes: ['/oficina/buscar'] },
     { key: 'plataforma.mensagens', label: 'Mensagens',        routes: ['/oficina/mensagens'] },
     { key: 'plataforma.rastreio',  label: 'Rastreio do serviço', routes: ['/oficina/job'] },
+    // Cadastro simples para quem fica só na Plataforma (mesmas tabelas do módulo Clientes)
+    { key: 'plataforma.clientes',  label: 'Clientes e orçamentos', routes: ['/oficina/plataforma/clientes'] },
   ],
 };
 

@@ -31,6 +31,8 @@ async function byIds<T>(ids: string[], run: (chunk: string[]) => PromiseLike<{ d
 }
 
 const NO_CHARGES: Map<string, number> = new Map();
+const NO_OS: PlatformOs[] = [];
+const NO_ITEMS: PlatformItem[] = [];
 
 const fmtH = (h: number) => `${String(Math.round(h * 10) / 10).replace('.', ',')} h`;
 const plural = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
@@ -97,8 +99,13 @@ export default function PlataformaPainel() {
   // Valor cobrado informado à mão: só para a oficina "Só mecânicos" (quem tem OS tem o lucro pela OS)
   const platformOnly = useWorkshopModules(s => s.loaded && isPlatformOnly(s.off));
   const usedCharges = platformOnly ? charges : NO_CHARGES;
-  const rows = useMemo(() => profitRows(jobs, osList, items, period.range, estPct, usedCharges), [jobs, osList, items, period.range, estPct, usedCharges]);
-  const missing = useMemo(() => (platformOnly ? missingCharges(jobs, items, charges, period.range) : []), [platformOnly, jobs, items, charges, period.range]);
+  // Só Plataforma: nada de OS aqui — o lucro de cada serviço vem do valor cobrado informado
+  // (o orçamento de Clientes e orçamentos já preenche). Sem link para OS nem custo de peça estimado.
+  const pJobs = useMemo(() => (platformOnly ? jobs.map(j => ({ ...j, service_order_id: null })) : jobs), [platformOnly, jobs]);
+  const pOs = platformOnly ? NO_OS : osList;
+  const pItems = platformOnly ? NO_ITEMS : items;
+  const rows = useMemo(() => profitRows(pJobs, pOs, pItems, period.range, estPct, usedCharges), [pJobs, pOs, pItems, period.range, estPct, usedCharges]);
+  const missing = useMemo(() => (platformOnly ? missingCharges(pJobs, pItems, charges, period.range) : []), [platformOnly, pJobs, pItems, charges, period.range]);
   const hasOsRows = rows.some(r => !r.manual);
   /** Grava o valor cobrado e atualiza o painel na hora */
   async function setCharge(jobId: string, amount: number | null) {
@@ -268,7 +275,7 @@ export default function PlataformaPainel() {
             <section>
               <SectionTitle>Capacidade e qualidade</SectionTitle>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <Kpi label="OS atendidas" value={String(m.osServed)} note="OS com serviço feito pela plataforma" />
+                {!platformOnly && <Kpi label="OS atendidas" value={String(m.osServed)} note="OS com serviço feito pela plataforma" />}
                 <Kpi label="Horas trabalhadas" value={m.hoursBase ? fmtH(m.actualHours) : '—'}
                   note={m.hoursBase ? `registradas em ${plural(m.hoursBase, 'demanda', 'demandas')}` : 'sem horas registradas'} />
                 <Kpi label="Previsto × real" value={m.plannedHours > 0 ? `${fmtH(m.plannedHours)} / ${fmtH(m.plannedActual)}` : '—'}
@@ -329,8 +336,9 @@ export default function PlataformaPainel() {
             </div>
 
             <p className="text-[11px] text-steel-400">
-              Lucro = o que o cliente pagou pelos serviços feitos pela plataforma (mão de obra + peças usadas neles) − custo de compra dessas peças − valor pago ao mecânico.
-              Na OS inteira feita pela plataforma, entra a OS toda. Demandas sem OS não entram nessa conta.
+              {platformOnly
+                ? 'Lucro = o que você cobrou do cliente − valor pago ao mecânico. O valor cobrado vem do orçamento ou do que você informar em cada serviço.'
+                : 'Lucro = o que o cliente pagou pelos serviços feitos pela plataforma (mão de obra + peças usadas neles) − custo de compra dessas peças − valor pago ao mecânico. Na OS inteira feita pela plataforma, entra a OS toda. Demandas sem OS não entram nessa conta.'}
             </p>
           </>
         )}

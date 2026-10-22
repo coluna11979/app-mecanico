@@ -74,6 +74,7 @@ import AdminVip from './pages/admin/Vip';
 const WorkshopOsPrint = lazy(() => import('./pages/oficina/OsPrint'));
 const WorkshopImportar = lazy(() => import('./pages/oficina/ImportarOrcamentos'));
 const WorkshopPlataformaPainel = lazy(() => import('./pages/oficina/PlataformaPainel'));
+const WorkshopPlataformaClientes = lazy(() => import('./pages/oficina/PlataformaClientes'));
 
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminApprovals from './pages/admin/Approvals';
@@ -152,6 +153,7 @@ export default function App() {
       {/* Oficina */}
       <Route path="/oficina/dashboard" element={<ProtectedRoute allow={['workshop']}><WorkshopDashboard /></ProtectedRoute>} />
       <Route path="/oficina/plataforma/painel" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopPlataformaPainel /></Suspense></ProtectedRoute>} />
+      <Route path="/oficina/plataforma/clientes" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopPlataformaClientes /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/inicio" element={<ProtectedRoute allow={['workshop']}><WorkshopInicio /></ProtectedRoute>} />
       <Route path="/oficina/resultado" element={<ProtectedRoute allow={['workshop']}><WorkshopResultado /></ProtectedRoute>} />
       <Route path="/oficina/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopPainel /></ProtectedRoute>} />
