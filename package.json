@@ -12,6 +12,7 @@
   "dependencies": {
     "@stripe/stripe-js": "^9.4.0",
     "@supabase/supabase-js": "^2.45.4",
+    "jspdf": "^2.5.2",
     "jszip": "^3.10.1",
     "mapbox-gl": "^3.7.0",
     "qrcode": "^1.5.4",

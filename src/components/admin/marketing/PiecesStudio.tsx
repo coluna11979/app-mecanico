@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { type Audience, canvasToBlob, download } from '@/lib/brandKit';
 import {
-  type FormatId, type Message, type ThemeId, FORMATS, MESSAGES, THEMES,
+  type FormatId, type Message, type ThemeId, FORMATS, MESSAGES, SOCIAL_FORMATS, THEMES,
   buildPiecesZip, pieceFileName, renderPiece, renderPiecePng,
 } from '@/lib/brandPieces';
 
 const THEME_IDS = Object.keys(THEMES) as ThemeId[];
-const FORMAT_IDS = Object.keys(FORMATS) as FormatId[];
 const EDITS_KEY = 'kit_pecas_textos';
 
 type Edits = Record<string, Partial<Pick<Message, 'kicker' | 'title' | 'highlight' | 'bullets' | 'cta' | 'caption'>>>;
@@ -91,7 +90,7 @@ export default function PiecesStudio({ tracked }: { tracked: boolean }) {
         <div>
           <label className="label">Formato</label>
           <select className="input" value={format} onChange={e => setFormat(e.target.value as FormatId)}>
-            {FORMAT_IDS.map(id => <option key={id} value={id}>{FORMATS[id].label} · {FORMATS[id].hint}</option>)}
+            {SOCIAL_FORMATS.map(id => <option key={id} value={id}>{FORMATS[id].label} · {FORMATS[id].hint}</option>)}
           </select>
         </div>
       </div>

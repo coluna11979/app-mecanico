@@ -81,7 +81,7 @@ export const MESSAGES: Message[] = [
 
 export type ThemeId = 'grafite' | 'claro' | 'laranja' | 'impacto';
 
-interface Theme {
+export interface Theme {
   label: string;
   text: string; highlight: string; kicker: string; body: string; dot: string; muted: string;
   logo: { icon: IconVariant; t1: string; t2: string };
@@ -152,16 +152,59 @@ export const THEMES: Record<ThemeId, Theme> = {
 
 // ── Formatos ────────────────────────────────────────────────────────────────
 
-export type FormatId = 'a5' | 'post' | 'feed' | 'story';
+export type FormatId = 'post' | 'feed' | 'story' | 'a6' | 'a5' | 'display' | 'a3' | 'rollup';
 
-const mmPx = (v: number) => Math.round((v / 25.4) * 300);
+export interface Format {
+  label: string; hint: string;
+  w: number; h: number;              // pixels do arquivo (com sangria)
+  print: boolean;
+  bleed: number;                     // sangria em px
+  mm?: { w: number; h: number; bleed: number; dpi: number }; // medida final pra gráfica
+  safeTop: number; safeBottom: number;
+  tight?: boolean;                   // pouca altura: espaços menores
+  k?: number;                        // escala dos textos de apoio
+  qrScale?: number;                  // cartão do QR maior
+}
 
-export const FORMATS: Record<FormatId, { label: string; hint: string; w: number; h: number; print: boolean; bleed: number; safeTop: number; safeBottom: number }> = {
-  a5:    { label: 'Panfleto A5', hint: '148×210 mm + 3 mm de sangria, 300 dpi', w: mmPx(154), h: mmPx(216), print: true, bleed: mmPx(3), safeTop: 0, safeBottom: 0 },
-  post:  { label: 'Post quadrado', hint: '1080×1080 (Instagram / Facebook)', w: 1080, h: 1080, print: false, bleed: 0, safeTop: 0, safeBottom: 0 },
-  feed:  { label: 'Feed retrato', hint: '1080×1350 (melhor alcance no feed)', w: 1080, h: 1350, print: false, bleed: 0, safeTop: 0, safeBottom: 0 },
-  story: { label: 'Story / Status', hint: '1080×1920 (Stories, Reels, WhatsApp)', w: 1080, h: 1920, print: false, bleed: 0, safeTop: 0.1, safeBottom: 0.1 },
+/** Formato impresso: medida final em mm + sangria, na resolução indicada. */
+function printFmt(label: string, hint: string, wMm: number, hMm: number, bleedMm: number, dpi: number, extra: Partial<Format> = {}): Format {
+  const px = (v: number) => Math.round((v / 25.4) * dpi);
+  return {
+    label, hint, print: true, safeTop: 0, safeBottom: 0,
+    w: px(wMm + 2 * bleedMm), h: px(hMm + 2 * bleedMm), bleed: px(bleedMm),
+    mm: { w: wMm, h: hMm, bleed: bleedMm, dpi }, ...extra,
+  };
+}
+
+export const FORMATS: Record<FormatId, Format> = {
+  post:    { label: 'Post quadrado', hint: '1080×1080 (Instagram / Facebook)', w: 1080, h: 1080, print: false, bleed: 0, safeTop: 0, safeBottom: 0, tight: true },
+  feed:    { label: 'Feed retrato', hint: '1080×1350 (melhor alcance no feed)', w: 1080, h: 1350, print: false, bleed: 0, safeTop: 0, safeBottom: 0 },
+  story:   { label: 'Story / Status', hint: '1080×1920 (Stories, Reels, WhatsApp)', w: 1080, h: 1920, print: false, bleed: 0, safeTop: 0.1, safeBottom: 0.1, k: 1.2 },
+  a6:      printFmt('Flyer de bolso A6', '105×148 mm', 105, 148, 3, 300),
+  a5:      printFmt('Panfleto A5', '148×210 mm', 148, 210, 3, 300),
+  display: printFmt('Display de balcão', '100×150 mm', 100, 150, 3, 300),
+  a3:      printFmt('Cartaz A3', '297×420 mm', 297, 420, 3, 300),
+  rollup:  printFmt('Banner roll-up', '80×200 cm', 800, 2000, 5, 100, { k: 1.5, qrScale: 1.35 }),
 };
+
+export const SOCIAL_FORMATS: FormatId[] = ['post', 'feed', 'story'];
+
+/** Ícone + "MecânicoApp" com a altura h; devolve a largura desenhada. */
+export async function drawLogoLockup(ctx: CanvasRenderingContext2D, th: Theme, x: number, y: number, h: number) {
+  await drawIcon(ctx, th.logo.icon, x, y, h);
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${h * 0.575}px "Space Grotesk"`;
+  const lx = x + h * 1.275, ly = y + h / 2;
+  ctx.fillStyle = th.logo.t1;
+  ctx.fillText('Mecânico', lx, ly);
+  const w1 = ctx.measureText('Mecânico').width;
+  ctx.fillStyle = th.logo.t2;
+  ctx.fillText('App', lx + w1, ly);
+  const w = h * 1.275 + w1 + ctx.measureText('App').width;
+  ctx.restore();
+  return w;
+}
 
 // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -173,10 +216,10 @@ export interface PieceOptions {
   scale?: number;          // < 1 para pré-visualização rápida
 }
 
-type Token = { text: string; color: string };
+export type Token = { text: string; color: string };
 
 /** Quebra palavras coloridas em linhas que cabem em maxW. */
-function layoutTokens(ctx: CanvasRenderingContext2D, tokens: Token[], maxW: number) {
+export function layoutTokens(ctx: CanvasRenderingContext2D, tokens: Token[], maxW: number) {
   const lines: Token[][] = [];
   let line: Token[] = [];
   let width = 0;
@@ -206,8 +249,8 @@ export async function renderPiece(o: PieceOptions) {
   const u = W / 100;                                  // 1% da largura
   const B = f.bleed * s;
   const M = B + u * 8;                                // margem segura
-  const tight = o.format === 'post';                 // quadrado: menos altura, espaços menores
-  const k = o.format === 'story' ? 1.2 : 1;          // story: textos de apoio maiores
+  const tight = !!f.tight;
+  const k = f.k ?? 1;
   const top = B + Math.max(u * (tight ? 6.5 : 8), H * f.safeTop);
   const bottom = H - B - Math.max(u * (tight ? 6 : 7), H * f.safeBottom);
   const innerW = W - 2 * M;
@@ -219,18 +262,12 @@ export async function renderPiece(o: PieceOptions) {
 
   // Logo
   const logoH = u * (tight ? 7 : 8);
-  await drawIcon(ctx, th.logo.icon, M, top, logoH);
-  ctx.textBaseline = 'middle';
-  ctx.font = `700 ${u * 4.6}px "Space Grotesk"`;
-  ctx.fillStyle = th.logo.t1;
-  const lx = M + logoH + u * 2.2, ly = top + logoH / 2;
-  ctx.fillText('Mecânico', lx, ly);
-  ctx.fillStyle = th.logo.t2;
-  ctx.fillText('App', lx + ctx.measureText('Mecânico').width, ly);
-  ctx.textBaseline = 'alphabetic';
+  await drawLogoLockup(ctx, th, M, top, logoH);
 
   // Bloco de baixo (fixo no rodapé): QR no impresso, botão nas redes
-  const blockH = f.print ? u * 40 : u * (tight ? 17 : 22) * k;
+  // Peça muito alta (roll-up): QR grande centralizado com o texto embaixo
+  const tall = f.print && H / W > 2;
+  const blockH = tall ? innerW * 0.62 + u * 26 : f.print ? u * 40 * (f.qrScale ?? 1) : u * (tight ? 17 : 22) * k;
   const blockY = bottom - blockH;
 
   // Bullets: altura reservada logo acima do bloco
@@ -252,7 +289,7 @@ export async function renderPiece(o: PieceOptions) {
     ...m.title.split(/\s+/).filter(Boolean).map(t => ({ text: t, color: th.text })),
     ...m.highlight.split(/\s+/).filter(Boolean).map(t => ({ text: t, color: th.highlight })),
   ];
-  let size = u * (o.format === 'post' ? 11 : 13);
+  let size = u * (tight ? 11 : 13);
   let lines: Token[][] = [];
   for (; size > u * 4; size -= u * 0.4) {
     ctx.font = `700 ${size}px "Space Grotesk"`;
@@ -283,7 +320,21 @@ export async function renderPiece(o: PieceOptions) {
 
   const url = `${DISPLAY_DOMAIN}${SIGNUP_PATH[m.audience]}`;
 
-  if (f.print) {
+  if (tall) {
+    ctx.fillStyle = th.card;
+    roundRect(ctx, M, blockY, innerW, blockH, u * 4); ctx.fill();
+    const qrSize = Math.round(innerW * 0.62);
+    const qr = await qrCanvas(signupUrl(m.audience, o.tracked), qrSize);
+    ctx.drawImage(qr, M + (innerW - qrSize) / 2, blockY + u * 5, qrSize, qrSize);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = th.cardText;
+    ctx.font = `700 ${u * 5.6}px "Space Grotesk"`;
+    wrap(ctx, m.cta, innerW - u * 8).forEach((l, i) => ctx.fillText(l, W / 2, blockY + u * 11 + qrSize + i * u * 6.6));
+    ctx.fillStyle = th.cardUrl;
+    ctx.font = `600 ${u * 3.6}px "Inter"`;
+    ctx.fillText(url, W / 2, blockY + blockH - u * 4, innerW - u * 8);
+    ctx.textAlign = 'left';
+  } else if (f.print) {
     // Cartão com QR
     ctx.fillStyle = th.card;
     roundRect(ctx, M, blockY, innerW, blockH, u * 3); ctx.fill();
