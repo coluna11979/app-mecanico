@@ -20,7 +20,7 @@ import StackBoard from '@/components/marketplace/StackBoard';
 import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
-import { MechanicCarousel, PlatformHero, StatusCounters } from '@/components/marketplace/PlatformHome';
+import { FavoriteMechanics, PlatformHero, StatusCounters, type HomeMechanic } from '@/components/marketplace/PlatformHome';
 import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
 
 type NewJob = {
@@ -85,6 +85,8 @@ export default function WorkshopDashboard() {
   /* Nome de quem foi convidado (convite direto) — id do mecânico → nome */
   const [inviteNames, setInviteNames] = useState<Record<string, string>>({});
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
+  /** Preferidos da oficina (disponíveis ou não), para o card "Meus preferidos" */
+  const [favMechanics, setFavMechanics] = useState<(HomeMechanic & { available: boolean })[]>([]);
   const [modal, setModal]       = useState(false);
   const [stackVer, setStackVer] = useState(0);
   /** Demanda sendo avaliada na janela (sem ir para o mapa) */
@@ -136,6 +138,26 @@ export default function WorkshopDashboard() {
       .select('mechanic_id')
       .eq('workshop_id', workshopId);
     setFavorites(new Set((data ?? []).map(d => d.mechanic_id)));
+  }
+
+  // Detalhes dos preferidos (mesmo offline): o card mostra quem está disponível agora
+  useEffect(() => {
+    const ids = [...favorites];
+    if (!ids.length) { setFavMechanics([]); return; }
+    supabase.from('mechanics')
+      .select('id, rating, total_jobs, is_available, skills, profile:profiles!inner(full_name, status, avatar_url)')
+      .in('id', ids).eq('profile.status', 'approved')
+      .then(({ data }) => setFavMechanics((data ?? []).map((m: any) => ({
+        id: m.id, name: m.profile.full_name, rating: Number(m.rating ?? 0), total_jobs: m.total_jobs ?? 0,
+        skills: m.skills ?? [], avatar: m.profile.avatar_url ?? null, available: !!m.is_available,
+      }))));
+  }, [favorites]);
+
+  /** "Chamar" num preferido: Nova demanda já como convite direto para ele */
+  function openInvite(mechanicId: string) {
+    if (hasPendingFees) return;
+    openCreateModal();
+    setMode('direct'); setPickedMechanic(mechanicId);
   }
 
   async function toggleFavorite(mechanicId: string) {
@@ -621,8 +643,11 @@ export default function WorkshopDashboard() {
       <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact
         storageKey={currentWorkshop?.id ? `oficina_atalhos_open:${currentWorkshop.id}` : null} />
 
-      {/* Quem está disponível agora: foto, nota, especialidades */}
-      <div className="lg:hidden"><MechanicCarousel mechanics={mechanics} /></div>
+      {/* Meus preferidos (recolhido): quem a oficina marcou com ⭐, com "Chamar" direto */}
+      <div className="lg:hidden">
+        <FavoriteMechanics mechanics={favMechanics} onCall={openInvite} disabled={shopLoading || hasPendingFees}
+          storageKey={currentWorkshop?.id ? `oficina_preferidos_open:${currentWorkshop.id}` : null} />
+      </div>
 
       {/* Números do período (gasto, tempos, ranking) ficam no Painel da Plataforma: esta é a tela de trabalho */}
 
@@ -879,7 +904,8 @@ export default function WorkshopDashboard() {
       {/* Coluna lateral (só no computador) */}
       <aside className="hidden lg:block space-y-4 sticky top-4">
         {!firstTime && counters(true)}
-        <MechanicCarousel mechanics={mechanics} list />
+        <FavoriteMechanics mechanics={favMechanics} onCall={openInvite} disabled={shopLoading || hasPendingFees} list
+          storageKey={currentWorkshop?.id ? `oficina_preferidos_open:${currentWorkshop.id}` : null} />
       </aside>
       </div>
 
@@ -1166,8 +1192,8 @@ export default function WorkshopDashboard() {
                     value={mechSearch} onChange={e => setMechSearch(e.target.value)} />
                   {pickedMechanic && !filteredMechanics.some(m => m.id === pickedMechanic) && (
                     <div className="mb-2 rounded-xl border-2 border-brand-500 bg-brand-50 p-3">
-                      <div className="font-semibold text-sm">✓ {inviteNames[pickedMechanic] ?? 'Mecânico escolhido'}</div>
-                      <div className="text-xs text-steel-600">fez esse serviço com você · recebe o convite direto</div>
+                      <div className="font-semibold text-sm">✓ {inviteNames[pickedMechanic] ?? favMechanics.find(m => m.id === pickedMechanic)?.name ?? 'Mecânico escolhido'}</div>
+                      <div className="text-xs text-steel-600">recebe o convite direto</div>
                     </div>
                   )}
                   <div className="space-y-2 max-h-44 overflow-y-auto">

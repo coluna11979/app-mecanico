@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useStoredOpen } from '@/hooks/useStoredOpen';
 
 /** Mecânico disponível com o que o carrossel mostra (foto e especialidades são opcionais) */
 export type HomeMechanic = {
@@ -182,6 +183,108 @@ export function MechanicCarousel({ mechanics, list }: {
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+/**
+ * ⭐ Meus preferidos — os mecânicos que a oficina marcou com estrela, recolhido como o Histórico.
+ * Mostra se cada um está disponível agora e "Chamar" já abre a demanda como convite direto para ele.
+ * `list` = coluna lateral do computador (lista vertical).
+ */
+export function FavoriteMechanics({ mechanics, storageKey, onCall, disabled, list }: {
+  mechanics: (HomeMechanic & { available: boolean })[];
+  storageKey: string | null;
+  onCall: (mechanicId: string) => void;
+  disabled?: boolean;
+  list?: boolean;
+}) {
+  const [open, toggle] = useStoredOpen(storageKey);
+  const online = mechanics.filter(m => m.available).length;
+  const sorted = [...mechanics].sort((a, b) => Number(b.available) - Number(a.available) || b.rating - a.rating);
+
+  return (
+    <section className={`${list ? '' : 'mb-5'} rounded-2xl bg-white ring-1 ring-steel-200/70 overflow-hidden`}>
+      <button type="button" onClick={toggle} aria-expanded={open}
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-steel-50 transition">
+        <span className="text-xl shrink-0" aria-hidden>⭐</span>
+        <span className="flex-1 min-w-0">
+          <span className="block font-bold text-steel-900">Meus preferidos{mechanics.length ? ` · ${mechanics.length}` : ''}</span>
+          <span className="block text-xs text-steel-500 mt-0.5 truncate">
+            {!mechanics.length ? 'Marque ⭐ nos mecânicos em quem você confia'
+              : online ? `${online} ${online === 1 ? 'disponível' : 'disponíveis'} agora` : 'Nenhum disponível agora'}
+          </span>
+        </span>
+        <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Ocultar' : 'Ver'}</span>
+        <span className={`text-steel-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-steel-100 pt-3 pb-4">
+          {!mechanics.length ? (
+            <div className="px-4 text-sm text-steel-600">
+              Toque na ⭐ de um mecânico em <Link to="/oficina/buscar" className="font-semibold text-brand-600 underline">Buscar profissionais</Link> ou
+              ao escolher "Um mecânico" na demanda. Ele aparece aqui para chamar com um toque.
+            </div>
+          ) : (
+            <ul className={list ? 'px-4 divide-y divide-steel-100' : 'flex gap-3 overflow-x-auto snap-x snap-mandatory px-4 pb-1 [scrollbar-width:none]'}>
+              {sorted.map(m => {
+                const skills = (m.skills ?? []).filter(Boolean).slice(0, list ? 2 : 3);
+                const avatar = (size: string, text: string) => (
+                  <span className="relative shrink-0">
+                    {m.avatar
+                      ? <img src={m.avatar} alt="" className={`${size} rounded-full object-cover bg-steel-100`} loading="lazy" />
+                      : <span className={`${size} rounded-full bg-brand-50 grid place-items-center ${text} font-bold text-brand-700`}>{initials(m.name)}</span>}
+                    <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full ring-2 ring-white ${m.available ? 'bg-signal-500' : 'bg-steel-300'}`} aria-hidden />
+                  </span>
+                );
+                const call = (
+                  <button type="button" disabled={disabled} onClick={() => onCall(m.id)}
+                    className="shrink-0 h-10 px-3 rounded-lg bg-brand-500 text-white text-xs font-bold active:scale-95 hover:bg-brand-600 disabled:opacity-50">
+                    Chamar
+                  </button>
+                );
+                if (list) return (
+                  <li key={m.id} className="flex items-center gap-3 py-2.5">
+                    {avatar('h-10 w-10', 'text-sm')}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-steel-900 truncate">{firstLast(m.name)}</span>
+                      <span className="block text-xs text-steel-600 truncate">
+                        {m.available ? 'Disponível' : 'Offline'} · {m.rating > 0 ? <><span className="text-amber-500">★</span> {m.rating.toFixed(1).replace('.', ',')}</> : 'Novo'}
+                      </span>
+                    </span>
+                    {call}
+                  </li>
+                );
+                return (
+                  <li key={m.id} className="snap-start shrink-0 w-[230px] rounded-2xl ring-1 ring-steel-200/70 p-3.5">
+                    <div className="flex items-center gap-3">
+                      {avatar('h-14 w-14', 'text-base')}
+                      <div className="min-w-0">
+                        <div className="font-semibold text-steel-900 text-[15px] leading-tight truncate">{firstLast(m.name)}</div>
+                        <div className="text-xs text-steel-600 mt-0.5">
+                          {m.rating > 0
+                            ? <><span className="text-amber-500">★</span> {m.rating.toFixed(1).replace('.', ',')} <span className="text-steel-500">({m.total_jobs} {m.total_jobs === 1 ? 'serviço' : 'serviços'})</span></>
+                            : 'Novo na plataforma'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-steel-600 mt-2.5 min-h-[32px] leading-snug line-clamp-2">
+                      {skills.length ? skills.join(' · ') : 'Mecânica geral'}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${m.available ? 'bg-signal-50 text-signal-700' : 'bg-steel-100 text-steel-600'}`}>
+                        {m.available ? 'Disponível' : 'Offline'}
+                      </span>
+                      {call}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
     </section>
   );
 }
