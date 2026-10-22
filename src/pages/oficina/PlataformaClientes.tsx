@@ -1,11 +1,19 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { jobDraftKey, jobDraftOriginKey } from '@/lib/callMechanic';
 import { formatBRL } from '@/lib/payment';
+import CatalogTab from '@/components/plataforma/CatalogTab';
+import QuotesTab from '@/components/plataforma/QuotesTab';
+
+type Tab = 'clientes' | 'orcamentos' | 'servicos' | 'pecas';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'clientes', label: '👤 Clientes' }, { key: 'orcamentos', label: '🧾 Orçamentos' },
+  { key: 'servicos', label: '🔧 Serviços' }, { key: 'pecas', label: '📦 Peças' },
+];
 
 type Vehicle = { id: string; make: string; model: string; year: number | null; plate: string; color: string | null };
 type Customer = { id: string; full_name: string; phone: string | null; notes: string | null; created_at: string; vehicles: Vehicle[] };
@@ -29,9 +37,10 @@ type CarForm = { make: string; model: string; year: string; plate: string; color
 const EMPTY_CAR: CarForm = { make: '', model: '', year: '', plate: '', color: '' };
 
 /**
- * 📇 Meus clientes — cadastro simples de clientes e carros para a oficina que usa só o módulo Plataforma.
- * Grava nas mesmas tabelas do módulo Clientes (customers / vehicles): se a oficina ligar Clientes ou OS
- * depois, os cadastros já estão lá. "Chamar mecânico" abre a Nova demanda com o carro preenchido.
+ * 📇 Meus cadastros — o básico para a oficina que usa só o módulo Plataforma: clientes e carros,
+ * orçamentos, serviços e peças salvos. Grava nas mesmas tabelas dos módulos completos (Clientes, OS,
+ * Tabela de serviços, Peças): se a oficina ligar esses módulos depois, os cadastros já estão lá.
+ * "Chamar mecânico" (no carro ou no orçamento) abre a Nova demanda já preenchida.
  */
 export default function PlataformaClientes() {
   const { currentWorkshop } = useAuth();
@@ -42,6 +51,11 @@ export default function PlataformaClientes() {
   const [openId, setOpenId] = useState<string | null>(null);
   /** Formulário: novo cliente, editar cliente ou novo carro de um cliente */
   const [form, setForm] = useState<null | { mode: 'new' | 'edit' | 'car'; id?: string }>(null);
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = TABS.some(t => t.key === params.get('aba')) ? params.get('aba') as Tab : 'clientes';
+  const goTab = (t: Tab) => setParams(p => { p.set('aba', t); return p; }, { replace: true });
+  /** Ficha do cliente → "Novo orçamento" já com ele */
+  const [quoteFor, setQuoteFor] = useState<{ customerId: string; vehicleId: string | null } | null>(null);
 
   async function load() {
     if (!wid) return;
@@ -81,13 +95,30 @@ export default function PlataformaClientes() {
   return (
     <WorkshopLayout>
       <div className="max-w-3xl mx-auto space-y-4">
-        <div className="flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="font-display text-2xl font-bold text-steel-900">📇 Meus clientes</h1>
-            <p className="text-sm text-steel-500 mt-0.5">
-              {list == null ? 'Carregando…' : `${list.length} ${list.length === 1 ? 'cliente' : 'clientes'} · busque por nome, telefone ou placa`}
-            </p>
-          </div>
+        <h1 className="font-display text-2xl font-bold text-steel-900">📇 Meus cadastros</h1>
+
+        {/* Abas: rolam de lado no celular */}
+        <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] -mx-1 px-1">
+          {TABS.map(t => (
+            <button key={t.key} type="button" onClick={() => goTab(t.key)}
+              className={`shrink-0 h-10 px-4 rounded-full text-sm font-semibold border transition ${
+                tab === t.key ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-700 border-steel-200'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'orcamentos' && wid && (
+          <QuotesTab wid={wid} customers={list ?? []} startWith={quoteFor} onStarted={() => setQuoteFor(null)} />
+        )}
+        {tab === 'servicos' && wid && <CatalogTab wid={wid} kind="service" />}
+        {tab === 'pecas' && wid && <CatalogTab wid={wid} kind="part" />}
+
+        {tab === 'clientes' && (<>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-steel-500 min-w-0">
+            {list == null ? 'Carregando…' : `${list.length} ${list.length === 1 ? 'cliente' : 'clientes'} · busque por nome, telefone ou placa`}
+          </p>
           <button type="button" onClick={() => setForm({ mode: 'new' })}
             className="shrink-0 h-11 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.98] hover:bg-brand-600">
             ＋ Novo cliente
@@ -126,10 +157,12 @@ export default function PlataformaClientes() {
             )}
           </ul>
         )}
+        </>)}
       </div>
 
       {current && !form && (
         <CustomerSheet c={current} onClose={() => setOpenId(null)} onCall={callFor}
+          onQuote={v => { setOpenId(null); setQuoteFor({ customerId: current.id, vehicleId: v?.id ?? null }); goTab('orcamentos'); }}
           onEdit={() => setForm({ mode: 'edit', id: current.id })} onAddCar={() => setForm({ mode: 'car', id: current.id })} />
       )}
 
@@ -143,8 +176,9 @@ export default function PlataformaClientes() {
 }
 
 /** Ficha do cliente: carros (cada um com "Chamar mecânico") e as demandas já feitas para ele */
-function CustomerSheet({ c, onClose, onCall, onEdit, onAddCar }: {
-  c: Customer; onClose: () => void; onCall: (c: Customer, v: Vehicle | null) => void; onEdit: () => void; onAddCar: () => void;
+function CustomerSheet({ c, onClose, onCall, onQuote, onEdit, onAddCar }: {
+  c: Customer; onClose: () => void; onCall: (c: Customer, v: Vehicle | null) => void;
+  onQuote: (v: Vehicle | null) => void; onEdit: () => void; onAddCar: () => void;
 }) {
   const [jobs, setJobs] = useState<CustomerJob[] | null>(null);
   useEffect(() => {
@@ -175,6 +209,8 @@ function CustomerSheet({ c, onClose, onCall, onEdit, onAddCar }: {
             )}
             <button type="button" onClick={onEdit} className="flex-1 h-11 rounded-xl border border-steel-200 text-steel-800 text-sm font-bold">✏️ Editar</button>
           </div>
+          <button type="button" onClick={() => onQuote(c.vehicles.length === 1 ? c.vehicles[0] : null)}
+            className="w-full h-11 rounded-xl border border-brand-300 text-brand-700 text-sm font-bold">🧾 Novo orçamento</button>
 
           {c.notes && <p className="text-sm text-steel-700 bg-steel-50 rounded-xl px-3 py-2 whitespace-pre-line">{c.notes}</p>}
 

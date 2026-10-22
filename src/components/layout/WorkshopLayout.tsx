@@ -81,7 +81,7 @@ const SECTIONS: NavGroup[] = [
   { key: 'plataforma', title: 'MecânicoApp', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
     { to: '/oficina/plataforma/painel', icon: '📊', label: 'Painel da plataforma' },
-    { to: '/oficina/plataforma/clientes', icon: '📇', label: 'Meus clientes' },
+    { to: '/oficina/plataforma/clientes', icon: '📇', label: 'Clientes e orçamentos' },
     { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar profissionais' },
     { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens da plataforma' },
   ] },
@@ -504,7 +504,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   // Sem OS (pacote "Só mecânicos") o Início, que é todo de OS, some e a entrada vira as Demandas
   const platformOnly = isPlatformOnly(mods.disabled);
   const allowed = (to: string) => !(platformOnly && to === HOME)
-    // Meus clientes é o cadastro simples de quem não tem o módulo Clientes: com ele ligado, usa o completo
+    // Meus cadastros é o básico de quem não tem o módulo Clientes: com ele ligado, usa o completo
     && !(to === '/oficina/plataforma/clientes' && !mods.disabled.includes('clientes'))
     && moduleAllows(mods.disabled, to) && (!role || sessionAllows(op.session!, to));
   // WhatsApp: conversas não lidas no menu + som de mensagem nova (só para quem pode abrir o Inbox)
