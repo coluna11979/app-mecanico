@@ -10,7 +10,6 @@ import TeamCostCompare, { CostBreakdown } from '@/components/finance/TeamCostCom
 const MAX_DAYS = 93;
 const br = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 const brLong = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
-const brShort = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
 
 type Inputs = Awaited<ReturnType<typeof loadTeamCostInputs>>;
 
@@ -77,7 +76,6 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
   const pctOfRevenue = cost && cost.revenue > 0 ? (cost.total / cost.revenue) * 100 : null;
   const perHour = cost && cost.workedMin > 0 ? cost.total / (cost.workedMin / 60) : null;
   const use = cost && cost.productiveMin != null && cost.workedMin > 0 ? (cost.productiveMin / cost.workedMin) * 100 : null;
-  const maxDay = Math.max(1, ...(all?.days ?? []).map(d => d.total));
 
   return (
     <div className="card">
@@ -174,29 +172,6 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
               <strong className="tabular-nums">{brl(cost.total)}</strong>
             </li>
           </ul>
-
-          {!focused && all && all.days.length > 1 && (
-            <div className="mt-4">
-              <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-0.5">Dia a dia</div>
-              <p className="text-[11px] text-steel-400 mb-2">Toque em um dia para ver o custo só daquele dia.</p>
-              <ul className="space-y-1">
-                {all.days.filter(d => d.workedMin > 0 || d.total > 0).map(d => (
-                  <li key={d.day}>
-                    <button onClick={() => setFocus(d.day)} className="w-full text-left rounded-xl px-2 py-1.5 hover:bg-steel-50 transition">
-                      <div className="flex items-baseline justify-between gap-3 text-sm">
-                        <span className="capitalize text-steel-700">{brShort(d.day)}
-                          <span className="text-steel-400 text-xs"> · {fmtHours(d.workedMin)} da equipe{d.commission > 0 ? ` · comissão ${brl(d.commission)}` : ''}</span></span>
-                        <strong className="tabular-nums">{brl(d.total)}</strong>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-steel-100 mt-1 overflow-hidden">
-                        <div className="h-full rounded-full bg-brand-500" style={{ width: `${(d.total / maxDay) * 100}%` }} />
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           {cost.missing.length > 0 && (
             <p className="text-xs bg-pending-50 border border-pending-200 text-pending-900 rounded-xl px-3 py-2 mt-3">
