@@ -124,6 +124,9 @@ export default function MechanicLayout({ children }: { children: ReactNode }) {
     <div className="dark min-h-screen bg-steel-900 text-steel-100 flex flex-col">
       {/* ── Header ── (Sair foi pro Perfil: no celular ficava colado no sino) */}
       <header className="sticky top-0 z-30 bg-steel-900/95 backdrop-blur border-b border-steel-800 shrink-0">
+        {/* iPhone: a barra do relógio é transparente e cobria o topo (o botão de tema sumia).
+            Esta faixa ocupa a área dela e fica sempre escura para o relógio (branco) aparecer. */}
+        <div className="h-[env(safe-area-inset-top)]" style={{ background: '#0B1117' }} />
         <div className="px-4 h-14 flex items-center justify-between">
           <Logo size={28} light={theme === 'dark'} />
           <div className="flex items-center">

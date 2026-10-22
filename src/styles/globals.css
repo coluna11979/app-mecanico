@@ -48,6 +48,14 @@
   html.mech-light [class*="from-brand"] {
     --white: 255 255 255;
   }
+  /* Em cima do mapa (que é escuro nos dois modos) as cores continuam as do modo escuro */
+  html.mech-light .mech-keep-dark {
+    --steel-50: 245 247 250;  --steel-100: 232 236 241; --steel-200: 203 211 221;
+    --steel-300: 154 166 182; --steel-400: 107 120 137; --steel-500: 71 85 103;
+    --steel-600: 51 65 79;    --steel-700: 34 44 55;    --steel-800: 21 28 36;
+    --steel-900: 11 17 23;
+    --white: 255 255 255;
+  }
   /* Os mesmos chips com fundo translúcido (bg-brand-500/15) não são fundo cheio: texto segue escuro */
   html.mech-light [class*="bg-brand-500/"], html.mech-light [class*="bg-signal-500/"],
   html.mech-light [class*="bg-alert-500/"], html.mech-light [class*="bg-pending-500/"] {

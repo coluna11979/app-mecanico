@@ -237,7 +237,8 @@ export default function MechanicMapa() {
   return (
     <MechanicLayout>
       {/* The map fills remaining viewport — overflow-hidden prevents scroll from pb-24 on main */}
-      <div className="relative overflow-hidden" style={{ height: 'calc(100dvh - 56px - 64px)' }}>
+      <div className="mech-keep-dark relative overflow-hidden"
+        style={{ height: 'calc(100dvh - 56px - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }}>
 
         {/* Mapbox canvas */}
         {/* Posição inline: o mapbox-gl.css põe `position: relative` em .mapboxgl-map
@@ -246,7 +247,7 @@ export default function MechanicMapa() {
 
         {/* Top badge */}
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-          <div className="bg-steel-950/90 backdrop-blur text-white text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-steel-700/50">
+          <div className="bg-steel-900/90 backdrop-blur text-white text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-steel-700/50">
             <span className="h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
             {jobsWithLocation.length} job{jobsWithLocation.length !== 1 ? 's' : ''} no mapa
           </div>
