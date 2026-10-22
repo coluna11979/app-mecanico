@@ -33,19 +33,21 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
   const first = days[0], last = days[days.length - 1];
   const key = `${first}|${last}`;
 
+  /** Nasce recolhido; os dados só são buscados quando o gestor abre o card */
+  const [open, setOpen] = useState(false);
   const [data, setData] = useState<{ key: string; hd: HalfData; inp: Inputs } | null>(null);
   /** Dia escolhido na lista "Dia a dia": mostra só o custo daquele dia */
   const [focus, setFocus] = useState<string | null>(null);
   useEffect(() => { setFocus(null); }, [key]);
   useEffect(() => {
-    if (!first || tooLong) return;
+    if (!open || !first || tooLong) return;
     let alive = true;
     const from = new Date(`${first}T00:00:00`).toISOString();
     const to = new Date(new Date(`${last}T00:00:00`).getTime() + 86400000).toISOString();
     Promise.all([loadRangeData(wid, from, to), loadTeamCostInputs(wid, first, last)])
       .then(([hd, inp]) => { if (alive) setData({ key, hd, inp }); });
     return () => { alive = false; };
-  }, [wid, key, first, last, tooLong]);
+  }, [wid, key, first, last, tooLong, open]);
 
   const { settings, save } = useCostSettings(wid);
   const cfg = useMemo(() => cfgOf(settings ?? DEFAULT_SETTINGS), [settings]);
@@ -78,9 +80,15 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
   const use = cost && cost.productiveMin != null && cost.workedMin > 0 ? (cost.productiveMin / cost.workedMin) * 100 : null;
 
   return (
-    <div className="card">
-      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">👷 Custo da equipe {single ? 'no dia' : 'no período'}</div>
-      <p className="text-[11px] text-steel-400 mb-2">Mecânicos e quem ganha só a % do faturamento (ex.: gerente que atua na operação), pelas horas trabalhadas · segue o período escolhido no topo · informativo (não entra no Resultado)</p>
+    <details className="card group" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
+      <summary className="cursor-pointer list-none flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">👷 Custo da equipe {single ? 'no dia' : 'no período'}</div>
+          <p className="text-[11px] text-steel-400">Mecânicos e quem ganha só a % do faturamento (ex.: gerente que atua na operação), pelas horas trabalhadas · segue o período escolhido no topo · informativo (não entra no Resultado)</p>
+        </div>
+        <span className="text-steel-400 group-open:rotate-90 transition shrink-0">›</span>
+      </summary>
+      <div className="mt-3">
       {focused && (
         <button onClick={() => setFocus(null)} className="text-xs font-semibold text-brand-700 hover:underline mb-1">‹ Voltar ao período {br(first)} a {br(last)}</button>
       )}
@@ -207,6 +215,7 @@ export default function TeamCostDay({ wid, range, os, items }: { wid: string; ra
           </p>
         </>
       )}
-    </div>
+      </div>
+    </details>
   );
 }
