@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { brl } from '@/lib/cash';
 import { loadCallParams, saveJobDraft, suggestPay } from '@/lib/callMechanic';
+import { useModuleAllows } from '@/lib/modules';
 
 type StackItem = {
   id: string; service_order_id: string; description: string; quantity: number; unit_price: number;
@@ -39,6 +40,9 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
   const [limit, setLimit] = useState(5);
   /** Serviço com o menu "o que fazer" aberto */
   const [menu, setMenu] = useState<Card | null>(null);
+  /** Sem o módulo OS, o serviço veio de um orçamento (Clientes e orçamentos) */
+  const canOs = useModuleAllows()('/oficina/os');
+  const osWord = canOs ? 'OS' : 'Orçamento';
 
   const load = useCallback(async () => {
     const [os, av] = await Promise.all([
@@ -113,7 +117,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
     if (!error) await supabase.from('service_orders').update({ executor: null }).eq('id', c.osId!).eq('workshop_id', wid).eq('executor', 'platform');
     setBusy(false);
     if (error) return toast.error('Não foi possível desempilhar: ' + error.message);
-    toast.success(`Voltou para a OS nº ${osNum(c.number, c.osId!)}: a equipe faz`);
+    toast.success(`Voltou para ${canOs ? 'a OS' : 'o orçamento'} nº ${osNum(c.number, c.osId!)}: a equipe faz`);
     move(c.key, 'stack');
     setMenu(null);
     load();
@@ -141,15 +145,15 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
       ...inSearch.flatMap(c => (c.kind === 'free'
         ? [`• ${c.title.trim()}${c.car ? ` (${c.car})` : ''}${c.free!.description.trim() ? ` — ${c.free!.description.trim()}` : ''}`]
         : [
-            many ? `\nVeículo${c.car ? `: ${c.car}` : ''} (OS nº ${osNum(c.number, c.osId!)})` : '',
+            many ? `\nVeículo${c.car ? `: ${c.car}` : ''} (${osWord} nº ${osNum(c.number, c.osId!)})` : '',
             ...c.items.map(i => `• ${i.description.trim()}${i.quantity > 1 ? ` (${i.quantity}x)` : ''}`),
           ])),
       !many && osCards.length === 1 && osCards[0].car ? `\nVeículo: ${osCards[0].car}` : '',
-      !many && osCards.length === 1 ? `Referência: OS nº ${osNum(osCards[0].number, osCards[0].osId!)}` : '',
+      !many && osCards.length === 1 ? `Referência: ${osWord} nº ${osNum(osCards[0].number, osCards[0].osId!)}` : '',
     ].filter(l => l !== '').join('\n');
     const hours = osCards.reduce((a, c) => a + c.items.length, 0)
       + freeCards.reduce((a, c) => a + (c.free!.hours ?? 1), 0);
-    saveJobDraft(wid, many ? `${inSearch.length} serviços empilhados` : osCards.length ? `OS nº ${osNum(osCards[0].number, osCards[0].osId!)}` : 'serviço empilhado', {
+    saveJobDraft(wid, many ? `${inSearch.length} serviços empilhados` : osCards.length ? `${osWord} nº ${osNum(osCards[0].number, osCards[0].osId!)}` : 'serviço empilhado', {
       serviceOrderId: osCards[0]?.osId ?? '', serviceOrderIds: osCards.length ? osCards.map(c => c.osId!) : undefined,
       itemIds: osCards.flatMap(c => c.items.map(i => i.id)),
       stackedServiceIds: freeCards.map(c => c.free!.id),
@@ -204,7 +208,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
                 ? (c.items.length === 1 ? c.items[0].description : `${c.items[0].description} + ${c.items.length - 1}`)
                 : c.title;
               const sub = [brl(c.labor), ...(c.kind === 'os'
-                ? [`OS nº ${osNum(c.number, c.osId!)}`, c.car]
+                ? [`${osWord} nº ${osNum(c.number, c.osId!)}`, c.car]
                 : [c.car ? `🚗 ${c.car}` : '', c.free!.hours ? `~${String(c.free!.hours).replace('.', ',')}h` : ''])].filter(Boolean).join(' · ');
               return (
                 <li key={c.key} className={`flex items-center gap-3 px-4 py-3 ${on ? 'bg-brand-50/60' : ''}`}>
@@ -268,7 +272,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
                 {menu.kind === 'os' ? (menu.items.length === 1 ? menu.items[0].description : `${menu.items[0].description} + ${menu.items.length - 1}`) : menu.title}
               </div>
               <div className="text-xs text-steel-600 mt-0.5">
-                {[brl(menu.labor), menu.kind === 'os' ? `OS nº ${osNum(menu.number, menu.osId!)}` : '', menu.car].filter(Boolean).join(' · ')}
+                {[brl(menu.labor), menu.kind === 'os' ? `${osWord} nº ${osNum(menu.number, menu.osId!)}` : '', menu.car].filter(Boolean).join(' · ')}
               </div>
             </div>
             {([
@@ -286,7 +290,7 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
             ))}
             {menu.kind === 'os' && (
               <p className="text-xs text-steel-500 px-1 pt-1">
-                Para cancelar um serviço da OS, <Link to={`/oficina/os/${menu.osId}`} className="font-semibold text-brand-600 underline">abra a OS nº {osNum(menu.number, menu.osId!)}</Link>.
+                Para cancelar um serviço {canOs ? 'da OS' : 'do orçamento'}, <Link to={canOs ? `/oficina/os/${menu.osId}` : '/oficina/plataforma/clientes?aba=orcamentos'} className="font-semibold text-brand-600 underline">abra {canOs ? 'a OS' : 'o orçamento'} nº {osNum(menu.number, menu.osId!)}</Link>.
               </p>
             )}
           </div>

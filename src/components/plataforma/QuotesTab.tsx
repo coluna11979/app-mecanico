@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { brl, moneyStr, parseMoney } from '@/lib/cash';
-import { jobDraftKey, jobDraftOriginKey } from '@/lib/callMechanic';
+import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import { catalogLabel, loadCatalog, type CatalogItem } from './CatalogTab';
 
 /**
@@ -16,7 +16,10 @@ export type QuoteCustomer = {
   id: string; full_name: string; phone: string | null;
   vehicles: { id: string; make: string; model: string; year: number | null; plate: string; color: string | null }[];
 };
-type QuoteItem = { id: string; kind: 'labor' | 'part'; description: string; quantity: number; unit_price: number };
+type QuoteItem = {
+  id: string; kind: 'labor' | 'part'; description: string; quantity: number; unit_price: number;
+  stacked_at: string | null; platform_job_id: string | null;
+};
 type Quote = {
   id: string; number: number | null; title: string; status: string; quote_status: string | null; price: number; created_at: string;
   customer_id: string | null; vehicle_id: string | null; items: QuoteItem[];
@@ -48,7 +51,7 @@ export default function QuotesTab({ wid, customers, startWith, onStarted }: {
 
   async function load() {
     const { data, error } = await supabase.from('service_orders')
-      .select('id, number, title, status, quote_status, price, created_at, customer_id, vehicle_id, items:service_order_items(id, kind, description, quantity, unit_price)')
+      .select('id, number, title, status, quote_status, price, created_at, customer_id, vehicle_id, items:service_order_items(id, kind, description, quantity, unit_price, stacked_at, platform_job_id)')
       .eq('workshop_id', wid).in('status', QUOTE_STATUSES).order('created_at', { ascending: false }).limit(200);
     if (error) { toast.error('Não foi possível carregar os orçamentos: ' + error.message); return; }
     // "cancelled" só conta como orçamento quando foi recusado pelo cliente
@@ -91,6 +94,9 @@ export default function QuotesTab({ wid, customers, startWith, onStarted }: {
                   <span className="shrink-0 text-right">
                     <span className="block font-bold text-steel-900">{brl(Number(q.price))}</span>
                     <span className={`inline-block mt-0.5 text-[11px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                    {q.items.some(i => i.kind === 'labor' && i.stacked_at && !i.platform_job_id) && (
+                      <span className="block text-[11px] font-semibold text-brand-700 mt-0.5">📚 Empilhado</span>
+                    )}
                   </span>
                 </button>
               </li>
@@ -122,6 +128,20 @@ function QuoteSheet({ wid, q, customer, onClose, onChanged }: {
   const items = [...q.items].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'labor' ? -1 : 1));
   const labor = items.filter(i => i.kind === 'labor');
   const phone = onlyDigits(customer?.phone ?? '');
+  /** Serviços que ainda não foram para uma demanda */
+  const free = labor.filter(i => !i.platform_job_id);
+  const stacked = free.length > 0 && free.every(i => i.stacked_at);
+
+  /** Guarda os serviços nos Empilhados (Demandas): juntar com outros e chamar um mecânico só depois */
+  async function stack() {
+    if (!free.length) return toast.error('O orçamento não tem serviço (mão de obra) para empilhar.');
+    setBusy(true);
+    const { error } = await markPlatformItems(wid, [q.id], free.map(i => i.id), { stack: true });
+    setBusy(false);
+    if (error) return toast.error('Não foi possível empilhar: ' + error.message);
+    toast.success(`${free.length === 1 ? 'Serviço empilhado' : `${free.length} serviços empilhados`} 📚 — veja em Demandas › Empilhados`);
+    onChanged();
+  }
 
   function whatsappText() {
     const first = customer?.full_name.trim().split(/\s+/)[0];
@@ -209,10 +229,17 @@ function QuoteSheet({ wid, q, customer, onClose, onChanged }: {
               <button type="button" disabled={busy} onClick={() => setStatus(false)} className="h-11 rounded-xl border border-steel-200 text-steel-700 text-sm font-bold">✕ Não aprovado</button>
             </div>
           )}
-          {q.status !== 'cancelled' && (
-            <button type="button" disabled={busy} onClick={callMechanic}
-              className="w-full h-12 rounded-xl bg-brand-500 text-white text-sm font-bold">⚡ Chamar mecânico para este serviço</button>
+          {q.status !== 'cancelled' && free.length > 0 && (
+            <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+              <button type="button" disabled={busy || stacked} onClick={stack}
+                className="h-12 rounded-xl border-2 border-brand-300 text-brand-700 text-sm font-bold disabled:opacity-60">
+                {stacked ? '📚 Empilhado' : '📚 Empilhar'}
+              </button>
+              <button type="button" disabled={busy} onClick={callMechanic}
+                className="h-12 rounded-xl bg-brand-500 text-white text-sm font-bold">⚡ Chamar mecânico</button>
+            </div>
           )}
+          {stacked && <p className="text-xs text-steel-500 text-center">Está nos Empilhados (Demandas): junte com outros e chame um mecânico só.</p>}
           <button type="button" onClick={onClose} className="w-full h-10 text-sm font-semibold text-steel-600">Fechar</button>
         </div>
       </div>
