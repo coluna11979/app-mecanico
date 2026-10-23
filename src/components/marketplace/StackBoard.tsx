@@ -5,6 +5,7 @@ import { toast } from '@/components/ui/Toast';
 import { brl } from '@/lib/cash';
 import { loadCallParams, saveJobDraft, suggestPay } from '@/lib/callMechanic';
 import { useModuleAllows } from '@/lib/modules';
+import { IconChevronDown, IconLayers } from '@/components/mecanico/icons';
 
 type StackItem = {
   id: string; service_order_id: string; description: string; quantity: number; unit_price: number;
@@ -193,22 +194,22 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
   const shown = cards.slice(0, limit);
 
   return (
-    <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 overflow-hidden">
+    <section className="mb-3 rounded-xl bg-white border border-steel-200 overflow-hidden">
       {/* Resumo: um toque abre a lista */}
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
         className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-steel-50">
-        <span className="h-10 w-10 shrink-0 rounded-xl bg-brand-50 grid place-items-center text-xl" aria-hidden>📚</span>
+        <IconLayers className="w-5 h-5 shrink-0 text-steel-400" />
         <span className="flex-1 min-w-0">
-          <span className="block font-bold text-steel-900 text-[15px] leading-tight">
-            {cards.length} {cards.length === 1 ? 'serviço empilhado' : 'serviços empilhados'} · {brl(allTotal)}
+          <span className="flex items-center gap-2">
+            <span className="font-semibold text-steel-900">Empilhados</span>
+            <span className="text-xs font-semibold text-steel-500 tabular-nums">{cards.length}</span>
+            <span className="ml-auto font-display font-bold text-steel-900 tabular-nums">{brl(allTotal)}</span>
           </span>
-          <span className="block text-xs text-steel-600 mt-0.5">
+          <span className="block text-xs text-steel-500 mt-0.5 truncate">
             {open ? 'Envie um, ou marque vários para um mecânico fazer junto' : 'Junte vários para um mecânico só e pague menos'}
           </span>
         </span>
-        <span className={`shrink-0 text-sm font-semibold text-brand-600 ${open ? '' : 'whitespace-nowrap'}`}>
-          {open ? 'Fechar ▲' : 'Ver e juntar ▼'}
-        </span>
+        <IconChevronDown className={`w-4 h-4 text-steel-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (

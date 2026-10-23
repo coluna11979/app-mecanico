@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useStoredOpen } from '@/hooks/useStoredOpen';
+import { Logo } from '@/components/Logo';
+import { IconChevronDown, IconPlus, IconStar } from '@/components/mecanico/icons';
 
 /** Mecânico disponível com o que o carrossel mostra (foto e especialidades são opcionais) */
 export type HomeMechanic = {
@@ -10,55 +12,33 @@ export type HomeMechanic = {
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('');
 const firstLast = (name: string) => { const p = name.trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[p.length - 1]}` : p[0]; };
 
-/** Roda estilizada (decoração do cartão principal, sem foto) */
-function WheelArt() {
-  return (
-    <svg viewBox="0 0 200 200" className="absolute -right-10 -bottom-12 w-56 h-56 sm:w-72 sm:h-72 lg:right-6 lg:-bottom-16 lg:w-80 lg:h-80 opacity-90 pointer-events-none" aria-hidden>
-      <defs>
-        <radialGradient id="ph-glow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#ff6b1a" stopOpacity="0.45" />
-          <stop offset="100%" stopColor="#ff6b1a" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <circle cx="100" cy="100" r="100" fill="url(#ph-glow)" />
-      <circle cx="100" cy="100" r="78" fill="none" stroke="#2b2f36" strokeWidth="22" />
-      <circle cx="100" cy="100" r="78" fill="none" stroke="#3a3f47" strokeWidth="2" strokeDasharray="6 7" />
-      <circle cx="100" cy="100" r="52" fill="#1d2025" stroke="#4a505a" strokeWidth="3" />
-      {Array.from({ length: 5 }, (_, i) => {
-        const a = (i * 72 - 90) * (Math.PI / 180);
-        return <line key={i} x1="100" y1="100" x2={100 + Math.cos(a) * 48} y2={100 + Math.sin(a) * 48} stroke="#5a616c" strokeWidth="9" strokeLinecap="round" />;
-      })}
-      <circle cx="100" cy="100" r="13" fill="#ff6b1a" />
-    </svg>
-  );
-}
-
-/** Topo da tela: o que se faz aqui, em um botão */
+/** Topo da tela: título, quem está disponível e a ação principal */
 export function PlatformHero({ available, onCall, disabled, locked }: {
   available: number; onCall: () => void; disabled?: boolean;
   /** Multa pendente: não dá para publicar */
   locked?: boolean;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-steel-900 text-white p-5 sm:p-7 mb-4">
-      <WheelArt />
-      <div className="relative max-w-md">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-500/15 ring-1 ring-brand-400/30 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-300">
-          {available > 0 && <span className="h-1.5 w-1.5 rounded-full bg-signal-400 animate-pulse-soft" />}
-          {available > 0 ? `${available} ${available === 1 ? 'profissional disponível' : 'profissionais disponíveis'}` : 'Mecânicos sob demanda'}
-        </span>
-        <h2 className="font-display text-[28px] sm:text-4xl font-bold leading-[1.1] tracking-tight mt-3">
-          Precisa de um mecânico agora?
-        </h2>
-        <p className="text-steel-300 text-[15px] mt-2 leading-snug">
-          Profissionais verificados para atender sua oficina. Você paga só pelo serviço.
+    <header className="mb-4 sm:flex sm:items-end sm:justify-between sm:gap-4">
+      <div className="min-w-0">
+        {/* Marca no celular (no computador ela já está na barra lateral) */}
+        <div className="lg:hidden mb-3 flex items-center gap-2">
+          <Logo size={26} withText={false} />
+          <span className="font-display text-base font-bold tracking-tight text-steel-900">Mecânico<span className="text-brand-500">App</span></span>
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-steel-900">Demandas</h1>
+        <p className="mt-1 flex items-center gap-1.5 text-sm text-steel-600">
+          <span className={`h-2 w-2 rounded-full shrink-0 ${available > 0 ? 'bg-signal-500' : 'bg-steel-300'}`} aria-hidden />
+          {available > 0
+            ? `${available} ${available === 1 ? 'mecânico disponível' : 'mecânicos disponíveis'} agora`
+            : 'Nenhum mecânico online agora. A demanda fica aberta até alguém aceitar.'}
         </p>
-        <button type="button" onClick={onCall} disabled={disabled}
-          className="mt-5 w-full sm:w-auto inline-flex items-center justify-center gap-2 h-14 px-6 rounded-2xl bg-brand-500 text-white text-[17px] font-bold shadow-brand active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-60">
-          {locked ? '🔒 Quite a multa para chamar' : <>＋ Chamar mecânico agora <span aria-hidden>→</span></>}
-        </button>
       </div>
-    </section>
+      <button type="button" onClick={onCall} disabled={disabled}
+        className="mt-3 sm:mt-0 w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2 h-12 px-5 rounded-xl bg-brand-500 text-white text-[15px] font-semibold active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-60">
+        {locked ? 'Quite a multa para publicar' : <><IconPlus className="w-5 h-5" />Nova demanda</>}
+      </button>
+    </header>
   );
 }
 
@@ -70,10 +50,10 @@ export function StatusCounters({ searching, accepted, working, done, onPick, sid
   side?: boolean;
 }) {
   const items = [
-    { n: searching, label: 'Em busca',    icon: '⏱️', tone: 'bg-pending-50',  target: 'ativas' as const },
-    { n: accepted,  label: 'Aceitas',     icon: '✅', tone: 'bg-signal-50',   target: 'ativas' as const },
-    { n: working,   label: 'Em execução', icon: '🔧', tone: 'bg-brand-50',    target: 'ativas' as const },
-    { n: done,      label: 'Concluídas',  icon: '🏁', tone: 'bg-steel-100',   target: 'historico' as const },
+    { n: searching, label: 'Em busca',    dot: 'bg-pending-500', target: 'ativas' as const },
+    { n: accepted,  label: 'Aceitas',     dot: 'bg-signal-500',  target: 'ativas' as const },
+    { n: working,   label: 'Em execução', dot: 'bg-brand-500',   target: 'ativas' as const },
+    { n: done,      label: 'Concluídas',  dot: 'bg-steel-400',   target: 'historico' as const },
   ];
   if (side) {
     return (
@@ -83,7 +63,7 @@ export function StatusCounters({ searching, accepted, working, done, onPick, sid
           {items.map(i => (
             <button key={i.label} type="button" onClick={() => onPick(i.target)}
               className="flex items-center gap-2.5 rounded-xl bg-steel-50 px-3 py-2.5 text-left hover:bg-brand-50 transition min-w-0">
-              <span className={`grid place-items-center h-8 w-8 shrink-0 rounded-lg text-base ${i.tone}`} aria-hidden>{i.icon}</span>
+              <span className={`h-2 w-2 shrink-0 rounded-full ${i.dot}`} aria-hidden />
               <span className="min-w-0">
                 <span className={`block font-display text-lg font-bold leading-none tabular-nums ${i.n ? 'text-steel-900' : 'text-steel-300'}`}>{i.n}</span>
                 <span className="block text-xs font-semibold text-steel-600 mt-0.5 leading-tight">{i.label}</span>
@@ -95,13 +75,14 @@ export function StatusCounters({ searching, accepted, working, done, onPick, sid
     );
   }
   return (
-    <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-4">
+    <div className="grid grid-cols-4 mb-3 rounded-xl bg-white border border-steel-200 divide-x divide-steel-200">
       {items.map(i => (
         <button key={i.label} type="button" onClick={() => onPick(i.target)}
-          className="min-h-[96px] rounded-2xl bg-white ring-1 ring-steel-200/70 p-2.5 sm:p-3.5 text-left active:scale-[0.98] hover:ring-brand-200 transition min-w-0">
-          <span className={`inline-grid place-items-center h-8 w-8 sm:h-9 sm:w-9 rounded-xl text-base sm:text-lg ${i.tone}`} aria-hidden>{i.icon}</span>
-          <div className={`font-display text-xl sm:text-2xl font-bold leading-none tabular-nums mt-2 ${i.n ? 'text-steel-900' : 'text-steel-300'}`}>{i.n}</div>
-          <div className="text-xs font-semibold text-steel-600 mt-1 leading-tight">{i.label}</div>
+          className="min-h-[64px] px-2 py-2.5 text-left active:bg-steel-50 transition min-w-0 first:rounded-l-xl last:rounded-r-xl">
+          <div className={`font-display text-xl font-bold leading-none tabular-nums ${i.n ? 'text-steel-900' : 'text-steel-300'}`}>{i.n}</div>
+          <div className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-steel-500 leading-tight min-w-0">
+            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${i.dot}`} aria-hidden /><span className="truncate">{i.label}</span>
+          </div>
         </button>
       ))}
     </div>
@@ -204,26 +185,25 @@ export function FavoriteMechanics({ mechanics, storageKey, onCall, disabled, lis
   const sorted = [...mechanics].sort((a, b) => Number(b.available) - Number(a.available) || b.rating - a.rating);
 
   return (
-    <section className={`${list ? '' : 'mb-5'} rounded-2xl bg-white ring-1 ring-steel-200/70 overflow-hidden`}>
+    <section className={`${list ? '' : 'mb-3'} rounded-xl bg-white border border-steel-200 overflow-hidden`}>
       <button type="button" onClick={toggle} aria-expanded={open}
         className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-steel-50 transition">
-        <span className="text-xl shrink-0" aria-hidden>⭐</span>
+        <IconStar className="w-5 h-5 shrink-0 text-steel-400" />
         <span className="flex-1 min-w-0">
-          <span className="block font-bold text-steel-900">Meus preferidos{mechanics.length ? ` · ${mechanics.length}` : ''}</span>
+          <span className="block font-semibold text-steel-900">Meus preferidos{mechanics.length ? ` · ${mechanics.length}` : ''}</span>
           <span className="block text-xs text-steel-500 mt-0.5 truncate">
-            {!mechanics.length ? 'Marque ⭐ nos mecânicos em quem você confia'
+            {!mechanics.length ? 'Marque a estrela nos mecânicos em quem você confia'
               : online ? `${online} ${online === 1 ? 'disponível' : 'disponíveis'} agora` : 'Nenhum disponível agora'}
           </span>
         </span>
-        <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Ocultar' : 'Ver'}</span>
-        <span className={`text-steel-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        <IconChevronDown className={`w-4 h-4 text-steel-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
         <div className="border-t border-steel-100 pt-3 pb-4">
           {!mechanics.length ? (
             <div className="px-4 text-sm text-steel-600">
-              Toque na ⭐ de um mecânico em <Link to="/oficina/buscar" className="font-semibold text-brand-600 underline">Buscar profissionais</Link> ou
+              Toque na estrela de um mecânico em <Link to="/oficina/buscar" className="font-semibold text-brand-600 underline">Buscar profissionais</Link> ou
               ao escolher "Um mecânico" na demanda. Ele aparece aqui para chamar com um toque.
             </div>
           ) : (
