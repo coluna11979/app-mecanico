@@ -300,7 +300,7 @@ function FontsSection() {
 function PiecesSection({ tracked }: { tracked: boolean }) {
   return (
     <Section id="pecas" n={6} title="Posts para redes sociais"
-      subtitle="Escolha a mensagem e o formato, compare os 4 temas e baixe com a legenda pronta. Panfletos, cartões e banners ficam em Material gráfico.">
+      subtitle="Escolha a mensagem e o formato, compare os temas e baixe com a legenda pronta. Panfletos, cartões e banners ficam em Material gráfico.">
       <PiecesStudio tracked={tracked} />
     </Section>
   );

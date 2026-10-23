@@ -3,7 +3,7 @@ import {
 } from './brandKit';
 import {
   type FormatId, type Message, type ThemeId, type Token, FORMATS, MESSAGES, THEMES,
-  drawLogoLockup, layoutTokens, renderPiece,
+  drawBadge, drawLogoLockup, layoutTokens, renderPiece,
 } from './brandPieces';
 
 /**
@@ -230,6 +230,7 @@ async function renderFaixa(o: MaterialOptions, m: Material['mm']) {
   const M = v * 10;
   await drawLogoLockup(ctx, th, M, v * 10, v * 13);
   const card = v * 76;
+  if (msg.badge) drawBadge(ctx, msg.badge, W - M * 2 - card, v * 3, v * 10, o.theme === 'claro');
   const textW = W - M * 3 - card;
   const t = fitText(ctx, [...tok(msg.title, th.text), ...tok(msg.highlight, th.highlight)], textW, v * 42, v * 18, v * 6);
   const after = drawLines(ctx, t.lines, M, v * 28, t.size);

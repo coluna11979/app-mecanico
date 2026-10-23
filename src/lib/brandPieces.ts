@@ -21,12 +21,58 @@ export interface Message {
   bullets: string[];
   cta: string;             // chamada do QR / botão
   caption: string;         // legenda pronta pra rede social
+  badge?: Badge;           // selo de gatilho desenhado na peça
 }
+
+/** Gatilhos de campanha: o selo aparece no canto da peça. */
+export type Badge = 'lancamento' | 'novidade';
+export const BADGE_LABEL: Record<Badge, string> = { lancamento: 'LANÇAMENTO', novidade: 'NOVIDADE' };
+
+/** Grupos da lista de mensagens (gatilho primeiro). */
+export const MESSAGE_GROUPS: { label: string; match: (m: Message) => boolean }[] = [
+  { label: '🚀 Lançamento', match: m => m.badge === 'lancamento' },
+  { label: '✨ Novidade',   match: m => m.badge === 'novidade' },
+  { label: 'Mensagens fixas', match: m => !m.badge },
+];
 
 const TAGS_MEC = '#mecanico #mecanicoautomotivo #rendaextra #mecanicoapp';
 const TAGS_OFI = '#oficinamecanica #oficina #donodeoficina #mecanicoapp';
 
 export const MESSAGES: Message[] = [
+  // Lançamento / novidade — mecânicos
+  { id: 'mec-lancamento', audience: 'mecanico', name: 'Chegou o MecânicoApp', badge: 'lancamento',
+    kicker: 'CHEGOU O MECÂNICOAPP', title: 'O app que leva serviço', highlight: 'até o mecânico.',
+    bullets: ['Oficinas da sua região chamando', 'Você escolhe o que aceita', 'Cadastro gratuito'],
+    cta: 'Aponte a câmera e entre agora',
+    caption: `🚀 LANÇAMENTO: chegou o MecânicoApp!\n\nO app que conecta mecânicos a oficinas que precisam de reforço. Você recebe os chamados da sua região e escolhe o que aceita.\n\nCadastro gratuito pelo link na bio.\n\n${TAGS_MEC} #lancamento #novidade` },
+  { id: 'mec-novidade', audience: 'mecanico', name: 'Renda extra agora no celular', badge: 'novidade',
+    kicker: 'NOVO JEITO DE TRABALHAR', title: 'Renda extra de mecânico', highlight: 'agora no celular.',
+    bullets: ['Receba chamados pelo app', 'Veja o valor antes de aceitar', 'Trabalhe quando puder'],
+    cta: 'Aponte a câmera e conheça',
+    caption: `✨ NOVIDADE para mecânicos: a renda extra agora cabe no celular.\n\nNo MecânicoApp você recebe chamados de oficinas da região, vê o valor antes e aceita só o que quiser.\n\nConheça pelo link na bio.\n\n${TAGS_MEC} #novidade` },
+  { id: 'mec-pioneiro', audience: 'mecanico', name: 'Seja dos primeiros', badge: 'lancamento',
+    kicker: 'SEJA DOS PRIMEIROS', title: 'Quem entra primeiro', highlight: 'sai na frente.',
+    bullets: ['Cadastro gratuito', 'Monte sua reputação desde o início', 'Seja lembrado pelas oficinas da região'],
+    cta: 'Aponte a câmera e garanta seu lugar',
+    caption: `⏳ O MecânicoApp acabou de chegar, e quem entra primeiro sai na frente.\n\nComece agora a montar sua reputação com as oficinas da sua região.\n\nCadastro gratuito pelo link na bio.\n\n${TAGS_MEC} #lancamento` },
+
+  // Lançamento / novidade — oficinas
+  { id: 'ofi-lancamento', audience: 'oficina', name: 'Chegou para oficinas', badge: 'lancamento',
+    kicker: 'CHEGOU PARA OFICINAS', title: 'Chegou a mão de obra', highlight: 'sob demanda.',
+    bullets: ['Mecânicos verificados', 'Chame só quando precisar', 'Cadastro gratuito'],
+    cta: 'Aponte a câmera e cadastre sua oficina',
+    caption: `🚀 LANÇAMENTO: chegou o MecânicoApp para oficinas!\n\nMão de obra sob demanda: você chama mecânicos verificados só quando precisa, sem aumentar a folha fixa.\n\nCadastre sua oficina pelo link na bio.\n\n${TAGS_OFI} #lancamento #novidade` },
+  { id: 'ofi-novidade', audience: 'oficina', name: 'Chame mecânico como chama um carro', badge: 'novidade',
+    kicker: 'NOVIDADE PARA OFICINAS', title: 'Agora você chama mecânico', highlight: 'como chama um carro de app.',
+    bullets: ['Publique o serviço em minutos', 'Profissionais da sua região aceitam', 'Acompanhe tudo pelo celular'],
+    cta: 'Aponte a câmera e conheça',
+    caption: `✨ NOVIDADE: chamar mecânico ficou tão fácil quanto chamar um carro de app.\n\nPublique o serviço, profissionais verificados da sua região aceitam e você acompanha tudo pelo celular.\n\nConheça pelo link na bio.\n\n${TAGS_OFI} #novidade` },
+  { id: 'ofi-fundadora', audience: 'oficina', name: 'Oficinas fundadoras', badge: 'lancamento',
+    kicker: 'OFICINAS FUNDADORAS', title: 'Seja uma das primeiras', highlight: 'oficinas da rede.',
+    bullets: ['Cadastro gratuito', 'Selo de oficina parceira', 'Monte sua rede de confiança desde o início'],
+    cta: 'Aponte a câmera e garanta sua vaga',
+    caption: `🏁 Estamos formando a rede de oficinas fundadoras do MecânicoApp.\n\nQuem entra agora ganha o selo de oficina parceira e monta a própria rede de mecânicos de confiança desde o começo.\n\nCadastro gratuito pelo link na bio.\n\n${TAGS_OFI} #lancamento` },
+
   // Mecânicos
   { id: 'mec-experiencia', audience: 'mecanico', name: 'Renda com a sua experiência',
     kicker: 'PARA MECÂNICOS', title: 'Ganhe mais usando a', highlight: 'experiência que você já tem.',
@@ -79,7 +125,7 @@ export const MESSAGES: Message[] = [
 
 // ── Temas ───────────────────────────────────────────────────────────────────
 
-export type ThemeId = 'grafite' | 'claro' | 'laranja' | 'impacto';
+export type ThemeId = 'grafite' | 'claro' | 'laranja' | 'impacto' | 'lancamento';
 
 export interface Theme {
   label: string;
@@ -148,6 +194,31 @@ export const THEMES: Record<ThemeId, Theme> = {
       ctx.beginPath(); ctx.moveTo(0, H * 0.88); ctx.lineTo(W, H * 0.74); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
     },
   },
+  lancamento: {
+    label: 'Lançamento',
+    text: '#FFFFFF', highlight: '#FF7A38', kicker: '#FFC9A8', body: '#E8ECF1', dot: '#FF5C0A', muted: '#9AA6B6',
+    logo: { icon: 'app', t1: '#FFFFFF', t2: '#FF5C0A' },
+    ctaBg: '#FF5C0A', ctaText: '#FFFFFF', card: '#FFFFFF', cardText: '#0B1117', cardUrl: '#E64500',
+    paint: (ctx, W, H) => {
+      ctx.fillStyle = '#0B1117'; ctx.fillRect(0, 0, W, H);
+      // Raios de explosão saindo do canto de cima
+      const cx = W * 0.92, cy = H * 0.04, R = Math.hypot(W, H);
+      for (let i = 0; i < 18; i++) {
+        const a0 = Math.PI * 0.5 + (i / 18) * Math.PI * 0.75, a1 = a0 + Math.PI / 60;
+        ctx.fillStyle = i % 2 ? 'rgba(255,92,10,0.10)' : 'rgba(255,122,56,0.05)';
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R);
+        ctx.lineTo(cx + Math.cos(a1) * R, cy + Math.sin(a1) * R);
+        ctx.closePath(); ctx.fill();
+      }
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.6);
+      g.addColorStop(0, 'rgba(255,92,10,0.45)'); g.addColorStop(1, 'rgba(255,92,10,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      // Brilhos (posições fixas pra peça sair sempre igual)
+      const sparks = [[0.12, 0.18, 1], [0.78, 0.32, 0.7], [0.55, 0.12, 0.6], [0.88, 0.5, 0.9], [0.2, 0.45, 0.5], [0.66, 0.6, 0.55]];
+      for (const [sx, sy, sz] of sparks) drawSpark(ctx, sx * W, sy * H, W * 0.018 * sz, 'rgba(255,201,168,0.7)');
+    },
+  },
 };
 
 // ── Formatos ────────────────────────────────────────────────────────────────
@@ -188,6 +259,61 @@ export const FORMATS: Record<FormatId, Format> = {
 };
 
 export const SOCIAL_FORMATS: FormatId[] = ['post', 'feed', 'story'];
+
+/** Estrela de 4 pontas (brilho). */
+function drawSpark(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+    const d = i % 2 ? r * 0.28 : r;
+    ctx.lineTo(x + Math.cos(a) * d, y + Math.sin(a) * d);
+  }
+  ctx.closePath(); ctx.fill();
+}
+
+/**
+ * Selo do gatilho no canto superior direito. Lançamento: carimbo estrelado;
+ * novidade: etiqueta inclinada. `size` é a altura de referência.
+ */
+export function drawBadge(ctx: CanvasRenderingContext2D, badge: Badge, right: number, top: number, size: number, onLight = false) {
+  const label = BADGE_LABEL[badge];
+  ctx.save();
+  if (badge === 'lancamento') {
+    const r = size * 1.25;
+    ctx.translate(right - r, top + r); ctx.rotate(-0.2);
+    ctx.fillStyle = '#FF5C0A';
+    ctx.beginPath();
+    const pts = 24;
+    for (let i = 0; i < pts * 2; i++) {
+      const a = (i / (pts * 2)) * Math.PI * 2;
+      const d = i % 2 ? r * 0.86 : r;
+      ctx.lineTo(Math.cos(a) * d, Math.sin(a) * d);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = r * 0.04;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.72, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 ${r * 0.27}px "Inter"`;
+    ctx.fillText(label, 0, r * 0.02, r * 1.36);
+    drawSpark(ctx, 0, -r * 0.42, r * 0.14, '#FFFFFF');
+    drawSpark(ctx, 0, r * 0.42, r * 0.14, '#FFFFFF');
+  } else {
+    ctx.font = `800 ${size * 0.42}px "Inter"`;
+    const w = ctx.measureText(label).width + size * 0.9;
+    const h = size * 0.75;
+    ctx.translate(right - w / 2, top + h);
+    ctx.rotate(-0.12);
+    ctx.fillStyle = onLight ? '#FF5C0A' : '#FFFFFF';
+    roundRect(ctx, -w / 2, -h / 2, w, h, h / 2); ctx.fill();
+    ctx.fillStyle = onLight ? '#FFFFFF' : '#E64500';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, size * 0.12, 0);
+    drawSpark(ctx, -w / 2 + size * 0.34, 0, size * 0.18, onLight ? '#FFFFFF' : '#FF5C0A');
+  }
+  ctx.restore();
+}
 
 /** Ícone + "MecânicoApp" com a altura h; devolve a largura desenhada. */
 export async function drawLogoLockup(ctx: CanvasRenderingContext2D, th: Theme, x: number, y: number, h: number) {
@@ -263,6 +389,7 @@ export async function renderPiece(o: PieceOptions) {
   // Logo
   const logoH = u * (tight ? 7 : 8);
   await drawLogoLockup(ctx, th, M, top, logoH);
+  if (m.badge) drawBadge(ctx, m.badge, W - M, top - u * 2, u * (tight ? 9 : 10), o.theme === 'claro');
 
   // Bloco de baixo (fixo no rodapé): QR no impresso, botão nas redes
   // Peça muito alta (roll-up): QR grande centralizado com o texto embaixo
