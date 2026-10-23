@@ -22,6 +22,11 @@ import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
 import { FavoriteMechanics, PlatformHero, StatusCounters, type HomeMechanic } from '@/components/marketplace/PlatformHome';
 import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
+import {
+  IconAlert, IconArchive, IconArrowLeft, IconArrowRight, IconBell, IconCalendar, IconCar, IconCheck, IconChevronDown, IconClipboardCheck,
+  IconClock, IconFileText, IconInfo, IconLayers, IconMap, IconMegaphone, IconPencil, IconPlus, IconRepeat, IconSearch, IconStar,
+  IconTarget, IconTrendingUp, IconWrench, IconX, IconZap,
+} from '@/components/mecanico/icons';
 
 type NewJob = {
   title: string; description: string;
@@ -290,10 +295,10 @@ export default function WorkshopDashboard() {
     const now = new Date();
     const at = (days: number, h: number) => { const d = new Date(now); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return localInput(d); };
     return [
-      { label: '⚡ O quanto antes', value: '' },
-      ...(now.getHours() < 13 ? [{ label: 'Hoje à tarde (14h)', value: at(0, 14) }] : []),
-      { label: 'Amanhã cedo (8h)', value: at(1, 8) },
-      { label: '📅 Outro dia', value: null },
+      { label: 'O quanto antes', value: '' },
+      ...(now.getHours() < 13 ? [{ label: 'Hoje, 14h', value: at(0, 14) }] : []),
+      { label: 'Amanhã, 8h', value: at(1, 8) },
+      { label: 'Outro dia', value: null },
     ];
   }
 
@@ -624,7 +629,7 @@ export default function WorkshopDashboard() {
 
   return (
     <WorkshopLayout>
-      <h1 className="sr-only">Demandas · {shop?.business_name ?? ''}</h1>
+      
 
       {/* Computador: largura máxima e duas colunas (trabalho à esquerda, pedidos e mecânicos à direita).
           Celular: uma coluna só, na mesma ordem de antes. */}
@@ -681,11 +686,11 @@ export default function WorkshopDashboard() {
       {/* 🔔 Confirmações pendentes — ação prioritária */}
       {pendingConfirm.length > 0 && (
         <section className="mb-6">
-          <div className="bg-gradient-to-r from-brand-50 to-brand-100/40 border-2 border-brand-300 rounded-2xl p-4 sm:p-5">
+          <div className="bg-white border border-brand-300 rounded-xl p-4 sm:p-5">
             <div className="flex items-start gap-3 mb-3">
-              <div className="text-3xl shrink-0 animate-pulse">🔔</div>
+              <IconBell className="w-5 h-5 mt-0.5 shrink-0 text-brand-600" />
               <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-brand-700 text-lg leading-tight">
+                <h3 className="font-semibold text-steel-900 text-base leading-tight">
                   {pendingConfirm.length === 1
                     ? '1 serviço aguardando confirmação'
                     : `${pendingConfirm.length} serviços aguardando confirmação`}
@@ -706,12 +711,12 @@ export default function WorkshopDashboard() {
                     <div className="font-semibold text-steel-900 truncate">{j.title}</div>
                     <div className="text-xs text-steel-500 mt-0.5">
                       R$ {formatBRL(j.price ?? 0)} fechado
-                      {j.actual_hours != null && ` · ⏱ ${j.actual_hours}h reais`}
+                      {j.actual_hours != null && ` · ${j.actual_hours}h reais`}
                       {j.completed_at && ` · finalizado ${new Date(j.completed_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
                     </div>
                   </div>
                   <span className="bg-brand-500 text-white text-xs font-bold rounded-lg px-3 py-1.5 shrink-0">
-                    Confirmar →
+                    Confirmar
                   </span>
                 </Link>
               ))}
@@ -723,9 +728,9 @@ export default function WorkshopDashboard() {
       {/* ⭐ Avaliações pendentes — opcional, sem urgência */}
       {pendingRate.length > 0 && (
         <section className="mb-6">
-          <div className="bg-steel-50 border border-steel-200 rounded-2xl p-4 sm:p-5">
+          <div className="bg-white border border-steel-200 rounded-xl p-4 sm:p-5">
             <div className="flex items-start gap-3 mb-3">
-              <div className="text-2xl shrink-0">⭐</div>
+              <IconStar className="w-5 h-5 mt-0.5 shrink-0 text-steel-400" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-bold text-steel-800 text-base leading-tight">
@@ -754,8 +759,8 @@ export default function WorkshopDashboard() {
                       Concluído {j.workshop_confirmed_at && new Date(j.workshop_confirmed_at).toLocaleDateString('pt-BR')}
                     </div>
                   </div>
-                  <span className="text-steel-600 text-xs font-semibold shrink-0">
-                    ⭐ Avaliar
+                  <span className="text-steel-700 text-xs font-semibold shrink-0 inline-flex items-center gap-1">
+                    <IconStar className="w-3.5 h-3.5 text-amber-500" />Avaliar
                   </span>
                 </button>
               ))}
@@ -774,7 +779,7 @@ export default function WorkshopDashboard() {
         const buckets = groupActive(active);
 
         const renderCard = (j: Job) => (
-          <div key={j.id} className="rounded-2xl bg-white ring-1 ring-steel-200/70 p-4 min-w-0">
+          <div key={j.id} className="rounded-xl bg-white border border-steel-200 p-4 min-w-0">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-steel-900 leading-snug line-clamp-2 break-words">{j.title}</div>
@@ -794,19 +799,19 @@ export default function WorkshopDashboard() {
             <ArrivalInfo j={j} />
             {inviteWaitingTooLong(j) && (
               <div className="mt-2 text-[12px] text-pending-700 bg-pending-50 border border-pending-200 rounded-lg px-2.5 py-2 leading-snug">
-                ⏳ {firstName(inviteName(j))} ainda não respondeu. Você pode cancelar sem multa e{' '}
+                {firstName(inviteName(j))} ainda não respondeu. Você pode cancelar sem multa e{' '}
                 <Link to="/oficina/buscar" className="font-bold underline">chamar outro mecânico</Link>.
               </div>
             )}
             {waitingNoAccept(j) && (
               <div className="mt-2 flex items-center justify-between gap-3 text-[12px] text-pending-800 bg-pending-50 border border-pending-200 rounded-lg px-2.5 py-2 leading-snug">
-                <span>⏳ Ninguém aceitou há <strong>{waitedLabel(j)}</strong>. Aumentar o valor costuma resolver.</span>
+                <span className="flex items-start gap-1.5"><IconClock className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>Ninguém aceitou há <strong>{waitedLabel(j)}</strong>. Aumentar o valor costuma resolver.</span></span>
                 <button type="button" onClick={() => openEditModal(j)}
                   className="shrink-0 h-9 px-3 rounded-lg bg-brand-500 text-white text-xs font-bold active:scale-95">Aumentar valor</button>
               </div>
             )}
             {j.scheduled_at && (
-              <div className="text-xs text-steel-500 mt-1.5">📅 {formatScheduled(j.scheduled_at)}</div>
+              <div className="text-xs text-steel-500 mt-1.5 flex items-center gap-1.5"><IconCalendar className="w-3.5 h-3.5" />{formatScheduled(j.scheduled_at)}</div>
             )}
 
             {/* Ações: a principal ocupa o espaço; editar só enquanto ninguém aceitou; cancelar sempre */}
@@ -815,10 +820,10 @@ export default function WorkshopDashboard() {
                 {j.mechanic_id && j.en_route_at ? (
                   <Link to={`/oficina/job/${j.id}/tracking`}
                     className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto h-10 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">
-                    🗺️ Ver no mapa
+                    <IconMap className="w-4 h-4" />Ver no mapa
                   </Link>
                 ) : j.mechanic_id ? (
-                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-signal-50 text-signal-700 text-xs font-bold">✓ Aceito</span>
+                  <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full bg-signal-50 text-signal-700 text-xs font-bold"><IconCheck className="w-3.5 h-3.5" />Aceito</span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-pending-50 text-pending-700 text-xs font-bold max-w-full">
                     <span className="h-1.5 w-1.5 rounded-full bg-pending-500 animate-pulse-soft shrink-0" />
@@ -828,8 +833,8 @@ export default function WorkshopDashboard() {
               </div>
               {j.status === 'open' && !j.mechanic_id && (
                 <button type="button" onClick={() => openEditModal(j)}
-                  className="shrink-0 h-10 px-2 text-xs font-semibold text-brand-600 active:text-brand-700">
-                  ✏️ Editar
+                  className="shrink-0 h-10 px-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-600 active:text-brand-700">
+                  <IconPencil className="w-3.5 h-3.5" />Editar
                 </button>
               )}
               <span className="shrink-0"><CancelJobButton job={j}
@@ -843,13 +848,13 @@ export default function WorkshopDashboard() {
           return (
             <section id="minhas-solicitacoes" className="mb-8 scroll-mt-4">
               <h2 className="text-[15px] lg:text-lg font-bold mb-3">Minhas solicitações</h2>
-              <div className="rounded-2xl bg-white ring-1 ring-steel-200/70 text-center px-5 py-8">
-                <div className="text-3xl" aria-hidden>📋</div>
-                <div className="font-semibold text-steel-900 mt-2">Nenhuma solicitação em andamento</div>
+              <div className="rounded-xl bg-white border border-steel-200 text-center px-5 py-8">
+                <IconClipboardCheck className="mx-auto w-7 h-7 text-steel-300" />
+                <div className="font-semibold text-steel-900 mt-3">Nenhuma solicitação em andamento</div>
                 <p className="text-sm text-steel-600 mt-1">Chame um mecânico e acompanhe tudo por aqui: aceite, chegada e serviço.</p>
                 <button type="button" onClick={() => openCreateModal()} disabled={shopLoading || hasPendingFees}
                   className="mt-4 inline-flex items-center justify-center gap-2 h-12 px-6 rounded-xl bg-brand-500 text-white font-bold active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-50">
-                  ＋ Chamar mecânico agora
+                  <IconPlus className="w-5 h-5" />Chamar mecânico agora
                 </button>
               </div>
             </section>
@@ -867,21 +872,20 @@ export default function WorkshopDashboard() {
                 return (
                   <section key={g.key} className="mb-6">
                     <button type="button" onClick={toggleWaiting} aria-expanded={waitingOpen}
-                      className="w-full rounded-2xl bg-white ring-1 ring-steel-200/70 px-4 py-3.5 flex items-center gap-3 text-left hover:bg-steel-50 transition">
-                      <span className="text-xl shrink-0" aria-hidden>📢</span>
+                      className="w-full rounded-xl bg-white border border-steel-200 px-4 py-3.5 flex items-center gap-3 text-left hover:bg-steel-50 transition">
+                      <IconMegaphone className="w-5 h-5 shrink-0 text-steel-400" />
                       <span className="flex-1 min-w-0">
                         <span className="flex items-center gap-2">
-                          <span className="font-bold text-steel-900">Aguardando aceite</span>
+                          <span className="font-semibold text-steel-900">Aguardando aceite</span>
                           <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{jobs.length}</span>
                         </span>
                         <span className={`block text-xs mt-0.5 ${late ? 'text-pending-700 font-semibold' : 'text-steel-500'}`}>
                           {late
-                            ? `⏳ ${late === 1 ? '1 sem aceite há muito tempo' : `${late} sem aceite há muito tempo`}: aumentar o valor costuma resolver`
+                            ? `${late === 1 ? '1 sem aceite há muito tempo' : `${late} sem aceite há muito tempo`}: aumentar o valor costuma resolver`
                             : 'Publicadas para os mecânicos, esperando alguém aceitar'}
                         </span>
                       </span>
-                      <span className="text-xs font-semibold text-brand-600 shrink-0">{waitingOpen ? 'Ocultar' : 'Ver'}</span>
-                      <span className={`text-steel-400 text-xs transition-transform ${waitingOpen ? 'rotate-180' : ''}`}>▼</span>
+                      <IconChevronDown className={`w-4 h-4 text-steel-400 shrink-0 transition-transform ${waitingOpen ? 'rotate-180' : ''}`} />
                     </button>
                     {waitingOpen && <div className="grid md:grid-cols-2 gap-3 mt-2.5">{jobs.map(renderCard)}</div>}
                   </section>
@@ -890,6 +894,7 @@ export default function WorkshopDashboard() {
               return (
                 <section key={g.key} className="mb-6">
                   <div className="flex items-center gap-2 mb-2.5">
+                    <g.icon className="w-[18px] h-[18px] text-steel-500" />
                     <h2 className="text-[15px] lg:text-lg font-bold">{g.title}</h2>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{jobs.length}</span>
                   </div>
@@ -940,30 +945,49 @@ export default function WorkshopDashboard() {
 
             {/* Scrollable content */}
             <div ref={formBody} className="flex-1 overflow-y-auto px-5 pb-2 pt-4 space-y-4">
-              {editingId ? (
-                <div>
-                  <h2 className="text-xl font-bold tracking-tight">Editar demanda</h2>
-                  <p className="text-sm text-steel-500 mt-0.5">Ajuste o que precisar enquanto nenhum mecânico aceitou.</p>
-                </div>
-              ) : (
-                <div>
-                  <div className="flex gap-1.5 mb-3" aria-hidden>
-                    {[1, 2, 3].map(n => <span key={n} className={`h-1.5 flex-1 rounded-full ${n <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />)}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-brand-600">
+                    {editingId ? 'Editar demanda' : 'Nova demanda'}
                   </div>
-                  <div className="text-xs font-semibold text-steel-500">Passo {step} de 3</div>
-                  <h2 className="text-xl font-bold tracking-tight mt-0.5">
-                    {step === 1 ? 'Qual serviço?' : step === 2 ? 'Quanto você paga?' : 'Para quando?'}
+                  <h2 className="text-xl font-bold tracking-tight text-steel-900 mt-0.5">
+                    {editingId ? 'Ajuste os detalhes' : FORM_STEPS[step - 1].title}
                   </h2>
+                  <p className="text-sm text-steel-500 mt-0.5 leading-snug">
+                    {editingId ? 'Dá para alterar enquanto nenhum mecânico aceitou.' : FORM_STEPS[step - 1].sub}
+                  </p>
                 </div>
+                <button type="button" onClick={resetModal} aria-label="Fechar"
+                  className="shrink-0 -mr-1.5 h-11 w-11 rounded-full grid place-items-center text-steel-500 hover:bg-steel-100 active:bg-steel-200">
+                  <IconX className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Etapas com nome: a oficina sabe onde está e o que falta */}
+              {!editingId && (
+                <ol className="grid grid-cols-3 gap-2" aria-label={`Passo ${step} de 3`}>
+                  {FORM_STEPS.map((s, i) => {
+                    const n = i + 1, done = n < step, on = n === step;
+                    return (
+                      <li key={s.short} className="min-w-0">
+                        <span className={`block h-1 rounded-full ${n <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />
+                        <span className={`mt-1.5 flex items-center gap-1 text-xs font-semibold truncate ${on ? 'text-steel-900' : done ? 'text-brand-600' : 'text-steel-400'}`}>
+                          {done && <IconCheck className="w-3.5 h-3.5 shrink-0" />}{s.short}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
               )}
 
               {showStep(1) && <>
               {draftRestored && !editingId && (
-                <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
-                  <span className="text-amber-800">
-                    {draftOrigin ? `🔧 Preenchido com ${draftOrigin} — revise e publique.` : '📝 Rascunho restaurado do último acesso.'}
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-steel-50 ring-1 ring-steel-200 px-3 py-2.5 text-sm">
+                  <span className="flex items-center gap-2 min-w-0 text-steel-700">
+                    <IconFileText className="w-4 h-4 shrink-0 text-steel-500" />
+                    <span className="min-w-0">{draftOrigin ? <>Preenchido com <strong className="text-steel-900">{draftOrigin}</strong>. Revise e publique.</> : 'Rascunho do último acesso restaurado.'}</span>
                   </span>
-                  <button type="button" onClick={discardDraft} className="text-amber-700 underline font-semibold whitespace-nowrap">
+                  <button type="button" onClick={discardDraft} className="shrink-0 min-h-[36px] text-xs font-semibold text-steel-600 underline">
                     Descartar
                   </button>
                 </div>
@@ -971,26 +995,29 @@ export default function WorkshopDashboard() {
 
               {/* Título */}
               <div>
-                <label className="label">Serviço</label>
-                <input className="input" placeholder="Ex.: Troca de pastilha de freio"
+                <label className="label" htmlFor="job-title">Serviço</label>
+                <input id="job-title" className="input" placeholder="Ex.: Troca de pastilha de freio" autoComplete="off"
                   value={form.title} onChange={set('title')} />
               </div>
 
               {/* Veículo: só na demanda avulsa (a que vem de OS/empilhados já traz os carros) */}
               {!editingId && !form.service_order_id && !form.stacked_service_ids?.length && (
                 <div>
-                  <label className="label">Veículo</label>
-                  <input className="input" placeholder="Ex.: Gol prata 2015 · ABC1D23"
-                    value={form.vehicle ?? ''} onChange={set('vehicle')} />
-                  <div className="text-xs text-steel-400 mt-1">Modelo, cor e placa: o mecânico vê em qual carro vai trabalhar</div>
+                  <label className="label" htmlFor="job-vehicle">Veículo</label>
+                  <div className="relative">
+                    <IconCar className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-400" />
+                    <input id="job-vehicle" className="input !pl-11" placeholder="Ex.: Gol prata 2015 · ABC1D23" autoComplete="off"
+                      value={form.vehicle ?? ''} onChange={set('vehicle')} />
+                  </div>
+                  <div className="text-xs text-steel-500 mt-1.5">Modelo, cor e placa. O mecânico vê em qual carro vai trabalhar.</div>
                 </div>
               )}
 
               {/* Descrição */}
               <div>
-                <label className="label">Detalhes <span className="font-normal text-steel-500">(opcional)</span></label>
-                <textarea className="input" rows={3}
-                  placeholder="Algo a mais que o mecânico precisa saber?"
+                <label className="label" htmlFor="job-details">Detalhes <span className="normal-case tracking-normal font-normal text-steel-400">· opcional</span></label>
+                <textarea id="job-details" className="input" rows={3}
+                  placeholder="Sintoma, peças que a oficina fornece, ferramenta necessária…"
                   value={form.description} onChange={set('description')} />
               </div>
               </>}
@@ -999,116 +1026,110 @@ export default function WorkshopDashboard() {
               {showStep(2) && (
               <div>
                 {(editingId || hourOpt || form.pricing === 'hour') && <>
-                <label className="label">Como cobrar</label>
-                <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-3">
+                <div className="label">Forma de pagamento</div>
+                <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-4">
                   {([['fixed', 'Pelo serviço'], ['hour', 'Por hora']] as const).map(([k, l]) => (
                     <button key={k} type="button"
                       onClick={() => setForm(f => { const next = { ...f, pricing: k }; persistDraft(next); return next; })}
-                      className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+                      className={`flex-1 min-h-[40px] rounded-lg py-2 text-sm font-semibold transition ${
                         (form.pricing ?? 'hour') === k ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
                       {l}
                     </button>
                   ))}
                 </div>
                 </>}
-                {form.pricing === 'fixed' ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
-                      <input className="input !pl-9" type="number" min={1} step={0.01} required
-                        placeholder="150" value={form.total ?? ''} onChange={set('total')} />
-                    </div>
-                    <div className="text-xs text-steel-400 mt-1">Valor do serviço</div>
-                  </div>
-                  <div>
-                    <div className="relative">
-                      <input className="input !pr-9" type="number" min={0.5} max={99} step={0.5}
-                        placeholder="opcional" value={form.max_hours} onChange={set('max_hours')} />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
-                    </div>
-                    <div className="text-xs text-steel-400 mt-1">Tempo previsto (opcional)</div>
-                  </div>
-                </div>
-                ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
-                      <input className="input !pl-9" type="number" min={1} required
-                        placeholder="60" value={form.price_per_hour} onChange={set('price_per_hour')} />
-                    </div>
-                    <div className="text-xs text-steel-400 mt-1">Valor por hora</div>
-                  </div>
-                  <div>
-                    <div className="relative">
-                      <input className="input !pr-9" type="number" min={0.5} max={24} step={0.5} required
-                        placeholder="2" value={form.max_hours} onChange={set('max_hours')} />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
-                    </div>
-                    <div className="text-xs text-steel-400 mt-1">Tempo previsto</div>
-                  </div>
-                </div>
-                )}
-                {suggested && !editingId && (
-                  <div className="mt-2 rounded-xl border border-steel-200 px-3 py-2 text-xs text-steel-600 flex items-center gap-2">
-                    <span className="text-sm shrink-0">🧮</span>
-                    <div className="flex-1 min-w-0">
-                      <strong className="text-steel-800">Estimativa: R$ {formatBRL(suggested, { decimals: 0 })}{form.pricing === 'fixed' ? '' : '/h'}</strong>
-                      <div className="text-[11px] text-steel-500">
-                        {form.pricing === 'fixed'
-                          ? `${String(estHours).replace('.', ',')}h × R$ ${Math.round(rateNow!)}/h, valor do meio entre os ${mechanics.length} disponíveis`
-                          : `valor do meio entre os ${mechanics.length} mecânicos disponíveis`}
+                {(() => {
+                  const fixed = form.pricing === 'fixed';
+                  return (
+                    <div className="grid grid-cols-[1.4fr_1fr] gap-3">
+                      <div>
+                        <label className="label" htmlFor="job-price">{fixed ? 'Valor do serviço' : 'Valor por hora'}</label>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-500 text-sm font-semibold">R$</span>
+                          <input id="job-price" className="input !pl-11 font-display !text-lg font-bold tabular-nums" type="number" inputMode="decimal"
+                            min={1} step={fixed ? 0.01 : 1} required placeholder={fixed ? '150' : '60'}
+                            value={fixed ? form.total ?? '' : form.price_per_hour} onChange={set(fixed ? 'total' : 'price_per_hour')} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="label" htmlFor="job-hours">Tempo{fixed && <span className="normal-case tracking-normal font-normal text-steel-400"> · opcional</span>}</label>
+                        <div className="relative">
+                          <input id="job-hours" className="input !pr-9 !text-lg tabular-nums" type="number" inputMode="decimal"
+                            min={0.5} max={fixed ? 99 : 24} step={0.5} required={!fixed} placeholder={fixed ? '—' : '2'}
+                            value={form.max_hours} onChange={set('max_hours')} />
+                          <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-steel-500 text-sm">h</span>
+                        </div>
                       </div>
                     </div>
-                    {typedPrice !== suggested && (
-                      <button type="button"
-                        onClick={() => setForm(f => {
-                          const next = f.pricing === 'fixed' ? { ...f, total: String(suggested) } : { ...f, price_per_hour: String(suggested) };
-                          persistDraft(next); return next;
-                        })}
-                        className="shrink-0 h-9 px-3 rounded-lg bg-steel-900 text-white text-xs font-bold active:scale-95">
-                        Usar
-                      </button>
+                  );
+                })()}
+
+                {/* Referências de preço: estimativa pelos disponíveis e faixa do estado (por hora) */}
+                {((suggested && !editingId) || (marketRate && form.pricing !== 'fixed')) && (
+                  <div className="mt-3 rounded-xl ring-1 ring-steel-200 divide-y divide-steel-100">
+                    {suggested && !editingId && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <IconTrendingUp className="w-4 h-4 shrink-0 text-steel-500" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-steel-700">
+                            Sugerido <strong className="text-steel-900 tabular-nums">R$ {formatBRL(suggested, { decimals: 0 })}{form.pricing === 'fixed' ? '' : '/h'}</strong>
+                          </div>
+                          <div className="text-xs text-steel-500 leading-snug">
+                            {form.pricing === 'fixed'
+                              ? `${String(estHours).replace('.', ',')}h × R$ ${Math.round(rateNow!)}/h, valor do meio entre ${mechanics.length} ${mechanics.length === 1 ? 'disponível' : 'disponíveis'}`
+                              : `valor do meio entre ${mechanics.length} ${mechanics.length === 1 ? 'mecânico disponível' : 'mecânicos disponíveis'}`}
+                          </div>
+                        </div>
+                        {typedPrice !== suggested && (
+                          <button type="button"
+                            onClick={() => setForm(f => {
+                              const next = f.pricing === 'fixed' ? { ...f, total: String(suggested) } : { ...f, price_per_hour: String(suggested) };
+                              persistDraft(next); return next;
+                            })}
+                            className="shrink-0 h-9 px-3 rounded-lg ring-1 ring-steel-300 text-steel-800 text-xs font-bold hover:bg-steel-50 active:scale-95">
+                            Usar
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {marketRate && form.pricing !== 'fixed' && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <IconInfo className="w-4 h-4 shrink-0 text-signal-600" />
+                        <div className="text-xs text-steel-600 leading-snug">
+                          <strong className="text-steel-800">Mercado em {currentWorkshop?.state}: R$ {Math.round(marketRate.low)}–{Math.round(marketRate.high)}/h</strong>
+                          {' '}({marketRate.count} {marketRate.count === 1 ? 'referência' : 'referências'}). Dentro dessa faixa o aceite costuma ser mais rápido.
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
-                {marketRate && form.pricing !== 'fixed' && (
-                  <div className="mt-2 bg-signal-50 border border-signal-200 rounded-xl px-3 py-2 text-xs text-signal-800 flex items-start gap-2">
-                    <span className="text-sm shrink-0">📊</span>
-                    <div className="flex-1">
-                      <strong>Faixa de mercado em {currentWorkshop?.state}:</strong>{' '}
-                      R$ {Math.round(marketRate.low)}–{Math.round(marketRate.high)}/h
-                      <span className="text-signal-700/70 ml-1">({marketRate.count} {marketRate.count === 1 ? 'referência' : 'referências'})</span>
-                      <div className="text-[10px] text-signal-700/80 mt-0.5">
-                        Preços dentro dessa faixa costumam ser aceitos mais rápido.
-                      </div>
-                    </div>
+
+                {/* Total que a oficina paga + o que "valor fechado" quer dizer */}
+                <div className={`mt-3 rounded-xl px-4 py-3 ${estimated > 0 ? 'bg-steel-900 text-white' : 'bg-steel-50 ring-1 ring-steel-200'}`}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className={`text-sm font-semibold ${estimated > 0 ? 'text-steel-200' : 'text-steel-600'}`}>Valor fechado</span>
+                    <span className={`font-display text-xl font-bold tabular-nums ${estimated > 0 ? '' : 'text-steel-300'}`}>
+                      R$ {estimated > 0 ? formatBRL(estimated) : '0,00'}
+                    </span>
                   </div>
-                )}
-                <p className="text-xs text-steel-600 mt-2 leading-relaxed">
-                  💡 <strong>Valor fechado:</strong> {form.pricing === 'fixed'
-                    ? 'você paga esse valor e pronto, não importa quanto tempo leve.'
-                    : 'você paga hora × tempo previsto, mesmo se ele terminar antes ou levar mais tempo.'}
-                </p>
+                  <p className={`text-xs mt-1 leading-snug ${estimated > 0 ? 'text-steel-300' : 'text-steel-500'}`}>
+                    {form.pricing === 'fixed'
+                      ? 'Você paga esse valor, não importa quanto tempo o serviço leve.'
+                      : 'Valor/hora × tempo previsto, mesmo se terminar antes ou levar mais.'}
+                  </p>
+                </div>
                 {!editingId && !hourOpt && form.pricing !== 'hour' && (
-                  <button type="button" onClick={() => setHourOpt(true)} className="mt-1 text-xs font-semibold text-brand-600 min-h-[36px]">
+                  <button type="button" onClick={() => setHourOpt(true)} className="mt-1 text-xs font-semibold text-brand-600 min-h-[40px]">
                     Prefere pagar por hora?
                   </button>
-                )}
-                {estimated > 0 && (
-                  <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
-                    <span className="text-sm text-brand-700">Valor fechado da demanda</span>
-                    <span className="font-bold text-brand-700 font-display">R$ {formatBRL(estimated)}</span>
-                  </div>
                 )}
 
                 {/* Quanto vai cobrar do cliente (só a oficina "Só mecânicos"; só ela vê) */}
                 {platformOnly && !editingId && (
-                  <div className="mt-4 rounded-xl border border-steel-200 p-3">
+                  <div className="mt-3 rounded-xl ring-1 ring-steel-200 p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <label className="text-sm font-semibold text-steel-800" htmlFor="customer-charge">💰 Quanto você vai cobrar do cliente?</label>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-steel-500">só você vê</span>
+                      <label className="text-sm font-semibold text-steel-800" htmlFor="customer-charge">Quanto você vai cobrar do cliente?</label>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-steel-500 bg-steel-100 rounded-full px-2 py-0.5">só você vê</span>
                     </div>
                     <div className="relative mt-2">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
@@ -1134,18 +1155,19 @@ export default function WorkshopDashboard() {
               {showStep(3) && <>
               {!editingId && (
                 <div>
-                  <label className="label">Quando</label>
+                  <div className="label">Quando</div>
                   <div className="grid grid-cols-2 gap-2">
                     {dateOptions().map(o => {
                       const on = o.value === null ? pickDate : !pickDate && form.scheduled_at === o.value;
                       return (
-                        <button key={o.label} type="button"
+                        <button key={o.label} type="button" aria-pressed={on}
                           onClick={() => {
                             if (o.value === null) { setPickDate(true); return; }
                             setPickDate(false);
                             setForm(f => { const next = { ...f, scheduled_at: o.value! }; persistDraft(next); return next; });
                           }}
-                          className={`min-h-[48px] rounded-xl border-2 px-3 py-2 text-sm font-semibold text-left transition active:scale-[0.98] ${on ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-steel-200 text-steel-700'}`}>
+                          className={`min-h-[48px] flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold text-left transition active:scale-[0.98] ${on ? 'border-brand-500 bg-brand-50 text-brand-800 ring-1 ring-brand-500' : 'border-steel-200 text-steel-700 hover:border-steel-300'}`}>
+                          {o.value === '' ? <IconZap className="w-4 h-4 shrink-0" /> : o.value === null ? <IconCalendar className="w-4 h-4 shrink-0" /> : <IconClock className="w-4 h-4 shrink-0" />}
                           {o.label}
                         </button>
                       );
@@ -1160,31 +1182,25 @@ export default function WorkshopDashboard() {
               {/* Para quem — só na criação */}
               {!editingId && (
                 <div>
-                  <label className="label">Para quem</label>
+                  <div className="label">Para quem</div>
                   <div className="grid grid-cols-3 gap-2">
-                    <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
-                      className={`min-h-[76px] rounded-xl border-2 p-2.5 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg leading-none mb-1">📢</div>
-                      <div className="font-semibold text-sm leading-tight">Todos</div>
-                      <div className="text-[11px] text-steel-500 mt-0.5 leading-snug">os disponíveis</div>
-                    </button>
-                    <button type="button"
-                      onClick={() => { setMode('favorites'); setPickedMechanic(''); }}
-                      disabled={favorites.size === 0}
-                      title={favorites.size === 0 ? 'Adicione preferidos em "Buscar mecânicos" ou no picker abaixo' : undefined}
-                      className={`min-h-[76px] rounded-xl border-2 p-2.5 text-left transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${mode === 'favorites' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg leading-none mb-1">⭐</div>
-                      <div className="font-semibold text-sm leading-tight">Preferidos</div>
-                      <div className="text-[11px] text-steel-500 mt-0.5 leading-snug">
-                        {favorites.size === 0 ? 'nenhum ainda' : `${favorites.size} na lista`}
-                      </div>
-                    </button>
-                    <button type="button" onClick={() => setMode('direct')}
-                      className={`min-h-[76px] rounded-xl border-2 p-2.5 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg leading-none mb-1">🎯</div>
-                      <div className="font-semibold text-sm leading-tight">Um mecânico</div>
-                      <div className="text-[11px] text-steel-500 mt-0.5 leading-snug">convite direto</div>
-                    </button>
+                    {([
+                      { k: 'open' as const, icon: IconMegaphone, title: 'Todos', sub: mechanics.length ? `${mechanics.length} ${mechanics.length === 1 ? 'disponível' : 'disponíveis'}` : 'os disponíveis', off: false },
+                      { k: 'favorites' as const, icon: IconStar, title: 'Preferidos', sub: favorites.size === 0 ? 'nenhum ainda' : `${favorites.size} na lista`, off: favorites.size === 0 },
+                      { k: 'direct' as const, icon: IconTarget, title: 'Um mecânico', sub: 'convite direto', off: false },
+                    ]).map(o => {
+                      const on = mode === o.k;
+                      return (
+                        <button key={o.k} type="button" disabled={o.off} aria-pressed={on}
+                          title={o.off ? 'Marque a estrela de um mecânico em "Um mecânico" ou em Buscar profissionais' : undefined}
+                          onClick={() => { setMode(o.k); if (o.k !== 'direct') setPickedMechanic(''); }}
+                          className={`min-h-[84px] rounded-xl border p-2.5 text-left transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-steel-200 hover:border-steel-300'}`}>
+                          <o.icon className={`w-5 h-5 mb-1.5 ${on ? 'text-brand-600' : 'text-steel-500'}`} />
+                          <div className="font-semibold text-sm leading-tight text-steel-900">{o.title}</div>
+                          <div className="text-[11px] text-steel-500 mt-0.5 leading-snug">{o.sub}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1192,56 +1208,68 @@ export default function WorkshopDashboard() {
               {/* Picker de mecânico */}
               {mode === 'direct' && (
                 <div>
-                  <label className="label">Escolher mecânico *</label>
-                  <input className="input mb-2" placeholder="Buscar por nome…"
-                    value={mechSearch} onChange={e => setMechSearch(e.target.value)} />
+                  <label className="label" htmlFor="mech-search">Escolha o mecânico</label>
+                  <div className="relative mb-2">
+                    <IconSearch className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-400" />
+                    <input id="mech-search" className="input !pl-11" placeholder="Buscar por nome…" autoComplete="off"
+                      value={mechSearch} onChange={e => setMechSearch(e.target.value)} />
+                  </div>
                   {pickedMechanic && !filteredMechanics.some(m => m.id === pickedMechanic) && (
-                    <div className="mb-2 rounded-xl border-2 border-brand-500 bg-brand-50 p-3">
-                      <div className="font-semibold text-sm">✓ {inviteNames[pickedMechanic] ?? favMechanics.find(m => m.id === pickedMechanic)?.name ?? 'Mecânico escolhido'}</div>
-                      <div className="text-xs text-steel-600">recebe o convite direto</div>
+                    <div className="mb-2 rounded-xl border border-brand-500 ring-1 ring-brand-500 bg-brand-50 p-3 flex items-center gap-2">
+                      <IconCheck className="w-4 h-4 text-brand-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm truncate">{inviteNames[pickedMechanic] ?? favMechanics.find(m => m.id === pickedMechanic)?.name ?? 'Mecânico escolhido'}</div>
+                        <div className="text-xs text-steel-600">recebe o convite direto</div>
+                      </div>
                     </div>
                   )}
-                  <div className="space-y-2 max-h-44 overflow-y-auto">
+                  <div className="space-y-2 max-h-56 overflow-y-auto">
                     {filteredMechanics.length === 0 ? (
-                      <div className="text-sm text-steel-400 text-center py-4">
-                        Nenhum mecânico disponível no momento
+                      <div className="text-sm text-steel-500 text-center py-4">
+                        {mechSearch ? 'Ninguém com esse nome entre os disponíveis' : 'Nenhum mecânico disponível no momento'}
                       </div>
                     ) : filteredMechanics.map(m => (
-                      <div key={m.id} className={`rounded-xl border-2 transition ${
-                        pickedMechanic === m.id ? 'border-brand-500 bg-brand-50' : 'border-steel-100'
+                      <div key={m.id} className={`rounded-xl border transition ${
+                        pickedMechanic === m.id ? 'border-brand-500 ring-1 ring-brand-500 bg-brand-50' : 'border-steel-200'
                       }`}>
                         <div className="w-full flex items-center gap-2 p-3">
                           <button type="button"
                             onClick={() => setPickedMechanic(m.id)}
-                            className="flex-1 flex items-center gap-3 text-left active:scale-95">
-                            <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
-                              {m.name.charAt(0).toUpperCase()}
-                            </div>
+                            className="flex-1 min-w-0 flex items-center gap-3 text-left active:scale-[0.99]">
+                            {m.avatar
+                              ? <img src={m.avatar} alt="" loading="lazy" className="h-10 w-10 rounded-full object-cover bg-steel-100 shrink-0" />
+                              : <span className="h-10 w-10 rounded-full bg-brand-50 grid place-items-center text-brand-700 text-sm font-bold shrink-0">{initialsOf(m.name)}</span>}
                             <div className="flex-1 min-w-0">
-                              <div className="font-semibold truncate">{m.name}</div>
-                              <div className="text-xs text-steel-500">
-                                ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                              <div className="font-semibold text-steel-900 truncate">{m.name}</div>
+                              <div className="text-xs text-steel-500 flex items-center gap-1 flex-wrap">
+                                {Number(m.rating) > 0
+                                  ? <><IconStar filled className="w-3 h-3 text-amber-500" />{Number(m.rating).toFixed(1).replace('.', ',')}</>
+                                  : 'Novo'}
+                                <span aria-hidden>·</span>{m.total_jobs} {m.total_jobs === 1 ? 'serviço' : 'serviços'}
+                                {Number(m.hourly_rate) > 0 && <><span aria-hidden>·</span>R$ {formatBRL(Number(m.hourly_rate), { decimals: 0 })}/h</>}
                               </div>
                             </div>
-                            {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
+                            {pickedMechanic === m.id && <IconCheck className="w-5 h-5 text-brand-600 shrink-0" />}
                           </button>
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
-                            title={favorites.has(m.id) ? 'Remover dos preferidos' : 'Adicionar aos preferidos'}
-                            className={`h-9 w-9 rounded-full grid place-items-center shrink-0 transition active:scale-90 ${
+                            aria-label={favorites.has(m.id) ? 'Remover dos preferidos' : 'Adicionar aos preferidos'}
+                            aria-pressed={favorites.has(m.id)}
+                            className={`h-10 w-10 rounded-full grid place-items-center shrink-0 transition active:scale-90 ${
                               favorites.has(m.id)
-                                ? 'bg-brand-500/15 text-brand-600 hover:bg-brand-500/25'
-                                : 'bg-steel-100 text-steel-400 hover:text-brand-500 hover:bg-brand-50'
+                                ? 'text-amber-500 hover:bg-amber-50'
+                                : 'text-steel-400 hover:text-amber-500 hover:bg-steel-50'
                             }`}
                           >
-                            {favorites.has(m.id) ? '★' : '☆'}
+                            <IconStar filled={favorites.has(m.id)} className="w-5 h-5" />
                           </button>
                         </div>
                         <button type="button"
                           onClick={() => setReviewsOpen(reviewsOpen === m.id ? null : m.id)}
-                          className="w-full text-[11px] text-brand-600 hover:text-brand-700 font-semibold border-t border-steel-100 py-1.5">
-                          {reviewsOpen === m.id ? '▲ Ocultar avaliações' : '▼ Ver avaliações'}
+                          aria-expanded={reviewsOpen === m.id}
+                          className="w-full min-h-[36px] text-xs text-steel-600 hover:text-steel-900 font-semibold border-t border-steel-100 py-1.5">
+                          {reviewsOpen === m.id ? 'Ocultar avaliações' : 'Ver avaliações'}
                         </button>
                         {reviewsOpen === m.id && (
                           <div className="px-3 pb-3 bg-steel-50 border-t border-steel-100">
@@ -1264,38 +1292,71 @@ export default function WorkshopDashboard() {
                     value={form.scheduled_at} onChange={set('scheduled_at')} />
                 </div>
               )}
+
+              {/* Resumo: o que vai ser publicado, conferido antes do botão */}
+              {!editingId && (() => {
+                const picked = mechanics.find(m => m.id === pickedMechanic)?.name
+                  ?? (pickedMechanic ? inviteNames[pickedMechanic] ?? favMechanics.find(m => m.id === pickedMechanic)?.name : undefined);
+                const rows: [string, string][] = [
+                  ['Serviço', form.title.trim() || '—'],
+                  ...(form.vehicle?.trim() ? [['Veículo', form.vehicle.trim()] as [string, string]] : []),
+                  ['Valor fechado', estimated > 0 ? `R$ ${formatBRL(estimated)}${form.pricing === 'hour' ? ` (${String(Number(form.max_hours)).replace('.', ',')}h)` : ''}` : '—'],
+                  ['Quando', form.scheduled_at ? formatScheduled(new Date(form.scheduled_at).toISOString()) : 'O quanto antes'],
+                  ['Para quem', mode === 'open' ? 'Todos os mecânicos disponíveis'
+                    : mode === 'favorites' ? `Seus ${favorites.size} preferidos`
+                    : picked ? `Convite para ${picked}` : 'Escolha o mecânico acima'],
+                ];
+                return (
+                  <div className="rounded-xl bg-steel-50 ring-1 ring-steel-200 p-3.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-steel-500 mb-2">Resumo da demanda</div>
+                    <dl className="space-y-1.5 text-sm">
+                      {rows.map(([k, v]) => (
+                        <div key={k} className="flex gap-3">
+                          <dt className="w-24 shrink-0 text-steel-500">{k}</dt>
+                          <dd className="flex-1 min-w-0 font-semibold text-steel-900 break-words">{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                );
+              })()}
               </>}
             </div>
 
             {/* Sticky footer */}
             <div className="px-5 py-4 border-t border-steel-100 bg-white rounded-b-3xl sm:rounded-b-2xl space-y-3">
               {formError && (
-                <div className="bg-alert-500/10 border border-alert-300 text-alert-700 text-sm font-semibold rounded-xl px-4 py-2.5 flex items-center gap-2">
-                  <span>⚠️</span><span>{formError}</span>
+                <div role="alert" className="bg-alert-500/10 border border-alert-300 text-alert-700 text-sm font-semibold rounded-xl px-4 py-2.5 flex items-center gap-2">
+                  <IconAlert className="w-4 h-4 shrink-0" /><span>{formError}</span>
                 </div>
               )}
               {/* Empilhar: só ao criar uma demanda avulsa (a que vem de OS/empilhados já tem o próprio caminho) */}
               {/* A partir do passo 2: já tem serviço e valor, e a data não importa para empilhar */}
               {!editingId && step >= 2 && mode !== 'direct' && !form.service_order_id && !form.stacked_service_ids?.length && (
                 <button type="button" onClick={stackService} disabled={saving}
-                  className="w-full min-h-[44px] rounded-xl border border-steel-200 bg-white px-4 py-2 text-sm font-semibold text-steel-700 hover:bg-steel-50 disabled:opacity-50">
-                  📚 Empilhar para juntar com outros serviços
-                  <span className="block text-[11px] font-normal text-steel-500">Um mecânico faz vários serviços numa demanda só: sai mais barato</span>
+                  className="w-full min-h-[48px] flex items-center gap-3 rounded-xl border border-dashed border-steel-300 bg-white px-3.5 py-2 text-left hover:bg-steel-50 disabled:opacity-50">
+                  <IconLayers className="w-5 h-5 text-steel-500 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-steel-800">Empilhar e juntar com outros serviços</span>
+                    <span className="block text-[11px] text-steel-500 leading-snug">Um mecânico faz vários numa demanda só e sai mais barato</span>
+                  </span>
                 </button>
               )}
               <div className="flex gap-3">
                 {!editingId && step > 1
-                  ? <button type="button" onClick={() => goStep((step - 1) as 1 | 2)} className="btn-ghost flex-1">← Voltar</button>
-                  : <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>}
+                  ? <button type="button" onClick={() => goStep((step - 1) as 1 | 2)} className="btn-ghost flex-1 min-h-[48px]"><IconArrowLeft className="w-4 h-4" />Voltar</button>
+                  : <button type="button" onClick={resetModal} className="btn-ghost flex-1 min-h-[48px]">Cancelar</button>}
                 {!editingId && step < 3 ? (
-                  <button key="next" type="button" onClick={e => { e.preventDefault(); nextStep(); }} className="btn-primary flex-[2]">Continuar →</button>
+                  <button key="next" type="button" onClick={e => { e.preventDefault(); nextStep(); }} className="btn-primary flex-[2] min-h-[48px]">
+                    Continuar<IconArrowRight className="w-4 h-4" />
+                  </button>
                 ) : (
-                  <button key="submit" type="submit" className="btn-primary flex-[2]" disabled={saving}>
+                  <button key="submit" type="submit" className="btn-primary flex-[2] min-h-[48px]" disabled={saving}>
                     {saving
                       ? (editingId ? 'Salvando…' : 'Publicando…')
                       : editingId ? 'Salvar alterações'
-                      : mode === 'direct' ? 'Convidar mecânico'
-                      : '⚡ Publicar demanda'}
+                      : mode === 'direct' ? 'Enviar convite'
+                      : 'Publicar demanda'}
                   </button>
                 )}
               </div>
@@ -1307,14 +1368,23 @@ export default function WorkshopDashboard() {
   );
 }
 
+/** Passos da Nova demanda: nome curto (barra de etapas), título e apoio */
+const FORM_STEPS = [
+  { short: 'Serviço', title: 'Qual serviço você precisa?', sub: 'Descreva o trabalho e o carro.' },
+  { short: 'Valor',   title: 'Quanto você vai pagar?',     sub: 'Valor fechado: o mecânico sabe quanto recebe antes de aceitar.' },
+  { short: 'Envio',   title: 'Quando e para quem?',        sub: 'Confira o resumo e publique.' },
+];
+
+const initialsOf = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('');
+
 /* ── Demandas ativas: em que etapa cada uma está ── */
 type ActiveGroup = 'service' | 'enroute' | 'scheduled' | 'waiting';
 
-const ACTIVE_GROUPS: { key: ActiveGroup; title: string; badge: string }[] = [
-  { key: 'service',   title: '🔧 Em serviço',         badge: 'bg-signal-500/15 text-signal-700'   },
-  { key: 'enroute',   title: '🚗 Mecânico a caminho', badge: 'bg-brand-500/15 text-brand-700'     },
-  { key: 'scheduled', title: '📅 Agendados',          badge: 'bg-pending-500/15 text-pending-700' },
-  { key: 'waiting',   title: '📢 Aguardando aceite',  badge: 'bg-steel-200 text-steel-700'        },
+const ACTIVE_GROUPS: { key: ActiveGroup; title: string; icon: typeof IconWrench; badge: string }[] = [
+  { key: 'service',   title: 'Em serviço',         icon: IconWrench,    badge: 'bg-signal-500/15 text-signal-700'   },
+  { key: 'enroute',   title: 'Mecânico a caminho', icon: IconCar,       badge: 'bg-brand-500/15 text-brand-700'     },
+  { key: 'scheduled', title: 'Agendados',          icon: IconCalendar,  badge: 'bg-pending-500/15 text-pending-700' },
+  { key: 'waiting',   title: 'Aguardando aceite',  icon: IconMegaphone, badge: 'bg-steel-200 text-steel-700'        },
 ];
 
 function groupOf(j: Job): ActiveGroup {
@@ -1342,7 +1412,7 @@ function ArrivalInfo({ j }: { j: Job }) {
   if (isArrivalLate(j)) {
     return (
       <div className="mt-1.5 text-[11px] font-semibold text-alert-700 bg-alert-500/10 border border-alert-200 px-2 py-1 rounded-lg">
-        ⏰ Atrasado — o prazo era {formatDeadline(deadline)}. Você pode cancelar sem multa.
+        Atrasado: o prazo era {formatDeadline(deadline)}. Você pode cancelar sem multa.
       </div>
     );
   }
@@ -1350,7 +1420,7 @@ function ArrivalInfo({ j }: { j: Job }) {
   if (deadline.getTime() - Date.now() > 24 * 60 * 60 * 1000) return null;
   return (
     <div className="mt-1 text-[11px] text-steel-500">
-      ⏱ Prazo de chegada: <strong className="text-steel-700">{formatDeadline(deadline)}</strong>
+      Prazo de chegada: <strong className="text-steel-700">{formatDeadline(deadline)}</strong>
     </div>
   );
 }
@@ -1392,8 +1462,8 @@ function HistorySection({ history, workshopId, names, onRepeat }: {
   const visible = list.slice(0, shown);
 
   const TABS: { key: HistTab; label: string; count: number }[] = [
-    { key: 'completed', label: '✅ Concluídos', count: completed.length },
-    { key: 'cancelled', label: '✕ Cancelados',  count: cancelled.length },
+    { key: 'completed', label: 'Concluídos', count: completed.length },
+    { key: 'cancelled', label: 'Cancelados', count: cancelled.length },
   ];
 
   return (
@@ -1401,20 +1471,19 @@ function HistorySection({ history, workshopId, names, onRepeat }: {
       <button
         type="button"
         onClick={toggle}
-        className="w-full card !py-4 flex items-center gap-3 text-left hover:bg-steel-50 transition"
+        className="w-full rounded-xl bg-white border border-steel-200 px-4 py-3.5 flex items-center gap-3 text-left hover:bg-steel-50 transition"
         aria-expanded={open}
       >
-        <span className="text-xl shrink-0">🗂️</span>
+        <IconArchive className="w-5 h-5 shrink-0 text-steel-400" />
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-steel-900">Histórico</div>
+          <div className="font-semibold text-steel-900">Histórico</div>
           <div className="text-xs text-steel-500 mt-0.5">
             {history.length === 0
               ? 'Sem histórico ainda'
               : `${completed.length} concluído${completed.length !== 1 ? 's' : ''} · ${cancelled.length} cancelado${cancelled.length !== 1 ? 's' : ''}`}
           </div>
         </div>
-        <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Ocultar' : 'Ver histórico'}</span>
-        <span className={`text-steel-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        <IconChevronDown className={`w-4 h-4 text-steel-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && history.length > 0 && (
@@ -1438,7 +1507,7 @@ function HistorySection({ history, workshopId, names, onRepeat }: {
 
           {list.length === 0 ? (
             <div className="text-center text-steel-500 text-sm py-6">
-              {tab === 'completed' ? 'Nenhum serviço concluído ainda.' : 'Nenhum cancelamento. 👏'}
+              {tab === 'completed' ? 'Nenhum serviço concluído ainda.' : 'Nenhum cancelamento.'}
             </div>
           ) : (
             <div className="divide-y divide-steel-100">
@@ -1477,19 +1546,19 @@ function HistoryRow({ j, mechName, onRepeat }: { j: Job; mechName?: string; onRe
         )}
         <div className="text-xs text-steel-400">
           Pacote: {pricingLabel(j)}
-          {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
+          {j.actual_hours != null && <span> · {j.actual_hours}h reais</span>}
         </div>
         {/* Serviço que se repete: chama de novo sem digitar tudo */}
         {onRepeat && (
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" onClick={() => onRepeat(j)}
-              className="h-9 px-3 rounded-lg border border-brand-300 bg-white text-brand-700 text-xs font-bold active:scale-95 hover:bg-brand-50">
-              🔁 Repetir
+              className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-white text-brand-700 text-xs font-bold active:scale-95 hover:bg-brand-50">
+              <IconRepeat className="w-3.5 h-3.5" />Repetir
             </button>
             {!isCancelled && j.mechanic_id && (
               <button type="button" onClick={() => onRepeat(j, true)}
-                className="h-9 px-3 rounded-lg border border-steel-200 bg-white text-steel-800 text-xs font-bold active:scale-95 hover:bg-steel-50 max-w-full truncate">
-                🎯 Chamar {mechName ? firstName(mechName) : 'o mesmo mecânico'}
+                className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-steel-200 bg-white text-steel-800 text-xs font-bold active:scale-95 hover:bg-steel-50 max-w-full truncate">
+                <IconTarget className="w-3.5 h-3.5 shrink-0" />Chamar {mechName ? firstName(mechName) : 'o mesmo mecânico'}
               </button>
             )}
           </div>
@@ -1529,15 +1598,15 @@ function statusLabel(j: Job): string {
   if (j.status === 'disputed')    return 'Em disputa';
   if (j.status === 'cancelled')   return 'Cancelado';
   if (j.status === 'open')        return 'Aguardando aceite de um mecânico';
-  if (j.status === 'in_progress') return '🔧 Em serviço';
+  if (j.status === 'in_progress') return 'Em serviço';
   // status === 'assigned'
   // Agendado aceito mas mecânico ainda não saiu (en_route_at null)
   if (!j.en_route_at && j.scheduled_at) {
-    return `📅 Agendado · ${formatScheduled(j.scheduled_at)}`;
+    return `Agendado · ${formatScheduled(j.scheduled_at)}`;
   }
   if (!j.arrived_at)              return 'Mecânico a caminho';
-  if (!j.pix_paid_at)             return 'Mecânico chegou — aguarda pagamento';
-  if (!j.started_at)              return '✅ Pago — aguardando início do serviço';
+  if (!j.pix_paid_at)             return 'Mecânico chegou, aguardando pagamento';
+  if (!j.started_at)              return 'Pago, aguardando início do serviço';
   return 'Em serviço';
 }
 

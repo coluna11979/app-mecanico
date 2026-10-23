@@ -1,29 +1,33 @@
 import { useState } from 'react';
 import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { formatBRL } from '@/lib/payment';
+import {
+  IconActivity, IconArrowRight, IconCheck, IconChevronDown, IconClipboardCheck, IconCog, IconDisc, IconDroplet,
+  IconSearch, IconSnowflake, IconWrench, IconZap,
+} from '@/components/mecanico/icons';
 
 /** Mecânico disponível agora (mesmo formato da lista de Demandas) */
 export type AvailableMechanic = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
 
 /** Serviços mais pedidos: um toque abre a demanda já escrita, com tempo típico e preço estimado */
-export type ServiceShortcut = { icon: string; label: string; title: string; description: string; hours: number };
+export type ServiceShortcut = { icon: (p: { className?: string }) => JSX.Element; label: string; title: string; description: string; hours: number };
 
 export const SERVICE_SHORTCUTS: ServiceShortcut[] = [
-  { icon: '🛢️', label: 'Troca de óleo',  hours: 1,   title: 'Troca de óleo e filtros',
+  { icon: IconDroplet, label: 'Troca de óleo',  hours: 1,   title: 'Troca de óleo e filtros',
     description: 'Troca de óleo do motor e filtro de óleo (filtro de ar/combustível se precisar). Peças por conta da oficina.' },
-  { icon: '🛑', label: 'Freios',         hours: 1.5, title: 'Troca de pastilhas / discos de freio',
+  { icon: IconDisc, label: 'Freios',         hours: 1.5, title: 'Troca de pastilhas / discos de freio',
     description: 'Substituição de pastilhas e, se necessário, discos de freio. Conferir fluido e sangria.' },
-  { icon: '🔩', label: 'Suspensão',      hours: 2,   title: 'Serviço de suspensão',
+  { icon: IconActivity, label: 'Suspensão',      hours: 2,   title: 'Serviço de suspensão',
     description: 'Troca de amortecedores, bandejas, buchas ou pivôs conforme diagnóstico.' },
-  { icon: '🔍', label: 'Diagnóstico',    hours: 1,   title: 'Diagnóstico com scanner',
+  { icon: IconSearch, label: 'Diagnóstico',    hours: 1,   title: 'Diagnóstico com scanner',
     description: 'Leitura de falhas com scanner e diagnóstico do problema relatado pelo cliente.' },
-  { icon: '⚡', label: 'Elétrica',       hours: 1.5, title: 'Serviço de elétrica automotiva',
+  { icon: IconZap, label: 'Elétrica',       hours: 1.5, title: 'Serviço de elétrica automotiva',
     description: 'Diagnóstico e reparo elétrico (bateria, alternador, motor de arranque, chicote, iluminação).' },
-  { icon: '⚙️', label: 'Embreagem',      hours: 3,   title: 'Troca de kit de embreagem',
+  { icon: IconCog, label: 'Embreagem',      hours: 3,   title: 'Troca de kit de embreagem',
     description: 'Substituição do kit de embreagem (platô, disco e rolamento). Peças por conta da oficina.' },
-  { icon: '🧰', label: 'Revisão',        hours: 2,   title: 'Revisão preventiva',
+  { icon: IconClipboardCheck, label: 'Revisão',        hours: 2,   title: 'Revisão preventiva',
     description: 'Revisão geral: fluidos, filtros, freios, suspensão, correias e itens de segurança.' },
-  { icon: '❄️', label: 'Ar-cond.', hours: 1.5, title: 'Serviço de ar-condicionado',
+  { icon: IconSnowflake, label: 'Ar-cond.', hours: 1.5, title: 'Serviço de ar-condicionado',
     description: 'Higienização, carga de gás ou diagnóstico do ar-condicionado.' },
 ];
 
@@ -65,7 +69,7 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact, storageKey
   const pickedList = picked.map(l => SERVICE_SHORTCUTS.find(s => s.label === l)!).filter(Boolean);
 
   return (
-    <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 overflow-hidden">
+    <section className="mb-3 rounded-xl bg-white border border-steel-200 overflow-hidden">
       {/* Disponíveis agora */}
       {!compact && (
       <div className="px-4 py-3.5 flex items-center gap-3 border-b border-steel-100">
@@ -104,13 +108,13 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact, storageKey
       {collapsible && (
         <button type="button" onClick={toggleOpen} aria-expanded={open}
           className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-steel-50 transition">
-          <span className="text-xl shrink-0" aria-hidden>🧰</span>
+          <IconWrench className="w-5 h-5 shrink-0 text-steel-400" />
           <span className="flex-1 min-w-0">
-            <span className="block font-bold text-steel-900">Do que você precisa?</span>
-            <span className="block text-xs text-steel-500 mt-0.5">Atalhos dos serviços mais pedidos: a demanda já vem escrita</span>
+            <span className="block font-semibold text-steel-900">Atalhos de serviço</span>
+            <span className="block text-xs text-steel-500 mt-0.5">Os mais pedidos, com a descrição pronta</span>
           </span>
-          <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Ocultar' : 'Ver atalhos'}</span>
-          <span className={`text-steel-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+          
+          <IconChevronDown className={`w-4 h-4 text-steel-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
       )}
 
@@ -134,8 +138,8 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact, storageKey
               className={`relative min-h-[52px] flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left active:scale-[0.98] transition disabled:opacity-50 ${
                 on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-steel-200 hover:border-brand-300'}`}
             >
-              {on && <span className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-brand-500 text-white text-[11px] font-bold grid place-items-center" aria-hidden>✓</span>}
-              <span className="text-xl leading-none shrink-0">{s.icon}</span>
+              {on && <span className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-brand-500 text-white grid place-items-center" aria-hidden><IconCheck className="w-3 h-3" /></span>}
+              <span className={`h-8 w-8 shrink-0 rounded-lg grid place-items-center ${on ? 'bg-brand-500 text-white' : 'bg-steel-100 text-steel-600'}`}><s.icon className="w-4 h-4" /></span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-steel-900 leading-tight">{s.label}</span>
               </span>
@@ -157,8 +161,8 @@ export function QuickCall({ mechanics, disabled, onShortcut, compact, storageKey
               </div>
             </div>
             <button type="button" disabled={disabled} onClick={() => { onShortcut(pickedList); setPicked([]); }}
-              className="shrink-0 h-11 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.98] hover:bg-brand-600 disabled:opacity-50">
-              Continuar →
+              className="shrink-0 h-11 px-4 inline-flex items-center gap-1.5 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.98] hover:bg-brand-600 disabled:opacity-50">
+              Continuar<IconArrowRight className="w-4 h-4" />
             </button>
           </div>
         )}
