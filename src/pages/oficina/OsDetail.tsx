@@ -17,6 +17,8 @@ import ScheduleOsModal from '@/components/os/ScheduleOsModal';
 import ResponsibleTimers from '@/components/os/ResponsibleTimers';
 import ServiceAssign from '@/components/os/ServiceAssign';
 import ResponsiblesModal from '@/components/os/ResponsiblesModal';
+import AddItemModal from '@/components/os/AddItemModal';
+import { recommendationQuote } from '@/lib/recommendations';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
 import PaymentsList from '@/components/cash/PaymentsList';
@@ -74,6 +76,10 @@ export default function OsDetail() {
   const [scheduling, setScheduling] = useState(false);
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
   const [splitting, setSplitting]     = useState(false);
+  const [addingItem, setAddingItem]   = useState(false);
+  /** Recomendação que está virando item desta OS (marca como feita ao incluir) */
+  const [fromRec, setFromRec]          = useState<{ id: string; description: string; price: number | null } | null>(null);
+  const [recVer, setRecVer]            = useState(0);
   /** Publicar demanda no MecânicoApp (OS já marcada como da plataforma, sem demanda ligada) */
   const [publishing, setPublishing] = useState(false);
   /** Aviso ao iniciar sem responsável (não bloqueia) */
@@ -800,7 +806,13 @@ export default function OsDetail() {
             {/* Recomendado para o futuro (base da reativação de clientes) */}
             {os.customer_id && !isSale && !mech && (
               <Recommendations workshopId={os.workshop_id} customerId={os.customer_id}
-                vehicleId={os.vehicle_id} osId={os.id} />
+                vehicleId={os.vehicle_id} osId={os.id} refreshKey={recVer}
+                onAddToOs={closed ? undefined : async r => {
+                  // Nome do item e o valor enviado ao cliente no orçamento do check-up
+                  const q = await recommendationQuote(r);
+                  setFromRec({ id: r.id, description: q.name, price: q.price });
+                  setAddingItem(true);
+                }} />
             )}
 
             {/* Orçamento original (importado do papel) */}
@@ -881,6 +893,16 @@ export default function OsDetail() {
           os={{ id: os.id, workshop_id: os.workshop_id, title: os.title, scheduled_at: os.scheduled_at ?? null,
                 customer: os.customer ?? null, vehicle: os.vehicle ?? null }}
           onClose={() => setScheduling(false)} onSaved={load} />
+      )}
+
+      {addingItem && (
+        <AddItemModal osId={os.id} workshopId={os.workshop_id} position={items.length} team={team} osMechanicId={os.workshop_mechanic_id}
+          initialDescription={fromRec?.description ?? ''} initialPrice={fromRec?.price ?? null}
+          onAdded={async () => {
+            if (fromRec) await supabase.from('service_recommendations').update({ status: 'done' }).eq('id', fromRec.id);
+            setRecVer(n => n + 1); // a recomendação sai do card na hora
+          }}
+          onClose={() => { setAddingItem(false); setFromRec(null); }} onSaved={load} />
       )}
 
       {splitting && (

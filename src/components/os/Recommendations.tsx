@@ -7,12 +7,16 @@ import type { ServiceRecommendation } from '@/types/database';
  * Serviços recomendados para o futuro deste cliente (pendentes).
  * Base da reativação: é o serviço que o cliente já sabe que precisa fazer.
  */
-export default function Recommendations({ workshopId, customerId, vehicleId, osId }: {
+export default function Recommendations({ workshopId, customerId, vehicleId, osId, refreshKey, onAddToOs }: {
   workshopId: string;
   customerId: string;
   vehicleId: string | null;
   /** OS de onde veio a recomendação (null quando anotada direto na ficha do cliente) */
   osId?: string | null;
+  /** Muda de valor para recarregar a lista (ex.: uma recomendação virou item da OS) */
+  refreshKey?: number;
+  /** Quando informado, cada recomendação ganha "Incluir na OS" (vira item desta OS) */
+  onAddToOs?: (r: ServiceRecommendation) => void;
 }) {
   const [list, setList]     = useState<ServiceRecommendation[]>([]);
   const [adding, setAdding] = useState(false);
@@ -26,7 +30,7 @@ export default function Recommendations({ workshopId, customerId, vehicleId, osI
     setList((data as ServiceRecommendation[]) ?? []);
   }, [customerId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   async function setStatus(r: ServiceRecommendation, status: 'done' | 'dismissed') {
     const { error } = await supabase.from('service_recommendations').update({ status }).eq('id', r.id);
@@ -72,7 +76,10 @@ export default function Recommendations({ workshopId, customerId, vehicleId, osI
                 desde {new Date(r.recommended_at).toLocaleDateString('pt-BR')}
                 {r.vehicle_id && vehicleId && r.vehicle_id !== vehicleId && ' · outro veículo'}
               </span>
-              <span className="flex gap-2">
+              <span className="flex flex-wrap justify-end gap-x-3 gap-y-1">
+                {onAddToOs && (
+                  <button onClick={() => onAddToOs(r)} className="text-[11px] font-bold text-brand-700 hover:underline min-h-[28px]">➕ Incluir na OS</button>
+                )}
                 <button onClick={() => setStatus(r, 'done')} className="text-[11px] font-semibold text-signal-700 hover:underline">✓ Feito</button>
                 <button onClick={() => setStatus(r, 'dismissed')} className="text-[11px] text-steel-400 hover:text-alert-600">Descartar</button>
               </span>
