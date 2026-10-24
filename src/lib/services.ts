@@ -44,3 +44,45 @@ export function fmtMinutes(min: number | null | undefined) {
   const h = Math.floor(min / 60), m = min % 60;
   return h ? (m ? `${h}h ${m}min` : `${h}h`) : `${m}min`;
 }
+
+const flat = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/** Palavras do nome do serviço → tempo típico de bancada (min). Do mais específico para o mais geral. */
+const KEYWORD_MINUTES: [string[], number][] = [
+  [['freio de mao', 'alavanca'], 60],
+  [['fluido de freio', 'sangria'], 40],
+  [['lona', 'sapata'], 90],
+  [['disco'], 90],
+  [['pastilha'], 60],
+  [['amortecedor'], 120],
+  [['bieleta'], 45],
+  [['pivo'], 60],
+  [['bandeja'], 90],
+  [['terminal', 'barra de direcao', 'caixa de direcao'], 60],
+  [['correia dentada', 'distribuicao'], 180],
+  [['bomba d', 'bomba de agua'], 120],
+  [['correia'], 45],
+  [['vela'], 30],
+  [['arrefecimento', 'radiador', 'valvula termostatica'], 60],
+  [['embreagem'], 240],
+  [['bateria'], 15],
+  [['alinhamento', 'cambagem'], 40],
+  [['balanceamento'], 30],
+  [['rodizio'], 20],
+  [['higieniza', 'ar condicionado', 'ar-condicionado'], 40],
+  [['gas'], 60],
+  [['bico', 'injet'], 90],
+  [['tbi'], 40],
+  [['escapamento', 'silencioso'], 60],
+  [['oleo'], 30],
+  [['filtro'], 20],
+  [['diagnostico', 'scanner'], 30],
+  [['revisao'], 180],
+];
+
+/** Tempo típico estimado a partir do nome do serviço (null = não reconheceu) */
+export function guessServiceMinutes(description: string): number | null {
+  const d = flat(description);
+  for (const [words, min] of KEYWORD_MINUTES) if (words.some(w => d.includes(w))) return min;
+  return null;
+}

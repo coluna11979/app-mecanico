@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { PAUSE_REASONS, fmtDur } from './osHelpers';
 import type { ServiceOrderItem } from '@/types/database';
-import { COMMON_SERVICES } from '@/lib/services';
+import { COMMON_SERVICES, guessServiceMinutes } from '@/lib/services';
 
 type WorkLog = {
   id: string; executor: 'workshop' | 'platform'; workshop_mechanic_id: string | null;
@@ -90,7 +90,9 @@ export default function ResponsibleTimers({ osId, workshopId, status, items, tea
     const t = table.get(norm(description));
     if (t) return { minutes: t, from: 'da tabela de serviços' };
     const c = COMMON_SERVICES.find(x => norm(x.name) === norm(description));
-    return c ? { minutes: c.minutes, from: 'tempo padrão' } : null;
+    if (c) return { minutes: c.minutes, from: 'tempo padrão' };
+    const g = guessServiceMinutes(description);
+    return g ? { minutes: g, from: 'tempo típico estimado pelo nome do serviço' } : null;
   };
 
   async function saveEstimate(itemId: string, raw: string) {
