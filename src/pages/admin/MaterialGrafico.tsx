@@ -4,7 +4,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { toast } from '@/components/ui/Toast';
 import { Modal } from '@/components/admin/marketing/ui';
 import { type Audience, canvasToBlob, download } from '@/lib/brandKit';
-import { type ThemeId, MESSAGES, THEMES } from '@/lib/brandPieces';
+import { type ThemeId, MESSAGE_GROUPS, MESSAGES, THEMES } from '@/lib/brandPieces';
 import {
   type Material, type MaterialOptions, GROUPS, MATERIALS, buildArsenalZip, defaultOptions,
   materialFileBase, materialPdf, materialPngs, orderText,
@@ -189,7 +189,14 @@ function MaterialDetail({ m, tracked, onClose }: { m: Material; tracked: boolean
           <div>
             <label className="label">Mensagem</label>
             <select className="input" value={o.messageId} onChange={e => setO(p => ({ ...p, messageId: e.target.value }))}>
-              {msgs.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+              {MESSAGE_GROUPS.map(g => {
+                const items = msgs.filter(g.match);
+                return items.length ? (
+                  <optgroup key={g.label} label={g.label}>
+                    {items.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                  </optgroup>
+                ) : null;
+              })}
             </select>
           </div>
         )}
@@ -197,7 +204,7 @@ function MaterialDetail({ m, tracked, onClose }: { m: Material; tracked: boolean
         {m.options.theme && (
           <div>
             <div className="label">Tema</div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
               {THEME_IDS.map(t => (
                 <button key={t} onClick={() => setO(p => ({ ...p, theme: t }))}
                   className={`min-h-[44px] rounded-lg border-2 text-sm font-semibold transition ${o.theme === t ? 'border-brand-500 text-brand-700 bg-brand-50' : 'border-steel-200 text-steel-600'}`}>

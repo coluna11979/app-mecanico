@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { type Audience, canvasToBlob, download } from '@/lib/brandKit';
 import {
-  type FormatId, type Message, type ThemeId, FORMATS, MESSAGES, SOCIAL_FORMATS, THEMES,
+  type FormatId, type Message, type ThemeId, FORMATS, MESSAGES, MESSAGE_GROUPS, SOCIAL_FORMATS, THEMES,
   buildPiecesZip, pieceFileName, renderPiece, renderPiecePng,
 } from '@/lib/brandPieces';
 
@@ -84,7 +84,14 @@ export default function PiecesStudio({ tracked }: { tracked: boolean }) {
         <div>
           <label className="label">Mensagem</label>
           <select className="input" value={base.id} onChange={e => setMessageId(e.target.value)}>
-            {list.map(m => <option key={m.id} value={m.id}>{m.name}{edits[m.id] ? ' (editada)' : ''}</option>)}
+            {MESSAGE_GROUPS.map(g => {
+              const items = list.filter(g.match);
+              return items.length ? (
+                <optgroup key={g.label} label={g.label}>
+                  {items.map(m => <option key={m.id} value={m.id}>{m.name}{edits[m.id] ? ' (editada)' : ''}</option>)}
+                </optgroup>
+              ) : null;
+            })}
           </select>
         </div>
         <div>
@@ -96,7 +103,7 @@ export default function PiecesStudio({ tracked }: { tracked: boolean }) {
       </div>
 
       {/* Temas lado a lado */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         {THEME_IDS.map(t => (
           <ThemePreview key={t} t={t} selected={t === theme} message={message} format={format} tracked={tracked}
             onSelect={() => setTheme(t)} onDownload={() => downloadOne(t)} />
@@ -108,7 +115,7 @@ export default function PiecesStudio({ tracked }: { tracked: boolean }) {
           ⬇ Baixar {THEMES[theme].label.toLowerCase()} ({f.label})
         </button>
         <button className="btn-secondary min-h-[44px]" onClick={downloadAll} disabled={!!zipping}>
-          {zipping ? `Gerando ${zipping}…` : `Baixar todas as mensagens nos 4 temas (.zip)`}
+          {zipping ? `Gerando ${zipping}…` : `Baixar todas as mensagens em todos os temas (.zip)`}
         </button>
         <button className="btn-ghost min-h-[44px]" onClick={() => setEditing(v => !v)}>
           ✏️ {editing ? 'Fechar edição' : 'Editar texto'}

@@ -302,7 +302,7 @@ PASTAS
   02-logotipo    Logo horizontal: fundo claro, fundo escuro, 1 cor preto, 1 cor branco (SVG + PNG transparente).
   03-icone       Só o símbolo: app (fundo grafite), laranja, branco, preto (SVG + PNG 2048 px).
   04-cores       Paleta em imagem + este resumo.
-  05-panfletos   Panfletos A5 prontos (oficina e mecânico, 4 temas), PNG 300 dpi com 3 mm de sangria (154 x 216 mm).
+  05-panfletos   Panfletos A5 prontos (oficina e mecânico, todos os temas), PNG 300 dpi com 3 mm de sangria (154 x 216 mm).
                  Mais mensagens e formatos de rede social: painel admin > Kit da marca > Panfletos e posts.
   06-textos      Frases da marca e textos dos panfletos.
 
