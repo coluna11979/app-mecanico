@@ -11,16 +11,20 @@ type Sugg = { name: string; price: number };
  * ➕ Incluir novo item — na OS já aprovada (ainda não concluída): serviço extra que apareceu durante
  * o trabalho. Entra com valor e responsável, o total da OS é recalculado e o mecânico vê o item novo.
  */
-export default function AddItemModal({ osId, workshopId, position, team, osMechanicId, onClose, onSaved }: {
+export default function AddItemModal({ osId, workshopId, position, team, osMechanicId, initialDescription = '', onAdded, onClose, onSaved }: {
   osId: string; workshopId: string;
   /** Posição do novo item (depois dos que já existem) */
   position: number;
   team: Member[];
   osMechanicId: string | null;
+  /** Vindo de uma recomendação: já abre com o texto dela */
+  initialDescription?: string;
+  /** Depois de incluir (ex.: marcar a recomendação como feita) */
+  onAdded?: () => void | Promise<void>;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [desc, setDesc] = useState('');
+  const [desc, setDesc] = useState(initialDescription);
   const [qty, setQty] = useState('1');
   const [price, setPrice] = useState('');
   const [who, setWho] = useState('');
@@ -54,6 +58,7 @@ export default function AddItemModal({ osId, workshopId, position, team, osMecha
     });
     setBusy(false);
     if (error) return toast.error('Não foi possível incluir: ' + error.message);
+    await onAdded?.();
     toast.success('Item incluído ✓ — o total da OS foi atualizado');
     onSaved();
     onClose();

@@ -74,6 +74,8 @@ export default function OsDetail() {
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
   const [splitting, setSplitting]     = useState(false);
   const [addingItem, setAddingItem]   = useState(false);
+  /** Recomendação que está virando item desta OS (marca como feita ao incluir) */
+  const [fromRec, setFromRec]          = useState<{ id: string; description: string } | null>(null);
   const [recSignal, setRecSignal]      = useState(0);
   /** Publicar demanda no MecânicoApp (OS já marcada como da plataforma, sem demanda ligada) */
   const [publishing, setPublishing] = useState(false);
@@ -797,7 +799,8 @@ export default function OsDetail() {
             {/* Recomendado para o futuro (base da reativação de clientes) */}
             {os.customer_id && !isSale && !mech && (
               <Recommendations workshopId={os.workshop_id} customerId={os.customer_id}
-                vehicleId={os.vehicle_id} osId={os.id} openSignal={recSignal} />
+                vehicleId={os.vehicle_id} osId={os.id} openSignal={recSignal}
+                onAddToOs={closed ? undefined : r => { setFromRec({ id: r.id, description: r.description }); setAddingItem(true); }} />
             )}
 
             {/* Orçamento original (importado do papel) */}
@@ -882,7 +885,9 @@ export default function OsDetail() {
 
       {addingItem && (
         <AddItemModal osId={os.id} workshopId={os.workshop_id} position={items.length} team={team} osMechanicId={os.workshop_mechanic_id}
-          onClose={() => setAddingItem(false)} onSaved={load} />
+          initialDescription={fromRec?.description ?? ''}
+          onAdded={async () => { if (fromRec) await supabase.from('service_recommendations').update({ status: 'done' }).eq('id', fromRec.id); }}
+          onClose={() => { setAddingItem(false); setFromRec(null); }} onSaved={load} />
       )}
 
       {splitting && (
