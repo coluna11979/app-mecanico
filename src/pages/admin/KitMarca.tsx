@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { toast } from '@/components/ui/Toast';
 import PiecesStudio from '@/components/admin/marketing/PiecesStudio';
+import CarouselStudio from '@/components/admin/marketing/CarouselStudio';
 import {
   type Audience, type IconVariant, COLORS, DISPLAY_DOMAIN, FONTS, LANDING_PATH,
   LOGO_VARIANTS, PHRASES, PUBLIC_URL, SIGNUP_PATH, buildKitZip, cmykText, download,
@@ -15,6 +16,7 @@ const SECTIONS = [
   { id: 'cores',     label: 'Cores' },
   { id: 'fontes',    label: 'Fontes' },
   { id: 'pecas',     label: 'Posts para redes' },
+  { id: 'carrosseis', label: 'Carrosséis' },
   { id: 'textos',    label: 'Frases e textos' },
 ];
 
@@ -92,6 +94,7 @@ export default function AdminKitMarca() {
         <ColorsSection />
         <FontsSection />
         <PiecesSection tracked={tracked} />
+        <CarouselSection />
         <TextsSection />
       </div>
     </AdminLayout>
@@ -297,6 +300,15 @@ function FontsSection() {
 
 // ── 06 Panfletos e posts ────────────────────────────────────────────────────
 
+function CarouselSection() {
+  return (
+    <Section id="carrosseis" n={7} title="Carrosséis"
+      subtitle="Sequências prontas para o Instagram (1080×1350): capa, passos e chamada final, com legenda.">
+      <CarouselStudio />
+    </Section>
+  );
+}
+
 function PiecesSection({ tracked }: { tracked: boolean }) {
   return (
     <Section id="pecas" n={6} title="Posts para redes sociais"
@@ -310,7 +322,7 @@ function PiecesSection({ tracked }: { tracked: boolean }) {
 
 function TextsSection() {
   return (
-    <Section id="textos" n={7} title="Frases e textos" subtitle="Frases da marca para chamadas, anúncios e materiais. Clique para copiar.">
+    <Section id="textos" n={8} title="Frases e textos" subtitle="Frases da marca para chamadas, anúncios e materiais. Clique para copiar.">
       <ul className="space-y-2">
         {PHRASES.map(p => (
           <li key={p.text}>
