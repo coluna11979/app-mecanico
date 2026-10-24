@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { ServiceRecommendation } from '@/types/database';
@@ -7,14 +7,14 @@ import type { ServiceRecommendation } from '@/types/database';
  * Serviços recomendados para o futuro deste cliente (pendentes).
  * Base da reativação: é o serviço que o cliente já sabe que precisa fazer.
  */
-export default function Recommendations({ workshopId, customerId, vehicleId, osId, openSignal, onAddToOs }: {
+export default function Recommendations({ workshopId, customerId, vehicleId, osId, refreshKey, onAddToOs }: {
   workshopId: string;
   customerId: string;
   vehicleId: string | null;
   /** OS de onde veio a recomendação (null quando anotada direto na ficha do cliente) */
   osId?: string | null;
-  /** Muda de valor para abrir o formulário de nova recomendação (vindo de outro botão da tela) */
-  openSignal?: number;
+  /** Muda de valor para recarregar a lista (ex.: uma recomendação virou item da OS) */
+  refreshKey?: number;
   /** Quando informado, cada recomendação ganha "Incluir na OS" (vira item desta OS) */
   onAddToOs?: (r: ServiceRecommendation) => void;
 }) {
@@ -30,13 +30,7 @@ export default function Recommendations({ workshopId, customerId, vehicleId, osI
     setList((data as ServiceRecommendation[]) ?? []);
   }, [customerId]);
 
-  useEffect(() => { load(); }, [load]);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!openSignal) return;
-    setAdding(true);
-    box.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [openSignal]);
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   async function setStatus(r: ServiceRecommendation, status: 'done' | 'dismissed') {
     const { error } = await supabase.from('service_recommendations').update({ status }).eq('id', r.id);
@@ -61,7 +55,7 @@ export default function Recommendations({ workshopId, customerId, vehicleId, osI
   }
 
   return (
-    <div className="card" ref={box}>
+    <div className="card">
       <div className="flex items-center justify-between mb-2">
         <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">🔧 Recomendado para o futuro</div>
         {!adding && (

@@ -12,14 +12,11 @@ type Member = { id: string; name: string; active?: boolean };
  * Cada serviço começa com o responsável da OS; só se mexe no que for diferente.
  * Quem for escolhido passa a ver (e só ele) esse serviço no painel do mecânico.
  */
-export default function ServiceAssign({ items, team, osMechanicId, onChanged, onAddItem, onRecommend }: {
+export default function ServiceAssign({ items, team, osMechanicId, onChanged }: {
   items: ServiceOrderItem[];
   team: Member[];
   osMechanicId: string | null;
   onChanged: () => void;
-  /** Atalhos da OS em andamento */
-  onAddItem?: () => void;
-  onRecommend?: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const services = items.filter(i => i.kind === 'labor');
@@ -52,12 +49,6 @@ export default function ServiceAssign({ items, team, osMechanicId, onChanged, on
           </select>
         </div>
       ))}
-      {(onAddItem || onRecommend) && (
-        <div className="px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-          {onAddItem && <button type="button" onClick={onAddItem} className="font-semibold text-brand-700 hover:underline min-h-[36px]">➕ Incluir novo item</button>}
-          {onRecommend && <button type="button" onClick={onRecommend} className="font-semibold text-brand-700 hover:underline min-h-[36px]">📌 Recomendar para o futuro</button>}
-        </div>
-      )}
     </div>
   );
 }

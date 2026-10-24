@@ -77,7 +77,7 @@ export default function OsDetail() {
   const [addingItem, setAddingItem]   = useState(false);
   /** Recomendação que está virando item desta OS (marca como feita ao incluir) */
   const [fromRec, setFromRec]          = useState<{ id: string; description: string; price: number | null } | null>(null);
-  const [recSignal, setRecSignal]      = useState(0);
+  const [recVer, setRecVer]            = useState(0);
   /** Publicar demanda no MecânicoApp (OS já marcada como da plataforma, sem demanda ligada) */
   const [publishing, setPublishing] = useState(false);
   /** Aviso ao iniciar sem responsável (não bloqueia) */
@@ -368,8 +368,6 @@ export default function OsDetail() {
   const moreActions: MoreItem[] = mech ? [
     ...(canOpen('/oficina/checkup') ? [{ label: '🔍 Check-up do veículo', onClick: () => nav(`/oficina/checkup?os=${os.id}`) }] : []),
   ] : [
-    ...(!closed && !isSale ? [{ label: '➕ Incluir novo item', onClick: () => setAddingItem(true) }] : []),
-    ...(!closed && !isSale && os.customer_id ? [{ label: '📌 Recomendar para o futuro', onClick: () => setRecSignal(n => n + 1) }] : []),
     ...(['open', 'awaiting_approval', 'approved'].includes(os.status)
       ? [{ label: '✓ Já foi concluída (escolher a data)', onClick: () => setConcluding(true) }] : []),
     ...(!closed && !os.scheduled_at && feature('os.agendar') ? [{ label: '📅 Agendar serviço', onClick: () => setScheduling(true) }] : []),
@@ -626,8 +624,7 @@ export default function OsDetail() {
   
                 {/* Depois de aprovada: a gestão distribui os serviços */}
                 {!mech && canDo(session, balcao, 'caixa') && ['approved', 'in_progress'].includes(os.status) && (
-                  <ServiceAssign items={items} team={team} osMechanicId={os.workshop_mechanic_id} onChanged={load}
-                    onAddItem={() => setAddingItem(true)} onRecommend={os.customer_id ? () => setRecSignal(n => n + 1) : undefined} />
+                  <ServiceAssign items={items} team={team} osMechanicId={os.workshop_mechanic_id} onChanged={load} />
                 )}
 
                 {/* Relógio por responsável (cada um inicia/pausa/termina a sua parte) */}
@@ -800,7 +797,7 @@ export default function OsDetail() {
             {/* Recomendado para o futuro (base da reativação de clientes) */}
             {os.customer_id && !isSale && !mech && (
               <Recommendations workshopId={os.workshop_id} customerId={os.customer_id}
-                vehicleId={os.vehicle_id} osId={os.id} openSignal={recSignal}
+                vehicleId={os.vehicle_id} osId={os.id} refreshKey={recVer}
                 onAddToOs={closed ? undefined : async r => {
                   // Nome do item e o valor enviado ao cliente no orçamento do check-up
                   const q = await recommendationQuote(r);
@@ -892,7 +889,10 @@ export default function OsDetail() {
       {addingItem && (
         <AddItemModal osId={os.id} workshopId={os.workshop_id} position={items.length} team={team} osMechanicId={os.workshop_mechanic_id}
           initialDescription={fromRec?.description ?? ''} initialPrice={fromRec?.price ?? null}
-          onAdded={async () => { if (fromRec) await supabase.from('service_recommendations').update({ status: 'done' }).eq('id', fromRec.id); }}
+          onAdded={async () => {
+            if (fromRec) await supabase.from('service_recommendations').update({ status: 'done' }).eq('id', fromRec.id);
+            setRecVer(n => n + 1); // a recomendação sai do card na hora
+          }}
           onClose={() => { setAddingItem(false); setFromRec(null); }} onSaved={load} />
       )}
 
