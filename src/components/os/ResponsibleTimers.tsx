@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { PAUSE_REASONS, fmtDur } from './osHelpers';
 import type { ServiceOrderItem } from '@/types/database';
+import { COMMON_SERVICES } from '@/lib/services';
 
 type WorkLog = {
   id: string; executor: 'workshop' | 'platform'; workshop_mechanic_id: string | null;
@@ -22,9 +23,11 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: 
  * (mecânico da loja ou da plataforma). OS que já tinha relógio por responsável continua assim.
  * O primeiro a iniciar coloca a OS "Em andamento"; quando tudo termina, sugere concluir a OS.
  */
-export default function ResponsibleTimers({ osId, status, items, team, osMechanicId, osExecutor, readOnly, onlyMechanicId, onStartOs, onAllDone }: {
+export default function ResponsibleTimers({ osId, workshopId, status, items, team, osMechanicId, osExecutor, readOnly, onlyMechanicId, onStartOs, onAllDone, onItemsChanged }: {
   osId: string; status: string;
-  items: Pick<ServiceOrderItem, 'id' | 'kind' | 'description' | 'executor' | 'workshop_mechanic_id'>[];
+  /** Para buscar a média real e a tabela de serviços da oficina */
+  workshopId?: string;
+  items: Pick<ServiceOrderItem, 'id' | 'kind' | 'description' | 'executor' | 'workshop_mechanic_id' | 'estimated_minutes'>[];
   team: { id: string; name: string }[];
   osMechanicId: string | null; osExecutor: 'workshop' | 'platform' | null | undefined;
   readOnly?: boolean;
@@ -32,11 +35,75 @@ export default function ResponsibleTimers({ osId, status, items, team, osMechani
   onlyMechanicId?: string | null;
   onStartOs: () => Promise<void> | void;
   onAllDone: () => void;
+  /** Depois de ajustar o tempo de um serviço */
+  onItemsChanged?: () => void;
 }) {
   const [logs, setLogs] = useState<WorkLog[] | null>(null);
   const [pausing, setPausing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [, tick] = useState(0);
+
+  /* ── Tempo médio de cada serviço ──
+     1) ajustado nesta OS · 2) média real da oficina (serviços já terminados, 2 ou mais) ·
+     3) tempo da tabela de serviços · 4) padrão do sistema. */
+  const [table, setTable] = useState<Map<string, number>>(new Map());
+  const [real, setReal] = useState<Map<string, { avg: number; n: number }>>(new Map());
+  const [mine, setMine] = useState<Record<string, number>>({});   // ajustes feitos agora (aparecem na hora)
+  const [editEst, setEditEst] = useState<{ id: string; value: string } | null>(null);
+  const norm = (t: string) => t.trim().toLowerCase();
+
+  useEffect(() => {
+    if (!workshopId) return;
+    let alive = true;
+    (async () => {
+      const [svc, hist] = await Promise.all([
+        supabase.from('workshop_services').select('name, estimated_minutes').eq('workshop_id', workshopId).not('estimated_minutes', 'is', null),
+        supabase.from('service_order_work_logs')
+          .select('service_order_item_id, started_at, ended_at, finished, item:service_order_items!service_order_item_id(description)')
+          .eq('workshop_id', workshopId).not('service_order_item_id', 'is', null).not('ended_at', 'is', null).limit(2000),
+      ]);
+      if (!alive) return;
+      setTable(new Map(((svc.data ?? []) as { name: string; estimated_minutes: number }[]).map(x => [x.name.trim().toLowerCase(), x.estimated_minutes])));
+      // soma o tempo por serviço (de todos os trechos) e tira a média por descrição, só dos terminados
+      const perItem = new Map<string, { desc: string; min: number; done: boolean }>();
+      for (const l of (hist.data ?? []) as unknown as { service_order_item_id: string; started_at: string; ended_at: string; finished: boolean; item: { description: string } | { description: string }[] | null }[]) {
+        const it = Array.isArray(l.item) ? l.item[0] : l.item;
+        if (!it) continue;
+        const cur = perItem.get(l.service_order_item_id) ?? { desc: it.description, min: 0, done: false };
+        cur.min += Math.max(0, (new Date(l.ended_at).getTime() - new Date(l.started_at).getTime()) / 60000);
+        cur.done = cur.done || l.finished;
+        perItem.set(l.service_order_item_id, cur);
+      }
+      const byDesc = new Map<string, number[]>();
+      for (const v of perItem.values()) if (v.done && v.min > 0) byDesc.set(v.desc.trim().toLowerCase(), [...(byDesc.get(v.desc.trim().toLowerCase()) ?? []), v.min]);
+      setReal(new Map([...byDesc.entries()].filter(([, a]) => a.length >= 2).map(([k, a]) => [k, { avg: a.reduce((x, y) => x + y, 0) / a.length, n: a.length }])));
+    })();
+    return () => { alive = false; };
+  }, [workshopId]);
+
+  /** Tempo estimado do serviço e de onde veio */
+  const estimateOf = (itemId: string, description: string): { minutes: number; from: string } | null => {
+    const own = mine[itemId] ?? items.find(i => i.id === itemId)?.estimated_minutes ?? null;
+    if (own) return { minutes: own, from: 'ajustado nesta OS' };
+    const r = real.get(norm(description));
+    if (r) return { minutes: Math.max(1, Math.round(r.avg)), from: `média real de ${r.n} serviços` };
+    const t = table.get(norm(description));
+    if (t) return { minutes: t, from: 'da tabela de serviços' };
+    const c = COMMON_SERVICES.find(x => norm(x.name) === norm(description));
+    return c ? { minutes: c.minutes, from: 'tempo padrão' } : null;
+  };
+
+  async function saveEstimate(itemId: string, raw: string) {
+    const m = Math.round(Number(raw.replace(',', '.')));
+    setEditEst(null);
+    if (!raw.trim()) return;
+    if (!Number.isFinite(m) || m <= 0) return toast.error('Informe os minutos (maior que zero)');
+    const { error } = await supabase.from('service_order_items').update({ estimated_minutes: m }).eq('id', itemId);
+    if (error) return toast.error('Não foi possível salvar o tempo: ' + error.message);
+    setMine(x => ({ ...x, [itemId]: m }));
+    toast.success('Tempo do serviço atualizado ✓');
+    onItemsChanged?.();
+  }
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('service_order_work_logs')
@@ -163,6 +230,35 @@ export default function ResponsibleTimers({ osId, status, items, team, osMechani
                 {s.open ? `trabalhando desde ${hhmm(s.open.started_at)}`
                   : s.finished ? 'terminou' : s.pausedReason ? `⏸ ${s.pausedReason.toLowerCase()}` : 'não começou'}
               </div>
+              {g.itemId && (() => {
+                const est = estimateOf(g.itemId, g.services[0]);
+                const editing = editEst?.id === g.itemId;
+                const over = !!est && s.worked > est.minutes;
+                return (
+                  <div className="text-[11px] mt-0.5 flex items-center justify-end gap-1.5">
+                    {editing ? (
+                      <>
+                        <span className="text-steel-500">médio</span>
+                        <input autoFocus inputMode="numeric" className="input !py-1 !px-2 !w-16 text-xs text-right" defaultValue={est?.minutes ?? ''}
+                          onKeyDown={e => { if (e.key === 'Enter') saveEstimate(g.itemId!, (e.target as HTMLInputElement).value); if (e.key === 'Escape') setEditEst(null); }}
+                          onChange={e => setEditEst({ id: g.itemId!, value: e.target.value })} />
+                        <span className="text-steel-500">min</span>
+                        <button type="button" onClick={() => saveEstimate(g.itemId!, editEst?.value ?? String(est?.minutes ?? ''))} className="font-semibold text-signal-700">OK</button>
+                      </>
+                    ) : (
+                      <>
+                        <span className={over ? 'text-alert-600 font-semibold' : 'text-steel-500'} title={est?.from}>
+                          {est ? `médio ${fmtDur(est.minutes)}` : 'sem tempo médio'}{over ? ' · passou' : ''}
+                        </span>
+                        {!readOnly && !onlyMechanicId && (
+                          <button type="button" onClick={() => setEditEst({ id: g.itemId!, value: String(est?.minutes ?? '') })}
+                            className="text-brand-600 hover:underline" aria-label="Editar tempo médio">✏️ {est ? 'editar' : 'definir'}</button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
             {!readOnly && (
               <div className="flex gap-1.5 shrink-0">

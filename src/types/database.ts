@@ -296,6 +296,8 @@ export interface ServiceOrderItem {
   platform_job_id?: string | null;
   /** Empilhado: marcado para o mecânico da plataforma, ainda sem demanda */
   stacked_at?: string | null;
+  /** Tempo estimado do serviço, em minutos (editável na OS) */
+  estimated_minutes?: number | null;
   position: number;
   created_at: string;
 }
