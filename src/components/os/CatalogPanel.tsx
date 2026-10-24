@@ -11,12 +11,15 @@ type Tab = 'servico' | 'peca';
  * em vez de digitar. Mostra serviços da tabela e peças do estoque (com saldo e preço) e fica
  * aberto para adicionar vários itens seguidos.
  */
-export default function CatalogPanel({ suggestions, services, itemCount, total, onPick, onClose }: {
+export default function CatalogPanel({ suggestions, services, itemCount, total, partsAsCost, showCost, onPick, onClose }: {
   suggestions: Suggestion[];
   /** Serviços já na OS (destino das peças): key + nome */
   services: { key: string; name: string }[];
   itemCount: number;
   total: number;
+  /** Peças entram dentro de um item: mostra o custo (e não o preço de venda) */
+  partsAsCost?: boolean;
+  showCost?: boolean;
   /** targetKey = serviço que recebe a peça ('' = peça avulsa/sem destino) */
   onPick: (s: Suggestion, targetKey: string) => void;
   onClose: () => void;
@@ -92,7 +95,11 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
                         : s.fromTable ? 'Tabela de serviços' : 'Já usado antes'}
                     </span>
                   </span>
-                  <span className="text-sm font-bold text-steel-900 shrink-0">{s.unit_price > 0 ? fmtBRL(s.unit_price) : 'a definir'}</span>
+                  <span className="text-sm font-bold text-steel-900 shrink-0">
+                    {s.kind === 'part' && partsAsCost
+                      ? (showCost ? (s.cost ? `custo ${fmtBRL(s.cost)}` : 'sem custo') : '')
+                      : s.unit_price > 0 ? fmtBRL(s.unit_price) : 'a definir'}
+                  </span>
                   <span className={`h-11 w-11 shrink-0 rounded-xl grid place-items-center text-lg font-bold transition ${justAdded === s.description ? 'bg-signal-500 text-white' : 'bg-brand-50 text-brand-700'}`}>
                     {justAdded === s.description ? '✓' : '+'}
                   </span>

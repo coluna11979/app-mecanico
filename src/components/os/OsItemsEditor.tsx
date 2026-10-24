@@ -100,6 +100,9 @@ function toRow(i: ServiceOrderItem): Row {
   };
 }
 
+/** Peça dentro de um item e sem preço de venda: serve só para custo/estoque (não soma no valor da OS) */
+const costOnly = (r: Row, nested: boolean) => r.kind === 'part' && nested && !(parseMoney(r.unit_price || '0') > 0);
+
 function rowTotal(r: Row): number {
   const q = parseMoney(r.quantity);
   const p = parseMoney(r.unit_price);
@@ -299,13 +302,15 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       if (i < 0) return [...rs, row];
       let j = i + 1;
       while (j < rs.length && rs[j].kind === 'part') j++;
-      return [...rs.slice(0, j), row, ...rs.slice(j)];
+      // Dentro de um item, a peça é só custo: o preço que o cliente paga já está no item
+      return [...rs.slice(0, j), { ...row, unit_price: '' }, ...rs.slice(j)];
     });
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
       if (r.key !== key) return r;
       const next = { ...r, ...patch };
+      const insideItem = r.kind === 'part' && groupOf(rs).get(r.key) != null;
       // Escolheu um item já usado antes → completa tipo e preço (se vazio).
       // Peça do cadastro → também guarda de qual peça veio e o custo de agora.
       if (patch.description !== undefined) {
@@ -324,6 +329,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         }
       }
       if (next.kind !== 'part') { next.part_id = null; next.unit_cost = ''; }
+      // Peça dentro de um item que ainda não tem preço de venda continua só com custo
+      if (patch.description !== undefined && next.kind === 'part' && insideItem && !(parseMoney(r.unit_price || '0') > 0)) next.unit_price = '';
       return next;
     }));
   }
@@ -481,10 +488,19 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                   onChange={e => update(r.key, { quantity: e.target.value })} />
               )}
             </div>
-            {/* Valor unit */}
+            {/* Valor unit (peça dentro de um item: só o custo) */}
             <div className="col-span-5 md:col-span-2">
-              <span className="md:hidden text-[10px] text-steel-400 uppercase">Valor unit.</span>
-              {readOnly ? <div className="text-sm text-right">R$ {r.unit_price}</div> : (
+              <span className="md:hidden text-[10px] text-steel-400 uppercase">{costOnly(r, nested) ? 'Custo unit.' : 'Valor unit.'}</span>
+              {costOnly(r, nested) ? (
+                !showCost ? null : readOnly ? <div className="text-sm text-right text-steel-500">custo R$ {r.unit_cost || '—'}</div> : (
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-[11px]">custo</span>
+                    <input className="input !py-2 !pl-12 text-sm text-right" inputMode="decimal" placeholder="0,00" value={r.unit_cost}
+                      onChange={e => update(r.key, { unit_cost: e.target.value })}
+                      onBlur={e => { const v = parseMoney(e.target.value); if (Number.isFinite(v)) update(r.key, { unit_cost: moneyInput(v) }); }} />
+                  </div>
+                )
+              ) : readOnly ? <div className="text-sm text-right">R$ {r.unit_price}</div> : (
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">R$</span>
                   <input className="input !py-2 !pl-8 text-sm text-right" inputMode="decimal" placeholder="0,00" value={r.unit_price}
@@ -496,7 +512,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Total */}
             <div className="col-span-4 md:col-span-2 text-right">
               <span className="md:hidden text-[10px] text-steel-400 uppercase block">Total</span>
-              <span className="text-sm font-bold text-steel-900">{fmtBRL(rowTotal(r))}</span>
+              {costOnly(r, nested)
+                ? (showCost ? <span className="text-xs text-steel-500">custo {fmtBRL(rowCost(r) ?? 0)}</span> : null)
+                : <span className="text-sm font-bold text-steel-900">{fmtBRL(rowTotal(r))}</span>}
             </div>
             {/* Ações (desktop) */}
             {!readOnly && (
@@ -560,7 +578,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               </div>
             )}
             {/* Custo e margem da peça (só para quem vê o financeiro) */}
-            {showCost && r.kind === 'part' && (
+            {showCost && r.kind === 'part' && !costOnly(r, nested) && (
               <CostLine row={r} readOnly={readOnly} onCost={v => update(r.key, { unit_cost: v })} onPrice={v => update(r.key, { unit_price: v })} />
             )}
           </div>
@@ -651,6 +669,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
       {catalogOpen && (
         <CatalogPanel suggestions={suggestions} itemCount={blocks.length} total={total}
+          partsAsCost={rows.some(r => r.kind === 'labor')} showCost={!!showCost}
           services={rows.filter(r => r.kind === 'labor').map(r => ({ key: r.key, name: r.description.trim() }))}
           onPick={addFromCatalog} onClose={() => setCatalogOpen(false)} />
       )}
@@ -697,9 +716,27 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                       Só mão de obra (sem peça)
                     </label>
                   )}
-                  {hasParts && (
-                    <span className="ml-auto text-steel-600">Total do item <strong className="text-steel-900">{fmtBRL(rowTotal(b.svc) + nestedParts.reduce((a, x) => a + rowTotal(x), 0))}</strong></span>
-                  )}
+                  {hasParts && (() => {
+                    const value = rowTotal(b.svc) + nestedParts.reduce((a, x) => a + rowTotal(x), 0);
+                    const cost = nestedParts.reduce((a, x) => a + (rowCost(x) ?? 0), 0);
+                    const missing = nestedParts.filter(x => rowCost(x) == null).length;
+                    const margin = value - cost;
+                    return (
+                      <span className="ml-auto text-steel-600 text-right">
+                        Total do item <strong className="text-steel-900">{fmtBRL(value)}</strong>
+                        {showCost && (
+                          <>
+                            {' · '}custo das peças <strong className="text-steel-800">{fmtBRL(cost)}</strong>
+                            {' · '}margem{' '}
+                            <strong className={margin < 0 ? 'text-alert-600' : 'text-signal-700'}>
+                              {fmtBRL(margin)}{value > 0 ? ` (${Math.round((margin / value) * 100)}%)` : ''}
+                            </strong>
+                            {missing > 0 && <span className="text-pending-700"> · {missing} peça{missing === 1 ? '' : 's'} sem custo</span>}
+                          </>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -743,9 +780,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 <div className="text-[10px] font-bold uppercase tracking-widest text-steel-400">Só a gestão vê</div>
                 <div className="flex justify-between text-steel-600"><span>Custo das peças</span><span>{fmtBRL(partsCost)}</span></div>
                 <div className="flex justify-between text-steel-600">
-                  <span>Lucro nas peças</span>
-                  <span className={costedSale - partsCost < 0 ? 'text-alert-600 font-semibold' : 'text-signal-700 font-semibold'}>
-                    {fmtBRL(costedSale - partsCost)} · {fmtPct(marginOf(partsCost, costedSale))}
+                  <span>Margem da OS (valor − custo das peças)</span>
+                  <span className={total - partsCost < 0 ? 'text-alert-600 font-semibold' : 'text-signal-700 font-semibold'}>
+                    {fmtBRL(total - partsCost)}{total > 0 ? ` · ${Math.round(((total - partsCost) / total) * 100)}%` : ''}
                   </span>
                 </div>
                 {costed.length < partRows.length && (
