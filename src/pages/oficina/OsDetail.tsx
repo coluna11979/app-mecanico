@@ -17,6 +17,7 @@ import ScheduleOsModal from '@/components/os/ScheduleOsModal';
 import ResponsibleTimers from '@/components/os/ResponsibleTimers';
 import ServiceAssign from '@/components/os/ServiceAssign';
 import ResponsiblesModal from '@/components/os/ResponsiblesModal';
+import AddItemModal from '@/components/os/AddItemModal';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
 import PaymentsList from '@/components/cash/PaymentsList';
@@ -72,6 +73,8 @@ export default function OsDetail() {
   const [scheduling, setScheduling] = useState(false);
   const [settingResp, setSettingResp] = useState<false | 'edit' | 'platform'>(false);
   const [splitting, setSplitting]     = useState(false);
+  const [addingItem, setAddingItem]   = useState(false);
+  const [recSignal, setRecSignal]      = useState(0);
   /** Publicar demanda no MecânicoApp (OS já marcada como da plataforma, sem demanda ligada) */
   const [publishing, setPublishing] = useState(false);
   /** Aviso ao iniciar sem responsável (não bloqueia) */
@@ -362,6 +365,8 @@ export default function OsDetail() {
   const moreActions: MoreItem[] = mech ? [
     ...(canOpen('/oficina/checkup') ? [{ label: '🔍 Check-up do veículo', onClick: () => nav(`/oficina/checkup?os=${os.id}`) }] : []),
   ] : [
+    ...(!closed && !isSale ? [{ label: '➕ Incluir novo item', onClick: () => setAddingItem(true) }] : []),
+    ...(!closed && !isSale && os.customer_id ? [{ label: '📌 Recomendar para o futuro', onClick: () => setRecSignal(n => n + 1) }] : []),
     ...(['open', 'awaiting_approval', 'approved'].includes(os.status)
       ? [{ label: '✓ Já foi concluída (escolher a data)', onClick: () => setConcluding(true) }] : []),
     ...(!closed && !os.scheduled_at && feature('os.agendar') ? [{ label: '📅 Agendar serviço', onClick: () => setScheduling(true) }] : []),
@@ -618,7 +623,8 @@ export default function OsDetail() {
   
                 {/* Depois de aprovada: a gestão distribui os serviços */}
                 {!mech && canDo(session, balcao, 'caixa') && ['approved', 'in_progress'].includes(os.status) && (
-                  <ServiceAssign items={items} team={team} osMechanicId={os.workshop_mechanic_id} onChanged={load} />
+                  <ServiceAssign items={items} team={team} osMechanicId={os.workshop_mechanic_id} onChanged={load}
+                    onAddItem={() => setAddingItem(true)} onRecommend={os.customer_id ? () => setRecSignal(n => n + 1) : undefined} />
                 )}
 
                 {/* Relógio por responsável (cada um inicia/pausa/termina a sua parte) */}
@@ -791,7 +797,7 @@ export default function OsDetail() {
             {/* Recomendado para o futuro (base da reativação de clientes) */}
             {os.customer_id && !isSale && !mech && (
               <Recommendations workshopId={os.workshop_id} customerId={os.customer_id}
-                vehicleId={os.vehicle_id} osId={os.id} />
+                vehicleId={os.vehicle_id} osId={os.id} openSignal={recSignal} />
             )}
 
             {/* Orçamento original (importado do papel) */}
@@ -872,6 +878,11 @@ export default function OsDetail() {
           os={{ id: os.id, workshop_id: os.workshop_id, title: os.title, scheduled_at: os.scheduled_at ?? null,
                 customer: os.customer ?? null, vehicle: os.vehicle ?? null }}
           onClose={() => setScheduling(false)} onSaved={load} />
+      )}
+
+      {addingItem && (
+        <AddItemModal osId={os.id} workshopId={os.workshop_id} position={items.length} team={team} osMechanicId={os.workshop_mechanic_id}
+          onClose={() => setAddingItem(false)} onSaved={load} />
       )}
 
       {splitting && (
