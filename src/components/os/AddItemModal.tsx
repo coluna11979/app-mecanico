@@ -11,7 +11,7 @@ type Sugg = { name: string; price: number };
  * ➕ Incluir novo item — na OS já aprovada (ainda não concluída): serviço extra que apareceu durante
  * o trabalho. Entra com valor e responsável, o total da OS é recalculado e o mecânico vê o item novo.
  */
-export default function AddItemModal({ osId, workshopId, position, team, osMechanicId, initialDescription = '', onAdded, onClose, onSaved }: {
+export default function AddItemModal({ osId, workshopId, position, team, osMechanicId, initialDescription = '', initialPrice, onAdded, onClose, onSaved }: {
   osId: string; workshopId: string;
   /** Posição do novo item (depois dos que já existem) */
   position: number;
@@ -19,6 +19,8 @@ export default function AddItemModal({ osId, workshopId, position, team, osMecha
   osMechanicId: string | null;
   /** Vindo de uma recomendação: já abre com o texto dela */
   initialDescription?: string;
+  /** Vindo de uma recomendação: valor que foi enviado ao cliente */
+  initialPrice?: number | null;
   /** Depois de incluir (ex.: marcar a recomendação como feita) */
   onAdded?: () => void | Promise<void>;
   onClose: () => void;
@@ -26,7 +28,7 @@ export default function AddItemModal({ osId, workshopId, position, team, osMecha
 }) {
   const [desc, setDesc] = useState(initialDescription);
   const [qty, setQty] = useState('1');
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState(initialPrice ? moneyInput(initialPrice) : '');
   const [who, setWho] = useState('');
   const [busy, setBusy] = useState(false);
   const [sugg, setSugg] = useState<Sugg[]>([]);

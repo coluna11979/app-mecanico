@@ -18,6 +18,7 @@ import ResponsibleTimers from '@/components/os/ResponsibleTimers';
 import ServiceAssign from '@/components/os/ServiceAssign';
 import ResponsiblesModal from '@/components/os/ResponsiblesModal';
 import AddItemModal from '@/components/os/AddItemModal';
+import { recommendationQuote } from '@/lib/recommendations';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
 import PaymentsList from '@/components/cash/PaymentsList';
@@ -75,7 +76,7 @@ export default function OsDetail() {
   const [splitting, setSplitting]     = useState(false);
   const [addingItem, setAddingItem]   = useState(false);
   /** Recomendação que está virando item desta OS (marca como feita ao incluir) */
-  const [fromRec, setFromRec]          = useState<{ id: string; description: string } | null>(null);
+  const [fromRec, setFromRec]          = useState<{ id: string; description: string; price: number | null } | null>(null);
   const [recSignal, setRecSignal]      = useState(0);
   /** Publicar demanda no MecânicoApp (OS já marcada como da plataforma, sem demanda ligada) */
   const [publishing, setPublishing] = useState(false);
@@ -800,7 +801,12 @@ export default function OsDetail() {
             {os.customer_id && !isSale && !mech && (
               <Recommendations workshopId={os.workshop_id} customerId={os.customer_id}
                 vehicleId={os.vehicle_id} osId={os.id} openSignal={recSignal}
-                onAddToOs={closed ? undefined : r => { setFromRec({ id: r.id, description: r.description }); setAddingItem(true); }} />
+                onAddToOs={closed ? undefined : async r => {
+                  // Nome do item e o valor enviado ao cliente no orçamento do check-up
+                  const q = await recommendationQuote(r);
+                  setFromRec({ id: r.id, description: q.name, price: q.price });
+                  setAddingItem(true);
+                }} />
             )}
 
             {/* Orçamento original (importado do papel) */}
@@ -885,7 +891,7 @@ export default function OsDetail() {
 
       {addingItem && (
         <AddItemModal osId={os.id} workshopId={os.workshop_id} position={items.length} team={team} osMechanicId={os.workshop_mechanic_id}
-          initialDescription={fromRec?.description ?? ''}
+          initialDescription={fromRec?.description ?? ''} initialPrice={fromRec?.price ?? null}
           onAdded={async () => { if (fromRec) await supabase.from('service_recommendations').update({ status: 'done' }).eq('id', fromRec.id); }}
           onClose={() => { setAddingItem(false); setFromRec(null); }} onSaved={load} />
       )}
