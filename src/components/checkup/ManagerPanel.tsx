@@ -31,6 +31,7 @@ const SITUATION_PILL: Record<Situation, { label: string; cls: string }> = {
   enviado:       { label: 'Enviado ao cliente',    cls: 'bg-sky-50 text-sky-700' },
   cliente_viu:   { label: 'Cliente viu',           cls: 'bg-sky-50 text-sky-700' },
   aprovado:      { label: 'Aprovado',              cls: 'bg-signal-100 text-signal-800' },
+  os_cancelada:  { label: 'OS cancelada',          cls: 'bg-alert-100 text-alert-700' },
   respondido:    { label: 'Respondido',            cls: 'bg-steel-100 text-steel-600' },
   refeito:       { label: 'Refeito',               cls: 'bg-steel-100 text-steel-500' },
 };
@@ -482,7 +483,7 @@ const BOARD_COLS: { key: ColKey; title: string; bar: string; empty: string; situ
   { key: 'rampa',       title: '🔧 Na rampa',          bar: 'bg-brand-500',   empty: 'Nenhum carro em inspeção', situations: ['nao_iniciado', 'inspecionando'] },
   { key: 'enviar',      title: '📝 Falta enviar',      bar: 'bg-pending-500', empty: 'Nada esperando envio',     situations: ['falta_enviar'] },
   { key: 'aguardando',  title: '⏳ Aguardando cliente', bar: 'bg-sky-500',     empty: 'Ninguém aguardando',       situations: ['enviado', 'cliente_viu'] },
-  { key: 'finalizados', title: '✅ Finalizados',       bar: 'bg-signal-500',  empty: 'Nenhum finalizado',        situations: ['aprovado', 'respondido'] },
+  { key: 'finalizados', title: '✅ Finalizados',       bar: 'bg-signal-500',  empty: 'Nenhum finalizado',        situations: ['aprovado', 'os_cancelada', 'respondido'] },
 ];
 /** Finalizados são muitos: mostra os mais recentes e o resto fica em Inspeções/Histórico */
 const DONE_SHOWN = 15;

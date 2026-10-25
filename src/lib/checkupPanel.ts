@@ -55,7 +55,7 @@ export type Row = {
 
 export function rowOf(c: PanelCheckup): Row {
   const counts = countsOf(c.items);
-  const situation = situationOf(c, counts.answered);
+  const situation = situationOf(c, counts.answered, c.sale_os?.status);
   const noPrice = itemsWithoutPrice(c.items).length;
   const mechanicWaiting = c.status === 'draft' && !!c.mechanic_link_sent_at && !c.mechanic_opened_at;
   const so = c.sale_os;
@@ -68,6 +68,7 @@ export function rowOf(c: PanelCheckup): Row {
     enviado:       c.quote_sent_at ?? c.updated_at,
     cliente_viu:   c.customer_viewed_at ?? c.updated_at,
     aprovado:      c.customer_responded_at ?? c.updated_at,
+    os_cancelada:  c.customer_responded_at ?? c.updated_at,
     respondido:    c.customer_responded_at ?? c.updated_at,
     refeito:       c.updated_at,
   }[situation];
@@ -80,6 +81,7 @@ export function rowOf(c: PanelCheckup): Row {
       break;
     case 'cliente_viu':   action = 'whatsapp'; break;
     case 'aprovado':      action = needsResponsible ? 'definir_responsavel' : c.sale_os_id ? 'abrir_os' : 'ver'; break;
+    case 'os_cancelada':  action = 'abrir_os'; break;
     case 'refeito':       action = 'abrir_novo'; break;
     default:              action = 'ver';
   }
@@ -96,6 +98,7 @@ export function sinceLabel(r: Row) {
     case 'enviado':       return `Enviado ${t}`;
     case 'cliente_viu':   return `Cliente viu ${t}`;
     case 'aprovado':      return r.needsResponsible ? `Aprovado ${t} · OS sem responsável` : `Aprovado ${t}`;
+    case 'os_cancelada':  return `Aprovado ${t} · a OS foi cancelada`;
     case 'respondido':    return `Respondeu ${t}`;
     case 'refeito':       return `Refeito ${t}`;
   }
