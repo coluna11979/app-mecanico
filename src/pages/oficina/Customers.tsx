@@ -17,6 +17,7 @@ import {
 } from '@/lib/customerInsights';
 import { PRESETS, rangeOf, type Preset } from '@/components/PeriodPicker';
 import WhatsAppButton from '@/components/inbox/WhatsAppButton';
+import { useModuleAllows } from '@/lib/modules';
 
 type Base = {
   id: string; full_name: string; phone: string | null; cpf: string | null; created_at: string;
@@ -77,6 +78,9 @@ export default function Customers() {
   const { currentWorkshop } = useAuth();
   const shop = currentWorkshop;
   const nav = useNavigate();
+  const allows = useModuleAllows();
+  const canOs = allows('/oficina/os');
+  const canSchedule = canOs && allows('/oficina/agenda');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -344,7 +348,8 @@ export default function Customers() {
                     <CustomerRow key={r.id} r={r} shopId={shop?.id ?? ''} shopName={shop?.business_name ?? ''}
                       onOpen={() => nav(`/oficina/clientes/${r.id}`)}
                       onNewOs={() => openNewOs(r.id)} onSchedule={() => openNewOs(r.id, true)} onOptOut={() => optOut(r)}
-                      periodSpent={range && dateMode === 'served' ? periodOf(r).spent : null} />
+                      periodSpent={range && dateMode === 'served' ? periodOf(r).spent : null}
+                      canOs={canOs} canSchedule={canSchedule} />
                   ))}
                 </ul>
                 {list.length > shown && (
@@ -404,16 +409,18 @@ const initials = (name: string) => {
 };
 
 /** Uma linha da lista: nome, telefone, veículo, última visita, total gasto e próxima ação */
-function CustomerRow({ r, shopId, shopName, onOpen, onNewOs, onSchedule, onOptOut, periodSpent }: {
+function CustomerRow({ r, shopId, shopName, onOpen, onNewOs, onSchedule, onOptOut, periodSpent, canOs, canSchedule }: {
   r: Row; shopId: string; shopName: string; onOpen: () => void; onNewOs: () => void; onSchedule: () => void; onOptOut: () => void;
   periodSpent: number | null;
+  /** Módulos liberados: sem eles, os atalhos de OS/Agenda somem */
+  canOs: boolean; canSchedule: boolean;
 }) {
   const seg = SEGMENTS[r.ins.segment];
   const wa = !r.contact_opt_out ? waNumber(r.phone) : null;
   const contacted = contactedRecently(r.last_contacted_at);
   const action = r.reason
     ? (contacted ? `Chamado ${timeAgo(r.last_contacted_at)}` : reasonLabel(r.reason))
-    : r.ins.openOs > 0 ? `${r.ins.openOs} OS em aberto` : null;
+    : canOs && r.ins.openOs > 0 ? `${r.ins.openOs} OS em aberto` : null;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
   return (
@@ -476,8 +483,8 @@ function CustomerRow({ r, shopId, shopName, onOpen, onNewOs, onSchedule, onOptOu
           </WhatsAppButton>
         ) : <span className="h-10 w-10 md:h-9 md:w-9" />}
         <RowMenu items={[
-          { label: 'Criar OS / orçamento', onClick: onNewOs },
-          { label: 'Agendar', onClick: onSchedule },
+          ...(canOs ? [{ label: 'Criar OS / orçamento', onClick: onNewOs }] : []),
+          ...(canSchedule ? [{ label: 'Agendar', onClick: onSchedule }] : []),
           { label: 'Ver histórico', onClick: onOpen },
           ...(!r.contact_opt_out ? [{ label: 'Não quer receber mensagens', onClick: onOptOut, muted: true }] : []),
         ]} />

@@ -54,6 +54,8 @@ export default function OsDetail() {
   const myComm = useMyCommission(currentWorkshop?.id, mech ? access.mechanicId : null);
   const [os, setOs]         = useState<OsRow | null>(null);
   const [items, setItems]   = useState<ServiceOrderItem[]>([]);
+  /** Itens digitados na OS que ainda não foram salvos */
+  const [itemsDirty, setItemsDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -673,6 +675,8 @@ export default function OsDetail() {
               customerBroughtParts={!!os.customer_brought_parts}
               saleMode={isSale}
               planning={os.status !== 'completed'}
+              vehicle={os.vehicle}
+              onDirtyChange={setItemsDirty}
               osLabel={`OS nº ${os.number != null ? String(os.number).padStart(4, '0') : os.id.slice(0, 8)}`}
               onSaved={load}
             />}
@@ -699,6 +703,11 @@ export default function OsDetail() {
             {isSale && os.status !== 'cancelled' && (
               <p className="text-xs text-steel-400 px-1">
                 💡 Venda de peças: não gera comissão por item. Só quem ganha % sobre o faturamento da loja (ex.: gerente) recebe, no fechamento.
+              </p>
+            )}
+            {!isSale && os.status !== 'cancelled' && canDo(session, balcao, 'caixa') && itemsDirty && (
+              <p className="rounded-xl border border-pending-300 bg-pending-50 px-4 py-2.5 text-sm text-pending-800">
+                ⚠️ Há itens ainda não salvos. Clique em <strong>Salvar itens</strong> para eles aparecerem aqui e você atribuir quem fez cada serviço.
               </p>
             )}
             {!isSale && os.status !== 'cancelled' && canDo(session, balcao, 'caixa') && (

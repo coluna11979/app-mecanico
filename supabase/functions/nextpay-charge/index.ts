@@ -55,15 +55,11 @@ Deno.serve(async (req) => {
 
     /* Cliente = a oficina (upsert pelo e-mail de quem está pagando) */
     const { data: shop } = await admin.from('workshops').select('id, business_name').eq('id', job.workshop_id).maybeSingle();
-    const customer = await nextpay<{ id: string }>(admin, 'POST', '/customers', {
-      name: shop?.business_name ?? 'Oficina',
-      email: user.email,
-      externalRef: `workshop:${job.workshop_id}`,
-    });
-
+    const createCustomer = (email: string | undefined, externalRef: string) =>
+      nextpay<{ id: string }>(admin, 'POST', '/customers', { name: shop?.business_name ?? 'Oficina', email, externalRef });
     const cents = Math.round(total * 100);
-    const charge = await nextpay<NextpayCharge>(admin, 'POST', '/charges', {
-      customerId: customer.id,
+    const createCharge = (customerId: string) => nextpay<NextpayCharge>(admin, 'POST', '/charges', {
+      customerId,
       amount: cents,
       paymentMethod: method === 'pix' ? 'pix' : 'credit_card',
       installments: 1,
@@ -71,6 +67,17 @@ Deno.serve(async (req) => {
       externalRef: jobRef(job.id, method),
       metadata: { job_id: job.id, method, service_amount: service, card_fee: cardFee },
     });
+
+    let charge: NextpayCharge;
+    try {
+      charge = await createCharge((await createCustomer(user.email, `workshop:${job.workshop_id}`)).id);
+    } catch (e) {
+      if (!/pagar para voc[êe] mesmo/i.test(String((e as Error)?.message))) throw e;
+      // Quem está pagando usa o mesmo e-mail da conta dona da NextPay (ex.: loja do próprio dono da
+      // plataforma): cadastra a oficina com um e-mail só dela e tenta de novo
+      const own = `pagamentos.oficina.${String(job.workshop_id).slice(0, 8)}@mecanicoapp.com.br`;
+      charge = await createCharge((await createCustomer(own, `workshop:${job.workshop_id}:own`)).id);
+    }
 
     if (method === 'pix') {
       const code = pixCode(charge);
@@ -87,6 +94,9 @@ Deno.serve(async (req) => {
     return json({ method, payment_url: charge.paymentUrl, total, card_fee: cardFee });
   } catch (e) {
     console.error('[nextpay-charge]', e);
+    // Recusa da NextPay ("NextPay /charges: 400 CODE Motivo"): mostra o motivo, não um erro genérico
+    const reason = /^NextPay [^:]+: 4\d\d\s+(?:[A-Z_]{3,}\s+)?(.+)$/.exec(String((e as Error)?.message ?? ''))?.[1]?.trim();
+    if (reason) return json({ error: `A NextPay recusou o pagamento: ${reason}` }, 502);
     return json({ error: 'Não foi possível gerar o pagamento agora. Tente de novo em instantes.' }, 500);
   }
 });

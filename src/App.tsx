@@ -55,6 +55,7 @@ import WorkshopServicos from './pages/oficina/Servicos';
 import WorkshopAgenda from './pages/oficina/Agenda';
 import WorkshopComercial from './pages/oficina/Comercial';
 import WorkshopInbox from './pages/oficina/Inbox';
+import WorkshopInboxDashboard from './pages/oficina/InboxDashboard';
 import Agentes from './pages/oficina/Agentes';
 import Avaliacoes from './pages/oficina/Avaliacoes';
 import WorkshopFornecedores from './pages/oficina/Fornecedores';
@@ -72,6 +73,8 @@ import WorkshopClienteFicha from './pages/oficina/ClienteFicha';
 import AdminVip from './pages/admin/Vip';
 const WorkshopOsPrint = lazy(() => import('./pages/oficina/OsPrint'));
 const WorkshopImportar = lazy(() => import('./pages/oficina/ImportarOrcamentos'));
+const WorkshopPlataformaPainel = lazy(() => import('./pages/oficina/PlataformaPainel'));
+const WorkshopPlataformaClientes = lazy(() => import('./pages/oficina/PlataformaClientes'));
 
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminApprovals from './pages/admin/Approvals';
@@ -83,10 +86,21 @@ import AdminRepasses from './pages/admin/Repasses';
 import AdminUserDetail from './pages/admin/UserDetail';
 import AdminFinancial from './pages/admin/Financial';
 import AdminLeads from './pages/admin/Leads';
+import AdminLeadsImport from './pages/admin/LeadsImport';
+import AdminLeadsMetrics from './pages/admin/LeadsMetrics';
+import AdminLeadsImportCsv from './pages/admin/LeadsImportCsv';
+import CrescimentoRadar from './pages/admin/CrescimentoRadar';
+import CrescimentoMetas from './pages/admin/CrescimentoMetas';
+import CrescimentoFunis from './pages/admin/CrescimentoFunis';
 import AdminAvisos from './pages/admin/Avisos';
 import AdminEmbaixadores from './pages/admin/Embaixadores';
 import AdminModulos from './pages/admin/Modulos';
 import AdminAgentes from './pages/admin/Agentes';
+import AdminMarketing from './pages/admin/Marketing';
+import AdminKitMarca from './pages/admin/KitMarca';
+import AdminMaterialGrafico from './pages/admin/MaterialGrafico';
+import CampaignLink from './pages/public/CampaignLink';
+import Unsubscribe from './pages/public/Unsubscribe';
 
 function LazyFallback() {
   return (
@@ -118,6 +132,8 @@ export default function App() {
       <Route path="/recuperar-senha"    element={<ForgotPassword />} />
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
       <Route path="/checkup/:token"     element={<CheckupReport />} />
+      <Route path="/c/:slug"            element={<CampaignLink />} />
+      <Route path="/descadastrar/:token" element={<Unsubscribe />} />
       <Route path="/m/checkup/:token"   element={<MechanicCheckup />} />
       {/* Pré-visualização do check-up com dados fictícios — só em dev */}
       {import.meta.env.DEV && <Route path="/demo/checkup" element={<WorkshopCheckups />} />}
@@ -136,6 +152,8 @@ export default function App() {
 
       {/* Oficina */}
       <Route path="/oficina/dashboard" element={<ProtectedRoute allow={['workshop']}><WorkshopDashboard /></ProtectedRoute>} />
+      <Route path="/oficina/plataforma/painel" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopPlataformaPainel /></Suspense></ProtectedRoute>} />
+      <Route path="/oficina/plataforma/clientes" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopPlataformaClientes /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/inicio" element={<ProtectedRoute allow={['workshop']}><WorkshopInicio /></ProtectedRoute>} />
       <Route path="/oficina/resultado" element={<ProtectedRoute allow={['workshop']}><WorkshopResultado /></ProtectedRoute>} />
       <Route path="/oficina/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopPainel /></ProtectedRoute>} />
@@ -150,6 +168,7 @@ export default function App() {
       <Route path="/oficina/agenda" element={<ProtectedRoute allow={['workshop']}><WorkshopAgenda /></ProtectedRoute>} />
       <Route path="/oficina/comercial" element={<ProtectedRoute allow={['workshop']}><WorkshopComercial /></ProtectedRoute>} />
       <Route path="/oficina/inbox" element={<ProtectedRoute allow={['workshop']}><WorkshopInbox /></ProtectedRoute>} />
+      <Route path="/oficina/inbox/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopInboxDashboard /></ProtectedRoute>} />
       <Route path="/oficina/agentes" element={<ProtectedRoute allow={['workshop']}><Agentes /></ProtectedRoute>} />
       <Route path="/oficina/avaliacoes" element={<ProtectedRoute allow={['workshop']}><Avaliacoes /></ProtectedRoute>} />
       <Route path="/oficina/fornecedores" element={<ProtectedRoute allow={['workshop']}><WorkshopFornecedores /></ProtectedRoute>} />
@@ -183,16 +202,26 @@ export default function App() {
 
       {/* Admin */}
       <Route path="/admin/dashboard" element={<ProtectedRoute allow={['admin']}><AdminDashboard /></ProtectedRoute>} />
+      <Route path="/admin/leads" element={<ProtectedRoute allow={['admin']}><AdminLeads /></ProtectedRoute>} />
+      <Route path="/admin/leads/importar" element={<ProtectedRoute allow={['admin']}><AdminLeadsImport /></ProtectedRoute>} />
+      <Route path="/admin/leads/metricas" element={<ProtectedRoute allow={['admin']}><AdminLeadsMetrics /></ProtectedRoute>} />
+      <Route path="/admin/leads/importar-csv" element={<ProtectedRoute allow={['admin']}><AdminLeadsImportCsv /></ProtectedRoute>} />
+      <Route path="/admin/crescimento"        element={<Navigate to="/admin/crescimento/radar" replace />} />
+      <Route path="/admin/crescimento/radar"  element={<ProtectedRoute allow={['admin']}><CrescimentoRadar /></ProtectedRoute>} />
+      <Route path="/admin/crescimento/metas"  element={<ProtectedRoute allow={['admin']}><CrescimentoMetas /></ProtectedRoute>} />
+      <Route path="/admin/crescimento/funis"  element={<ProtectedRoute allow={['admin']}><CrescimentoFunis /></ProtectedRoute>} />
       <Route path="/admin/aprovacoes" element={<ProtectedRoute allow={['admin']}><AdminApprovals /></ProtectedRoute>} />
       <Route path="/admin/mecanicos" element={<ProtectedRoute allow={['admin']}><AdminMechanics /></ProtectedRoute>} />
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />
       <Route path="/admin/modulos" element={<ProtectedRoute allow={['admin']}><AdminModulos /></ProtectedRoute>} />
       <Route path="/admin/agentes" element={<ProtectedRoute allow={['admin']}><AdminAgentes /></ProtectedRoute>} />
+      <Route path="/admin/marketing" element={<ProtectedRoute allow={['admin']}><AdminMarketing /></ProtectedRoute>} />
+      <Route path="/admin/kit-marca" element={<ProtectedRoute allow={['admin']}><AdminKitMarca /></ProtectedRoute>} />
+      <Route path="/admin/material-grafico" element={<ProtectedRoute allow={['admin']}><AdminMaterialGrafico /></ProtectedRoute>} />
       <Route path="/admin/usuario/:id"   element={<ProtectedRoute allow={['admin']}><AdminUserDetail /></ProtectedRoute>} />
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
       <Route path="/admin/financeiro"    element={<ProtectedRoute allow={['admin']}><AdminFinancial /></ProtectedRoute>} />
-      <Route path="/admin/leads"         element={<ProtectedRoute allow={['admin']}><AdminLeads /></ProtectedRoute>} />
       <Route path="/admin/avisos"        element={<ProtectedRoute allow={['admin']}><AdminAvisos /></ProtectedRoute>} />
       <Route path="/admin/embaixadores"  element={<ProtectedRoute allow={['admin']}><AdminEmbaixadores /></ProtectedRoute>} />
       <Route path="/admin/configuracoes" element={<ProtectedRoute allow={['admin']}><AdminSettings /></ProtectedRoute>} />

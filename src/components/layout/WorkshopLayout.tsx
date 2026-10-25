@@ -10,7 +10,7 @@ import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
 import { ROLES, sessionAllows, useOperator, type OperatorRole } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
-import { moduleAllows, moduleEntry, useWorkshopModules } from '@/lib/modules';
+import { isPlatformOnly, moduleAllows, moduleEntry, useWorkshopModules } from '@/lib/modules';
 import { useInboxAlerts } from '@/hooks/useInboxAlerts';
 import { Icon, type IconName } from '@/components/home/ui';
 
@@ -53,6 +53,7 @@ const SECTIONS: NavGroup[] = [
   ] },
   { key: 'comunicacao', title: 'Comunicação', items: [
     { to: '/oficina/inbox',      icon: '💬', label: 'WhatsApp dos clientes' },
+    { to: '/oficina/inbox/painel', icon: '📊', label: 'Painel do WhatsApp' },
     { to: '/oficina/avaliacoes', icon: '⭐', label: 'Avaliações Google'    },
     { to: '/oficina/agentes',    icon: '🤖', label: 'Agentes de IA'        },
   ] },
@@ -79,6 +80,8 @@ const SECTIONS: NavGroup[] = [
   ] },
   { key: 'plataforma', title: 'MecânicoApp', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
+    { to: '/oficina/plataforma/painel', icon: '📊', label: 'Painel da plataforma' },
+    { to: '/oficina/plataforma/clientes', icon: '📇', label: 'Clientes e orçamentos' },
     { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar profissionais' },
     { to: '/oficina/mensagens',  icon: '💬', label: 'Mensagens da plataforma' },
   ] },
@@ -90,6 +93,13 @@ const SECTIONS: NavGroup[] = [
     { to: '/oficina/vip',        icon: '⭐', label: 'Plano VIP'            },
   ] },
 ];
+
+/** Pacote "Só mecânicos": sem Configurações à parte, o perfil da oficina fica junto da Plataforma */
+const PLATFORM_SECTIONS: NavGroup[] = SECTIONS.filter(sec => sec.key !== 'config').map(sec => (sec.key === 'plataforma'
+  ? { ...sec, items: [...sec.items, { to: '/oficina/perfil', icon: '🏪', label: 'Perfil da oficina' }] }
+  : sec))
+  // O produto principal fica em primeiro, mesmo com pacotes extras (ex.: Atendimento) ligados
+  .sort((a, b) => Number(b.key === 'plataforma') - Number(a.key === 'plataforma'));
 
 /** Ícone de cada bloco na gaveta "Mais" (celular) */
 const SECTION_ICON: Record<string, string> = {
@@ -104,8 +114,8 @@ const GROUP_ICON: Record<string, IconName> = {
 };
 
 /** Grupo de uma rota (para abrir sozinho o grupo da tela atual) */
-function groupOf(path: string): string | null {
-  for (const sec of SECTIONS) if (leaves(sec.items).some(i => onRoute(path, i.to))) return sec.key;
+function groupOf(path: string, sections = SECTIONS): string | null {
+  for (const sec of sections) if (leaves(sec.items).some(i => onRoute(path, i.to))) return sec.key;
   return null;
 }
 
@@ -173,6 +183,12 @@ const TAB = {
   resultado: { to: '/oficina/resultado', icon: '📈', label: 'Resultado' },
   hoje:      { to: '/oficina/inicio',    icon: '🏠', label: 'Hoje'      },
   plataforma:{ to: '/oficina/dashboard', icon: '⚡', label: 'Plataforma' },
+  demandas:  { to: '/oficina/dashboard', icon: '⚡', label: 'Demandas'  },
+  inicioPlataforma: { to: '/oficina/dashboard', icon: '🏠', label: 'Início' },
+  /** Abre a Nova demanda (a tela de Demandas lê o ?nova=1) */
+  chamar:    { to: '/oficina/dashboard?nova=1', icon: '＋', label: 'Chamar' },
+  buscar:    { to: '/oficina/buscar',    icon: '🔍', label: 'Buscar'    },
+  mensagens: { to: '/oficina/mensagens', icon: '💬', label: 'Mensagens' },
   equipe:    { to: '/oficina/desempenho', icon: '🏆', label: 'Equipe'   },
   painel:    { to: '/oficina/painel',    icon: '📊', label: 'Vendas'    },
   os:        { to: '/oficina/os',        icon: '📋', label: 'OS'        },
@@ -190,6 +206,11 @@ const BOTTOM_TABS: Record<OperatorRole, NavItem[]> = {
   vendedor:  [TAB.comercial, TAB.clientes, TAB.agenda, TAB.os],
   mecanico:  [TAB.os, TAB.agenda, TAB.checkup],
 };
+/** Pacote "Só mecânicos": a barra é só a Plataforma */
+const PLATFORM_TABS: NavItem[] = [TAB.inicioPlataforma, TAB.chamar, TAB.mensagens];
+const HOME = '/oficina/inicio';
+/** Para onde o login e os redirecionamentos mandam a oficina sem ela ter escolhido (Login.destino, ProtectedRoute) */
+const LANDING_PATHS = [HOME, '/oficina/painel', '/oficina/resultado'];
 
 const LS_KEY = 'oficina_msgs_last_seen';
 
@@ -203,7 +224,11 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const unreadNotif = useUnreadNotifications();
   // Sanfona: um grupo aberto por vez; abre sozinho o grupo da tela atual
   const [openGroup, setOpenGroup] = useState<string | null>(() => groupOf(location.pathname));
-  useEffect(() => { const g = groupOf(location.pathname); if (g) setOpenGroup(g); }, [location.pathname]);
+  const platformOnlyNow = useWorkshopModules(s => isPlatformOnly(s.disabled));
+  useEffect(() => {
+    const g = groupOf(location.pathname, platformOnlyNow ? PLATFORM_SECTIONS : SECTIONS);
+    if (g) setOpenGroup(g);
+  }, [location.pathname, platformOnlyNow]);
   // Tema do menu e menu recolhido: preferência deste aparelho
   const [sideTheme, setSideTheme] = useState<SideTheme>(() => (readLS(LS_THEME) === 'light' ? 'light' : 'dark'));
   const toggleTheme = () => setSideTheme(t => { const n: SideTheme = t === 'dark' ? 'light' : 'dark'; writeLS(LS_THEME, n); return n; });
@@ -476,7 +501,12 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   // Módulos liberados para a oficina (superadmin) valem para todos, inclusive o gestor
   const mods = useWorkshopModules();
   useEffect(() => { mods.load(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const allowed = (to: string) => moduleAllows(mods.disabled, to) && (!role || sessionAllows(op.session!, to));
+  // Sem OS (pacote "Só mecânicos") o Início, que é todo de OS, some e a entrada vira as Demandas
+  const platformOnly = isPlatformOnly(mods.disabled);
+  const allowed = (to: string) => !(platformOnly && to === HOME)
+    // Meus cadastros é o básico de quem não tem o módulo Clientes: com ele ligado, usa o completo
+    && !(to === '/oficina/plataforma/clientes' && !mods.disabled.includes('clientes'))
+    && moduleAllows(mods.disabled, to) && (!role || sessionAllows(op.session!, to));
   // WhatsApp: conversas não lidas no menu + som de mensagem nova (só para quem pode abrir o Inbox)
   const inboxUnread = useInboxAlerts(shopId, allowed('/oficina/inbox'), role);
   const badgeOf = (to: string) => (to === '/oficina/mensagens' ? unread : to === '/oficina/inbox' ? inboxUnread : 0);
@@ -501,16 +531,22 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   /** Tela inicial que a função e os módulos da oficina deixam abrir (evita ficar pulando entre telas bloqueadas) */
   function homePath() {
     const candidates = role
-      ? [ROLES[role].home, '/oficina/inicio', ...(ROLES[role].routes ?? [])]
-      : ['/oficina/inicio'];
-    return candidates.find(allowed) ?? '/oficina/avisos';
+      ? [ROLES[role].home, HOME, ...(ROLES[role].routes ?? [])]
+      : [HOME];
+    return [...candidates, '/oficina/dashboard'].find(allowed) ?? '/oficina/avisos';
   }
 
   /* Módulo/ferramenta desligado pra esta oficina → outra ferramenta do módulo ou a tela inicial */
   useEffect(() => {
+    if (mods.loaded && mods.workshopId === shopId && platformOnly && location.pathname === HOME) {
+      nav(homePath(), { replace: true });
+      return;
+    }
     if (mods.loaded && mods.workshopId === shopId && !moduleAllows(mods.disabled, location.pathname)) {
       const alt = moduleEntry(mods.disabled, location.pathname);
       if (alt && allowed(alt)) { nav(alt, { replace: true }); return; }
+      // Tela de entrada padrão (login cai no Painel/Resultado): vai pra tela certa sem aviso
+      if (LANDING_PATHS.includes(location.pathname)) { nav(homePath(), { replace: true }); return; }
       const onlyDesktop = mods.isMobile && moduleAllows(mods.off, location.pathname);
       toast.warning(onlyDesktop
         ? 'Esse módulo está liberado só no computador.'
@@ -518,6 +554,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       nav(homePath(), { replace: true });
     }
   }, [mods.loaded, mods.disabled, shopId, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Modo balcão só faz sentido com o módulo "Acessos e modo balcão" (é lá que se cadastram os PINs)
+  const balcaoOk = !mods.off.includes('acessos');
 
   async function enterBalcao() {
     if (!shopId) return;
@@ -538,16 +577,16 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   if (shopId && op.wid !== shopId) return null;
   if (op.balcao && !op.session) return <OperatorLock />;
 
-  const bottomTabs = BOTTOM_TABS[role ?? 'gestor'].map(fix).filter(t => allowed(t.to));
+  const bottomTabs = (platformOnly ? PLATFORM_TABS : BOTTOM_TABS[role ?? 'gestor']).map(fix).filter(t => allowed(t.to));
   // No celular, o "Mais" abre este mesmo menu sem repetir o que já está na barra inferior
   const inBottom = (to: string) => bottomTabs.some(t => t.to === to);
   const path = location.pathname;
   const showMsgs = allowed('/oficina/mensagens');
   // Mensagens da plataforma: o contador vai na aba Plataforma quando ela está na barra; senão, no "Mais"
-  const msgsTab = inBottom('/oficina/dashboard') ? '/oficina/dashboard' : null;
+  const msgsTab = inBottom('/oficina/mensagens') ? '/oficina/mensagens' : inBottom('/oficina/dashboard') ? '/oficina/dashboard' : null;
 
   /** Grupos do menu com só o que a função pode abrir (submenu sem filho liberado some) */
-  const navSections = SECTIONS.flatMap(sec => {
+  const navSections = (platformOnly ? PLATFORM_SECTIONS : SECTIONS).flatMap(sec => {
     const entries = sec.items
       .map(e => (isSub(e) ? {
         ...e,
@@ -802,7 +841,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 </button>
               )
             ) : !op.balcao ? (
-              rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
+              !balcaoOk ? (rail ? null : <span className="flex-1" />)
+              : rail ? <RailButton T={T} icon="lock" label="Ativar modo balcão" onClick={enterBalcao} /> : (
                 <button onClick={enterBalcao} title="Cada colaborador entra com o próprio PIN e vê só as telas da função dele"
                   className={`flex-1 h-8 px-2 inline-flex items-center gap-2 rounded-lg text-xs font-semibold transition ${T.tool}`}>
                   <Icon name="lock" size={14} />Modo balcão
@@ -910,11 +950,12 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             return (
               <NavLink key={tab.to} to={tab.to} onClick={() => setOpen(false)}
                 className={({ isActive }) => `group flex flex-col items-center justify-center gap-1 text-[10px] font-semibold tracking-tight transition-colors ${
-                  isActive && !open ? 'text-brand-600' : 'text-steel-400 active:text-steel-600'}`}>
+                  tab.to.includes('?') ? 'text-brand-600' : isActive && !open ? 'text-brand-600' : 'text-steel-400 active:text-steel-600'}`}>
                 {({ isActive }) => (
                   <>
                     <span className={`relative grid place-items-center h-7 w-12 rounded-full text-lg leading-none transition-all duration-200 ${
-                      isActive && !open ? 'bg-brand-50' : 'grayscale-[35%] opacity-80 group-active:scale-90'}`}>
+                      tab.to.includes('?') ? 'bg-brand-500 text-white font-bold group-active:scale-90'
+                      : isActive && !open ? 'bg-brand-50' : 'grayscale-[35%] opacity-80 group-active:scale-90'}`}>
                       {tab.icon}
                       {badge > 0 && <Badge n={badge} />}
                     </span>
@@ -1028,7 +1069,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 );
               })()}
 
-              {!sheetGroup && !op.balcao && (
+              {!sheetGroup && !op.balcao && balcaoOk && (
                 <button onClick={enterBalcao}
                   className="w-full flex items-center gap-3 rounded-2xl bg-white ring-1 ring-steel-200/70 px-4 py-3 text-left active:bg-steel-100">
                   <span className="text-xl">🔒</span>

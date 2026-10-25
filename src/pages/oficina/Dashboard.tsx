@@ -1,18 +1,32 @@
-import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/Toast';
+import { isPlatformOnly, useWorkshopModules } from '@/lib/modules';
+import { saveCharge } from '@/components/marketplace/CustomerCharge';
+import { localInput } from '@/lib/agenda';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
 import { MechanicReviews } from '@/components/MechanicReviews';
 import { formatScheduled } from '@/lib/scheduling';
 import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
+import { inviteFields, inviteWaitingTooLong, isPendingInvite } from '@/lib/jobInvite';
 import type { Job } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
-import MarketplaceSummary from '@/components/marketplace/MarketplaceSummary';
+import { useStoredOpen } from '@/hooks/useStoredOpen';
+import { splitJobVehicle } from '@/lib/jobDescription';
+import RateMechanicModal from '@/components/marketplace/RateMechanic';
+import { FavoriteMechanics, PlatformHero, StatusCounters, type HomeMechanic } from '@/components/marketplace/PlatformHome';
+import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
+import {
+  IconAlert, IconArchive, IconArrowLeft, IconArrowRight, IconBell, IconCalendar, IconCar, IconCheck, IconChevronDown, IconClipboardCheck,
+  IconClock, IconFileText, IconInfo, IconLayers, IconMap, IconMegaphone, IconPencil, IconPlus, IconRepeat, IconSearch, IconStar,
+  IconTarget, IconTrendingUp, IconWrench, IconX, IconZap,
+} from '@/components/mecanico/icons';
 
 type NewJob = {
   title: string; description: string;
@@ -26,11 +40,35 @@ type NewJob = {
   service_order_item_ids?: string[];
   /** Demanda com serviços de várias OS (vindo dos empilhados) */
   service_order_ids?: string[];
+  /** Serviços empilhados avulsos (sem OS) que viram esta demanda */
+  stacked_service_ids?: string[];
+  /** Veículo do serviço (texto livre). Vai na descrição e no título da demanda */
+  vehicle?: string;
+  /** Quanto a oficina vai cobrar do cliente (só ela vê; oficina "Só mecânicos") */
+  customer_charge?: string;
+  /** Veio de Meus clientes ("Chamar mecânico para este carro"): de quem é a demanda */
+  customer_id?: string | null;
+  vehicle_id?: string | null;
 };
-type MechanicOption = { id: string; name: string; rating: number; total_jobs: number; hourly_rate: number };
+type MechanicOption = {
+  id: string; name: string; rating: number; total_jobs: number; hourly_rate: number;
+  skills?: string[] | null; avatar?: string | null;
+};
 type JobMode = 'open' | 'favorites' | 'direct';
 
-const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '' };
+const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '', vehicle: '' };
+
+/** Título e descrição com o veículo (o mecânico vê em qual carro vai trabalhar) */
+function withVehicle(f: NewJob) {
+  const v = (f.vehicle ?? '').trim();
+  const title = f.title.trim(), description = f.description.trim() || title;
+  if (!v) return { title, description };
+  const model = v.split('·')[0].trim();
+  return {
+    title: (title.toLowerCase().includes(model.toLowerCase()) ? title : `${title} — ${model}`).slice(0, 120),
+    description: `${description}${description ? '\n\n' : ''}Veículo: ${v}`,
+  };
+}
 
 const draftKey = jobDraftKey;
 function loadDraft(workshopId: string): NewJob | null {
@@ -38,7 +76,8 @@ function loadDraft(workshopId: string): NewJob | null {
     const raw = localStorage.getItem(draftKey(workshopId));
     if (!raw) return null;
     const d = JSON.parse(raw) as Partial<NewJob>;
-    const hasContent = !!(d.title?.trim() || d.description?.trim() || d.price_per_hour || d.total || d.scheduled_at);
+    const hasContent = !!(d.title?.trim() || d.description?.trim() || d.price_per_hour || d.total || d.scheduled_at
+      || d.vehicle?.trim() || d.customer_id);
     if (!hasContent) return null;
     // Rascunho antigo (antes do "pelo serviço") era sempre por hora
     return { ...EMPTY, ...d, pricing: d.pricing ?? 'hour' };
@@ -52,9 +91,15 @@ export default function WorkshopDashboard() {
   const [history, setHistory]   = useState<Job[]>([]);
   const [pendingConfirm, setPendingConfirm] = useState<Job[]>([]);
   const [pendingRate, setPendingRate] = useState<Job[]>([]);
+  /* Nome de quem foi convidado (convite direto) — id do mecânico → nome */
+  const [inviteNames, setInviteNames] = useState<Record<string, string>>({});
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
+  /** Preferidos da oficina (disponíveis ou não), para o card "Meus preferidos" */
+  const [favMechanics, setFavMechanics] = useState<(HomeMechanic & { available: boolean })[]>([]);
   const [modal, setModal]       = useState(false);
   const [stackVer, setStackVer] = useState(0);
+  /** Demanda sendo avaliada na janela (sem ir para o mapa) */
+  const [rating, setRatingJob] = useState<Job | null>(null);
   const [form, setForm]         = useState<NewJob>(EMPTY);
   const [draftRestored, setDraftRestored] = useState(false);
   /* Rascunho montado no Caixa ("Chamar mecânico"): de qual OS veio */
@@ -70,6 +115,23 @@ export default function WorkshopDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
   const shopLoading = !currentWorkshop;
   const hasPendingFees = usePendingFees(currentWorkshop?.id ?? null);
+  /** Aguardando aceite fica recolhido (a oficina abre quando quiser) */
+  const [waitingOpen, toggleWaiting] = useStoredOpen(currentWorkshop?.id ? `oficina_aguardando_open:${currentWorkshop.id}` : null);
+  // Oficina "Só mecânicos": pode informar quanto vai cobrar do cliente (quem tem OS tem o valor pela OS)
+  const platformOnly = useWorkshopModules(s => s.loaded && isPlatformOnly(s.off));
+  /** Valor cobrado do cliente digitado no formulário (null = não informou) */
+  const chargeOf = (f: NewJob) => {
+    const raw = (f.customer_charge ?? '').trim().replace(',', '.');
+    const n = raw === '' ? null : Number(raw);
+    return n != null && n >= 0 ? n : null;
+  };
+
+  const inviteName = (j: Job) => (j.invited_mechanic_id && inviteNames[j.invited_mechanic_id]) || 'o mecânico';
+
+  /* Convites recusados nas últimas 12h — a oficina escolhe outro mecânico */
+  const declinedInvites = history.filter(j =>
+    j.status === 'cancelled' && j.audience === 'invite' && j.cancelled_by === 'mechanic'
+    && !!j.cancelled_at && Date.now() - new Date(j.cancelled_at).getTime() < 12 * 60 * 60 * 1000);
 
   // Recarrega jobs quando a oficina ativa mudar (troca pelo seletor)
   useEffect(() => {
@@ -85,6 +147,26 @@ export default function WorkshopDashboard() {
       .select('mechanic_id')
       .eq('workshop_id', workshopId);
     setFavorites(new Set((data ?? []).map(d => d.mechanic_id)));
+  }
+
+  // Detalhes dos preferidos (mesmo offline): o card mostra quem está disponível agora
+  useEffect(() => {
+    const ids = [...favorites];
+    if (!ids.length) { setFavMechanics([]); return; }
+    supabase.from('mechanics')
+      .select('id, rating, total_jobs, is_available, skills, profile:profiles!inner(full_name, status, avatar_url)')
+      .in('id', ids).eq('profile.status', 'approved')
+      .then(({ data }) => setFavMechanics((data ?? []).map((m: any) => ({
+        id: m.id, name: m.profile.full_name, rating: Number(m.rating ?? 0), total_jobs: m.total_jobs ?? 0,
+        skills: m.skills ?? [], avatar: m.profile.avatar_url ?? null, available: !!m.is_available,
+      }))));
+  }, [favorites]);
+
+  /** "Chamar" num preferido: Nova demanda já como convite direto para ele */
+  function openInvite(mechanicId: string) {
+    if (hasPendingFees) return;
+    openCreateModal();
+    setMode('direct'); setPickedMechanic(mechanicId);
   }
 
   async function toggleFavorite(mechanicId: string) {
@@ -151,6 +233,15 @@ export default function WorkshopDashboard() {
     ]);
     setActive((a as Job[]) ?? []);
     setHistory((h as Job[]) ?? []);
+    const invited = [...new Set([
+      ...(a ?? []).map(j => (j as Job).invited_mechanic_id),
+      ...(h ?? []).flatMap(j => [(j as Job).invited_mechanic_id, (j as Job).mechanic_id]),
+    ].filter((x): x is string => !!x))];
+    if (invited.length) {
+      const { data: ms } = await supabase.from('mechanics')
+        .select('id, profile:profiles(full_name)').in('id', invited);
+      setInviteNames(Object.fromEntries((ms ?? []).map((m: any) => [m.id, m.profile?.full_name ?? 'Mecânico'])));
+    }
     setPendingConfirm((pc as Job[]) ?? []);
     setPendingRate((pr as Job[]) ?? []);
   }
@@ -158,7 +249,7 @@ export default function WorkshopDashboard() {
   async function fetchMechanics() {
     const { data } = await supabase
       .from('mechanics')
-      .select('id, rating, total_jobs, hourly_rate, is_available, profile:profiles!inner(full_name, status)')
+      .select('id, rating, total_jobs, hourly_rate, is_available, skills, profile:profiles!inner(full_name, status, avatar_url)')
       .eq('profile.status', 'approved')
       .eq('is_available', true)
       .order('rating', { ascending: false });
@@ -168,8 +259,47 @@ export default function WorkshopDashboard() {
       rating: m.rating,
       total_jobs: m.total_jobs,
       hourly_rate: m.hourly_rate,
+      skills: m.skills ?? [],
+      avatar: m.profile.avatar_url ?? null,
     }));
     setMechanics(list);
+  }
+
+  /* Nova demanda em 3 passos: 1 o quê · 2 quanto · 3 quando (a edição mostra tudo numa tela só) */
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  /** Mostrar "Pelo serviço / Por hora" */
+  const [hourOpt, setHourOpt] = useState(false);
+  const [pickDate, setPickDate] = useState(false);
+  const formBody = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (modal) { setStep(1); setHourOpt(false); setPickDate(false); } }, [modal]);
+  /** Até quando ignorar "publicar" (o toque em Continuar não pode virar publicação) */
+  const submitLockUntil = useRef(0);
+  const goStep = (n: 1 | 2 | 3) => {
+    setFormError(null); setStep(n); formBody.current?.scrollTo({ top: 0 });
+    if (n === 3) submitLockUntil.current = Date.now() + 800;
+  };
+  function nextStep() {
+    if (step === 1) {
+      if (!form.title.trim()) return setFormError('Diga qual é o serviço.');
+      return goStep(2);
+    }
+    if (step === 2) {
+      const price = priceOf();
+      if (typeof price === 'string') return setFormError(price);
+      return goStep(3);
+    }
+  }
+  const showStep = (n: 1 | 2 | 3) => !!editingId || step === n;
+  /** Botões de data: '' = o quanto antes; null = escolher no calendário */
+  function dateOptions(): { label: string; value: string | null }[] {
+    const now = new Date();
+    const at = (days: number, h: number) => { const d = new Date(now); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return localInput(d); };
+    return [
+      { label: 'O quanto antes', value: '' },
+      ...(now.getHours() < 13 ? [{ label: 'Hoje, 14h', value: at(0, 14) }] : []),
+      { label: 'Amanhã, 8h', value: at(1, 8) },
+      { label: 'Outro dia', value: null },
+    ];
   }
 
   function resetModal() {
@@ -179,10 +309,20 @@ export default function WorkshopDashboard() {
     setEditingId(null);
   }
 
-  function openCreateModal() {
+  /**
+   * Abre a Nova demanda. Clique em "Chamar mecânico" = formulário limpo; só o que veio de uma OS
+   * (Caixa/OS → ?nova=os) ou do "Gerar demanda" dos Empilhados (fromFlow) abre já preenchido.
+   * Rascunho de OS/empilhados que ficou para trás é descartado; texto digitado e não enviado volta.
+   */
+  function openCreateModal(fromFlow = false) {
     setEditingId(null);
     if (currentWorkshop?.id) {
-      const draft = loadDraft(currentWorkshop.id);
+      const wid = currentWorkshop.id;
+      if (!fromFlow && localStorage.getItem(jobDraftOriginKey(wid))) {
+        localStorage.removeItem(draftKey(wid));
+        localStorage.removeItem(jobDraftOriginKey(wid));
+      }
+      const draft = loadDraft(wid);
       if (draft) { setForm(draft); setDraftRestored(true); }
       else { setForm(EMPTY); setDraftRestored(false); }
       setDraftOrigin(draft ? localStorage.getItem(jobDraftOriginKey(currentWorkshop.id)) : null);
@@ -191,27 +331,64 @@ export default function WorkshopDashboard() {
     setModal(true);
   }
 
-  // Link "Chamar mecânico da plataforma" (vindo da Nova OS): /oficina/dashboard?nova=1
+  /** Atalhos marcados: abre a demanda já escrita (um ou vários serviços para um mecânico), pelo serviço,
+   *  com o tempo típico somado. O valor vem VAZIO: a estimativa aparece só como dica ("Usar") no passo 2,
+   *  para ninguém empilhar/publicar um valor que não escolheu. */
+  function openShortcut(list: ServiceShortcut[]) {
+    if (hasPendingFees || !list.length) return;
+    const hours = list.reduce((a, s) => a + s.hours, 0);
+    const one = list.length === 1;
+    const next: NewJob = {
+      ...EMPTY,
+      title: one ? list[0].title : `${list[0].title} + ${list.length - 1} serviço(s)`,
+      description: one ? list[0].description : ['Serviços a realizar:', ...list.map(s => `• ${s.title} — ${s.description}`)].join('\n'),
+      pricing: 'fixed', max_hours: String(hours), total: '',
+    };
+    setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
+    setForm(next); persistDraft(next);
+    setMode('open'); setPickedMechanic(''); setMechSearch('');
+    setModal(true);
+  }
+
+  // ?nova=1 = abrir a Nova demanda (limpa); ?nova=os = veio do Caixa/OS com o rascunho da OS preenchido
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
-    if (searchParams.get('nova') !== '1' || !currentWorkshop?.id) return;
+    const nova = searchParams.get('nova');
+    if ((nova !== '1' && nova !== 'os') || !currentWorkshop?.id) return;
     setSearchParams(p => { p.delete('nova'); return p; }, { replace: true });
-    if (!hasPendingFees) openCreateModal();
+    if (!hasPendingFees) openCreateModal(nova === 'os');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, currentWorkshop?.id]);
 
   function openEditModal(j: Job) {
     setEditingId(j.id);
     setDraftRestored(false);
+    const t = splitJobVehicle(j.title, j.description);
     setForm({
-      title: j.title,
-      description: j.description,
-      ...(j.pricing === 'fixed'
-        ? { pricing: 'fixed' as const, total: String(j.price_per_hour ?? ''), price_per_hour: '', max_hours: j.estimated_hours != null ? String(j.estimated_hours) : '' }
-        : { pricing: 'hour' as const, total: '', price_per_hour: String(j.price_per_hour ?? ''), max_hours: String(j.max_hours ?? '1') }),
+      ...EMPTY,
+      title: t.title,
+      description: t.description,
+      vehicle: t.vehicle ?? '',
+      ...priceForm(j),
       scheduled_at: j.scheduled_at ? new Date(j.scheduled_at).toISOString().slice(0, 16) : '',
     });
     setMode('open'); setPickedMechanic(''); setMechSearch(''); setFormError(null);
+    setModal(true);
+  }
+
+  /**
+   * Histórico: abre uma demanda nova com o mesmo serviço e valor de uma antiga. O carro fica em branco
+   * (repetir é quase sempre o mesmo serviço em outro carro). Com `sameMechanic`, vira convite direto
+   * para quem fez da outra vez.
+   */
+  function openRepeat(j: Job, sameMechanic = false) {
+    if (hasPendingFees) return;
+    const t = splitJobVehicle(j.title, j.description);
+    const next: NewJob = { ...EMPTY, title: t.title, description: t.description, ...priceForm(j) };
+    setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
+    setForm(next); persistDraft(next);
+    const mech = sameMechanic ? j.mechanic_id ?? '' : '';
+    setMode(mech ? 'direct' : 'open'); setPickedMechanic(mech); setMechSearch('');
     setModal(true);
   }
 
@@ -243,20 +420,10 @@ export default function WorkshopDashboard() {
     }
 
     // Validação explícita (mobile não mostra o tooltip do browser)
-    if (!form.title.trim()) return setFormError('Informe o título do serviço.');
-    if (!form.description.trim()) return setFormError('Informe a descrição do serviço.');
-    // Preço pelo serviço: grava valor × 1h (as contas de cobrança não mudam) e o tempo previsto à parte
-    const fixed = form.pricing === 'fixed';
-    const pph = fixed ? Number(form.total) : Number(form.price_per_hour);
-    const mh  = fixed ? 1 : Number(form.max_hours);
-    const est = fixed && form.max_hours ? Number(form.max_hours) : null;
-    if (fixed) {
-      if (!pph || pph < 1) return setFormError('Informe o valor do serviço (mínimo R$ 1).');
-      if (est != null && !(est > 0 && est <= 99)) return setFormError('Tempo previsto inválido.');
-    } else {
-      if (!pph || pph < 1) return setFormError('Informe o valor por hora (mínimo R$ 1).');
-      if (!mh  || mh  < 0.5) return setFormError('Informe o máximo de horas (mínimo 0,5h).');
-    }
+    if (!form.title.trim()) return setFormError('Informe qual é o serviço.');
+    const price = priceOf();
+    if (typeof price === 'string') return setFormError(price);
+    const { fixed, pph, mh, est } = price;
     const pricingFields = { pricing: fixed ? 'fixed' : 'hour', estimated_hours: est };
     if (mode === 'direct' && !pickedMechanic) return setFormError('Selecione o mecânico para contratação direta.');
 
@@ -267,9 +434,11 @@ export default function WorkshopDashboard() {
 
     if (editingId) {
       // Edição: só campos editáveis. Status, workshop_id e mechanic_id ficam intocados.
+      // O carro volta a ir junto no título e na descrição, como na criação
+      const text = withVehicle(form);
       const updatePayload: Record<string, unknown> = {
-        title:          form.title.trim(),
-        description:    form.description.trim(),
+        title:          text.title,
+        description:    text.description,
         price_per_hour: pph,
         max_hours:      mh,
         price:          pph * mh,
@@ -294,19 +463,22 @@ export default function WorkshopDashboard() {
       setSaving(false);
       return setFormError('Você ainda não tem mecânicos preferidos. Adicione pelo menos um antes de usar esse modo.');
     }
+    const text = withVehicle(form);
     const payload: Record<string, unknown> = {
       workshop_id:    currentShop.id,
-      title:          form.title.trim(),
-      description:    form.description.trim(),
+      title:          text.title,
+      description:    text.description,
       price_per_hour: pph,
       max_hours:      mh,
       price:          pph * mh,
       ...pricingFields,
-      status:         isDirect ? 'assigned' : 'open',
-      mechanic_id:    isDirect ? pickedMechanic : null,
-      audience:       isFavorites ? 'favorites' : 'public',
+      // Mecânico específico = convite: só vira "aceito" quando ele aceitar
+      ...(isDirect
+        ? inviteFields(pickedMechanic)
+        : { status: 'open', mechanic_id: null, audience: isFavorites ? 'favorites' : 'public' }),
     };
     if (form.service_order_id) payload.service_order_id = form.service_order_id;
+    if (form.customer_id) { payload.customer_id = form.customer_id; payload.vehicle_id = form.vehicle_id ?? null; }
     if (form.scheduled_at) payload.scheduled_at = new Date(form.scheduled_at).toISOString();
     const { data: ins, error: insErr } = await supabase.from('jobs').insert(payload).select('id').single();
     setSaving(false);
@@ -324,9 +496,63 @@ export default function WorkshopDashboard() {
       const osIds = form.service_order_ids?.length ? form.service_order_ids : [form.service_order_id];
       await markPlatformItems(currentShop.id, osIds, form.service_order_item_ids ?? [], { jobId: ins?.id });
     }
+    // Quanto vai cobrar do cliente (só a oficina vê)
+    const charge = chargeOf(form);
+    if (platformOnly && charge != null && ins?.id) {
+      const { error: chErr } = await saveCharge(currentShop.id, ins.id, charge, user?.id);
+      if (chErr) toast.error('A demanda foi publicada, mas o valor cobrado não salvou: ' + chErr.message);
+    }
+    // Empilhados avulsos que viraram esta demanda saem da pilha
+    if (form.stacked_service_ids?.length && ins?.id) {
+      await supabase.from('stacked_services').update({ job_id: ins.id })
+        .in('id', form.stacked_service_ids).eq('workshop_id', currentShop.id);
+    }
     setStackVer(v => v + 1);
     resetModal();
     await fetchJobs(currentShop.id);
+  }
+
+  /** Preço do formulário (pelo serviço = valor × 1h; por hora = valor/hora × horas) ou a mensagem de erro */
+  function priceOf(): { fixed: boolean; pph: number; mh: number; est: number | null } | string {
+    const fixed = form.pricing === 'fixed';
+    const pph = fixed ? Number(form.total) : Number(form.price_per_hour);
+    const mh  = fixed ? 1 : Number(form.max_hours);
+    const est = fixed && form.max_hours ? Number(form.max_hours) : null;
+    if (fixed) {
+      if (!pph || pph < 1) return 'Informe o valor do serviço (mínimo R$ 1).';
+      if (est != null && !(est > 0 && est <= 99)) return 'Tempo previsto inválido.';
+    } else {
+      if (!pph || pph < 1) return 'Informe o valor por hora (mínimo R$ 1).';
+      if (!mh  || mh  < 0.5) return 'Informe o máximo de horas (mínimo 0,5h).';
+    }
+    return { fixed, pph, mh, est };
+  }
+
+  /** 📚 Empilhar: guarda o serviço para juntar com outros numa demanda só (um mecânico, mais barato) */
+  async function stackService() {
+    setFormError(null);
+    if (!form.title.trim()) return setFormError('Informe o título do serviço.');
+    const price = priceOf();
+    if (typeof price === 'string') return setFormError(price);
+    if (!shop) return setFormError('Oficina não encontrada. Recarregue a página.');
+    setSaving(true);
+    const { error } = await supabase.from('stacked_services').insert({
+      workshop_id: shop.id,
+      title: form.title.trim(),
+      description: form.description.trim(),
+      vehicle: form.vehicle?.trim() || null,
+      customer_charge: platformOnly ? chargeOf(form) : null,
+      total: Math.round(price.pph * price.mh * 100) / 100,
+      hours: price.fixed ? price.est : price.mh,
+      created_by: user?.id ?? null,
+    });
+    setSaving(false);
+    if (error) return setFormError('Não foi possível empilhar: ' + error.message);
+    localStorage.removeItem(draftKey(shop.id));
+    localStorage.removeItem(jobDraftOriginKey(shop.id));
+    toast.success('Serviço empilhado 📚 — junte com outros em Empilhados e publique tudo para um mecânico só');
+    setStackVer(v => v + 1);
+    resetModal();
   }
 
   function set(k: keyof NewJob) {
@@ -379,53 +605,92 @@ export default function WorkshopDashboard() {
   }, [modal]);
 
   const estimated = form.pricing === 'fixed' ? Number(form.total) : Number(form.price_per_hour) * Number(form.max_hours);
+  // Estimativa pelo valor/hora dos mecânicos disponíveis × tempo previsto (o mesmo que a oficina pagaria contratando direto)
+  const rateNow = medianRate(mechanics);
+  const estHours = Number(form.max_hours) || 1;
+  const suggested = rateNow ? (form.pricing === 'fixed' ? estimatePrice(rateNow, estHours) : Math.round(rateNow)) : null;
+  const typedPrice = form.pricing === 'fixed' ? Number(form.total) : Number(form.price_per_hour);
+  // Nunca contratou pela plataforma: a tela vende a primeira demanda
+  const firstTime = !shopLoading && active.length === 0 && history.length === 0 && (shop?.total_jobs ?? 0) === 0;
   // Preferidos no topo; dentro de cada grupo mantém a ordem por nota do fetch
   const filteredMechanics = mechanics
     .filter(m => m.name.toLowerCase().includes(mechSearch.toLowerCase()))
     .sort((a, b) => Number(favorites.has(b.id)) - Number(favorites.has(a.id)));
 
+  /** Contadores de pedidos (linha no celular, cartão 2×2 na coluna lateral do computador) */
+  const counters = (side = false) => (
+    <StatusCounters side={side}
+      searching={active.filter(j => !j.mechanic_id).length}
+      accepted={active.filter(j => j.mechanic_id && !j.arrived_at && j.status !== 'in_progress').length}
+      working={active.filter(j => j.mechanic_id && (j.arrived_at || j.status === 'in_progress')).length}
+      done={shop?.total_jobs ?? 0}
+      onPick={t => document.getElementById(t === 'ativas' ? 'minhas-solicitacoes' : 'historico')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
+  );
+
   return (
     <WorkshopLayout>
-      {/* Cabeçalho: no celular o botão de chamar ocupa a largura toda (é o que se faz aqui) */}
-      <div className="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs font-medium text-steel-500">Plataforma · mecânicos sob demanda</div>
-          <h1 className="font-display text-[26px] lg:text-3xl font-bold tracking-tight text-steel-900 leading-tight truncate">{shop?.business_name ?? '…'}</h1>
-        </div>
-        <button
-          onClick={openCreateModal}
-          disabled={shopLoading || hasPendingFees}
-          title={hasPendingFees ? 'Quite a multa pendente para publicar nova demanda' : undefined}
-          className="shrink-0 inline-flex items-center justify-center gap-2 h-12 sm:h-11 px-5 rounded-xl bg-brand-500 text-white font-bold shadow-brand active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {shopLoading ? '…' : hasPendingFees ? <>🔒 Multa pendente</> : <><span className="text-lg leading-none">⚡</span> Chamar mecânico</>}
-        </button>
-      </div>
+      
+
+      {/* Computador: largura máxima e duas colunas (trabalho à esquerda, pedidos e mecânicos à direita).
+          Celular: uma coluna só, na mesma ordem de antes. */}
+      <div className="max-w-6xl mx-auto lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5 lg:items-start">
+      <div className="min-w-0">
+
+      {/* O que se faz aqui, em um botão */}
+      <PlatformHero available={mechanics.length} onCall={() => openCreateModal()}
+        disabled={shopLoading || hasPendingFees} locked={hasPendingFees} />
 
       {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
 
       {/* Serviços empilhados: esperando mecânico da plataforma (a gestão junta e gera a demanda) */}
-      {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={openCreateModal} />}
+      {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={() => openCreateModal(true)} />}
 
-      {/* Números rápidos: uma faixa só, cabe em qualquer celular */}
-      <dl className="grid grid-cols-3 divide-x divide-steel-100 rounded-2xl bg-white ring-1 ring-steel-200/70 mb-5">
-        <KPI label="Ativas" value={active.length} />
-        <KPI label="Concluídas" value={shop?.total_jobs ?? 0} />
-        <KPI label="Avaliação" value={shop?.rating ? `★ ${shop.rating.toFixed(1)}` : '—'} />
-      </dl>
+      {/* Como estão os pedidos (oficina que nunca pediu não vê quatro zeros) */}
+      {!firstTime && <div className="lg:hidden">{counters()}</div>}
 
-      {/* Resumo do período: gasto, tempos de aceite/chegada, mecânicos mais contratados */}
-      {currentWorkshop?.id && <MarketplaceSummary workshopId={currentWorkshop.id} />}
+      {/* Atalhos dos serviços mais pedidos (um toque abre a demanda pronta) */}
+      <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact
+        storageKey={currentWorkshop?.id ? `oficina_atalhos_open:${currentWorkshop.id}` : null} />
+
+      {/* Meus preferidos (recolhido): quem a oficina marcou com ⭐, com "Chamar" direto */}
+      <div className="lg:hidden">
+        <FavoriteMechanics mechanics={favMechanics} onCall={openInvite} disabled={shopLoading || hasPendingFees}
+          storageKey={currentWorkshop?.id ? `oficina_preferidos_open:${currentWorkshop.id}` : null} />
+      </div>
+
+      {/* Números do período (gasto, tempos, ranking) ficam no Painel da Plataforma: esta é a tela de trabalho */}
+
+      {/* Convite recusado: avisa e leva para escolher outro mecânico */}
+      {declinedInvites.length > 0 && (
+        <section className="mb-6 space-y-2">
+          {declinedInvites.map(j => (
+            <div key={j.id} className="rounded-2xl border border-alert-200 bg-alert-500/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-steel-900 leading-snug">
+                  {firstName(inviteName(j))} {j.cancellation_reason?.startsWith('Mecânico desistiu') ? 'desistiu do' : 'recusou o'} convite
+                </div>
+                <div className="text-sm text-steel-600 mt-0.5 break-words">
+                  “{j.title}” foi cancelada sem multa. Escolha outro mecânico ou publique para todos.
+                </div>
+              </div>
+              <Link to="/oficina/buscar"
+                className="shrink-0 inline-flex items-center justify-center h-11 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">
+                Escolher outro mecânico
+              </Link>
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* 🔔 Confirmações pendentes — ação prioritária */}
       {pendingConfirm.length > 0 && (
         <section className="mb-6">
-          <div className="bg-gradient-to-r from-brand-50 to-brand-100/40 border-2 border-brand-300 rounded-2xl p-4 sm:p-5">
+          <div className="bg-white border border-brand-300 rounded-xl p-4 sm:p-5">
             <div className="flex items-start gap-3 mb-3">
-              <div className="text-3xl shrink-0 animate-pulse">🔔</div>
+              <IconBell className="w-5 h-5 mt-0.5 shrink-0 text-brand-600" />
               <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-brand-700 text-lg leading-tight">
+                <h3 className="font-semibold text-steel-900 text-base leading-tight">
                   {pendingConfirm.length === 1
                     ? '1 serviço aguardando confirmação'
                     : `${pendingConfirm.length} serviços aguardando confirmação`}
@@ -446,12 +711,12 @@ export default function WorkshopDashboard() {
                     <div className="font-semibold text-steel-900 truncate">{j.title}</div>
                     <div className="text-xs text-steel-500 mt-0.5">
                       R$ {formatBRL(j.price ?? 0)} fechado
-                      {j.actual_hours != null && ` · ⏱ ${j.actual_hours}h reais`}
+                      {j.actual_hours != null && ` · ${j.actual_hours}h reais`}
                       {j.completed_at && ` · finalizado ${new Date(j.completed_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
                     </div>
                   </div>
                   <span className="bg-brand-500 text-white text-xs font-bold rounded-lg px-3 py-1.5 shrink-0">
-                    Confirmar →
+                    Confirmar
                   </span>
                 </Link>
               ))}
@@ -463,9 +728,9 @@ export default function WorkshopDashboard() {
       {/* ⭐ Avaliações pendentes — opcional, sem urgência */}
       {pendingRate.length > 0 && (
         <section className="mb-6">
-          <div className="bg-steel-50 border border-steel-200 rounded-2xl p-4 sm:p-5">
+          <div className="bg-white border border-steel-200 rounded-xl p-4 sm:p-5">
             <div className="flex items-start gap-3 mb-3">
-              <div className="text-2xl shrink-0">⭐</div>
+              <IconStar className="w-5 h-5 mt-0.5 shrink-0 text-steel-400" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-bold text-steel-800 text-base leading-tight">
@@ -482,10 +747,11 @@ export default function WorkshopDashboard() {
             </div>
             <div className="space-y-2">
               {pendingRate.slice(0, 3).map(j => (
-                <Link
+                <button
                   key={j.id}
-                  to={`/oficina/job/${j.id}/tracking`}
-                  className="flex items-center justify-between gap-3 bg-white rounded-xl px-3 py-2.5 hover:bg-steel-50 transition border border-steel-100"
+                  type="button"
+                  onClick={() => setRatingJob(j)}
+                  className="w-full text-left flex items-center justify-between gap-3 bg-white rounded-xl px-3 py-2.5 min-h-[52px] hover:bg-steel-50 transition border border-steel-100"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-steel-900 truncate text-sm">{j.title}</div>
@@ -493,10 +759,10 @@ export default function WorkshopDashboard() {
                       Concluído {j.workshop_confirmed_at && new Date(j.workshop_confirmed_at).toLocaleDateString('pt-BR')}
                     </div>
                   </div>
-                  <span className="text-steel-600 text-xs font-semibold shrink-0">
-                    ⭐ Avaliar
+                  <span className="text-steel-700 text-xs font-semibold shrink-0 inline-flex items-center gap-1">
+                    <IconStar className="w-3.5 h-3.5 text-amber-500" />Avaliar
                   </span>
-                </Link>
+                </button>
               ))}
               {pendingRate.length > 3 && (
                 <div className="text-[11px] text-steel-400 text-center pt-1">
@@ -513,11 +779,15 @@ export default function WorkshopDashboard() {
         const buckets = groupActive(active);
 
         const renderCard = (j: Job) => (
-          <div key={j.id} className="rounded-2xl bg-white ring-1 ring-steel-200/70 p-4 min-w-0">
+          <div key={j.id} className="rounded-xl bg-white border border-steel-200 p-4 min-w-0">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-steel-900 leading-snug line-clamp-2 break-words">{j.title}</div>
-                <div className="text-[13px] text-steel-500 mt-0.5">{statusLabel(j)}</div>
+                <div className="text-[13px] text-steel-500 mt-0.5">
+                  {isPendingInvite(j)
+                    ? `Convite enviado para ${inviteName(j)} — aguardando ele aceitar`
+                    : statusLabel(j)}
+                </div>
               </div>
               <div className="text-right shrink-0">
                 <div className="font-display text-lg font-bold tabular-nums leading-tight">R$ {formatBRL(j.price, { decimals: 0 })}</div>
@@ -527,8 +797,21 @@ export default function WorkshopDashboard() {
               </div>
             </div>
             <ArrivalInfo j={j} />
+            {inviteWaitingTooLong(j) && (
+              <div className="mt-2 text-[12px] text-pending-700 bg-pending-50 border border-pending-200 rounded-lg px-2.5 py-2 leading-snug">
+                {firstName(inviteName(j))} ainda não respondeu. Você pode cancelar sem multa e{' '}
+                <Link to="/oficina/buscar" className="font-bold underline">chamar outro mecânico</Link>.
+              </div>
+            )}
+            {waitingNoAccept(j) && (
+              <div className="mt-2 flex items-center justify-between gap-3 text-[12px] text-pending-800 bg-pending-50 border border-pending-200 rounded-lg px-2.5 py-2 leading-snug">
+                <span className="flex items-start gap-1.5"><IconClock className="w-3.5 h-3.5 mt-0.5 shrink-0" /><span>Ninguém aceitou há <strong>{waitedLabel(j)}</strong>. Aumentar o valor costuma resolver.</span></span>
+                <button type="button" onClick={() => openEditModal(j)}
+                  className="shrink-0 h-9 px-3 rounded-lg bg-brand-500 text-white text-xs font-bold active:scale-95">Aumentar valor</button>
+              </div>
+            )}
             {j.scheduled_at && (
-              <div className="text-xs text-steel-500 mt-1.5">📅 {formatScheduled(j.scheduled_at)}</div>
+              <div className="text-xs text-steel-500 mt-1.5 flex items-center gap-1.5"><IconCalendar className="w-3.5 h-3.5" />{formatScheduled(j.scheduled_at)}</div>
             )}
 
             {/* Ações: a principal ocupa o espaço; editar só enquanto ninguém aceitou; cancelar sempre */}
@@ -537,35 +820,41 @@ export default function WorkshopDashboard() {
                 {j.mechanic_id && j.en_route_at ? (
                   <Link to={`/oficina/job/${j.id}/tracking`}
                     className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto h-10 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">
-                    🗺️ Ver no mapa
+                    <IconMap className="w-4 h-4" />Ver no mapa
                   </Link>
                 ) : j.mechanic_id ? (
-                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-signal-50 text-signal-700 text-xs font-bold">✓ Aceito</span>
+                  <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full bg-signal-50 text-signal-700 text-xs font-bold"><IconCheck className="w-3.5 h-3.5" />Aceito</span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-pending-50 text-pending-700 text-xs font-bold">
-                    <span className="h-1.5 w-1.5 rounded-full bg-pending-500 animate-pulse-soft" /> Aguardando aceite
+                  <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-pending-50 text-pending-700 text-xs font-bold max-w-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-pending-500 animate-pulse-soft shrink-0" />
+                    <span className="truncate">{isPendingInvite(j) ? `Aguardando ${firstName(inviteName(j))} aceitar` : 'Aguardando aceite'}</span>
                   </span>
                 )}
               </div>
               {j.status === 'open' && !j.mechanic_id && (
                 <button type="button" onClick={() => openEditModal(j)}
-                  className="shrink-0 h-10 px-2 text-xs font-semibold text-brand-600 active:text-brand-700">
-                  ✏️ Editar
+                  className="shrink-0 h-10 px-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-600 active:text-brand-700">
+                  <IconPencil className="w-3.5 h-3.5" />Editar
                 </button>
               )}
-              <span className="shrink-0"><CancelJobButton job={j} onCancelled={() => currentWorkshop?.id && fetchJobs(currentWorkshop.id)} /></span>
+              <span className="shrink-0"><CancelJobButton job={j}
+                onEdit={j.status === 'open' && !j.mechanic_id ? () => openEditModal(j) : undefined}
+                onCancelled={() => { setStackVer(v => v + 1); if (currentWorkshop?.id) fetchJobs(currentWorkshop.id); }} /></span>
             </div>
           </div>
         );
 
         if (active.length === 0) {
           return (
-            <section className="mb-8">
-              <h2 className="text-lg font-bold mb-3">Demandas ativas</h2>
-              <div className="card text-center text-steel-500 py-10">
-                Nenhuma demanda ativa.{' '}
-                <button onClick={openCreateModal} className="text-brand-500 font-semibold">
-                  Criar uma demanda →
+            <section id="minhas-solicitacoes" className="mb-8 scroll-mt-4">
+              <h2 className="text-[15px] lg:text-lg font-bold mb-3">Minhas solicitações</h2>
+              <div className="rounded-xl bg-white border border-steel-200 text-center px-5 py-8">
+                <IconClipboardCheck className="mx-auto w-7 h-7 text-steel-300" />
+                <div className="font-semibold text-steel-900 mt-3">Nenhuma solicitação em andamento</div>
+                <p className="text-sm text-steel-600 mt-1">Chame um mecânico e acompanhe tudo por aqui: aceite, chegada e serviço.</p>
+                <button type="button" onClick={() => openCreateModal()} disabled={shopLoading || hasPendingFees}
+                  className="mt-4 inline-flex items-center justify-center gap-2 h-12 px-6 rounded-xl bg-brand-500 text-white font-bold active:scale-[0.99] hover:bg-brand-600 transition disabled:opacity-50">
+                  <IconPlus className="w-5 h-5" />Chamar mecânico agora
                 </button>
               </div>
             </section>
@@ -573,13 +862,39 @@ export default function WorkshopDashboard() {
         }
 
         return (
-          <div className="mb-8">
+          <div id="minhas-solicitacoes" className="mb-8 scroll-mt-4">
             {ACTIVE_GROUPS.map(g => {
               const jobs = buckets[g.key];
               if (jobs.length === 0) return null;
+              // Aguardando aceite: recolhido, a oficina abre quando quiser (como o Histórico)
+              if (g.key === 'waiting') {
+                const late = jobs.filter(j => waitingNoAccept(j)).length;
+                return (
+                  <section key={g.key} className="mb-6">
+                    <button type="button" onClick={toggleWaiting} aria-expanded={waitingOpen}
+                      className="w-full rounded-xl bg-white border border-steel-200 px-4 py-3.5 flex items-center gap-3 text-left hover:bg-steel-50 transition">
+                      <IconMegaphone className="w-5 h-5 shrink-0 text-steel-400" />
+                      <span className="flex-1 min-w-0">
+                        <span className="flex items-center gap-2">
+                          <span className="font-semibold text-steel-900">Aguardando aceite</span>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{jobs.length}</span>
+                        </span>
+                        <span className={`block text-xs mt-0.5 ${late ? 'text-pending-700 font-semibold' : 'text-steel-500'}`}>
+                          {late
+                            ? `${late === 1 ? '1 sem aceite há muito tempo' : `${late} sem aceite há muito tempo`}: aumentar o valor costuma resolver`
+                            : 'Publicadas para os mecânicos, esperando alguém aceitar'}
+                        </span>
+                      </span>
+                      <IconChevronDown className={`w-4 h-4 text-steel-400 shrink-0 transition-transform ${waitingOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {waitingOpen && <div className="grid md:grid-cols-2 gap-3 mt-2.5">{jobs.map(renderCard)}</div>}
+                  </section>
+                );
+              }
               return (
                 <section key={g.key} className="mb-6">
                   <div className="flex items-center gap-2 mb-2.5">
+                    <g.icon className="w-[18px] h-[18px] text-steel-500" />
                     <h2 className="text-[15px] lg:text-lg font-bold">{g.title}</h2>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{jobs.length}</span>
                   </div>
@@ -592,14 +907,35 @@ export default function WorkshopDashboard() {
       })()}
 
       {/* Histórico — fechado por padrão; a oficina escolhe abrir */}
-      <HistorySection history={history} workshopId={currentWorkshop?.id ?? null} />
+      <div id="historico" className="scroll-mt-4"><HistorySection history={history} workshopId={currentWorkshop?.id ?? null}
+        names={inviteNames} onRepeat={hasPendingFees ? undefined : openRepeat} /></div>
+      </div>
+
+      {/* Coluna lateral (só no computador) */}
+      <aside className="hidden lg:block space-y-4 sticky top-4">
+        {!firstTime && counters(true)}
+        <FavoriteMechanics mechanics={favMechanics} onCall={openInvite} disabled={shopLoading || hasPendingFees} list
+          storageKey={currentWorkshop?.id ? `oficina_preferidos_open:${currentWorkshop.id}` : null} />
+      </aside>
+      </div>
+
+      {/* Avaliar o mecânico sem sair da tela */}
+      {rating && (
+        <RateMechanicModal job={{ id: rating.id, title: rating.title }}
+          onClose={() => setRatingJob(null)}
+          onSaved={() => { setRatingJob(null); if (currentWorkshop?.id) fetchJobs(currentWorkshop.id); }} />
+      )}
 
       {/* ── Modal nova demanda ── */}
       {modal && (
         <div className="fixed inset-0 bg-steel-900/70 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={resetModal}>
           <form
             onClick={e => e.stopPropagation()}
-            onSubmit={createJob}
+            onSubmit={e => {
+              if (!editingId && step < 3) { e.preventDefault(); nextStep(); return; }
+              if (!editingId && Date.now() < submitLockUntil.current) { e.preventDefault(); return; }
+              createJob(e);
+            }}
             className="bg-white w-full sm:rounded-2xl sm:max-w-lg sm:shadow-2xl rounded-t-3xl max-h-[92vh] flex flex-col"
           >
             {/* Sheet handle (mobile) */}
@@ -608,22 +944,50 @@ export default function WorkshopDashboard() {
             </div>
 
             {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto px-5 pb-2 pt-4 space-y-4">
-              <div>
-                <h2 className="text-xl font-bold tracking-tight">{editingId ? 'Editar demanda' : 'Nova demanda'}</h2>
-                <p className="text-sm text-steel-500 mt-0.5">
-                  {editingId
-                    ? 'Ajuste o que precisar enquanto nenhum mecânico aceitou.'
-                    : 'Descreva o serviço e escolha como publicar.'}
-                </p>
+            <div ref={formBody} className="flex-1 overflow-y-auto px-5 pb-2 pt-4 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-brand-600">
+                    {editingId ? 'Editar demanda' : 'Nova demanda'}
+                  </div>
+                  <h2 className="text-xl font-bold tracking-tight text-steel-900 mt-0.5">
+                    {editingId ? 'Ajuste os detalhes' : FORM_STEPS[step - 1].title}
+                  </h2>
+                  <p className="text-sm text-steel-500 mt-0.5 leading-snug">
+                    {editingId ? 'Dá para alterar enquanto nenhum mecânico aceitou.' : FORM_STEPS[step - 1].sub}
+                  </p>
+                </div>
+                <button type="button" onClick={resetModal} aria-label="Fechar"
+                  className="shrink-0 -mr-1.5 h-11 w-11 rounded-full grid place-items-center text-steel-500 hover:bg-steel-100 active:bg-steel-200">
+                  <IconX className="w-5 h-5" />
+                </button>
               </div>
 
+              {/* Etapas com nome: a oficina sabe onde está e o que falta */}
+              {!editingId && (
+                <ol className="grid grid-cols-3 gap-2" aria-label={`Passo ${step} de 3`}>
+                  {FORM_STEPS.map((s, i) => {
+                    const n = i + 1, done = n < step, on = n === step;
+                    return (
+                      <li key={s.short} className="min-w-0">
+                        <span className={`block h-1 rounded-full ${n <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />
+                        <span className={`mt-1.5 flex items-center gap-1 text-xs font-semibold truncate ${on ? 'text-steel-900' : done ? 'text-brand-600' : 'text-steel-400'}`}>
+                          {done && <IconCheck className="w-3.5 h-3.5 shrink-0" />}{s.short}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+
+              {showStep(1) && <>
               {draftRestored && !editingId && (
-                <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
-                  <span className="text-amber-800">
-                    {draftOrigin ? `🔧 Preenchido com os serviços da ${draftOrigin} — revise e publique.` : '📝 Rascunho restaurado do último acesso.'}
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-steel-50 ring-1 ring-steel-200 px-3 py-2.5 text-sm">
+                  <span className="flex items-center gap-2 min-w-0 text-steel-700">
+                    <IconFileText className="w-4 h-4 shrink-0 text-steel-500" />
+                    <span className="min-w-0">{draftOrigin ? <>Preenchido com <strong className="text-steel-900">{draftOrigin}</strong>. Revise e publique.</> : 'Rascunho do último acesso restaurado.'}</span>
                   </span>
-                  <button type="button" onClick={discardDraft} className="text-amber-700 underline font-semibold whitespace-nowrap">
+                  <button type="button" onClick={discardDraft} className="shrink-0 min-h-[36px] text-xs font-semibold text-steel-600 underline">
                     Descartar
                   </button>
                 </div>
@@ -631,127 +995,212 @@ export default function WorkshopDashboard() {
 
               {/* Título */}
               <div>
-                <label className="label">Título do serviço *</label>
-                <input className="input" required placeholder="Ex.: Troca de pastilha de freio — Civic"
+                <label className="label" htmlFor="job-title">Serviço</label>
+                <input id="job-title" className="input" placeholder="Ex.: Troca de pastilha de freio" autoComplete="off"
                   value={form.title} onChange={set('title')} />
               </div>
 
+              {/* Veículo: só na demanda avulsa (a que vem de OS/empilhados já traz os carros) */}
+              {!editingId && !form.service_order_id && !form.stacked_service_ids?.length && (
+                <div>
+                  <label className="label" htmlFor="job-vehicle">Veículo</label>
+                  <div className="relative">
+                    <IconCar className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-400" />
+                    <input id="job-vehicle" className="input !pl-11" placeholder="Ex.: Gol prata 2015 · ABC1D23" autoComplete="off"
+                      value={form.vehicle ?? ''} onChange={set('vehicle')} />
+                  </div>
+                  <div className="text-xs text-steel-500 mt-1.5">Modelo, cor e placa. O mecânico vê em qual carro vai trabalhar.</div>
+                </div>
+              )}
+
               {/* Descrição */}
               <div>
-                <label className="label">Descrição *</label>
-                <textarea className="input" rows={3} required
-                  placeholder="Descreva o problema, veículo, detalhes importantes…"
+                <label className="label" htmlFor="job-details">Detalhes <span className="normal-case tracking-normal font-normal text-steel-400">· opcional</span></label>
+                <textarea id="job-details" className="input" rows={3}
+                  placeholder="Sintoma, peças que a oficina fornece, ferramenta necessária…"
                   value={form.description} onChange={set('description')} />
               </div>
+              </>}
 
-              {/* Precificação */}
+              {/* Passo 2: quanto */}
+              {showStep(2) && (
               <div>
-                <label className="label">Como cobrar</label>
-                <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-3">
+                {(editingId || hourOpt || form.pricing === 'hour') && <>
+                <div className="label">Forma de pagamento</div>
+                <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-4">
                   {([['fixed', 'Pelo serviço'], ['hour', 'Por hora']] as const).map(([k, l]) => (
                     <button key={k} type="button"
                       onClick={() => setForm(f => { const next = { ...f, pricing: k }; persistDraft(next); return next; })}
-                      className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+                      className={`flex-1 min-h-[40px] rounded-lg py-2 text-sm font-semibold transition ${
                         (form.pricing ?? 'hour') === k ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
                       {l}
                     </button>
                   ))}
                 </div>
-                {form.pricing === 'fixed' ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
-                      <input className="input !pl-9" type="number" min={1} step={0.01} required
-                        placeholder="150" value={form.total ?? ''} onChange={set('total')} />
-                    </div>
-                    <div className="text-xs text-steel-400 mt-1">Valor do serviço</div>
-                  </div>
-                  <div>
-                    <div className="relative">
-                      <input className="input !pr-9" type="number" min={0.5} max={99} step={0.5}
-                        placeholder="opcional" value={form.max_hours} onChange={set('max_hours')} />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
-                    </div>
-                    <div className="text-xs text-steel-400 mt-1">Tempo previsto (opcional)</div>
-                  </div>
-                </div>
-                ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
-                      <input className="input !pl-9" type="number" min={1} required
-                        placeholder="60" value={form.price_per_hour} onChange={set('price_per_hour')} />
-                    </div>
-                    <div className="text-xs text-steel-400 mt-1">Valor por hora</div>
-                  </div>
-                  <div>
-                    <div className="relative">
-                      <input className="input !pr-9" type="number" min={0.5} max={24} step={0.5} required
-                        placeholder="2" value={form.max_hours} onChange={set('max_hours')} />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">h</span>
-                    </div>
-                    <div className="text-xs text-steel-400 mt-1">Tempo previsto</div>
-                  </div>
-                </div>
-                )}
-                {marketRate && form.pricing !== 'fixed' && (
-                  <div className="mt-2 bg-signal-50 border border-signal-200 rounded-xl px-3 py-2 text-xs text-signal-800 flex items-start gap-2">
-                    <span className="text-sm shrink-0">📊</span>
-                    <div className="flex-1">
-                      <strong>Faixa de mercado em {currentWorkshop?.state}:</strong>{' '}
-                      R$ {Math.round(marketRate.low)}–{Math.round(marketRate.high)}/h
-                      <span className="text-signal-700/70 ml-1">({marketRate.count} {marketRate.count === 1 ? 'referência' : 'referências'})</span>
-                      <div className="text-[10px] text-signal-700/80 mt-0.5">
-                        Preços dentro dessa faixa costumam ser aceitos mais rápido.
+                </>}
+                {(() => {
+                  const fixed = form.pricing === 'fixed';
+                  return (
+                    <div className="grid grid-cols-[1.4fr_1fr] gap-3">
+                      <div>
+                        <label className="label" htmlFor="job-price">{fixed ? 'Valor do serviço' : 'Valor por hora'}</label>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-500 text-sm font-semibold">R$</span>
+                          <input id="job-price" className="input !pl-11 font-display !text-lg font-bold tabular-nums" type="number" inputMode="decimal"
+                            min={1} step={fixed ? 0.01 : 1} required placeholder={fixed ? '150' : '60'}
+                            value={fixed ? form.total ?? '' : form.price_per_hour} onChange={set(fixed ? 'total' : 'price_per_hour')} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="label" htmlFor="job-hours">Tempo{fixed && <span className="normal-case tracking-normal font-normal text-steel-400"> · opcional</span>}</label>
+                        <div className="relative">
+                          <input id="job-hours" className="input !pr-9 !text-lg tabular-nums" type="number" inputMode="decimal"
+                            min={0.5} max={fixed ? 99 : 24} step={0.5} required={!fixed} placeholder={fixed ? '—' : '2'}
+                            value={form.max_hours} onChange={set('max_hours')} />
+                          <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-steel-500 text-sm">h</span>
+                        </div>
                       </div>
                     </div>
+                  );
+                })()}
+
+                {/* Referências de preço: estimativa pelos disponíveis e faixa do estado (por hora) */}
+                {((suggested && !editingId) || (marketRate && form.pricing !== 'fixed')) && (
+                  <div className="mt-3 rounded-xl ring-1 ring-steel-200 divide-y divide-steel-100">
+                    {suggested && !editingId && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <IconTrendingUp className="w-4 h-4 shrink-0 text-steel-500" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-steel-700">
+                            Sugerido <strong className="text-steel-900 tabular-nums">R$ {formatBRL(suggested, { decimals: 0 })}{form.pricing === 'fixed' ? '' : '/h'}</strong>
+                          </div>
+                          <div className="text-xs text-steel-500 leading-snug">
+                            {form.pricing === 'fixed'
+                              ? `${String(estHours).replace('.', ',')}h × R$ ${Math.round(rateNow!)}/h, valor do meio entre ${mechanics.length} ${mechanics.length === 1 ? 'disponível' : 'disponíveis'}`
+                              : `valor do meio entre ${mechanics.length} ${mechanics.length === 1 ? 'mecânico disponível' : 'mecânicos disponíveis'}`}
+                          </div>
+                        </div>
+                        {typedPrice !== suggested && (
+                          <button type="button"
+                            onClick={() => setForm(f => {
+                              const next = f.pricing === 'fixed' ? { ...f, total: String(suggested) } : { ...f, price_per_hour: String(suggested) };
+                              persistDraft(next); return next;
+                            })}
+                            className="shrink-0 h-9 px-3 rounded-lg ring-1 ring-steel-300 text-steel-800 text-xs font-bold hover:bg-steel-50 active:scale-95">
+                            Usar
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {marketRate && form.pricing !== 'fixed' && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <IconInfo className="w-4 h-4 shrink-0 text-signal-600" />
+                        <div className="text-xs text-steel-600 leading-snug">
+                          <strong className="text-steel-800">Mercado em {currentWorkshop?.state}: R$ {Math.round(marketRate.low)}–{Math.round(marketRate.high)}/h</strong>
+                          {' '}({marketRate.count} {marketRate.count === 1 ? 'referência' : 'referências'}). Dentro dessa faixa o aceite costuma ser mais rápido.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-                <p className="text-[11px] text-steel-500 mt-2 leading-relaxed">
-                  💡 <strong>Valor fechado:</strong> {form.pricing === 'fixed'
-                    ? 'a oficina paga o valor do serviço e o mecânico recebe esse valor, não importa quanto tempo leve.'
-                    : 'a oficina paga o pacote (hora × tempo previsto) e o mecânico recebe esse valor mesmo se terminar antes ou levar mais tempo.'} O tempo real é registrado para análise.
-                </p>
-                {estimated > 0 && (
-                  <div className="mt-2 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
-                    <span className="text-sm text-brand-700">Valor fechado da demanda</span>
-                    <span className="font-bold text-brand-700 font-display">R$ {formatBRL(estimated)}</span>
+
+                {/* Total que a oficina paga + o que "valor fechado" quer dizer */}
+                <div className={`mt-3 rounded-xl px-4 py-3 ${estimated > 0 ? 'bg-steel-900 text-white' : 'bg-steel-50 ring-1 ring-steel-200'}`}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className={`text-sm font-semibold ${estimated > 0 ? 'text-steel-200' : 'text-steel-600'}`}>Valor fechado</span>
+                    <span className={`font-display text-xl font-bold tabular-nums ${estimated > 0 ? '' : 'text-steel-300'}`}>
+                      R$ {estimated > 0 ? formatBRL(estimated) : '0,00'}
+                    </span>
+                  </div>
+                  <p className={`text-xs mt-1 leading-snug ${estimated > 0 ? 'text-steel-300' : 'text-steel-500'}`}>
+                    {form.pricing === 'fixed'
+                      ? 'Você paga esse valor, não importa quanto tempo o serviço leve.'
+                      : 'Valor/hora × tempo previsto, mesmo se terminar antes ou levar mais.'}
+                  </p>
+                </div>
+                {!editingId && !hourOpt && form.pricing !== 'hour' && (
+                  <button type="button" onClick={() => setHourOpt(true)} className="mt-1 text-xs font-semibold text-brand-600 min-h-[40px]">
+                    Prefere pagar por hora?
+                  </button>
+                )}
+
+                {/* Quanto vai cobrar do cliente (só a oficina "Só mecânicos"; só ela vê) */}
+                {platformOnly && !editingId && (
+                  <div className="mt-3 rounded-xl ring-1 ring-steel-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-sm font-semibold text-steel-800" htmlFor="customer-charge">Quanto você vai cobrar do cliente?</label>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-steel-500 bg-steel-100 rounded-full px-2 py-0.5">só você vê</span>
+                    </div>
+                    <div className="relative mt-2">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
+                      <input id="customer-charge" className="input !pl-9" type="number" inputMode="decimal" min={0} step={0.01}
+                        placeholder="opcional" value={form.customer_charge ?? ''} onChange={set('customer_charge')} />
+                    </div>
+                    {(() => {
+                      const c = chargeOf(form);
+                      if (c == null || !(estimated > 0)) return <p className="text-xs text-steel-600 mt-1.5">Opcional. Com ele o Painel mostra quanto você ganha em cada serviço. O mecânico não vê.</p>;
+                      const left = c - estimated;
+                      return (
+                        <p className={`text-xs font-semibold mt-1.5 ${left >= 0 ? 'text-signal-700' : 'text-alert-600'}`}>
+                          Fica R$ {formatBRL(left)} com você ({c > 0 ? Math.round((left / c) * 100) : 0}% do cobrado)
+                        </p>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
+              )}
 
-              {/* Modo de publicação — só na criação */}
+              {/* Passo 3: quando e para quem */}
+              {showStep(3) && <>
               {!editingId && (
                 <div>
-                  <label className="label">Como publicar</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <button type="button" onClick={() => { setMode('open'); setPickedMechanic(''); }}
-                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'open' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg mb-1">📢</div>
-                      <div className="font-semibold text-sm">Para todos</div>
-                      <div className="text-xs text-steel-500 mt-0.5">Todos os mecânicos disponíveis verão</div>
-                    </button>
-                    <button type="button"
-                      onClick={() => { setMode('favorites'); setPickedMechanic(''); }}
-                      disabled={favorites.size === 0}
-                      title={favorites.size === 0 ? 'Adicione preferidos em "Buscar mecânicos" ou no picker abaixo' : undefined}
-                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${mode === 'favorites' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg mb-1">⭐</div>
-                      <div className="font-semibold text-sm">Meus preferidos</div>
-                      <div className="text-xs text-steel-500 mt-0.5">
-                        {favorites.size === 0
-                          ? 'Sem preferidos ainda'
-                          : `${favorites.size} ${favorites.size === 1 ? 'mecânico' : 'mecânicos'} na sua lista`}
-                      </div>
-                    </button>
-                    <button type="button" onClick={() => setMode('direct')}
-                      className={`rounded-xl border-2 p-3 text-left transition active:scale-95 ${mode === 'direct' ? 'border-brand-500 bg-brand-50' : 'border-steel-200'}`}>
-                      <div className="text-lg mb-1">🎯</div>
-                      <div className="font-semibold text-sm">Mecânico específico</div>
-                      <div className="text-xs text-steel-500 mt-0.5">Convide diretamente e inicie o chat</div>
-                    </button>
+                  <div className="label">Quando</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {dateOptions().map(o => {
+                      const on = o.value === null ? pickDate : !pickDate && form.scheduled_at === o.value;
+                      return (
+                        <button key={o.label} type="button" aria-pressed={on}
+                          onClick={() => {
+                            if (o.value === null) { setPickDate(true); return; }
+                            setPickDate(false);
+                            setForm(f => { const next = { ...f, scheduled_at: o.value! }; persistDraft(next); return next; });
+                          }}
+                          className={`min-h-[48px] flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold text-left transition active:scale-[0.98] ${on ? 'border-brand-500 bg-brand-50 text-brand-800 ring-1 ring-brand-500' : 'border-steel-200 text-steel-700 hover:border-steel-300'}`}>
+                          {o.value === '' ? <IconZap className="w-4 h-4 shrink-0" /> : o.value === null ? <IconCalendar className="w-4 h-4 shrink-0" /> : <IconClock className="w-4 h-4 shrink-0" />}
+                          {o.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {pickDate && (
+                    <input className="input mt-2" type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} />
+                  )}
+                </div>
+              )}
+
+              {/* Para quem — só na criação */}
+              {!editingId && (
+                <div>
+                  <div className="label">Para quem</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { k: 'open' as const, icon: IconMegaphone, title: 'Todos', sub: mechanics.length ? `${mechanics.length} ${mechanics.length === 1 ? 'disponível' : 'disponíveis'}` : 'os disponíveis', off: false },
+                      { k: 'favorites' as const, icon: IconStar, title: 'Preferidos', sub: favorites.size === 0 ? 'nenhum ainda' : `${favorites.size} na lista`, off: favorites.size === 0 },
+                      { k: 'direct' as const, icon: IconTarget, title: 'Um mecânico', sub: 'convite direto', off: false },
+                    ]).map(o => {
+                      const on = mode === o.k;
+                      return (
+                        <button key={o.k} type="button" disabled={o.off} aria-pressed={on}
+                          title={o.off ? 'Marque a estrela de um mecânico em "Um mecânico" ou em Buscar profissionais' : undefined}
+                          onClick={() => { setMode(o.k); if (o.k !== 'direct') setPickedMechanic(''); }}
+                          className={`min-h-[84px] rounded-xl border p-2.5 text-left transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${on ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-steel-200 hover:border-steel-300'}`}>
+                          <o.icon className={`w-5 h-5 mb-1.5 ${on ? 'text-brand-600' : 'text-steel-500'}`} />
+                          <div className="font-semibold text-sm leading-tight text-steel-900">{o.title}</div>
+                          <div className="text-[11px] text-steel-500 mt-0.5 leading-snug">{o.sub}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -759,50 +1208,68 @@ export default function WorkshopDashboard() {
               {/* Picker de mecânico */}
               {mode === 'direct' && (
                 <div>
-                  <label className="label">Escolher mecânico *</label>
-                  <input className="input mb-2" placeholder="Buscar por nome…"
-                    value={mechSearch} onChange={e => setMechSearch(e.target.value)} />
-                  <div className="space-y-2 max-h-44 overflow-y-auto">
+                  <label className="label" htmlFor="mech-search">Escolha o mecânico</label>
+                  <div className="relative mb-2">
+                    <IconSearch className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-400" />
+                    <input id="mech-search" className="input !pl-11" placeholder="Buscar por nome…" autoComplete="off"
+                      value={mechSearch} onChange={e => setMechSearch(e.target.value)} />
+                  </div>
+                  {pickedMechanic && !filteredMechanics.some(m => m.id === pickedMechanic) && (
+                    <div className="mb-2 rounded-xl border border-brand-500 ring-1 ring-brand-500 bg-brand-50 p-3 flex items-center gap-2">
+                      <IconCheck className="w-4 h-4 text-brand-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm truncate">{inviteNames[pickedMechanic] ?? favMechanics.find(m => m.id === pickedMechanic)?.name ?? 'Mecânico escolhido'}</div>
+                        <div className="text-xs text-steel-600">recebe o convite direto</div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-2 max-h-56 overflow-y-auto">
                     {filteredMechanics.length === 0 ? (
-                      <div className="text-sm text-steel-400 text-center py-4">
-                        Nenhum mecânico disponível no momento
+                      <div className="text-sm text-steel-500 text-center py-4">
+                        {mechSearch ? 'Ninguém com esse nome entre os disponíveis' : 'Nenhum mecânico disponível no momento'}
                       </div>
                     ) : filteredMechanics.map(m => (
-                      <div key={m.id} className={`rounded-xl border-2 transition ${
-                        pickedMechanic === m.id ? 'border-brand-500 bg-brand-50' : 'border-steel-100'
+                      <div key={m.id} className={`rounded-xl border transition ${
+                        pickedMechanic === m.id ? 'border-brand-500 ring-1 ring-brand-500 bg-brand-50' : 'border-steel-200'
                       }`}>
                         <div className="w-full flex items-center gap-2 p-3">
                           <button type="button"
                             onClick={() => setPickedMechanic(m.id)}
-                            className="flex-1 flex items-center gap-3 text-left active:scale-95">
-                            <div className="h-10 w-10 rounded-full bg-brand-500/10 grid place-items-center text-brand-600 font-bold shrink-0">
-                              {m.name.charAt(0).toUpperCase()}
-                            </div>
+                            className="flex-1 min-w-0 flex items-center gap-3 text-left active:scale-[0.99]">
+                            {m.avatar
+                              ? <img src={m.avatar} alt="" loading="lazy" className="h-10 w-10 rounded-full object-cover bg-steel-100 shrink-0" />
+                              : <span className="h-10 w-10 rounded-full bg-brand-50 grid place-items-center text-brand-700 text-sm font-bold shrink-0">{initialsOf(m.name)}</span>}
                             <div className="flex-1 min-w-0">
-                              <div className="font-semibold truncate">{m.name}</div>
-                              <div className="text-xs text-steel-500">
-                                ★ {m.rating.toFixed(1)} · {m.total_jobs} jobs · R$ {m.hourly_rate}/h
+                              <div className="font-semibold text-steel-900 truncate">{m.name}</div>
+                              <div className="text-xs text-steel-500 flex items-center gap-1 flex-wrap">
+                                {Number(m.rating) > 0
+                                  ? <><IconStar filled className="w-3 h-3 text-amber-500" />{Number(m.rating).toFixed(1).replace('.', ',')}</>
+                                  : 'Novo'}
+                                <span aria-hidden>·</span>{m.total_jobs} {m.total_jobs === 1 ? 'serviço' : 'serviços'}
+                                {Number(m.hourly_rate) > 0 && <><span aria-hidden>·</span>R$ {formatBRL(Number(m.hourly_rate), { decimals: 0 })}/h</>}
                               </div>
                             </div>
-                            {pickedMechanic === m.id && <span className="text-brand-500 text-lg">✓</span>}
+                            {pickedMechanic === m.id && <IconCheck className="w-5 h-5 text-brand-600 shrink-0" />}
                           </button>
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }}
-                            title={favorites.has(m.id) ? 'Remover dos preferidos' : 'Adicionar aos preferidos'}
-                            className={`h-9 w-9 rounded-full grid place-items-center shrink-0 transition active:scale-90 ${
+                            aria-label={favorites.has(m.id) ? 'Remover dos preferidos' : 'Adicionar aos preferidos'}
+                            aria-pressed={favorites.has(m.id)}
+                            className={`h-10 w-10 rounded-full grid place-items-center shrink-0 transition active:scale-90 ${
                               favorites.has(m.id)
-                                ? 'bg-brand-500/15 text-brand-600 hover:bg-brand-500/25'
-                                : 'bg-steel-100 text-steel-400 hover:text-brand-500 hover:bg-brand-50'
+                                ? 'text-amber-500 hover:bg-amber-50'
+                                : 'text-steel-400 hover:text-amber-500 hover:bg-steel-50'
                             }`}
                           >
-                            {favorites.has(m.id) ? '★' : '☆'}
+                            <IconStar filled={favorites.has(m.id)} className="w-5 h-5" />
                           </button>
                         </div>
                         <button type="button"
                           onClick={() => setReviewsOpen(reviewsOpen === m.id ? null : m.id)}
-                          className="w-full text-[11px] text-brand-600 hover:text-brand-700 font-semibold border-t border-steel-100 py-1.5">
-                          {reviewsOpen === m.id ? '▲ Ocultar avaliações' : '▼ Ver avaliações'}
+                          aria-expanded={reviewsOpen === m.id}
+                          className="w-full min-h-[36px] text-xs text-steel-600 hover:text-steel-900 font-semibold border-t border-steel-100 py-1.5">
+                          {reviewsOpen === m.id ? 'Ocultar avaliações' : 'Ver avaliações'}
                         </button>
                         {reviewsOpen === m.id && (
                           <div className="px-3 pb-3 bg-steel-50 border-t border-steel-100">
@@ -817,30 +1284,81 @@ export default function WorkshopDashboard() {
                 </div>
               )}
 
-              {/* Data */}
-              <div>
-                <label className="label">Data / hora desejada</label>
-                <input className="input" type="datetime-local"
-                  value={form.scheduled_at} onChange={set('scheduled_at')} />
-              </div>
+              {/* Data (edição) */}
+              {editingId && (
+                <div>
+                  <label className="label">Data / hora desejada</label>
+                  <input className="input" type="datetime-local"
+                    value={form.scheduled_at} onChange={set('scheduled_at')} />
+                </div>
+              )}
+
+              {/* Resumo: o que vai ser publicado, conferido antes do botão */}
+              {!editingId && (() => {
+                const picked = mechanics.find(m => m.id === pickedMechanic)?.name
+                  ?? (pickedMechanic ? inviteNames[pickedMechanic] ?? favMechanics.find(m => m.id === pickedMechanic)?.name : undefined);
+                const rows: [string, string][] = [
+                  ['Serviço', form.title.trim() || '—'],
+                  ...(form.vehicle?.trim() ? [['Veículo', form.vehicle.trim()] as [string, string]] : []),
+                  ['Valor fechado', estimated > 0 ? `R$ ${formatBRL(estimated)}${form.pricing === 'hour' ? ` (${String(Number(form.max_hours)).replace('.', ',')}h)` : ''}` : '—'],
+                  ['Quando', form.scheduled_at ? formatScheduled(new Date(form.scheduled_at).toISOString()) : 'O quanto antes'],
+                  ['Para quem', mode === 'open' ? 'Todos os mecânicos disponíveis'
+                    : mode === 'favorites' ? `Seus ${favorites.size} preferidos`
+                    : picked ? `Convite para ${picked}` : 'Escolha o mecânico acima'],
+                ];
+                return (
+                  <div className="rounded-xl bg-steel-50 ring-1 ring-steel-200 p-3.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-steel-500 mb-2">Resumo da demanda</div>
+                    <dl className="space-y-1.5 text-sm">
+                      {rows.map(([k, v]) => (
+                        <div key={k} className="flex gap-3">
+                          <dt className="w-24 shrink-0 text-steel-500">{k}</dt>
+                          <dd className="flex-1 min-w-0 font-semibold text-steel-900 break-words">{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                );
+              })()}
+              </>}
             </div>
 
             {/* Sticky footer */}
             <div className="px-5 py-4 border-t border-steel-100 bg-white rounded-b-3xl sm:rounded-b-2xl space-y-3">
               {formError && (
-                <div className="bg-alert-500/10 border border-alert-300 text-alert-700 text-sm font-semibold rounded-xl px-4 py-2.5 flex items-center gap-2">
-                  <span>⚠️</span><span>{formError}</span>
+                <div role="alert" className="bg-alert-500/10 border border-alert-300 text-alert-700 text-sm font-semibold rounded-xl px-4 py-2.5 flex items-center gap-2">
+                  <IconAlert className="w-4 h-4 shrink-0" /><span>{formError}</span>
                 </div>
               )}
-              <div className="flex gap-3">
-                <button type="button" onClick={resetModal} className="btn-ghost flex-1">Cancelar</button>
-                <button type="submit" className="btn-primary flex-1" disabled={saving}>
-                  {saving
-                    ? (editingId ? 'Salvando…' : 'Publicando…')
-                    : editingId ? 'Salvar alterações'
-                    : mode === 'direct' ? 'Convidar mecânico'
-                    : 'Publicar demanda'}
+              {/* Empilhar: só ao criar uma demanda avulsa (a que vem de OS/empilhados já tem o próprio caminho) */}
+              {/* A partir do passo 2: já tem serviço e valor, e a data não importa para empilhar */}
+              {!editingId && step >= 2 && mode !== 'direct' && !form.service_order_id && !form.stacked_service_ids?.length && (
+                <button type="button" onClick={stackService} disabled={saving}
+                  className="w-full min-h-[48px] flex items-center gap-3 rounded-xl border border-dashed border-steel-300 bg-white px-3.5 py-2 text-left hover:bg-steel-50 disabled:opacity-50">
+                  <IconLayers className="w-5 h-5 text-steel-500 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-steel-800">Empilhar e juntar com outros serviços</span>
+                    <span className="block text-[11px] text-steel-500 leading-snug">Um mecânico faz vários numa demanda só e sai mais barato</span>
+                  </span>
                 </button>
+              )}
+              <div className="flex gap-3">
+                {!editingId && step > 1
+                  ? <button type="button" onClick={() => goStep((step - 1) as 1 | 2)} className="btn-ghost flex-1 min-h-[48px]"><IconArrowLeft className="w-4 h-4" />Voltar</button>
+                  : <button type="button" onClick={resetModal} className="btn-ghost flex-1 min-h-[48px]">Cancelar</button>}
+                {!editingId && step < 3 ? (
+                  <button key="next" type="button" onClick={e => { e.preventDefault(); nextStep(); }} className="btn-primary flex-[2] min-h-[48px]">
+                    Continuar<IconArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button key="submit" type="submit" className="btn-primary flex-[2] min-h-[48px]" disabled={saving}>
+                    {saving
+                      ? (editingId ? 'Salvando…' : 'Publicando…')
+                      : editingId ? 'Salvar alterações'
+                      : mode === 'direct' ? 'Enviar convite'
+                      : 'Publicar demanda'}
+                  </button>
+                )}
               </div>
             </div>
           </form>
@@ -850,14 +1368,23 @@ export default function WorkshopDashboard() {
   );
 }
 
+/** Passos da Nova demanda: nome curto (barra de etapas), título e apoio */
+const FORM_STEPS = [
+  { short: 'Serviço', title: 'Qual serviço você precisa?', sub: 'Descreva o trabalho e o carro.' },
+  { short: 'Valor',   title: 'Quanto você vai pagar?',     sub: 'Valor fechado: o mecânico sabe quanto recebe antes de aceitar.' },
+  { short: 'Envio',   title: 'Quando e para quem?',        sub: 'Confira o resumo e publique.' },
+];
+
+const initialsOf = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('');
+
 /* ── Demandas ativas: em que etapa cada uma está ── */
 type ActiveGroup = 'service' | 'enroute' | 'scheduled' | 'waiting';
 
-const ACTIVE_GROUPS: { key: ActiveGroup; title: string; badge: string }[] = [
-  { key: 'service',   title: '🔧 Em serviço',         badge: 'bg-signal-500/15 text-signal-700'   },
-  { key: 'enroute',   title: '🚗 Mecânico a caminho', badge: 'bg-brand-500/15 text-brand-700'     },
-  { key: 'scheduled', title: '📅 Agendados',          badge: 'bg-pending-500/15 text-pending-700' },
-  { key: 'waiting',   title: '📢 Aguardando aceite',  badge: 'bg-steel-200 text-steel-700'        },
+const ACTIVE_GROUPS: { key: ActiveGroup; title: string; icon: typeof IconWrench; badge: string }[] = [
+  { key: 'service',   title: 'Em serviço',         icon: IconWrench,    badge: 'bg-signal-500/15 text-signal-700'   },
+  { key: 'enroute',   title: 'Mecânico a caminho', icon: IconCar,       badge: 'bg-brand-500/15 text-brand-700'     },
+  { key: 'scheduled', title: 'Agendados',          icon: IconCalendar,  badge: 'bg-pending-500/15 text-pending-700' },
+  { key: 'waiting',   title: 'Aguardando aceite',  icon: IconMegaphone, badge: 'bg-steel-200 text-steel-700'        },
 ];
 
 function groupOf(j: Job): ActiveGroup {
@@ -885,7 +1412,7 @@ function ArrivalInfo({ j }: { j: Job }) {
   if (isArrivalLate(j)) {
     return (
       <div className="mt-1.5 text-[11px] font-semibold text-alert-700 bg-alert-500/10 border border-alert-200 px-2 py-1 rounded-lg">
-        ⏰ Atrasado — o prazo era {formatDeadline(deadline)}. Você pode cancelar sem multa.
+        Atrasado: o prazo era {formatDeadline(deadline)}. Você pode cancelar sem multa.
       </div>
     );
   }
@@ -893,7 +1420,7 @@ function ArrivalInfo({ j }: { j: Job }) {
   if (deadline.getTime() - Date.now() > 24 * 60 * 60 * 1000) return null;
   return (
     <div className="mt-1 text-[11px] text-steel-500">
-      ⏱ Prazo de chegada: <strong className="text-steel-700">{formatDeadline(deadline)}</strong>
+      Prazo de chegada: <strong className="text-steel-700">{formatDeadline(deadline)}</strong>
     </div>
   );
 }
@@ -902,7 +1429,13 @@ function ArrivalInfo({ j }: { j: Job }) {
 type HistTab = 'completed' | 'cancelled';
 const HIST_PAGE = 10;
 
-function HistorySection({ history, workshopId }: { history: Job[]; workshopId: string | null }) {
+function HistorySection({ history, workshopId, names, onRepeat }: {
+  history: Job[]; workshopId: string | null;
+  /** id do mecânico → nome */
+  names: Record<string, string>;
+  /** Repetir a demanda (com o mesmo mecânico, se `same`) */
+  onRepeat?: (j: Job, same?: boolean) => void;
+}) {
   const openKey = workshopId ? `oficina_hist_open:${workshopId}` : null;
   const [open, setOpen] = useState(false);
   const [tab, setTab]   = useState<HistTab>('completed');
@@ -929,8 +1462,8 @@ function HistorySection({ history, workshopId }: { history: Job[]; workshopId: s
   const visible = list.slice(0, shown);
 
   const TABS: { key: HistTab; label: string; count: number }[] = [
-    { key: 'completed', label: '✅ Concluídos', count: completed.length },
-    { key: 'cancelled', label: '✕ Cancelados',  count: cancelled.length },
+    { key: 'completed', label: 'Concluídos', count: completed.length },
+    { key: 'cancelled', label: 'Cancelados', count: cancelled.length },
   ];
 
   return (
@@ -938,20 +1471,19 @@ function HistorySection({ history, workshopId }: { history: Job[]; workshopId: s
       <button
         type="button"
         onClick={toggle}
-        className="w-full card !py-4 flex items-center gap-3 text-left hover:bg-steel-50 transition"
+        className="w-full rounded-xl bg-white border border-steel-200 px-4 py-3.5 flex items-center gap-3 text-left hover:bg-steel-50 transition"
         aria-expanded={open}
       >
-        <span className="text-xl shrink-0">🗂️</span>
+        <IconArchive className="w-5 h-5 shrink-0 text-steel-400" />
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-steel-900">Histórico</div>
+          <div className="font-semibold text-steel-900">Histórico</div>
           <div className="text-xs text-steel-500 mt-0.5">
             {history.length === 0
               ? 'Sem histórico ainda'
               : `${completed.length} concluído${completed.length !== 1 ? 's' : ''} · ${cancelled.length} cancelado${cancelled.length !== 1 ? 's' : ''}`}
           </div>
         </div>
-        <span className="text-xs font-semibold text-brand-600 shrink-0">{open ? 'Ocultar' : 'Ver histórico'}</span>
-        <span className={`text-steel-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        <IconChevronDown className={`w-4 h-4 text-steel-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && history.length > 0 && (
@@ -975,11 +1507,11 @@ function HistorySection({ history, workshopId }: { history: Job[]; workshopId: s
 
           {list.length === 0 ? (
             <div className="text-center text-steel-500 text-sm py-6">
-              {tab === 'completed' ? 'Nenhum serviço concluído ainda.' : 'Nenhum cancelamento. 👏'}
+              {tab === 'completed' ? 'Nenhum serviço concluído ainda.' : 'Nenhum cancelamento.'}
             </div>
           ) : (
             <div className="divide-y divide-steel-100">
-              {visible.map(j => <HistoryRow key={j.id} j={j} />)}
+              {visible.map(j => <HistoryRow key={j.id} j={j} mechName={j.mechanic_id ? names[j.mechanic_id] : undefined} onRepeat={onRepeat} />)}
             </div>
           )}
 
@@ -998,7 +1530,7 @@ function HistorySection({ history, workshopId }: { history: Job[]; workshopId: s
   );
 }
 
-function HistoryRow({ j }: { j: Job }) {
+function HistoryRow({ j, mechName, onRepeat }: { j: Job; mechName?: string; onRepeat?: (j: Job, same?: boolean) => void }) {
   const isCancelled = j.status === 'cancelled';
   const fee  = Number(j.cancellation_fee ?? 0);
   const date = isCancelled ? (j.cancelled_at ?? j.created_at) : j.completed_at;
@@ -1009,10 +1541,28 @@ function HistoryRow({ j }: { j: Job }) {
         <div className="text-xs text-steel-500">
           {date ? new Date(date).toLocaleDateString('pt-BR') : '—'}
         </div>
+        {isCancelled && j.audience === 'invite' && j.cancelled_by === 'mechanic' && (
+          <div className="text-xs text-alert-600">Convite recusado pelo mecânico</div>
+        )}
         <div className="text-xs text-steel-400">
           Pacote: {pricingLabel(j)}
-          {j.actual_hours != null && <span className="ml-2">⏱ {j.actual_hours}h reais</span>}
+          {j.actual_hours != null && <span> · {j.actual_hours}h reais</span>}
         </div>
+        {/* Serviço que se repete: chama de novo sem digitar tudo */}
+        {onRepeat && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={() => onRepeat(j)}
+              className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-white text-brand-700 text-xs font-bold active:scale-95 hover:bg-brand-50">
+              <IconRepeat className="w-3.5 h-3.5" />Repetir
+            </button>
+            {!isCancelled && j.mechanic_id && (
+              <button type="button" onClick={() => onRepeat(j, true)}
+                className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-steel-200 bg-white text-steel-800 text-xs font-bold active:scale-95 hover:bg-steel-50 max-w-full truncate">
+                <IconTarget className="w-3.5 h-3.5 shrink-0" />Chamar {mechName ? firstName(mechName) : 'o mesmo mecânico'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div className="text-right shrink-0">
         {isCancelled ? (
@@ -1048,14 +1598,39 @@ function statusLabel(j: Job): string {
   if (j.status === 'disputed')    return 'Em disputa';
   if (j.status === 'cancelled')   return 'Cancelado';
   if (j.status === 'open')        return 'Aguardando aceite de um mecânico';
-  if (j.status === 'in_progress') return '🔧 Em serviço';
+  if (j.status === 'in_progress') return 'Em serviço';
   // status === 'assigned'
   // Agendado aceito mas mecânico ainda não saiu (en_route_at null)
   if (!j.en_route_at && j.scheduled_at) {
-    return `📅 Agendado · ${formatScheduled(j.scheduled_at)}`;
+    return `Agendado · ${formatScheduled(j.scheduled_at)}`;
   }
   if (!j.arrived_at)              return 'Mecânico a caminho';
-  if (!j.pix_paid_at)             return 'Mecânico chegou — aguarda pagamento';
-  if (!j.started_at)              return '✅ Pago — aguardando início do serviço';
+  if (!j.pix_paid_at)             return 'Mecânico chegou, aguardando pagamento';
+  if (!j.started_at)              return 'Pago, aguardando início do serviço';
   return 'Em serviço';
+}
+
+/** Valor da demanda no formato do formulário (pelo serviço ou por hora) */
+function priceForm(j: Job): Pick<NewJob, 'pricing' | 'total' | 'price_per_hour' | 'max_hours'> {
+  return j.pricing === 'fixed'
+    ? { pricing: 'fixed', total: String(j.price_per_hour ?? ''), price_per_hour: '', max_hours: j.estimated_hours != null ? String(j.estimated_hours) : '' }
+    : { pricing: 'hour', total: '', price_per_hour: String(j.price_per_hour ?? ''), max_hours: String(j.max_hours ?? '1') };
+}
+
+/** Demanda aberta (não convite) sem aceite há tempo demais: 20 min, ou 2 h se for agendada */
+const NO_ACCEPT_MS = 20 * 60 * 1000;
+const NO_ACCEPT_SCHEDULED_MS = 2 * 60 * 60 * 1000;
+function waitingNoAccept(j: Job, now = Date.now()): boolean {
+  if (j.status !== 'open' || j.mechanic_id || j.audience === 'invite') return false;
+  return now - new Date(j.created_at).getTime() > (j.scheduled_at ? NO_ACCEPT_SCHEDULED_MS : NO_ACCEPT_MS);
+}
+function waitedLabel(j: Job, now = Date.now()): string {
+  const min = Math.floor((now - new Date(j.created_at).getTime()) / 60000);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return h >= 24 ? `${Math.floor(h / 24)} dia${h >= 48 ? 's' : ''}` : m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+}
+
+function firstName(name: string): string {
+  return name.split(' ')[0] || name;
 }

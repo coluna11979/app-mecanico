@@ -10,14 +10,15 @@ type ChargeResult = {
 };
 
 /**
- * Pagamento da demanda pela NextPay (gateway = nextpay em Configurações).
+ * Pagamento pela NextPay (gateway = nextpay em Configurações): serviço da demanda ou multa de cancelamento.
  * PIX em primeiro ("cai na hora"); cartão abre o checkout seguro da NextPay em outra aba.
- * Quem libera o serviço é o webhook (jobs.pix_paid_at) — a tela de acompanhamento fecha este
- * modal sozinha quando o pagamento cai.
+ * Quem dá baixa é o webhook (jobs.pix_paid_at / cancellation_fee_paid_at) — quem usa este componente
+ * fecha a tela sozinho quando o pagamento cai.
  */
-export default function NextpayPayment({ jobId, service, feePassthrough, feePercent }: {
-  jobId: string;
-  /** Valor fechado do serviço (valor/hora × horas) */
+export default function NextpayPayment({ request, service, feePassthrough, feePercent }: {
+  /** Função que gera a cobrança e o corpo (sem o método): nextpay-charge { job_id } ou nextpay-fee-charge { workshop_id } */
+  request: { fn: 'nextpay-charge' | 'nextpay-fee-charge'; body: Record<string, unknown> };
+  /** Valor a pagar sem taxa do cartão (serviço fechado ou total das multas) */
   service: number;
   /** Cobrar a taxa do cartão da oficina (senão: "por nossa conta no lançamento") */
   feePassthrough: boolean;
@@ -33,7 +34,7 @@ export default function NextpayPayment({ jobId, service, feePassthrough, feePerc
   async function load(m: Method, force = false) {
     if (loading || (!force && results[m] && !results[m]!.error)) return;
     setLoading(m);
-    const { data, error } = await supabase.functions.invoke('nextpay-charge', { body: { job_id: jobId, method: m } });
+    const { data, error } = await supabase.functions.invoke(request.fn, { body: { ...request.body, method: m } });
     let res = data as ChargeResult | null;
     if (error) {
       // Erro HTTP: a função devolve { error } no corpo
@@ -137,7 +138,7 @@ export default function NextpayPayment({ jobId, service, feePassthrough, feePerc
           <div className="space-y-3">
             {feePassthrough ? (
               <div className="bg-steel-50 rounded-2xl p-4 text-sm space-y-1">
-                <div className="flex justify-between"><span className="text-steel-600">Serviço</span><span className="font-semibold">R$ {formatBRL(service)}</span></div>
+                <div className="flex justify-between"><span className="text-steel-600">{request.fn === 'nextpay-fee-charge' ? 'Multa' : 'Serviço'}</span><span className="font-semibold">R$ {formatBRL(service)}</span></div>
                 <div className="flex justify-between"><span className="text-steel-600">Taxa do cartão ({pctLabel}%)</span><span className="font-semibold">R$ {formatBRL(current.card_fee)}</span></div>
                 <div className="flex justify-between border-t border-steel-200 pt-1 mt-1"><span className="font-bold">Total no cartão</span><span className="font-bold">R$ {formatBRL(current.total)}</span></div>
                 <p className="text-[11px] text-steel-500 pt-1">No PIX você paga só R$ {formatBRL(service)}.</p>
@@ -145,7 +146,7 @@ export default function NextpayPayment({ jobId, service, feePassthrough, feePerc
             ) : (
               <div className="bg-signal-500/10 rounded-2xl px-4 py-3 text-center">
                 <p className="text-sm font-semibold text-signal-700">🎉 Taxa do cartão por nossa conta no lançamento</p>
-                <p className="text-xs text-signal-600 mt-0.5">Você paga só o valor do serviço.</p>
+                <p className="text-xs text-signal-600 mt-0.5">{request.fn === 'nextpay-fee-charge' ? 'Você paga só o valor da multa.' : 'Você paga só o valor do serviço.'}</p>
               </div>
             )}
             <a href={current.payment_url} target="_blank" rel="noopener noreferrer"

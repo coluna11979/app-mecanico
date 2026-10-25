@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
+import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AvatarUpload } from '@/components/AvatarUpload';
@@ -43,6 +44,8 @@ export default function MechanicProfile() {
   const { user, profile, refreshProfile, signOut } = useAuth();
   const [me, setMe]             = useState<Mechanic | null>(null);
   const [history, setHistory]   = useState<Job[]>([]);
+  /** Histórico recolhido: abre quando o mecânico quiser (lembra a escolha no aparelho) */
+  const [historyOpen, toggleHistory] = useStoredOpen('mecanico_historico_open');
   const [loading, setLoading]   = useState(true);
   const [editing, setEditing]   = useState(false);
   const [form, setForm]         = useState<EditForm>(EMPTY_FORM);
@@ -270,15 +273,26 @@ export default function MechanicProfile() {
           </div>
         </div>
 
-        {/* ── Histórico ── */}
+        {/* ── Histórico (recolhido) ── */}
         <div>
-          <div className="text-[10px] text-steel-500 uppercase tracking-widest font-semibold mb-3 px-1">Histórico</div>
-          {history.length === 0 ? (
-            <div className="rounded-2xl bg-steel-800 border border-steel-700 text-center py-10 text-steel-500 text-sm">
+          <button type="button" onClick={toggleHistory} aria-expanded={historyOpen}
+            className="w-full rounded-2xl bg-steel-800 border border-steel-700 px-4 py-3.5 flex items-center gap-3 text-left active:bg-steel-700 min-h-[56px]">
+            <span className="text-xl shrink-0" aria-hidden>🗂️</span>
+            <span className="flex-1 min-w-0">
+              <span className="block font-bold text-white">Histórico</span>
+              <span className="block text-xs text-steel-400 mt-0.5">
+                {history.length === 0 ? 'Nenhum job concluído ainda' : `${history.length} ${history.length === 1 ? 'job concluído' : 'jobs concluídos'}`}
+              </span>
+            </span>
+            <span className="text-xs font-semibold text-brand-400 shrink-0">{historyOpen ? 'Ocultar' : 'Ver'}</span>
+            <span className={`text-steel-400 text-xs transition-transform ${historyOpen ? 'rotate-180' : ''}`}>▼</span>
+          </button>
+          {!historyOpen ? null : history.length === 0 ? (
+            <div className="mt-2 rounded-2xl bg-steel-800 border border-steel-700 text-center py-10 text-steel-500 text-sm">
               Nenhum job concluído ainda.
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="mt-2 space-y-2">
               {history.map(j => (
                 <div key={j.id} className="rounded-2xl bg-steel-800 border border-steel-700 px-4 py-3 flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">

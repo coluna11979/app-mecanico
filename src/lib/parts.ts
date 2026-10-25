@@ -5,6 +5,7 @@
  * Preço da peça: preço fixo, se tiver; senão custo + margem da peça; senão custo + margem padrão.
  */
 import { supabase } from '@/lib/supabase';
+import { fetchAll } from '@/lib/fetchAll';
 
 export type WorkshopPart = {
   id: string; workshop_id: string; name: string; code: string | null; brand: string | null;
@@ -66,6 +67,19 @@ export function marginOf(cost: number | null | undefined, price: number) {
 
 export const fmtPct = (n: number | null) => (n == null ? '—' : `${Math.round(n)}%`);
 
+/**
+ * Cadastro de peças inteiro da oficina (em páginas: o Supabase devolve no máximo 1000 por vez),
+ * ordenado pelo nome. Use no lugar de select direto em workshop_parts para listas/buscas.
+ */
+export async function loadAllParts<T = WorkshopPart>(wid: string, cols = '*', activeOnly = true): Promise<T[]> {
+  const { data } = await fetchAll<T>((a, b) => {
+    let q = supabase.from('workshop_parts').select(cols).eq('workshop_id', wid);
+    if (activeOnly) q = q.eq('active', true);
+    return q.order('id').range(a, b) as unknown as PromiseLike<{ data: T[] | null; error: unknown }>;
+  });
+  return data.sort((x, y) => String((x as { name?: string }).name ?? '').localeCompare(String((y as { name?: string }).name ?? ''), 'pt-BR'));
+}
+
 /** Margem padrão da oficina (100% se nunca foi definida) */
 export async function loadDefaultMargin(workshopId: string) {
   const { data } = await supabase.from('workshop_pricing').select('part_margin_percent').eq('workshop_id', workshopId).maybeSingle();
@@ -97,11 +111,11 @@ export async function ensureCatalogParts(wid: string, list: { name: string; pric
     if (k && !wanted.has(k)) wanted.set(k, { name: p.name.trim(), price: p.price });
   }
   if (!wanted.size) return { map: out, created: 0 };
-  const [{ data: existing }, margin] = await Promise.all([
-    supabase.from('workshop_parts').select('id, name, cost').eq('workshop_id', wid),
+  const [existing, margin] = await Promise.all([
+    loadAllParts<{ id: string; name: string; cost: number }>(wid, 'id, name, cost', false),
     loadDefaultMargin(wid),
   ]);
-  for (const p of (existing ?? []) as { id: string; name: string; cost: number }[]) {
+  for (const p of existing as { id: string; name: string; cost: number }[]) {
     const k = partKey(p.name);
     if (!out.has(k)) out.set(k, { id: p.id, cost: Number(p.cost) });
   }

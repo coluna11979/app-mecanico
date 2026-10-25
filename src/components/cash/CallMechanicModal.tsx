@@ -119,7 +119,7 @@ export default function CallMechanicModal({ wid, os, onClose }: { wid: string; o
       serviceOrderId: os.id, itemIds: picked.flatMap(r => (r.itemId ? [r.itemId] : [])),
       title: title.slice(0, 120), description, total: finalTotal, hours: hoursN, scheduledAt: when,
     });
-    nav('/oficina/dashboard?nova=1');
+    nav('/oficina/dashboard?nova=os');
   }
 
   return (
@@ -193,7 +193,7 @@ export default function CallMechanicModal({ wid, os, onClose }: { wid: string; o
 
         <div className="grid grid-cols-2 gap-3 mt-4">
           <div>
-            <label className="label">Vai pagar ao mecânico</label>
+            <label className="label">Valor fechado ao mecânico</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-steel-400 text-sm">R$</span>
               <input className="input !pl-9" inputMode="decimal" value={total ?? moneyStr(sug.total)} onChange={e => setTotal(e.target.value)} />
@@ -210,6 +210,10 @@ export default function CallMechanicModal({ wid, os, onClose }: { wid: string; o
             </div>
           </div>
         </div>
+        <p className="text-xs text-steel-600 mt-2 leading-relaxed">
+          💡 <strong>Valor fechado:</strong> você paga esse valor e pronto, não importa quanto tempo leve.
+          Prefere pagar por hora? Troque na próxima tela, em “Quanto você paga?”.
+        </p>
 
         <div className="mt-3">
           <label className="label">Quando o mecânico deve vir</label>

@@ -6,6 +6,7 @@ import { fmtBRL, waNumber } from '@/components/os/osHelpers';
 import { Icon, type IconName } from '@/components/home/ui';
 import type { CallReason } from '@/lib/customerInsights';
 import WhatsAppButton from '@/components/inbox/WhatsAppButton';
+import { useModuleAllows } from '@/lib/modules';
 
 export type CallItem = {
   id: string; name: string; phone: string | null; car: string | null; lastService: string | null;
@@ -87,6 +88,10 @@ export default function CallToday({ items, workshopId, shopName, onContacted, on
   onContacted: (id: string) => void;
   onSchedule: (customerId: string) => void;
 }) {
+  const allows = useModuleAllows();
+  const canOs = allows('/oficina/os');
+  // Agendar abre uma OS agendada: precisa da OS e da Agenda
+  const canSchedule = canOs && allows('/oficina/agenda');
   const [showAll, setShowAll] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -183,8 +188,9 @@ export default function CallToday({ items, workshopId, shopName, onContacted, on
                   <span className="hidden sm:block text-sm font-bold text-steel-900 tabular-nums shrink-0">{fmtBRL(r.value)}</span>
                 )}
                 <div className="flex items-center gap-1.5 sm:shrink-0">
-                  {r.kind === 'quote' && <Link to={`/oficina/os/${r.osId}`} className={`${BTN_SEC} flex-1 sm:flex-none`}>Ver orçamento</Link>}
-                  {r.kind === 'service' && <button onClick={() => onSchedule(c.id)} className={`${BTN_SEC} flex-1 sm:flex-none`}>Agendar</button>}
+                  {/* Só leva para telas que a oficina tem liberadas (sem OS/Agenda o atalho daria "módulo não liberado") */}
+                  {r.kind === 'quote' && canOs && <Link to={`/oficina/os/${r.osId}`} className={`${BTN_SEC} flex-1 sm:flex-none`}>Ver orçamento</Link>}
+                  {r.kind === 'service' && canSchedule && <button onClick={() => onSchedule(c.id)} className={`${BTN_SEC} flex-1 sm:flex-none`}>Agendar</button>}
                   {wa && (
                     <WhatsAppButton phone={wa} text={callMessage(workshopId, shopName, c, r)} customerId={c.id} customerName={c.name}
                       className={`${BTN_PRI} flex-[2] sm:flex-none`}><Icon name="chat" size={15} />WhatsApp</WhatsAppButton>

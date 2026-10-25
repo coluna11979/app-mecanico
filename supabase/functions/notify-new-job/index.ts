@@ -1,5 +1,6 @@
 // Dispara notificação push ("toca o celular") para os mecânicos quando nasce
 // uma demanda. Chamada pelo trigger jobs_notify_push (0112) via pg_net.
+// kind = 'raise' (0130): a oficina aumentou o valor — mesmo público, outra mensagem.
 //
 // Quem recebe:
 //   - convite direto  → só o mecânico convidado
@@ -45,21 +46,23 @@ Deno.serve(async (req) => {
   if (!pub || !priv) return new Response('vapid not configured', { status: 500 });
   webpush.setVapidDetails(Deno.env.get('VAPID_SUBJECT') || 'mailto:contato@mecanicoapp.com.br', pub, priv);
 
-  const { job_id, kind } = await req.json().catch(() => ({}));
+  const { job_id, kind, from } = await req.json().catch(() => ({}));
+  const isRaise = kind === 'raise';
   if (!job_id) return new Response('job_id required', { status: 400 });
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
   const { data: job } = await supabase
     .from('jobs')
-    .select('id, title, status, audience, mechanic_id, workshop_id, price, price_per_hour, max_hours, scheduled_at, workshop:workshops(business_name, lat, lng, city)')
+    .select('id, title, status, audience, mechanic_id, invited_mechanic_id, workshop_id, price, price_per_hour, max_hours, scheduled_at, workshop:workshops(business_name, lat, lng, city)')
     .eq('id', job_id)
     .maybeSingle();
   if (!job) return Response.json({ sent: 0, reason: 'job not found' });
 
-  const isInvite = kind === 'invite';
-  // A demanda pode ter sido aceita entre o insert e esta chamada
-  if (!isInvite && job.status !== 'open') return Response.json({ sent: 0, reason: 'not open' });
+  const isInvite = kind === 'invite' || job.audience === 'invite';
+  // A demanda pode ter sido aceita (ou o convite recusado) entre o insert e esta chamada
+  if (job.status !== 'open') return Response.json({ sent: 0, reason: 'not open' });
+  if (isRaise && job.mechanic_id) return Response.json({ sent: 0, reason: 'already taken' });
 
   // ── Destinatários ──
   type Mech = { id: string; profile_id: string; current_lat: number | null; current_lng: number | null; profile: { status: string } | null };
@@ -67,8 +70,10 @@ Deno.serve(async (req) => {
   const cols = 'id, profile_id, current_lat, current_lng, profile:profiles!inner(status)';
 
   if (isInvite) {
-    if (!job.mechanic_id) return Response.json({ sent: 0, reason: 'no mechanic' });
-    const { data } = await supabase.from('mechanics').select(cols).eq('id', job.mechanic_id);
+    // Convite: o convidado ainda não é mechanic_id (só vira no aceite)
+    const target = job.invited_mechanic_id ?? job.mechanic_id;
+    if (!target) return Response.json({ sent: 0, reason: 'no mechanic' });
+    const { data } = await supabase.from('mechanics').select(cols).eq('id', target);
     mechs = (data ?? []) as unknown as Mech[];
   } else if (job.audience === 'favorites') {
     const { data: favs } = await supabase
@@ -103,9 +108,12 @@ Deno.serve(async (req) => {
   const net    = jobGross(job) * share;
   const shop   = job.workshop as unknown as { business_name?: string; city?: string } | null;
 
+  const fromNet = Number(from) > 0 ? Number(from) * share : 0;
+  const value   = net > 0 ? (isRaise && fromNet > 0 && fromNet < net ? `R$ ${brl(fromNet)} → R$ ${brl(net)}` : `R$ ${brl(net)}`) : null;
+
   const payload = JSON.stringify({
-    title: isInvite ? 'Você recebeu um convite de serviço' : 'Nova demanda disponível',
-    body:  [job.title, shop?.business_name, net > 0 ? `R$ ${brl(net)}` : null].filter(Boolean).join(' · '),
+    title: isRaise ? '💰 Valor aumentou' : isInvite ? 'Você recebeu um convite de serviço' : 'Nova demanda disponível',
+    body:  [job.title, shop?.business_name, value].filter(Boolean).join(' · '),
     url:   isInvite ? `/mecanico/job/${job.id}` : '/mecanico/dashboard',
     tag:   `job-${job.id}`,
   });

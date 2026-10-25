@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { jobSummary } from '@/lib/jobDescription';
+import { raisedFrom } from '@/lib/jobRaise';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
@@ -10,6 +12,7 @@ import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
 import { PushAlertCard } from '@/components/mecanico/PushAlertCard';
+import { declineInvite, isPendingInvite } from '@/lib/jobInvite';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 import {
   IconAlert, IconBuilding, IconCalendar, IconChevronDown, IconChevronRight, IconClock, IconDollar,
@@ -153,8 +156,13 @@ export default function MechanicDashboard() {
   }
 
   /* Jobs decorados com distância (quando há posição) e ordenados por proximidade */
+  // Convites diretos pra mim ficam numa seção própria (Aceitar / Recusar)
+  const invites = useMemo(
+    () => openJobs.filter(j => isPendingInvite(j) && !!me && j.invited_mechanic_id === me.id),
+    [openJobs, me],
+  );
   const decoratedJobs = useMemo(() => {
-    const withDist = openJobs.map(j => {
+    const withDist = openJobs.filter(j => j.audience !== 'invite').map(j => {
       const ws = j.workshop;
       const km = (userPos && ws?.lat != null && ws?.lng != null)
         ? distKm(userPos[0], userPos[1], ws.lat, ws.lng)
@@ -169,19 +177,34 @@ export default function MechanicDashboard() {
         return a.km - b.km;
       });
     }
-    return withDist;
+    // Valor aumentou: sobe para o topo
+    return withDist.sort((a, b) => Number(raisedFrom(b.job) != null) - Number(raisedFrom(a.job) != null));
   }, [openJobs, userPos]);
+
+  async function declineJob(job: Job) {
+    if (!confirm(`Recusar o convite "${capitalize(job.title)}"? A oficina será avisada para escolher outro mecânico.`)) return;
+    setAccepting(job.id);
+    const { error } = await declineInvite(job.id);
+    setAccepting(null);
+    if (error) { alert('Erro ao recusar: ' + error.message); return; }
+    setOpenJobs(prev => prev.filter(j => j.id !== job.id));
+  }
 
   async function acceptJob(job: Job) {
     if (!me) return;
     setAccepting(job.id);
     const scheduled = isScheduled(job);
     const enRoute = scheduled ? null : new Date().toISOString();
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('jobs')
       .update({ mechanic_id: me.id, status: 'assigned', en_route_at: enRoute })
-      .eq('id', job.id).eq('status', 'open');
-    if (!error) {
+      .eq('id', job.id).eq('status', 'open')
+      .select('id');
+    if (!error && !updated?.length) {
+      // Outro mecânico aceitou antes, ou a oficina cancelou o convite
+      setOpenJobs(prev => prev.filter(j => j.id !== job.id));
+      alert(job.audience === 'invite' ? 'Esse convite não está mais disponível.' : 'Esse job já foi aceito por outro mecânico.');
+    } else if (!error) {
       setOpenJobs(prev => prev.filter(j => j.id !== job.id));
       if (scheduled) {
         nav('/mecanico/agenda');
@@ -213,7 +236,9 @@ export default function MechanicDashboard() {
             >
               <IconWrench className="w-6 h-6 shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-bold uppercase tracking-wide opacity-90">Nova demanda</div>
+                <div className="text-xs font-bold uppercase tracking-wide opacity-90">
+                  {t.job.audience === 'invite' ? 'Convite para você' : 'Nova demanda'}
+                </div>
                 <div className="font-bold truncate">{capitalize(t.job.title)}</div>
                 <div className="text-xs opacity-90">
                   R$ {formatMoney(mechanicNet(cap))} no seu PIX · {previstas(t.job)}
@@ -271,6 +296,61 @@ export default function MechanicDashboard() {
             </div>
             <IconChevronRight className="w-5 h-5 text-steel-300 shrink-0" />
           </Link>
+        )}
+
+        {/* ── Convites diretos: a oficina escolheu você ── */}
+        {invites.length > 0 && (
+          <section className="space-y-2">
+            <SectionTitle>{invites.length === 1 ? 'Convite para você' : `${invites.length} convites para você`}</SectionTitle>
+            {invites.map(j => {
+              const net = mechanicNet((j.price_per_hour ?? 0) * (j.max_hours ?? 1));
+              const ws = j.workshop;
+              return (
+                <article key={j.id} className="rounded-2xl bg-steel-800 border-2 border-brand-500/60 overflow-hidden">
+                  <Link to={`/mecanico/job/${j.id}`} className="block p-4 active:bg-steel-700/60 transition">
+                    <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs font-bold px-2 py-0.5 rounded-full">
+                      <IconStar className="w-3 h-3" filled /> {ws?.business_name ?? 'Uma oficina'} escolheu você
+                    </div>
+                    <div><RaisedBadge j={j} /></div>
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-white leading-snug line-clamp-2">{capitalize(j.title)}</div>
+                        {j.description && <div className="text-sm text-steel-300 line-clamp-2 mt-1">{jobSummary(j.description) ?? j.description}</div>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-signal-500 font-bold font-display text-2xl leading-tight">R$ {formatMoney(net)}</div>
+                        <div className="text-xs text-steel-300">no seu PIX</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-xs text-steel-300">
+                      {ws && (
+                        <span className="inline-flex items-center gap-1">
+                          <IconMapPin className="w-3.5 h-3.5" /> {ws.city}{ws.state ? `/${ws.state}` : ''}
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-1"><IconClock className="w-3.5 h-3.5" /> {previstas(j)}</span>
+                      {j.scheduled_at && (
+                        <span className="inline-flex items-center gap-1"><IconCalendar className="w-3.5 h-3.5" /> {formatScheduled(j.scheduled_at)}</span>
+                      )}
+                    </div>
+                  </Link>
+                  <div className="px-4 pb-4 space-y-2">
+                    <AcceptDeadlineHint job={j} />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => declineJob(j)} disabled={accepting === j.id}
+                        className="btn-ghost h-12 text-base disabled:opacity-50">
+                        Recusar
+                      </button>
+                      <button onClick={() => acceptJob(j)} disabled={accepting === j.id}
+                        className="btn-primary h-12 text-base disabled:opacity-50">
+                        {accepting === j.id ? '…' : 'Aceitar'}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
         )}
 
         {/* ── Em andamento ── */}
@@ -373,16 +453,19 @@ export default function MechanicDashboard() {
                 return (
                   <article key={j.id} className="rounded-2xl bg-steel-800 border border-steel-700 overflow-hidden">
                     <Link to={`/mecanico/job/${j.id}`} className="block p-4 active:bg-steel-700/60 transition">
-                      {j.audience === 'favorites' && (
-                        <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs font-bold px-2 py-0.5 rounded-full">
-                          <IconStar className="w-3 h-3" filled /> Convite preferido
-                        </div>
-                      )}
+                      <div className="flex flex-wrap gap-1.5">
+                        {j.audience === 'favorites' && (
+                          <div className="mb-2 inline-flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs font-bold px-2 py-0.5 rounded-full">
+                            <IconStar className="w-3 h-3" filled /> Convite preferido
+                          </div>
+                        )}
+                        <RaisedBadge j={j} />
+                      </div>
                       <div className="flex justify-between items-start gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-white leading-snug line-clamp-2">{capitalize(j.title)}</div>
                           {j.description && (
-                            <div className="text-sm text-steel-300 line-clamp-2 mt-1">{j.description}</div>
+                            <div className="text-sm text-steel-300 line-clamp-2 mt-1">{jobSummary(j.description) ?? j.description}</div>
                           )}
                         </div>
                         <div className="text-right shrink-0">
@@ -589,4 +672,15 @@ function capitalize(s: string | null | undefined) {
 /** "2h previstas" — ou "Preço fechado" na demanda pelo serviço sem tempo informado */
 function previstas(j: Parameters<typeof hoursLabel>[0]) {
   return hoursLabel(j) ?? 'Preço fechado';
+}
+
+/** A oficina aumentou o valor (24 h): mostra quanto era, no líquido que o mecânico recebe */
+function RaisedBadge({ j }: { j: Job }) {
+  const from = raisedFrom(j);
+  if (from == null) return null;
+  return (
+    <div className="mb-2 inline-flex items-center gap-1 bg-signal-500/15 text-signal-400 text-xs font-bold px-2 py-0.5 rounded-full">
+      💰 Valor aumentou · era R$ {formatMoney(mechanicNet(from))}
+    </div>
+  );
 }

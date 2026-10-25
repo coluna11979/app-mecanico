@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGeoBroadcast } from '@/hooks/useGeoBroadcast';
+import { GeoPill, GeoProblemBanner } from '@/components/mecanico/GeoStatus';
 import { getSetting } from '@/lib/settings';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
@@ -156,7 +157,7 @@ export default function MechanicTracking() {
     setTimeout(() => setToast(null), 5000);
   }
 
-  useGeoBroadcast({
+  const geo = useGeoBroadcast({
     enabled: !!job && (job.status === 'assigned' || job.status === 'in_progress'),
     jobId: job?.id ?? null,
     mechanicId,
@@ -272,7 +273,7 @@ export default function MechanicTracking() {
       )}
 
       {/* Topo */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex justify-between items-start gap-2">
+      <div className="absolute top-[calc(0.75rem+env(safe-area-inset-top,0px))] left-3 right-3 z-10 flex justify-between items-start gap-2">
         <button onClick={() => nav('/mecanico/dashboard')}
           className="bg-steel-900/90 backdrop-blur rounded-full px-4 py-2 text-sm font-semibold">
           ← Sair
@@ -303,12 +304,16 @@ export default function MechanicTracking() {
               </span>
             )}
           </button>
-          <div className="bg-brand-500 text-white text-xs font-semibold rounded-full px-3 py-2 flex items-center gap-2 shadow-brand">
-            <span className="h-2 w-2 rounded-full bg-white animate-pulse-soft" />
-            📍 Ao vivo
-          </div>
+          <GeoPill state={geo.state} />
         </div>
       </div>
+
+      {/* GPS com problema: a oficina não está vendo o mecânico no mapa */}
+      {(geo.state === 'denied' || geo.state === 'unavailable' || geo.state === 'unsupported') && (
+        <div className="absolute top-16 left-3 right-3 z-10">
+          <GeoProblemBanner state={geo.state} className="bg-steel-900/95 backdrop-blur" />
+        </div>
+      )}
 
       {/* Mapa */}
       <div className="flex-1">
@@ -362,6 +367,15 @@ export default function MechanicTracking() {
         {job?.status === 'assigned' && !arrived && (
           <div className="space-y-2">
             <ArrivalCountdown job={job} className="!text-sm" />
+            {/* Navegação de verdade (voz, trânsito): abre o app de mapa do celular com o destino já marcado */}
+            {shop && (
+              <div className="grid grid-cols-2 gap-2">
+                <a href={mapsLink(shop)} target="_blank" rel="noreferrer"
+                  className="h-12 rounded-xl bg-white text-steel-900 text-sm font-bold grid place-items-center active:scale-[0.98]">🗺️ Google Maps</a>
+                <a href={wazeLink(shop)} target="_blank" rel="noreferrer"
+                  className="h-12 rounded-xl bg-[#33CCFF] text-steel-900 text-sm font-bold grid place-items-center active:scale-[0.98]">🚗 Waze</a>
+              </div>
+            )}
             <button onClick={confirmArrival} disabled={busy} className="btn-primary btn-lg w-full">
               {busy ? '…' : '📍 Confirmar chegada'}
             </button>
@@ -489,4 +503,16 @@ export default function MechanicTracking() {
       )}
     </div>
   );
+}
+
+/** Rota até a oficina no Google Maps (coordenadas; sem elas, o endereço) */
+function mapsLink(s: Workshop) {
+  const dest = s.lat != null && s.lng != null ? `${s.lat},${s.lng}` : [s.address, s.city].filter(Boolean).join(', ');
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+}
+/** Rota até a oficina no Waze */
+function wazeLink(s: Workshop) {
+  return s.lat != null && s.lng != null
+    ? `https://waze.com/ul?ll=${s.lat},${s.lng}&navigate=yes`
+    : `https://waze.com/ul?q=${encodeURIComponent([s.address, s.city].filter(Boolean).join(', '))}&navigate=yes`;
 }

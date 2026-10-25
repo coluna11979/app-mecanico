@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  DEFAULT_MARGIN, UNITS, fmtQty, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
+  DEFAULT_MARGIN, UNITS, fmtQty, loadAllParts, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
 } from '@/lib/parts';
 import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
@@ -76,7 +76,7 @@ export default function CompraNova() {
     (async () => {
       const [s, p, m] = await Promise.all([
         supabase.from('suppliers').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
-        supabase.from('workshop_parts').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
+        loadAllParts(wid).then(data => ({ data })),
         loadDefaultMargin(wid),
       ]);
       setSuppliers((s.data as Supplier[]) ?? []);
@@ -94,7 +94,11 @@ export default function CompraNova() {
   const byName = useMemo(() => new Map(parts.map(p => [p.name.trim().toLowerCase(), p])), [parts]);
   const byId = useMemo(() => new Map(parts.map(p => [p.id, p])), [parts]);
 
-  const itemsTotal = rows.reduce((a, r) => a + num(r.quantity) * num(r.unit_cost), 0);
+  // Acordo com o fornecedor: o custo digitado é o da nota; entra com o desconto do acordo
+  const agreement = Number(supplier?.discount_percent ?? 0);
+  const netCost = (r: Row) => Math.round(num(r.unit_cost) * (1 - agreement / 100) * 10000) / 10000;
+  const grossItems = rows.reduce((a, r) => a + num(r.quantity) * num(r.unit_cost), 0);
+  const itemsTotal = rows.reduce((a, r) => a + num(r.quantity) * netCost(r), 0);
   const total = Math.round((itemsTotal + num(freight) - num(discount)) * 100) / 100;
 
   // Vencimento sugerido pelo prazo do fornecedor — a não ser que a nota já traga os vencimentos
@@ -320,7 +324,7 @@ export default function CompraNova() {
     const { data, error } = await supabase.rpc('purchase_post', {
       p_workshop: wid, p_supplier: supplierId, p_number: number, p_issue_date: date,
       p_freight: num(freight), p_discount: num(discount),
-      p_items: items.map(r => ({ part_id: r.part_id, code: r.code.trim() || null, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: num(r.unit_cost) })),
+      p_items: items.map(r => ({ part_id: r.part_id, code: r.code.trim() || null, name: r.name.trim(), unit: r.unit, quantity: num(r.quantity), unit_cost: netCost(r) })),
       p_installments: insts.map(i => ({ due_date: i.due_date, amount: num(i.amount) })),
       p_notes: addStock ? notes : [notes.trim(), NO_STOCK_NOTE].filter(Boolean).join(' · '),
     });
@@ -393,7 +397,7 @@ export default function CompraNova() {
         </div>}
 
         {imported && (
-          <ImportSummary d={imported} itemsTotal={itemsTotal} freight={num(freight)} discount={num(discount)} />
+          <ImportSummary d={imported} itemsTotal={grossItems} freight={num(freight)} discount={num(discount)} agreement={agreement} />
         )}
         {missingSupplier && (
           <div className="rounded-xl bg-pending-50 border border-pending-200 px-4 py-3 text-sm flex flex-wrap items-center gap-3">
@@ -509,7 +513,15 @@ export default function CompraNova() {
           </div>
           <div className="bg-steel-50 border-t border-steel-100 px-5 py-4">
             <div className="ml-auto max-w-xs space-y-1.5 text-sm">
-              <div className="flex justify-between text-steel-600"><span>Peças</span><span>{fmtBRL(itemsTotal)}</span></div>
+              {agreement > 0 ? (
+                <>
+                  <div className="flex justify-between text-steel-600"><span>Peças (como na nota)</span><span>{fmtBRL(grossItems)}</span></div>
+                  <div className="flex justify-between text-signal-700"><span>Acordo com o fornecedor ({agreement}%)</span><span>− {fmtBRL(grossItems - itemsTotal)}</span></div>
+                  <div className="flex justify-between text-steel-600"><span>Peças com desconto</span><span>{fmtBRL(itemsTotal)}</span></div>
+                </>
+              ) : (
+                <div className="flex justify-between text-steel-600"><span>Peças</span><span>{fmtBRL(itemsTotal)}</span></div>
+              )}
               <MoneyLine label="Frete" value={freight} onChange={setFreight} />
               <MoneyLine label="Desconto" value={discount} onChange={setDiscount} minus />
               <div className="flex justify-between pt-2 border-t border-steel-200">
@@ -603,7 +615,7 @@ function MoneyLine({ label, value, onChange, minus }: { label: string; value: st
 }
 
 /** Resumo do que veio do arquivo: confere a soma com o total impresso na nota */
-function ImportSummary({ d, itemsTotal, freight, discount }: { d: InvoiceData; itemsTotal: number; freight: number; discount: number }) {
+function ImportSummary({ d, itemsTotal, freight, discount, agreement = 0 }: { d: InvoiceData; itemsTotal: number; freight: number; discount: number; agreement?: number }) {
   const formTotal = Math.round((itemsTotal + freight - discount) * 100) / 100;
   const diff = d.total != null ? Math.round((d.total - formTotal) * 100) / 100 : 0;
   const ok = d.total == null || Math.abs(diff) < 0.05;
@@ -622,6 +634,7 @@ function ImportSummary({ d, itemsTotal, freight, discount }: { d: InvoiceData; i
               Confira quantidades e valores{d.source === 'ia' ? ' — IPI ou ST podem estar fora dos itens' : ''}.
             </div>
       )}
+      {agreement > 0 && <div className="text-xs text-signal-700">Acordo de {agreement}% com este fornecedor: o custo das peças e as contas a pagar entram com o desconto.</div>}
       {d.source === 'xml' && <div className="text-xs text-steel-500">IPI, ST e outras despesas da nota já estão no custo de cada peça.</div>}
       {d.uncertain.length > 0 && (
         <div className="text-xs text-pending-800">A IA ficou em dúvida em: {d.uncertain.join(', ')}.</div>

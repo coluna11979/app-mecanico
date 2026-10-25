@@ -12,6 +12,7 @@ import VehicleForm from '@/components/customers/VehicleForm';
 import { APPROVAL_CHANNELS, fmtBRL, fmtPhone, osNumber, osStatusColor, osStatusLabel } from '@/components/os/osHelpers';
 import { onlyDigits, timeAgo } from '@/lib/customers';
 import { useInboxAccess } from '@/lib/inbox';
+import { useModuleAllows } from '@/lib/modules';
 import {
   SEGMENTS, approvalProfile, birthdaySoon, customerInsight, fmtMonthYear, habits, shopContext, spendByCategory, vehicleUsage,
   type InsOs, type InsRec, type ShopContext,
@@ -21,6 +22,8 @@ import type { Customer, Vehicle } from '@/types/database';
 type FichaOs = InsOs & { number: number | null; title: string };
 
 export default function ClienteFicha() {
+  // Sem OS (ex.: pacote Atendimento): ficha só de contato e carros — sem números, linha do tempo e previsões de OS
+  const hasOs = useModuleAllows()('/oficina/os');
   const { id } = useParams();
   const nav = useNavigate();
   const { currentWorkshop } = useAuth();
@@ -167,7 +170,7 @@ export default function ClienteFicha() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2 lg:justify-end shrink-0">
-              <Link to={newOsUrl()} className="btn-primary text-sm !py-2">＋ Nova OS</Link>
+              {hasOs && <Link to={newOsUrl()} className="btn-primary text-sm !py-2">＋ Nova OS</Link>}
               {wa && (inboxOn ? (
                 <Link to={`/oficina/inbox?tel=${phone}&cliente=${customer.id}&nome=${encodeURIComponent(customer.full_name)}`}
                   className="btn-ghost text-sm !py-2 border border-signal-500/40 text-signal-700">💬 Conversar no WhatsApp</Link>
@@ -181,7 +184,7 @@ export default function ClienteFicha() {
           </div>
 
           {/* Números que valem dinheiro */}
-          {ins && (
+          {hasOs && ins && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
               <Mini label="Valor do cliente" value={fmtBRL(ins.spent)}
                 sub={ins.visits ? `${ins.visits} visita${ins.visits === 1 ? '' : 's'} desde ${fmtMonthYear(ins.firstVisit)}` : 'ainda sem serviço'} />
@@ -197,7 +200,7 @@ export default function ClienteFicha() {
           )}
 
           {/* Dinheiro na mesa deste cliente */}
-          {ins && ins.opportunity.total > 0 && (
+          {hasOs && ins && ins.opportunity.total > 0 && (
             <div className="mt-4 rounded-xl bg-signal-50 border border-signal-200 px-4 py-3">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <div className="font-bold text-signal-900">💰 Dinheiro na mesa: {fmtBRL(ins.opportunity.total)}</div>
@@ -216,16 +219,16 @@ export default function ClienteFicha() {
               🔒 <strong>Observações:</strong> {customer.notes}
             </div>
           )}
-          {ins && ins.openOs > 0 && (
+          {hasOs && ins && ins.openOs > 0 && (
             <div className="mt-3 text-sm text-brand-800 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2">
               🔧 {ins.openOs} OS em aberto agora{ins.openValue > 0 ? ` · ${fmtBRL(ins.openValue)} a entrar quando concluir` : ''} — veja na linha do tempo abaixo.
             </div>
           )}
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-5">
+        <div className={`grid gap-5 ${hasOs ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
           {/* Histórico (linha do tempo) */}
-          <div className="lg:col-span-2 space-y-3">
+          {hasOs && <div className="lg:col-span-2 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-bold text-lg">🕒 Linha do tempo ({os.length})</h2>
               {vehicles.length > 1 && (
@@ -267,12 +270,12 @@ export default function ClienteFicha() {
                 })}
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Lateral */}
           <div className="space-y-4">
             {/* Onde gasta */}
-            {cats.length > 0 && (
+            {hasOs && cats.length > 0 && (
               <div className="card">
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">🧾 Onde ele gasta</div>
                 <div className="space-y-2">
@@ -315,17 +318,17 @@ export default function ClienteFicha() {
                             <div className="text-xs text-steel-500">{[v.year && `${v.year}${age != null ? ` (${age} anos)` : ''}`, v.color].filter(Boolean).join(' · ') || '—'}</div>
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                        {hasOs && <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                           <Info label="Km estimado hoje" value={u.estKm != null ? `${u.estKm.toLocaleString('pt-BR')} km` : '—'} />
                           <Info label="Roda por mês" value={u.kmPerMonth ? `~${u.kmPerMonth.toLocaleString('pt-BR')} km` : '—'} />
                           <Info label="Última troca de óleo" value={u.lastOil ? timeAgo(u.lastOil) : '—'} />
                           <Info label="Próxima troca" value={u.nextOilDays == null ? '—' : u.nextOilDays < 0 ? `vencida há ${-u.nextOilDays} dias` : `em ~${Math.max(1, Math.round(u.nextOilDays / 30))} ${Math.round(u.nextOilDays / 30) <= 1 ? 'mês' : 'meses'}`}
                             warn={u.nextOilDays != null && u.nextOilDays < 30} />
-                        </div>
+                        </div>}
                         {v.notes && <p className="text-xs text-steel-500 italic mt-2">{v.notes}</p>}
                         <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
-                          <span className="text-steel-400">{count} OS</span>
-                          <Link to={newOsUrl(v.id)} className="font-semibold text-brand-600 hover:underline">＋ Nova OS</Link>
+                          {hasOs && <span className="text-steel-400">{count} OS</span>}
+                          {hasOs && <Link to={newOsUrl(v.id)} className="font-semibold text-brand-600 hover:underline">＋ Nova OS</Link>}
                           <button onClick={() => setVehForm({ vehicle: v })} className="text-steel-600 hover:underline">Editar</button>
                           <button onClick={() => removeVehicle(v)} className="text-steel-400 hover:text-alert-600">Excluir</button>
                         </div>
@@ -336,16 +339,16 @@ export default function ClienteFicha() {
               )}
             </div>
 
-            {currentWorkshop && (
+            {hasOs && currentWorkshop && (
               <Recommendations workshopId={currentWorkshop.id} customerId={customer.id}
                 vehicleId={vehicles.length === 1 ? vehicles[0].id : null} osId={null} />
             )}
           </div>
         </div>
-        <p className="text-[11px] text-steel-400">
+        {hasOs && <p className="text-[11px] text-steel-400">
           Previsões pelo histórico do cliente: próxima visita = última visita + intervalo médio entre visitas; próxima troca de óleo = 6 meses ou 10 mil km
           (o que vier antes, pelo km que ele roda). Valores de oportunidade são estimativas.
-        </p>
+        </p>}
       </div>
 
       {editing && currentWorkshop && (

@@ -1,36 +1,85 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { brl } from '@/lib/cash';
 import { loadCallParams, saveJobDraft, suggestPay } from '@/lib/callMechanic';
+import { useModuleAllows } from '@/lib/modules';
+import { IconChevronDown, IconLayers } from '@/components/mecanico/icons';
 
 type StackItem = {
   id: string; service_order_id: string; description: string; quantity: number; unit_price: number;
   order: { id: string; number: number | null; title: string; status: string; vehicle: { make: string | null; model: string | null; plate: string | null } | null } | null;
 };
-type Card = { osId: string; number: number | null; title: string; car: string; items: StackItem[]; labor: number };
+/** Serviço empilhado avulso (sem OS), guardado direto pela Nova demanda */
+type FreeItem = { id: string; title: string; description: string; total: number; hours: number | null; vehicle: string | null; customer_charge: number | null };
+/** Um card da pilha: os serviços de uma OS ou um serviço avulso */
+type Card = {
+  key: string; kind: 'os' | 'free'; osId: string | null; number: number | null; title: string; car: string;
+  items: { id: string; description: string; quantity: number; amount: number }[];
+  /** OS: soma da mão de obra (o pagamento sai da sugestão). Avulso: o valor que a oficina definiu */
+  labor: number; free?: FreeItem;
+  /** Peças da OS/orçamento (a oficina fornece): o mecânico precisa saber o que vai trocar */
+  parts: string[];
+};
+
+/** "2x Bucha de bandeja" */
+const partText = (p: { description: string; quantity: number }) =>
+  `${Number(p.quantity) !== 1 ? `${String(Number(p.quantity)).replace('.', ',')}x ` : ''}${p.description.trim()}`;
 
 const osNum = (n: number | null, id: string) => (n != null ? String(n).padStart(4, '0') : id.slice(0, 8));
 const amt = (i: StackItem) => Math.round(Number(i.quantity) * Number(i.unit_price) * 100) / 100;
 
 /**
- * 📚 Empilhados — serviços marcados para o mecânico da plataforma que ainda não viraram demanda.
- * Cada OS é um card separado (nada se mistura sozinho). A gestão move os cards que quer resolver
- * para "Buscar mecânico" e gera a demanda: um mecânico, vários serviços (de uma ou mais OS).
+ * 📚 Empilhados — serviços esperando mecânico da plataforma que ainda não viraram demanda:
+ * os marcados numa OS e os avulsos guardados pela Nova demanda (oficina sem OS).
+ * Fica fechado (só o resumo) para a tela não crescer; aberto, é uma lista compacta: a oficina marca os
+ * serviços que quer resolver juntos e "Juntar e chamar 1 mecânico" gera a demanda — mais barato.
  */
 export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string; reloadKey: number; onGenerate: () => void }) {
   const [items, setItems] = useState<StackItem[] | null>(null);
+  const [free, setFree] = useState<FreeItem[]>([]);
+  /** Peças das OS empilhadas, por OS */
+  const [partsByOs, setPartsByOs] = useState<Map<string, string[]>>(new Map());
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [dragOver, setDragOver] = useState<'stack' | 'search' | null>(null);
+  /** Lista aberta (fechada = só o resumo) */
+  const [open, setOpen] = useState(false);
+  /** Quantos mostrar antes do "Ver mais" */
+  const [limit, setLimit] = useState(5);
+  /** Serviço com o menu "o que fazer" aberto */
+  const [menu, setMenu] = useState<Card | null>(null);
+  /** Sem o módulo OS, o serviço veio de um orçamento (Clientes e orçamentos) */
+  const canOs = useModuleAllows()('/oficina/os');
+  const osWord = canOs ? 'OS' : 'Orçamento';
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.from('service_order_items')
-      .select('id, service_order_id, description, quantity, unit_price, order:service_orders(id, number, title, status, vehicle:vehicles(make, model, plate))')
-      .eq('workshop_id', wid).eq('kind', 'labor').eq('executor', 'platform')
-      .not('stacked_at', 'is', null).is('platform_job_id', null).order('stacked_at');
-    if (error) { console.warn('[StackBoard]', error.message); setItems([]); return; }
-    setItems(((data ?? []) as unknown as StackItem[]).filter(i => i.order && i.order.status !== 'cancelled'));
+    const [os, av] = await Promise.all([
+      supabase.from('service_order_items')
+        .select('id, service_order_id, description, quantity, unit_price, order:service_orders(id, number, title, status, vehicle:vehicles(make, model, plate))')
+        .eq('workshop_id', wid).eq('kind', 'labor').eq('executor', 'platform')
+        .not('stacked_at', 'is', null).is('platform_job_id', null).order('stacked_at'),
+      supabase.from('stacked_services').select('id, title, description, total, hours, vehicle, customer_charge')
+        .eq('workshop_id', wid).is('job_id', null).is('removed_at', null).order('created_at'),
+    ]);
+    if (os.error) console.warn('[StackBoard]', os.error.message);
+    if (av.error) console.warn('[StackBoard] avulsos', av.error.message);
+    const stackItems = ((os.data ?? []) as unknown as StackItem[]).filter(i => i.order && i.order.status !== 'cancelled');
+    setItems(stackItems);
+    const osIds = [...new Set(stackItems.map(i => i.service_order_id))];
+    if (osIds.length) {
+      const { data: parts } = await supabase.from('service_order_items').select('service_order_id, description, quantity')
+        .eq('workshop_id', wid).eq('kind', 'part').in('service_order_id', osIds).order('position');
+      const m = new Map<string, string[]>();
+      for (const p of (parts ?? []) as { service_order_id: string; description: string; quantity: number }[]) {
+        m.set(p.service_order_id, [...(m.get(p.service_order_id) ?? []), partText(p)]);
+      }
+      setPartsByOs(m);
+    } else setPartsByOs(new Map());
+    setFree(((av.data ?? []) as FreeItem[]).map(f => ({
+      ...f, total: Number(f.total), hours: f.hours != null ? Number(f.hours) : null,
+      customer_charge: f.customer_charge != null ? Number(f.customer_charge) : null,
+    })));
   }, [wid]);
   useEffect(() => { load(); }, [load, reloadKey]);
 
@@ -39,126 +88,235 @@ export default function StackBoard({ wid, reloadKey, onGenerate }: { wid: string
     for (const i of items ?? []) {
       const o = i.order!;
       const c = m.get(o.id) ?? {
-        osId: o.id, number: o.number, title: o.title,
+        key: `os:${o.id}`, kind: 'os' as const, osId: o.id, number: o.number, title: o.title,
         car: [[o.vehicle?.make, o.vehicle?.model].filter(Boolean).join(' '), o.vehicle?.plate].filter(Boolean).join(' · '),
-        items: [], labor: 0,
+        items: [], labor: 0, parts: partsByOs.get(o.id) ?? [],
       };
-      c.items.push(i); c.labor += amt(i);
+      c.items.push({ id: i.id, description: i.description, quantity: Number(i.quantity), amount: amt(i) });
+      c.labor += amt(i);
       m.set(o.id, c);
     }
-    return [...m.values()];
-  }, [items]);
+    const freeCards: Card[] = free.map(f => ({
+      key: `free:${f.id}`, kind: 'free', osId: null, number: null, title: f.title, car: f.vehicle?.trim() ?? '',
+      items: [{ id: f.id, description: f.title, quantity: 1, amount: f.total }], labor: f.total, free: f, parts: [],
+    }));
+    return [...m.values(), ...freeCards];
+  }, [items, free, partsByOs]);
 
-  const inStack = cards.filter(c => !picked.has(c.osId));
-  const inSearch = cards.filter(c => picked.has(c.osId));
+  const inStack = cards.filter(c => !picked.has(c.key));
+  const inSearch = cards.filter(c => picked.has(c.key));
   const searchItems = inSearch.flatMap(c => c.items);
-  const searchLabor = inSearch.reduce((a, c) => a + c.labor, 0);
-  const sug = suggestPay(searchLabor, loadCallParams(wid));
+  const osCards = inSearch.filter(c => c.kind === 'os');
+  const freeCards = inSearch.filter(c => c.kind === 'free');
+  const osLabor = osCards.reduce((a, c) => a + c.labor, 0);
+  const freeTotal = freeCards.reduce((a, c) => a + c.labor, 0);
+  // OS: sugestão a partir da mão de obra; avulso: o valor que a oficina já definiu ao empilhar
+  const sug = suggestPay(osLabor, loadCallParams(wid));
+  const total = (osCards.length ? sug.total : 0) + freeTotal;
 
-  const move = (osId: string, to: 'stack' | 'search') =>
-    setPicked(p => { const n = new Set(p); if (to === 'search') n.add(osId); else n.delete(osId); return n; });
+  const move = (key: string, to: 'stack' | 'search') =>
+    setPicked(p => { const n = new Set(p); if (to === 'search') n.add(key); else n.delete(key); return n; });
 
-  async function unstack(c: Card) {
-    if (!confirm(`Tirar da pilha os serviços da OS nº ${osNum(c.number, c.osId)}? Eles voltam para o responsável da OS.`)) return;
+  /** Tira da pilha: "equipe" = a própria loja faz; "cancelado" = o serviço não vai mais ser feito */
+  async function unstack(c: Card, why: 'equipe' | 'cancelado') {
+    if (c.kind === 'free') {
+      setBusy(true);
+      const { error } = await supabase.from('stacked_services').update({ removed_at: new Date().toISOString(), removed_reason: why })
+        .eq('id', c.free!.id).eq('workshop_id', wid);
+      setBusy(false);
+      if (error) return toast.error('Não foi possível tirar da pilha: ' + error.message);
+      toast.success(why === 'equipe' ? 'Saiu da pilha: a equipe faz' : 'Serviço cancelado');
+      move(c.key, 'stack');
+      setMenu(null);
+      load();
+      return;
+    }
     setBusy(true);
     const { error } = await supabase.from('service_order_items')
       .update({ executor: null, workshop_mechanic_id: null, stacked_at: null }).in('id', c.items.map(i => i.id)).eq('workshop_id', wid);
-    if (!error) await supabase.from('service_orders').update({ executor: null }).eq('id', c.osId).eq('workshop_id', wid).eq('executor', 'platform');
+    if (!error) await supabase.from('service_orders').update({ executor: null }).eq('id', c.osId!).eq('workshop_id', wid).eq('executor', 'platform');
     setBusy(false);
     if (error) return toast.error('Não foi possível desempilhar: ' + error.message);
-    move(c.osId, 'stack');
+    toast.success(`Voltou para ${canOs ? 'a OS' : 'o orçamento'} nº ${osNum(c.number, c.osId!)}: a equipe faz`);
+    move(c.key, 'stack');
+    setMenu(null);
     load();
   }
 
-  function generate() {
-    if (!inSearch.length) return;
+  /** Monta a demanda com os cards dados (os marcados, ou um só pelo "Enviar" da linha) */
+  function generate(list: Card[] = inSearch) {
+    if (!list.length) return;
+    const inSearch = list;
+    const searchItems = list.flatMap(c => c.items);
+    const osCards = list.filter(c => c.kind === 'os');
+    const freeCards = list.filter(c => c.kind === 'free');
+    const sug = suggestPay(osCards.reduce((a, c) => a + c.labor, 0), loadCallParams(wid));
+    const total = (osCards.length ? sug.total : 0) + freeCards.reduce((a, c) => a + c.labor, 0);
     const many = inSearch.length > 1;
     const first = searchItems[0];
+    // Carros diferentes na demanda: um por OS + os avulsos com veículo (mesmo texto = mesmo carro)
+    const cars = [...new Set(inSearch.map(c => (c.kind === 'os' ? `os:${c.osId}` : c.car.toLowerCase())).filter(Boolean))];
+    const oneCar = inSearch.find(c => c.car)?.car ?? '';
+    const vehicles = cars.length;
     const title = (searchItems.length === 1 ? first.description : `${first.description} + ${searchItems.length - 1} serviço(s)`)
-      + (many ? ` — ${inSearch.length} veículos` : inSearch[0].car ? ` — ${inSearch[0].car.split(' · ')[0]}` : '');
+      + (vehicles > 1 ? ` — ${vehicles} veículos` : vehicles === 1 && oneCar ? ` — ${oneCar.split(' · ')[0]}` : '');
     const description = [
       'Serviços a realizar:',
-      ...inSearch.flatMap(c => [
-        many ? `\nVeículo${c.car ? `: ${c.car}` : ''} (OS nº ${osNum(c.number, c.osId)})` : '',
-        ...c.items.map(i => `• ${i.description.trim()}${Number(i.quantity) > 1 ? ` (${i.quantity}x)` : ''}`),
-      ]),
-      !many && inSearch[0].car ? `\nVeículo: ${inSearch[0].car}` : '',
-      !many ? `Referência: OS nº ${osNum(inSearch[0].number, inSearch[0].osId)}` : '',
+      ...inSearch.flatMap(c => (c.kind === 'free'
+        ? [`• ${c.title.trim()}${c.car ? ` (${c.car})` : ''}${c.free!.description.trim() ? ` — ${c.free!.description.trim()}` : ''}`]
+        : [
+            many ? `\nVeículo${c.car ? `: ${c.car}` : ''} (${osWord} nº ${osNum(c.number, c.osId!)})` : '',
+            ...c.items.map(i => `• ${i.description.trim()}${i.quantity > 1 ? ` (${i.quantity}x)` : ''}`),
+            c.parts.length ? `Peças (a oficina fornece)${many && c.car ? ` — ${c.car.split(' · ')[0]}` : ''}: ${c.parts.join(', ')}` : '',
+          ])),
+      !many && osCards.length === 1 && osCards[0].car ? `\nVeículo: ${osCards[0].car}` : '',
+      !many && osCards.length === 1 ? `Referência: ${osWord} nº ${osNum(osCards[0].number, osCards[0].osId!)}` : '',
     ].filter(l => l !== '').join('\n');
-    saveJobDraft(wid, many ? `${inSearch.length} OS empilhadas` : `OS nº ${osNum(inSearch[0].number, inSearch[0].osId)}`, {
-      serviceOrderId: inSearch[0].osId, serviceOrderIds: inSearch.map(c => c.osId),
-      itemIds: searchItems.map(i => i.id),
-      title: title.slice(0, 120), description, total: sug.total, hours: Math.max(1, searchItems.length), scheduledAt: '',
+    const hours = osCards.reduce((a, c) => a + c.items.length, 0)
+      + freeCards.reduce((a, c) => a + (c.free!.hours ?? 1), 0);
+    saveJobDraft(wid, many ? `${inSearch.length} serviços empilhados` : osCards.length ? `${osWord} nº ${osNum(osCards[0].number, osCards[0].osId!)}` : 'serviço empilhado', {
+      serviceOrderId: osCards[0]?.osId ?? '', serviceOrderIds: osCards.length ? osCards.map(c => c.osId!) : undefined,
+      itemIds: osCards.flatMap(c => c.items.map(i => i.id)),
+      stackedServiceIds: freeCards.map(c => c.free!.id),
+      // Valor cobrado do cliente: só quando todos os serviços juntados são avulsos e todos têm o valor
+      customerCharge: !osCards.length && freeCards.every(c => c.free!.customer_charge != null)
+        ? freeCards.reduce((a, c) => a + (c.free!.customer_charge ?? 0), 0) : undefined,
+      title: title.slice(0, 120), description, total, hours: Math.max(1, hours), scheduledAt: '',
     });
     onGenerate();
   }
 
   if (items === null || cards.length === 0) return null;
 
-  const Col = ({ id, title, hint, list, children }: { id: 'stack' | 'search'; title: string; hint: string; list: Card[]; children?: React.ReactNode }) => (
-    <div
-      onDragOver={e => { e.preventDefault(); setDragOver(id); }}
-      onDragLeave={() => setDragOver(null)}
-      onDrop={e => { e.preventDefault(); setDragOver(null); const os = e.dataTransfer.getData('text/plain'); if (os) move(os, id); }}
-      className={`rounded-2xl p-3 transition ${dragOver === id ? 'bg-brand-50 ring-2 ring-brand-300' : 'bg-steel-50'}`}>
-      <div className="flex items-baseline justify-between px-1 mb-2">
-        <h3 className="text-sm font-bold text-steel-800">{title} <span className="text-steel-400 font-semibold">{list.length}</span></h3>
-        <span className="text-[11px] text-steel-400">{hint}</span>
-      </div>
-      <div className="space-y-2 min-h-[56px]">
-        {list.length === 0 && <div className="rounded-xl border border-dashed border-steel-300 px-3 py-4 text-center text-xs text-steel-400">{id === 'search' ? 'Arraste ou use “Buscar mecânico →”' : 'Nada empilhado'}</div>}
-        {list.map(c => (
-          <div key={c.osId} draggable onDragStart={e => e.dataTransfer.setData('text/plain', c.osId)}
-            className="bg-white rounded-xl ring-1 ring-steel-200/70 p-3 cursor-grab active:cursor-grabbing">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-steel-900">OS nº {osNum(c.number, c.osId)}</div>
-                <div className="text-xs text-steel-500 truncate">{c.car || c.title}</div>
-              </div>
-              <div className="text-sm font-bold text-steel-900 shrink-0">{brl(c.labor)}</div>
-            </div>
-            <ul className="mt-2 text-xs text-steel-600 space-y-0.5">
-              {c.items.map(i => <li key={i.id} className="flex justify-between gap-2"><span className="truncate">• {i.description}</span><span className="shrink-0 text-steel-400">{brl(amt(i))}</span></li>)}
-            </ul>
-            <div className="mt-2.5 flex items-center justify-between gap-2">
-              {id === 'stack' ? (
-                <>
-                  <button type="button" onClick={() => unstack(c)} disabled={busy} className="text-xs text-steel-500 hover:text-alert-600 underline min-h-[36px]">Desempilhar</button>
-                  <button type="button" onClick={() => move(c.osId, 'search')} className="btn-secondary !py-2 !px-3 text-xs min-h-[40px]">Buscar mecânico →</button>
-                </>
-              ) : (
-                <button type="button" onClick={() => move(c.osId, 'stack')} className="text-xs text-steel-500 hover:text-steel-800 underline min-h-[36px]">← Voltar para a pilha</button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-      {children}
-    </div>
-  );
+  const allTotal = cards.reduce((a, c) => a + c.labor, 0);
+  const allPicked = picked.size === cards.length;
+  const toggle = (key: string) => move(key, picked.has(key) ? 'stack' : 'search');
+  const shown = cards.slice(0, limit);
 
   return (
-    <section className="mb-5 rounded-2xl bg-white ring-1 ring-steel-200/70 p-4">
-      <div className="mb-3">
-        <h2 className="text-base font-bold text-steel-900">📚 Empilhados</h2>
-        <p className="text-xs text-steel-500">Serviços esperando mecânico da plataforma. Mova para “Buscar mecânico” os que quer resolver juntos e gere a demanda.</p>
-      </div>
-      <div className="grid md:grid-cols-2 gap-3">
-        {Col({ id: 'stack', title: 'Empilhados', hint: 'cada OS separada', list: inStack })}
-        {Col({
-          id: 'search', title: 'Buscar mecânico', hint: 'vão na mesma demanda', list: inSearch,
-          children: inSearch.length > 0 && (
-            <div className="mt-3 rounded-xl bg-white ring-1 ring-brand-200 p-3 space-y-2">
-              <div className="text-sm font-semibold text-steel-900">
-                Vai gerar 1 demanda · {inSearch.length} {inSearch.length === 1 ? 'OS' : 'OS'} · {searchItems.length} {searchItems.length === 1 ? 'serviço' : 'serviços'}
+    <section className="mb-3 rounded-xl bg-white border border-steel-200 overflow-hidden">
+      {/* Resumo: um toque abre a lista */}
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-steel-50">
+        <IconLayers className="w-5 h-5 shrink-0 text-steel-400" />
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="font-semibold text-steel-900">Empilhados</span>
+            <span className="text-xs font-semibold text-steel-500 tabular-nums">{cards.length}</span>
+            <span className="ml-auto font-display font-bold text-steel-900 tabular-nums">{brl(allTotal)}</span>
+          </span>
+          <span className="block text-xs text-steel-500 mt-0.5 truncate">
+            {open ? 'Envie um, ou marque vários para um mecânico fazer junto' : 'Junte vários para um mecânico só e pague menos'}
+          </span>
+        </span>
+        <IconChevronDown className={`w-4 h-4 text-steel-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-steel-100">
+          <div className="flex items-center justify-between px-4 py-2 bg-steel-50">
+            <button type="button" onClick={() => setPicked(allPicked ? new Set() : new Set(cards.map(c => c.key)))}
+              className="text-xs font-semibold text-brand-700 min-h-[36px]">
+              {allPicked ? 'Desmarcar todos' : 'Selecionar todos'}
+            </button>
+            <span className="text-xs text-steel-500">{picked.size} de {cards.length} marcados</span>
+          </div>
+
+          <ul className="divide-y divide-steel-100">
+            {shown.map(c => {
+              const on = picked.has(c.key);
+              const name = c.kind === 'os'
+                ? (c.items.length === 1 ? c.items[0].description : `${c.items[0].description} + ${c.items.length - 1}`)
+                : c.title;
+              const sub = [brl(c.labor), ...(c.kind === 'os'
+                ? [`${osWord} nº ${osNum(c.number, c.osId!)}`, c.car, c.parts.length ? `+ ${c.parts.length} ${c.parts.length === 1 ? 'peça' : 'peças'}` : '']
+                : [c.car ? `🚗 ${c.car}` : '', c.free!.hours ? `~${String(c.free!.hours).replace('.', ',')}h` : ''])].filter(Boolean).join(' · ');
+              return (
+                <li key={c.key} className={`flex items-center gap-3 px-4 py-3 ${on ? 'bg-brand-50/60' : ''}`}>
+                  <button type="button" onClick={() => toggle(c.key)} aria-pressed={on}
+                    className="flex-1 min-w-0 flex items-center gap-3 text-left min-h-[44px]">
+                    <span className={`h-6 w-6 shrink-0 rounded-md border-2 grid place-items-center text-sm font-bold transition ${
+                      on ? 'bg-brand-500 border-brand-500 text-white' : 'border-steel-300 bg-white'}`} aria-hidden>{on ? '✓' : ''}</span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-steel-900 truncate">{name}</span>
+                      <span className="block text-xs text-steel-600 truncate">{sub}</span>
+                    </span>
+                  </button>
+                  <button type="button" onClick={() => generate([c])}
+                    className="h-10 px-3 shrink-0 rounded-lg border border-brand-300 bg-white text-brand-700 text-xs font-bold active:scale-95 hover:bg-brand-50">
+                    Enviar
+                  </button>
+                  <button type="button" onClick={() => setMenu(c)} disabled={busy}
+                    title="Equipe própria ou cancelar"
+                    aria-label={`O que fazer com ${name}`}
+                    className="h-10 w-10 shrink-0 rounded-lg grid place-items-center text-lg font-bold text-steel-500 hover:text-steel-800 hover:bg-steel-100 disabled:opacity-40">⋯</button>
+                </li>
+              );
+            })}
+          </ul>
+
+          {cards.length > limit && (
+            <button type="button" onClick={() => setLimit(l => l + 10)}
+              className="w-full h-11 text-sm font-semibold text-steel-700 border-t border-steel-100 hover:bg-steel-50">
+              Ver mais {cards.length - limit}
+            </button>
+          )}
+
+          {/* Barra no fim da lista (não fica por cima das linhas): junta os marcados numa demanda só */}
+          {inSearch.length > 0 && (
+            <div className="border-t border-brand-200 bg-brand-50/60 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-steel-900">
+                    {searchItems.length} {searchItems.length === 1 ? 'serviço' : 'serviços'} · {brl(total)}
+                  </div>
+                  <div className="text-[11px] text-steel-600 leading-tight">
+                    {searchItems.length > 1 ? 'um mecânico faz todos · ' : ''}você revisa antes de publicar
+                  </div>
+                </div>
+                <button type="button" onClick={() => generate()}
+                  className="shrink-0 h-12 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.98] hover:bg-brand-600">
+                  📤 Enviar para demanda
+                </button>
               </div>
-              <div className="text-xs text-steel-500">Mão de obra {brl(searchLabor)} · sugestão de pagamento {brl(sug.total)} (você ajusta antes de publicar)</div>
-              <button type="button" onClick={generate} className="btn-primary w-full">Gerar demanda →</button>
-              <p className="text-[11px] text-steel-400">Quer mais de uma demanda? Gere esta e depois mova os outros cards.</p>
             </div>
-          ),
-        })}
-      </div>
+          )}
+        </div>
+      )}
+
+      {/* O que fazer com um serviço da pilha */}
+      {menu && (
+        <div className="fixed inset-0 z-[60] bg-steel-900/70 flex items-end sm:items-center justify-center sm:p-4" onClick={() => !busy && setMenu(null)}>
+          <div onClick={e => e.stopPropagation()} className="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl p-4 pb-6 space-y-2 shadow-2xl">
+            <div className="px-1 pb-1">
+              <div className="text-base font-bold text-steel-900 leading-tight">
+                {menu.kind === 'os' ? (menu.items.length === 1 ? menu.items[0].description : `${menu.items[0].description} + ${menu.items.length - 1}`) : menu.title}
+              </div>
+              <div className="text-xs text-steel-600 mt-0.5">
+                {[brl(menu.labor), menu.kind === 'os' ? `${osWord} nº ${osNum(menu.number, menu.osId!)}` : '', menu.car].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            {([
+              ['continua', '📚 Continuar empilhado', 'fica guardado para chamar depois'],
+              ['equipe', '👷 Equipe própria', menu.kind === 'os' ? 'volta para a OS e a equipe da loja faz' : 'sai da pilha: a equipe da loja faz'],
+              ...(menu.kind === 'free' ? [['cancelado', '🗑️ Cancelar serviço', 'não vai mais ser feito'] as const] : []),
+            ] as const).map(([k, l, d]) => (
+              <button key={k} type="button" disabled={busy}
+                onClick={() => (k === 'continua' ? setMenu(null) : unstack(menu, k))}
+                className={`w-full min-h-[56px] rounded-xl border px-3 py-2 text-left transition active:scale-[0.99] disabled:opacity-50 ${
+                  k === 'cancelado' ? 'border-alert-200 hover:bg-alert-50' : 'border-steel-200 hover:bg-steel-50'}`}>
+                <span className={`block text-sm font-semibold ${k === 'cancelado' ? 'text-alert-700' : 'text-steel-900'}`}>{l}</span>
+                <span className="block text-xs text-steel-600">{d}</span>
+              </button>
+            ))}
+            {menu.kind === 'os' && (
+              <p className="text-xs text-steel-500 px-1 pt-1">
+                Para cancelar um serviço {canOs ? 'da OS' : 'do orçamento'}, <Link to={canOs ? `/oficina/os/${menu.osId}` : '/oficina/plataforma/clientes?aba=orcamentos'} className="font-semibold text-brand-600 underline">abra {canOs ? 'a OS' : 'o orçamento'} nº {osNum(menu.number, menu.osId!)}</Link>.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

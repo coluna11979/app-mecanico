@@ -20,6 +20,48 @@
 }
 
 @layer base {
+  /* Aço (steel) e branco em variáveis: iguais ao de sempre no app inteiro */
+  :root {
+    --steel-50: 245 247 250;  --steel-100: 232 236 241; --steel-200: 203 211 221;
+    --steel-300: 154 166 182; --steel-400: 107 120 137; --steel-500: 71 85 103;
+    --steel-600: 51 65 79;    --steel-700: 34 44 55;    --steel-800: 21 28 36;
+    --steel-900: 11 17 23;
+    --white: 255 255 255;
+  }
+  /*
+   * Painel do mecânico no modo claro: as telas foram feitas no escuro, então a escala do aço inverte
+   * (fundo escuro → claro, texto claro → escuro) e o "branco" vira grafite. Quem tem fundo colorido
+   * (botões laranja, verde, vermelho, amarelo) volta a ter branco de verdade, para o texto continuar branco.
+   */
+  html.mech-light {
+    --steel-900: 238 241 245; --steel-800: 255 255 255; --steel-700: 226 231 238;
+    --steel-600: 184 194 206; --steel-500: 135 148 165; --steel-400: 102 114 127;
+    --steel-300: 74 86 102;   --steel-200: 51 65 79;    --steel-100: 28 37 48;
+    --steel-50: 17 23 30;
+    --white: 28 37 48;
+    color-scheme: light;
+  }
+  html.mech-light [class*="bg-brand-400"], html.mech-light [class*="bg-brand-500"], html.mech-light [class*="bg-brand-600"],
+  html.mech-light [class*="bg-signal-500"], html.mech-light [class*="bg-signal-600"],
+  html.mech-light [class*="bg-alert-500"], html.mech-light [class*="bg-alert-600"],
+  html.mech-light [class*="bg-pending-500"], html.mech-light [class*="bg-pending-600"],
+  html.mech-light [class*="from-brand"] {
+    --white: 255 255 255;
+  }
+  /* Em cima do mapa (que é escuro nos dois modos) as cores continuam as do modo escuro */
+  html.mech-light .mech-keep-dark {
+    --steel-50: 245 247 250;  --steel-100: 232 236 241; --steel-200: 203 211 221;
+    --steel-300: 154 166 182; --steel-400: 107 120 137; --steel-500: 71 85 103;
+    --steel-600: 51 65 79;    --steel-700: 34 44 55;    --steel-800: 21 28 36;
+    --steel-900: 11 17 23;
+    --white: 255 255 255;
+  }
+  /* Os mesmos chips com fundo translúcido (bg-brand-500/15) não são fundo cheio: texto segue escuro */
+  html.mech-light [class*="bg-brand-500/"], html.mech-light [class*="bg-signal-500/"],
+  html.mech-light [class*="bg-alert-500/"], html.mech-light [class*="bg-pending-500/"] {
+    --white: 28 37 48;
+  }
+
   html {
     -webkit-tap-highlight-color: transparent;
     -webkit-font-smoothing: antialiased;
@@ -40,6 +82,13 @@
     @apply bg-brand-500/30;
   }
 }
+
+/* Modo claro do mecânico: tons claros de destaque (feitos para fundo escuro) ficam fortes no fundo claro */
+html.mech-light .text-brand-200, html.mech-light .text-brand-300, html.mech-light .text-brand-400 { color: #BF3700; }
+html.mech-light .text-signal-300, html.mech-light .text-signal-400, html.mech-light .text-signal-500 { color: #0C8455; }
+html.mech-light .text-pending-200, html.mech-light .text-pending-300, html.mech-light .text-pending-400 { color: #A86C0B; }
+html.mech-light .text-alert-300, html.mech-light .text-alert-400 { color: #C13A3F; }
+html.mech-light .text-amber-300, html.mech-light .text-amber-400 { color: #B45309; }
 
 @layer components {
   .btn {
@@ -81,6 +130,29 @@
   .badge-brand   { @apply badge bg-brand-500/15 text-brand-600; }
 
   .section { @apply max-w-7xl mx-auto px-5 lg:px-8; }
+
+  /* ───── Admin "Linear denso" ─────
+     Classes utilitárias para o painel admin: tipografia tight,
+     tabular-nums, cards compactos, hierarquia por peso. */
+  .admin-h1    { @apply text-2xl font-bold tracking-[-0.02em] text-steel-900 dark:text-white; }
+  .admin-h2    { @apply text-base font-semibold tracking-tight text-steel-800 dark:text-steel-100; }
+  .admin-label { @apply text-[11px] font-semibold uppercase tracking-wider text-steel-500 dark:text-steel-400; }
+  .admin-num   { @apply font-display tracking-tight; font-variant-numeric: tabular-nums; }
+
+  .admin-card  { @apply rounded-xl bg-white border border-steel-200 dark:bg-steel-800 dark:border-steel-700; }
+  .admin-card-pad { @apply admin-card p-4; }
+
+  .admin-pill  { @apply inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold tracking-tight; }
+  .admin-pill-neutral { @apply admin-pill; background:#F5F7FA; color:#33414F; border-color:#CBD3DD; }
+  .admin-pill-success { @apply admin-pill; background:rgba(42,207,128,.1); color:#1F7A4D; border-color:#8FE8C1; }
+  .admin-pill-alert   { @apply admin-pill; background:#FEF2F2; color:#B91C1C; border-color:#FECACA; }
+  .admin-pill-brand   { @apply admin-pill; background:#FFF4ED; color:#BF3700; border-color:#FFC9A8; }
+  .admin-pill-warn    { @apply admin-pill; background:rgba(245,165,36,.1); color:#A86C0B; border-color:#F9C059; }
+
+  .admin-dot   { @apply inline-block h-1.5 w-1.5 rounded-full; }
+
+  /* Divisor sutil entre blocos */
+  .admin-divider { @apply border-t border-steel-200 dark:border-steel-700; }
 
   /* Bottom nav safe area for iPhone home indicator */
   .safe-area-inset-bottom {

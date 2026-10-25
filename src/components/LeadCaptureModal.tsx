@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react';
+import { leadAttributionFields } from '@/lib/marketingAttribution';
 import { supabase } from '@/lib/supabase';
 
 type Intent = 'mechanic' | 'workshop';
@@ -64,6 +65,7 @@ export function LeadCaptureModal({ intent, onComplete, onClose }: Props) {
         consent,
         user_agent: navigator.userAgent.slice(0, 240),
         referrer:   document.referrer.slice(0, 240) || null,
+        ...leadAttributionFields(),
       });
     } catch { /* ignore */ }
     markLeadCaptured(intent);

@@ -89,7 +89,7 @@ export default function Landing() {
       </a>
 
       {/* ── 1. HEADER ── */}
-      <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+      <header className={`fixed inset-x-0 top-0 z-50 pt-[env(safe-area-inset-top)] transition-all duration-300 ${
         scrolled || menuOpen ? 'border-b border-steel-100 bg-white/90 shadow-sm backdrop-blur-xl' : 'bg-transparent'
       }`}>
         <Container className="flex h-16 items-center justify-between gap-4">
@@ -117,7 +117,7 @@ export default function Landing() {
         </Container>
 
         {menuOpen && (
-          <nav id="menu-mobile" aria-label="Menu" className="h-[calc(100dvh-4rem)] animate-fade-in overflow-y-auto border-t border-steel-100 bg-white lg:hidden">
+          <nav id="menu-mobile" aria-label="Menu" className="h-[calc(100dvh-4rem-env(safe-area-inset-top))] animate-fade-in overflow-y-auto border-t border-steel-100 bg-white lg:hidden">
             <Container className="flex flex-col py-2">
               {NAV.map(item => item.intent ? (
                 <button key={item.label} type="button" onClick={() => go(item.intent!)} className="flex min-h-[52px] items-center justify-between border-b border-steel-100 text-left text-lg font-semibold text-steel-900">
@@ -140,7 +140,7 @@ export default function Landing() {
 
       <main id="conteudo">
         {/* ── 2. HERO ── */}
-        <section ref={heroRef} className="relative overflow-hidden pb-12 pt-24 sm:pb-16 sm:pt-32 lg:pb-24 lg:pt-40" aria-labelledby="hero-title">
+        <section ref={heroRef} className="relative overflow-hidden pb-12 pt-[calc(6rem+env(safe-area-inset-top))] sm:pb-16 sm:pt-[calc(8rem+env(safe-area-inset-top))] lg:pb-24 lg:pt-[calc(10rem+env(safe-area-inset-top))]" aria-labelledby="hero-title">
           <div aria-hidden className="pointer-events-none absolute inset-0">
             <div className="absolute -right-40 -top-40 hidden h-[560px] w-[560px] rounded-full bg-brand-500/10 blur-3xl sm:block" />
             <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(255,92,10,0.12),transparent_70%)] sm:hidden" />

@@ -8,7 +8,7 @@ import { useOperator } from '@/lib/operators';
 import { ensureCatalogParts, partKey, partNameForVehicle } from '@/lib/parts';
 import { COMMISSION_COLS, RULE, commissionFor, pcts, type CommissionMech } from '@/lib/commission';
 import { OsCommission, useDraftCommission, type AutoCommission } from '@/components/cash/OsCommission';
-import { fixedFor, isExcluded, loadItemRules, type ItemRule } from '@/lib/commissionRules';
+import { isExcluded, itemExtra, loadItemRules, type ItemRule } from '@/lib/commissionRules';
 import type { Customer, OsItemKind, PaperImport, PaperQuoteExtracted, Vehicle, WorkshopMechanic } from '@/types/database';
 import type { EditOs } from '@/lib/importEdit';
 import ServiceTitleInput from './ServiceTitleInput';
@@ -242,8 +242,8 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
         if (g.parts.length || g.labor.stype === 'servico') { if (lab + prt > 0) { e.value += (lab + prt) * RULE.service / 100; e.base.push(`${RULE.service}% de ${fmtBRL(lab + prt)}`); } }
         else if (lab > 0) { e.value += lab * RULE.labor / 100; e.base.push(`${RULE.labor}% de ${fmtBRL(lab)}`); }
         for (const it of [g.labor, ...g.parts]) {
-          const fx = fixedFor(it.descricao, w, parseMoney(it.quantidade) || 0, itemRules);
-          if (fx > 0) { e.value += fx; e.base.push(`${fmtBRL(fx)} fixo (${it.descricao})`); }
+          const fx = itemExtra(it.descricao, w, parseMoney(it.quantidade) || 0, rowTotal(it), itemRules);
+          if (fx.value > 0) { e.value += fx.value; e.base.push(`${fx.label} (${it.descricao})`); }
         }
       } else {
         const p = pcts(m);

@@ -3,6 +3,8 @@
 export type Supplier = {
   id: string; workshop_id: string; name: string; cnpj: string | null; phone: string | null;
   contact: string | null; payment_days: number; notes: string | null; active: boolean;
+  /** Desconto de acordo nas peças das notas deste fornecedor (%) */
+  discount_percent?: number;
   created_at: string; updated_at: string;
 };
 

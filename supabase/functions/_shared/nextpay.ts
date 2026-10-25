@@ -60,6 +60,22 @@ export const pixCode = (c: NextpayCharge) => c.pix?.qrcode ?? c.pix?.qrCode ?? n
 
 /** externalRef das cobranças de demanda: job:<id>:<pix|card>:<ts> */
 export const jobRef = (jobId: string, method: 'pix' | 'card') => `job:${jobId}:${method}:${Date.now()}`;
+/** externalRef das cobranças de multa: fee:<id em nextpay_fee_charges>:<pix|card>:<ts> */
+export const feeRef = (rowId: string, method: 'pix' | 'card') => `fee:${rowId}:${method}:${Date.now()}`;
+export function parseFeeRef(ref: string | null | undefined) {
+  const m = /^fee:([0-9a-f-]{36}):(pix|card):/.exec(ref ?? '');
+  return m ? { rowId: m[1], method: m[2] as 'pix' | 'card' } : null;
+}
+
+/** Valor no cartão com a taxa repassada: total ÷ (1 − taxa), quando card_fee_passthrough está ligado */
+export async function cardTotal(admin: SupabaseClient, base: number): Promise<number> {
+  const { data } = await admin.from('app_settings').select('key, value').in('key', ['card_fee_passthrough', 'card_fee_percent']);
+  const cfg = Object.fromEntries((data ?? []).map(s => [s.key, s.value]));
+  const pct = Number(String(cfg.card_fee_percent ?? '4.20').replace(',', '.')) || 0;
+  const on = cfg.card_fee_passthrough === 'true' && pct > 0 && pct < 50;
+  return on ? Math.round((base / (1 - pct / 100)) * 100) / 100 : base;
+}
+
 export function parseJobRef(ref: string | null | undefined) {
   const m = /^job:([0-9a-f-]{36}):(pix|card):/.exec(ref ?? '');
   return m ? { jobId: m[1], method: m[2] as 'pix' | 'card' } : null;
