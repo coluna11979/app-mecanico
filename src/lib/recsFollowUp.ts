@@ -72,3 +72,42 @@ export async function loadRecFollowUps(wid: string): Promise<RecFollow[]> {
     return a.recommended_at.localeCompare(b.recommended_at);
   });
 }
+
+/** Tudo o que um cliente pediu para lembrar: um contato só para fechar junto */
+export type ClientRecs = {
+  key: string;
+  customer_id: string | null;
+  customer: RecFollow['customer'];
+  items: RecFollow[];
+  /** Soma do que foi orçado (itens sem valor não entram) */
+  total: number;
+  /** Itens sem valor orçado */
+  withoutPrice: number;
+  /** Data de lembrar mais próxima (ou vencida) entre os itens */
+  nextRemind: Date | null;
+  /** Veículos citados (um cliente pode ter mais de um carro) */
+  cars: string[];
+};
+
+const carOfRec = (r: RecFollow) => [[r.vehicle?.make, r.vehicle?.model].filter(Boolean).join(' '), r.vehicle?.plate].filter(Boolean).join(' · ');
+
+/** Agrupa por cliente. Quem tem data mais próxima/vencida vem primeiro. */
+export function groupByClient(list: RecFollow[]): ClientRecs[] {
+  const map = new Map<string, ClientRecs>();
+  for (const r of list) {
+    const key = r.customer_id ?? `avulso-${r.id}`;
+    const g = map.get(key) ?? { key, customer_id: r.customer_id, customer: r.customer, items: [], total: 0, withoutPrice: 0, nextRemind: null, cars: [] };
+    g.items.push(r);
+    if (r.price) g.total += r.price; else g.withoutPrice += 1;
+    if (r.remind && (!g.nextRemind || r.remind < g.nextRemind)) g.nextRemind = r.remind;
+    const c = carOfRec(r);
+    if (c && !g.cars.includes(c)) g.cars.push(c);
+    map.set(key, g);
+  }
+  return [...map.values()].sort((a, b) => {
+    if (a.nextRemind && b.nextRemind) return a.nextRemind.getTime() - b.nextRemind.getTime();
+    if (a.nextRemind) return -1;
+    if (b.nextRemind) return 1;
+    return a.items[0].recommended_at.localeCompare(b.items[0].recommended_at);
+  });
+}

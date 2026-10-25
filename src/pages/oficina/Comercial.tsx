@@ -13,8 +13,8 @@ import PeriodPicker, { PRESETS, usePeriod, type Preset } from '@/components/Peri
 import { useFeature, useModuleAllows } from '@/lib/modules';
 import SiteStats from '@/components/commercial/SiteStats';
 import ComercialInsights from '@/components/commercial/ComercialInsights';
-import { RecCard, RecRow } from '@/components/commercial/RecCards';
-import { loadRecFollowUps, type RecFollow } from '@/lib/recsFollowUp';
+import { ClientCard, ClientRow } from '@/components/commercial/RecCards';
+import { groupByClient, loadRecFollowUps, type ClientRecs, type RecFollow } from '@/lib/recsFollowUp';
 import { ShopGoalCard } from '@/components/goals/Goals';
 import { toast } from '@/components/ui/Toast';
 import {
@@ -132,7 +132,8 @@ export default function Comercial() {
 
   /* Lembrar depois = recomendações pendentes (todas, sem depender do período): data de lembrar, valor orçado e como fechar */
   const [recs, setRecs] = useState<RecFollow[] | null>(null);
-  const [waRec, setWaRec] = useState<RecFollow | null>(null);
+  const [waRec, setWaRec] = useState<ClientRecs | null>(null);
+  const recClients = useMemo(() => (recs ? groupByClient(recs) : null), [recs]);
   const reloadRecs = useCallback(() => { if (wid) loadRecFollowUps(wid).then(setRecs).catch(() => setRecs([])); }, [wid]);
   useEffect(() => { reloadRecs(); }, [reloadRecs]);
   async function closeRec(r: RecFollow, status: 'done' | 'dismissed') {
@@ -263,7 +264,7 @@ export default function Comercial() {
                 <Board
                   leads={inboxOn ? leads : null} leadsValue={leadsValue} fn={fn}
                   canOpen={canOpen} openLink={openLink} onWa={setWa} onDiscardLead={discardLead}
-                  recs={recs} recsValue={recsValue} recHandlers={recHandlers}
+                  recClients={recClients} recsValue={recsValue} recHandlers={recHandlers}
                 />
               </div>
             ) : null}
@@ -305,7 +306,7 @@ export default function Comercial() {
                 )}
                 <button onClick={() => setStage('lembrar')}
                   className={`rounded-full px-3 py-1 border transition ${stage === 'lembrar' ? 'bg-brand-600 text-white border-brand-600' : 'bg-brand-50 text-brand-700 border-brand-200'}`}>
-                  🔔 Lembrar depois · {recs ? recs.length : fn.lembrar.length} <span className="opacity-70">(retorno futuro, não é perda)</span>
+                  🔔 Lembrar depois · {recClients ? recClients.length : fn.lembrar.length} <span className="opacity-70">(retorno futuro, não é perda)</span>
                 </button>
                 </div>
               </div>
@@ -335,8 +336,8 @@ export default function Comercial() {
             {/* Lista da etapa */}
             <div className="card !p-0 overflow-hidden">
               <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-steel-100">
-                <div className="font-bold text-sm">{stage === 'interessado' ? '💬 Interessados' : STAGE_LABEL[stage]} <span className="text-steel-400 font-medium">({stage === 'interessado' ? leads.length : stage === 'lembrar' && recs ? recs.length : list.length})</span>
-                  <span className="text-xs font-normal text-steel-400 ml-2">{stage === 'interessado' ? 'pediram preço no WhatsApp, ainda sem orçamento' : stage === 'lembrar' && recs ? 'todas as pendentes, pela data de lembrar' : stage === 'montando' || stage === 'aguardando' ? 'situação de agora' : 'no período'}</span>
+                <div className="font-bold text-sm">{stage === 'interessado' ? '💬 Interessados' : STAGE_LABEL[stage]} <span className="text-steel-400 font-medium">({stage === 'interessado' ? leads.length : stage === 'lembrar' && recClients ? recClients.length : list.length})</span>
+                  <span className="text-xs font-normal text-steel-400 ml-2">{stage === 'interessado' ? 'pediram preço no WhatsApp, ainda sem orçamento' : stage === 'lembrar' && recClients ? 'por cliente, pela data de lembrar mais próxima' : stage === 'montando' || stage === 'aguardando' ? 'situação de agora' : 'no período'}</span>
                 </div>
                 <button onClick={() => setMoreFilters(v => !v)} className={`text-xs font-semibold text-steel-600 hover:text-steel-900 ${leadsOnly ? 'hidden' : ''}`}>
                   {moreFilters ? 'Menos filtros' : 'Mais filtros'}{(origin !== 'all' || mechanic !== 'all') && ' •'}
@@ -367,11 +368,11 @@ export default function Comercial() {
                     {leads.map(l => <LeadRow key={l.id} l={l} canOpen={canOpen} onDiscard={() => discardLead(l)} />)}
                   </ul>
                 )
-              ) : stage === 'lembrar' && recs ? (
-                recs.length === 0 ? (
+              ) : stage === 'lembrar' && recClients ? (
+                recClients.length === 0 ? (
                   <p className="px-5 py-8 text-sm text-steel-500 text-center">Nenhuma recomendação pendente. Quando um cliente pedir para lembrar depois, aparece aqui.</p>
                 ) : (
-                  <ul className="divide-y divide-steel-100">{recs.map(r => <RecRow key={r.id} r={r} h={recHandlers} />)}</ul>
+                  <ul className="divide-y divide-steel-100">{recClients.map(g => <ClientRow key={g.key} g={g} h={recHandlers} />)}</ul>
                 )
               ) : list.length === 0 ? (
                 <p className="px-5 py-8 text-sm text-steel-500 text-center">
@@ -396,8 +397,9 @@ export default function Comercial() {
         <SendWhatsAppModal phone={waRec.customer?.phone ?? ''} customerId={waRec.customer_id} customerName={waRec.customer?.full_name ?? null} sectorKind="comercial"
           messages={[{ key: 'lembrar', label: 'Lembrar do serviço', text:
             `Olá${waRec.customer?.full_name ? ` ${waRec.customer.full_name.trim().split(' ')[0]}` : ''}! Aqui é da ${shop}. ` +
-            `Você pediu para lembrarmos de ${waRec.name}${[waRec.vehicle?.make, waRec.vehicle?.model].filter(Boolean).length ? ` do seu ${[waRec.vehicle?.make, waRec.vehicle?.model].filter(Boolean).join(' ')}` : ''}. ` +
-            `${waRec.price ? `O valor que passamos foi ${fmtBRL(waRec.price)}. ` : ''}Quer que a gente reserve um horário para fazer?` }]}
+            `Você pediu para lembrarmos destes serviços${waRec.cars.length === 1 ? ` do seu ${waRec.cars[0].split(' · ')[0]}` : ''}:\n` +
+            waRec.items.map(i => `• ${i.name}${i.price ? ` — ${fmtBRL(i.price)}` : ''}`).join('\n') +
+            `${waRec.total > 0 && waRec.items.length > 1 ? `\nTotal: ${fmtBRL(waRec.total)}` : ''}\nQuer que a gente reserve um horário para fazer?` }]}
           onClose={() => setWaRec(null)} />
       )}
 
@@ -526,9 +528,9 @@ const COLUMNS: { key: Stage; title: string; bar: string; hint: string; empty: st
   { key: 'lembrar',    title: 'Lembrar depois',     bar: 'bg-brand-500',   hint: 'no período', empty: 'Nada para lembrar' },
 ];
 
-function Board({ leads, leadsValue, fn, canOpen, openLink, onWa, onDiscardLead, recs, recsValue, recHandlers }: {
+function Board({ leads, leadsValue, fn, canOpen, openLink, onWa, onDiscardLead, recClients, recsValue, recHandlers }: {
   leads: Lead[] | null; leadsValue: number; fn: Fn;
-  recs: RecFollow[] | null; recsValue: number; recHandlers: Parameters<typeof RecCard>[0]['h'];
+  recClients: ClientRecs[] | null; recsValue: number; recHandlers: Parameters<typeof ClientCard>[0]['h'];
   canOpen: (p: string) => boolean; openLink: (o: Opp) => string;
   onWa: (o: Opp) => void; onDiscardLead: (l: Lead) => void;
 }) {
@@ -540,9 +542,9 @@ function Board({ leads, leadsValue, fn, canOpen, openLink, onWa, onDiscardLead, 
           {leads.map(l => <LeadCard key={l.id} l={l} canOpen={canOpen} onDiscard={() => onDiscardLead(l)} />)}
         </Column>
       )}
-      {COLUMNS.map(c => c.key === 'lembrar' && recs ? (
-        <Column key={c.key} title={c.title} bar={c.bar} n={recs.length} value={recsValue} hint="pela data de lembrar" empty={c.empty}>
-          {recs.map(r => <RecCard key={r.id} r={r} h={recHandlers} />)}
+      {COLUMNS.map(c => c.key === 'lembrar' && recClients ? (
+        <Column key={c.key} title={c.title} bar={c.bar} n={recClients.length} value={recsValue} hint="um card por cliente" empty={c.empty}>
+          {recClients.map(g => <ClientCard key={g.key} g={g} h={recHandlers} />)}
         </Column>
       ) : (
         <Column key={c.key} title={c.title} bar={c.bar} n={fn[c.key].length} value={fn.values[c.key]} hint={c.hint} empty={c.empty}>
