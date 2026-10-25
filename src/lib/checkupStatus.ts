@@ -84,15 +84,16 @@ export type Situation =
   | 'enviado'        // enviado, cliente ainda não abriu
   | 'cliente_viu'    // abriu e não respondeu
   | 'aprovado'       // virou OS
+  | 'os_cancelada'   // aprovado, mas a OS que nasceu dele foi cancelada
   | 'respondido'     // respondeu sem aprovar nada agora
   | 'refeito';       // substituído por um check-up novo (replaced_by)
 
 type CkFunnel = Pick<VehicleCheckup, 'status' | 'quote_sent_at' | 'customer_viewed_at' | 'customer_responded_at' | 'sale_os_id' | 'replaced_by'>;
 
-export function situationOf(c: CkFunnel, answered: number): Situation {
+export function situationOf(c: CkFunnel, answered: number, saleOsStatus?: string | null): Situation {
   if (c.replaced_by) return 'refeito';
   if (c.status !== 'completed') return answered > 0 ? 'inspecionando' : 'nao_iniciado';
-  if (c.sale_os_id) return 'aprovado';
+  if (c.sale_os_id) return saleOsStatus === 'cancelled' ? 'os_cancelada' : 'aprovado';
   if (c.customer_responded_at) return 'respondido';
   if (c.customer_viewed_at) return 'cliente_viu';
   if (c.quote_sent_at) return 'enviado';
@@ -101,7 +102,7 @@ export function situationOf(c: CkFunnel, answered: number): Situation {
 
 export function bucketOf(s: Situation): Bucket {
   if (s === 'enviado' || s === 'cliente_viu') return 'aguardando';
-  if (s === 'aprovado' || s === 'respondido' || s === 'refeito') return 'finalizado';
+  if (s === 'aprovado' || s === 'os_cancelada' || s === 'respondido' || s === 'refeito') return 'finalizado';
   return 'andamento';
 }
 
@@ -113,6 +114,7 @@ export const SITUATION_LABEL: Record<Situation, string> = {
   enviado:       'Enviado ao cliente',
   cliente_viu:   'Cliente viu · sem resposta',
   aprovado:      'Aprovado · virou OS',
+  os_cancelada:  'Aprovado · OS cancelada',
   respondido:    'Respondido · nada aprovado agora',
   refeito:       'Refeito',
 };

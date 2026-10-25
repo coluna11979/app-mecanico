@@ -84,7 +84,8 @@ export default function WorkshopCheckups() {
     ]);
     if (c.error) toast.error('Não foi possível carregar os check-ups');
     const rows = c.data;
-    const withCheckup = new Set(rows.map(r => r.service_order_id).filter(Boolean));
+    // OS que já tem check-up: a de onde ele partiu e a que nasceu da aprovação dele (mesmo atendimento, outra fase)
+    const withCheckup = new Set(rows.flatMap(r => [r.service_order_id, r.sale_os_id]).filter(Boolean));
     setList(rows);
     setScheduled(((s.data as unknown as ScheduledOs[]) ?? []).filter(o => !withCheckup.has(o.id)));
     setMechs(m.data ?? []);
