@@ -16,12 +16,15 @@ type Step = { key: string; name: string; kit: Suggestion[] };
  * Passo 3: peças do serviço — opcional: kit cadastrado, estoque ou descrição livre (o cliente costuma pedir a peça descrita).
  * Fica aberto para adicionar vários itens seguidos.
  */
-export default function CatalogPanel({ suggestions, services, itemCount, total, onPick, kitFor, vehicleModel, osHasVehicle, onVehicle, loadModels, priceFor, onClose }: {
+export default function CatalogPanel({ suggestions, services, itemCount, total, partsAsCost, showCost, onPick, kitFor, vehicleModel, osHasVehicle, onVehicle, loadModels, priceFor, onClose }: {
   suggestions: Suggestion[];
   /** Serviços já na OS (destino das peças): key + nome */
   services: { key: string; name: string }[];
   itemCount: number;
   total: number;
+  /** Peças entram dentro de um item: mostra o custo (e não o preço de venda) */
+  partsAsCost?: boolean;
+  showCost?: boolean;
   /** targetKey = serviço que recebe a peça ('' = peça avulsa/sem destino) */
   onPick: (s: Suggestion, targetKey: string) => string | void;
   /** Peças do kit do serviço (cadastradas na Tabela de serviços); vazio = sem kit */
@@ -36,6 +39,9 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   priceFor: (s: Suggestion) => { price: number; count: number } | null;
   onClose: () => void;
 }) {
+  const partLabel = (p: Suggestion) => (partsAsCost
+    ? (showCost ? (p.cost ? `custo ${fmtBRL(p.cost)}` : 'sem custo') : '')
+    : (p.unit_price > 0 ? fmtBRL(p.unit_price) : 'a definir'));
   const [tab, setTab] = useState<Tab>('servico');
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<string | null>(null);
@@ -226,7 +232,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
                               {p.part_id ? <> · <span className={out ? 'text-alert-600 font-semibold' : ''}>{fmtQty(p.stock)} em estoque</span></> : ' · peça avulsa'}
                             </span>
                           </span>
-                          <span className="text-sm font-bold text-steel-900 shrink-0">{p.unit_price > 0 ? fmtBRL(p.unit_price) : 'a definir'}</span>
+                          <span className="text-sm font-bold text-steel-900 shrink-0">{partLabel(p)}</span>
                           <span className={`h-10 w-10 shrink-0 rounded-xl grid place-items-center text-lg font-bold ${done ? 'bg-signal-500 text-white' : 'bg-brand-50 text-brand-700'}`}>{done ? '✓' : '+'}</span>
                         </button>
                       </li>
@@ -253,7 +259,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
                         className="w-full px-3 py-2 flex items-center gap-3 text-left text-sm hover:bg-brand-50 disabled:opacity-60">
                         <span className="flex-1 min-w-0 truncate">{p.description}{p.code && <span className="text-steel-400"> · {p.code}</span>}</span>
                         <span className="text-[11px] text-steel-500 shrink-0">{fmtQty(p.stock)} {p.unit} em estoque</span>
-                        <strong className="shrink-0">{p.unit_price > 0 ? fmtBRL(p.unit_price) : 'a definir'}</strong>
+                        <strong className="shrink-0">{partLabel(p)}</strong>
                         <span className="shrink-0 text-brand-700 font-bold">{added.includes(p.description) ? '✓' : '+'}</span>
                       </button>
                     </li>

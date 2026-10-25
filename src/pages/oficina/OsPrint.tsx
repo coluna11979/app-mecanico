@@ -29,7 +29,8 @@ export default function OsPrint() {
       ]);
       const row = o as OsRow | null;
       setOs(row);
-      setItems((its as ServiceOrderItem[]) ?? []);
+      // Peça só de custo (sem preço de venda, dentro de um serviço) é interna: o cliente não vê
+      setItems(((its as ServiceOrderItem[]) ?? []).filter(i => !(i.kind === 'part' && Number(i.unit_price) === 0)));
       if (row) {
         const known = workshops.find(w => w.id === row.workshop_id);
         if (known) setShop(known);

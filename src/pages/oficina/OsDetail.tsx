@@ -631,7 +631,7 @@ export default function OsDetail() {
 
                 {/* Relógio por responsável (cada um inicia/pausa/termina a sua parte) */}
                 {['approved', 'in_progress', 'completed'].includes(os.status) && (
-                  <ResponsibleTimers key={`${os.id}-${items.map(i => `${i.id}${i.executor}${i.workshop_mechanic_id}`).join()}`}
+                  <ResponsibleTimers workshopId={os.workshop_id} onItemsChanged={load} key={`${os.id}-${items.map(i => `${i.id}${i.executor}${i.workshop_mechanic_id}`).join()}`}
                     osId={os.id} status={os.status} items={items} team={team}
                     osMechanicId={os.workshop_mechanic_id} osExecutor={os.executor} readOnly={os.status === 'completed'} onlyMechanicId={mech ? access.mechanicId : null}
                     onStartOs={() => changeStatus('in_progress', { skipConfirm: true })}
