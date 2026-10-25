@@ -97,7 +97,12 @@ export function sinceLabel(r: Row) {
     case 'falta_enviar':  return `Pronto ${t}`;
     case 'enviado':       return `Enviado ${t}`;
     case 'cliente_viu':   return `Cliente viu ${t}`;
-    case 'aprovado':      return r.needsResponsible ? `Aprovado ${t} · OS sem responsável` : `Aprovado ${t}`;
+    case 'aprovado': {
+      const when = r.c.customer_scheduled_at
+        ? ` · agendado ${new Date(r.c.customer_scheduled_at).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })} às ${new Date(r.c.customer_scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+        : '';
+      return (r.needsResponsible ? `Aprovado ${t} · OS sem responsável` : `Aprovado ${t}`) + when;
+    }
     case 'os_cancelada':  return `Aprovado ${t} · a OS foi cancelada`;
     case 'respondido':    return `Respondeu ${t}`;
     case 'refeito':       return `Refeito ${t}`;
