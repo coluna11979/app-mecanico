@@ -36,6 +36,8 @@ const looksLikePlate = (s: string) => /^[A-Z]{3}[0-9][A-Z0-9]?[0-9]{0,2}$/.test(
 
 export interface NewOsPreset {
   title?: string;
+  /** Vários serviços já escolhidos (ex.: recomendações do cliente) */
+  titles?: string[];
   category?: string;
   free?: boolean;       // check-up gratuito
   schedule?: boolean;   // abrir já em "Agendar"
@@ -80,7 +82,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   const [lastKm, setLastKm]     = useState<number | null>(null);
 
   // 2. Serviços (vários)
-  const [services, setServices] = useState<string[]>(() => preset?.title ? [preset.title] : []);
+  const [services, setServices] = useState<string[]>(() => preset?.titles?.length ? preset.titles : preset?.title ? [preset.title] : []);
   const [category, setCategory] = useState(preset?.category ?? '');
   const [custom, setCustom]     = useState('');
   const [report, setReport]     = useState('');
