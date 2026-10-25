@@ -114,7 +114,7 @@ export default function ServiceOrders() {
   const newForVehicle = searchParams.get('veiculo');
   useEffect(() => {
     if (!newForCustomer) return;
-    setNewOs({ customerId: newForCustomer, vehicleId: newForVehicle });
+    setNewOs({ customerId: newForCustomer, vehicleId: newForVehicle, title: searchParams.get('servico') ?? undefined });
     nav('/oficina/os', { replace: true });
   }, [newForCustomer, newForVehicle, nav]);
 
