@@ -4,6 +4,8 @@ import { supabase } from './supabase';
 /** "Para você": parceiros (benefícios) e artigos (conteúdo) dos painéis. */
 
 export type Audience = 'workshop' | 'mechanic' | 'all';
+/** Artigo pode ainda ficar só no blog público, fora dos painéis. */
+export type ArticleAudience = Audience | 'blog';
 
 export interface Partner {
   id: string;
@@ -26,7 +28,7 @@ export interface Partner {
 
 export interface Article {
   id: string;
-  audience: Audience;
+  audience: ArticleAudience;
   slug: string;
   title: string;
   summary: string | null;
@@ -39,11 +41,19 @@ export interface Article {
   reads: number;
   created_at: string;
   updated_at: string;
+  public?: boolean;                 // aparece no blog público (/blog)
+  origin?: 'manual' | 'ia';
+  review_status?: 'aguardando_revisao' | 'revisado' | null;
+  social_caption?: string | null;
+  cover_query?: string | null;     // busca de foto sugerida pela IA
+  cover_credit?: string | null;    // "Foto: Fulano / Pixabay"
 }
 
 export const AUDIENCE_LABEL: Record<Audience, string> = {
   mechanic: '🔧 Mecânicos', workshop: '🏭 Oficinas', all: '👥 Todos',
 };
+
+export const ARTICLE_AUDIENCE_LABEL: Record<ArticleAudience, string> = { ...AUDIENCE_LABEL, blog: '🌐 Só no blog' };
 
 export const PARTNER_CATEGORIES: { v: string; label: string; emoji: string }[] = [
   { v: 'autopecas',   label: 'Autopeças',    emoji: '🔩' },
@@ -55,12 +65,14 @@ export const PARTNER_CATEGORIES: { v: string; label: string; emoji: string }[] =
   { v: 'outros',      label: 'Outros',       emoji: '🎁' },
 ];
 
-export const ARTICLE_CATEGORIES: { v: string; label: string }[] = [
-  { v: 'dicas',     label: 'Dicas' },
-  { v: 'renda',     label: 'Ganhar mais' },
-  { v: 'gestao',    label: 'Gestão da oficina' },
-  { v: 'tecnica',   label: 'Técnica' },
-  { v: 'novidades', label: 'Novidades do app' },
+export const ARTICLE_CATEGORIES: { v: string; label: string; emoji: string; desc: string }[] = [
+  { v: 'gestao',      label: 'Gestão da oficina',      emoji: '📊', desc: 'Agenda, organização, custos e rotina da oficina.' },
+  { v: 'atendimento', label: 'Atendimento ao cliente', emoji: '🤝', desc: 'Orçamento, comunicação e como fazer o cliente voltar.' },
+  { v: 'equipe',      label: 'Equipe e mão de obra',   emoji: '👥', desc: 'Contratar, montar a equipe e chamar reforço na hora certa.' },
+  { v: 'renda',       label: 'Ganhar mais',            emoji: '💰', desc: 'Renda extra e carreira para mecânicos.' },
+  { v: 'tecnica',     label: 'Técnica',                emoji: '🔧', desc: 'Boas práticas de serviço, diagnóstico e segurança.' },
+  { v: 'dicas',       label: 'Dicas rápidas',          emoji: '💡', desc: 'Dicas curtas para o dia a dia.' },
+  { v: 'novidades',   label: 'Novidades do app',       emoji: '🚀', desc: 'O que há de novo no MecânicoApp.' },
 ];
 
 export const partnerCategory = (v: string) => PARTNER_CATEGORIES.find(c => c.v === v) ?? PARTNER_CATEGORIES[PARTNER_CATEGORIES.length - 1];
@@ -79,11 +91,16 @@ export async function loadPartners() {
   return (data ?? []) as Partner[];
 }
 
-export async function loadArticles() {
+/**
+ * Artigos do painel de quem está logado. O blog público também é legível por
+ * quem está logado, então filtra aqui: nada de "só no blog" nem do outro público.
+ */
+export async function loadArticles(role?: string | null) {
   const { data } = await supabase.from('panel_articles')
     .select('id, audience, slug, title, summary, category, cover_url, published_at, featured, reads, active, created_at, updated_at, body')
     .order('featured', { ascending: false }).order('published_at', { ascending: false });
-  return (data ?? []) as Article[];
+  return ((data ?? []) as Article[]).filter(a =>
+    a.audience !== 'blog' && (a.audience === 'all' || !(role === 'workshop' || role === 'mechanic') || a.audience === role));
 }
 
 export const readMinutes = (body: string) => Math.max(1, Math.round(body.split(/\s+/).filter(Boolean).length / 200));

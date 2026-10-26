@@ -1,3 +1,4 @@
+import ArticleCover from '@/components/paraVoce/ArticleCover';
 import { ReactNode, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
@@ -7,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { ArticleCard, PartnerCard } from '@/components/paraVoce/Cards';
 import {
-  type Article, type Partner, PARTNER_CATEGORIES, articleCategory, contentEvent,
+  type Article, type Partner, ARTICLE_CATEGORIES, PARTNER_CATEGORIES, articleCategory, contentEvent,
   loadArticles, loadPartners, readMinutes, renderArticleBody,
 } from '@/lib/paraVoce';
 
@@ -21,19 +22,22 @@ function RoleLayout({ children }: { children: ReactNode }) {
 
 /** "Para você": todos os benefícios de parceiros e os artigos, com filtro. */
 export default function ParaVoce() {
+  const { profile } = useAuth();
   const [params, setParams] = useSearchParams();
   const tab = params.get('aba') === 'conteudo' ? 'conteudo' : 'beneficios';
   const [partners, setPartners] = useState<Partner[] | null>(null);
   const [articles, setArticles] = useState<Article[] | null>(null);
   const [cat, setCat] = useState('');
+  const [artCat, setArtCat] = useState('');
 
   useEffect(() => {
     loadPartners().then(setPartners);
-    loadArticles().then(setArticles);
-  }, []);
+    loadArticles(profile?.role).then(setArticles);
+  }, [profile?.role]);
 
   const cats = PARTNER_CATEGORIES.filter(c => partners?.some(p => p.category === c.v));
   const shown = (partners ?? []).filter(p => !cat || p.category === cat);
+  const artCats = ARTICLE_CATEGORIES.filter(c => articles?.some(a => a.category === c.v));
 
   return (
     <RoleLayout>
@@ -67,9 +71,17 @@ export default function ParaVoce() {
 
       {tab === 'conteudo' && (
         articles === null ? <Loading /> : articles.length === 0 ? <Nothing text="Ainda não há artigos publicados. Em breve!" /> : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-6">
-            {articles.map(a => <ArticleCard key={a.id} a={a} />)}
-          </div>
+          <>
+            {artCats.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 lg:mx-0 lg:px-0 mb-2">
+                <Chip on={!artCat} onClick={() => setArtCat('')}>Todos</Chip>
+                {artCats.map(c => <Chip key={c.v} on={artCat === c.v} onClick={() => setArtCat(c.v)}>{c.emoji} {c.label}</Chip>)}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-6">
+              {articles.filter(a => !artCat || a.category === artCat).map(a => <ArticleCard key={a.id} a={a} />)}
+            </div>
+          </>
         )
       )}
     </RoleLayout>
@@ -97,9 +109,7 @@ export function ParaVoceArtigo() {
           className="text-sm font-semibold text-steel-500 hover:text-brand-600 min-h-[44px]">← Voltar</button>
         {a === undefined ? <Loading /> : a === null ? <Nothing text="Esse artigo não está disponível." /> : (
           <article>
-            {a.cover_url && <img src={a.cover_url} alt="" className="w-full rounded-2xl mb-4 max-h-80 object-cover" />}
-            <div className="text-xs font-bold uppercase tracking-wide text-brand-600">{articleCategory(a.category)}</div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-steel-900 mt-1 leading-tight">{a.title}</h1>
+            <div className="rounded-2xl overflow-hidden"><ArticleCover a={a} variant="hero" /></div>
             <div className="text-sm text-steel-400 mt-2">
               {new Date(a.published_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })} · {readMinutes(a.body)} min de leitura
             </div>

@@ -1,0 +1,179 @@
+// Rascunho semanal do blog escrito pela IA (Claude Haiku por padrão, pra custo baixo).
+// Quem chama: o pg_cron (toda segunda, header x-cron-secret) ou o admin ("Gerar rascunho agora").
+// Nunca publica: o artigo nasce inativo com review_status 'aguardando_revisao' e o admin revisa.
+// Tema: o próximo da pauta (blog_topics); sem pauta, a IA escolhe dentro dos assuntos da marca.
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+import Anthropic from 'npm:@anthropic-ai/sdk';
+import { zodOutputFormat } from 'npm:@anthropic-ai/sdk/helpers/zod';
+import { z } from 'npm:zod';
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
+
+const OLD_LOOK = /vintage|retro|antique|classic|oldtimer|old car|old-timer|sepia|black and white|monochrome|nostalg|rust|abandoned|ruin/i;
+
+const Article = z.object({
+  title: z.string().describe('Título direto, até 80 caracteres, sem clickbait'),
+  summary: z.string().describe('Resumo de 1 frase, até 150 caracteres'),
+  category: z.enum(['gestao', 'atendimento', 'equipe', 'renda', 'tecnica', 'dicas', 'novidades']),
+  audience: z.enum(['mechanic', 'workshop', 'all']),
+  body: z.string().describe('Texto do artigo no formato pedido'),
+  social_caption: z.string().describe('Legenda para Instagram com emojis moderados, chamada para o link na bio e 4 a 6 hashtags'),
+  illustration: z.string().describe('Código da ilustração da lista "Ilustrações disponíveis" que melhor combina com o tema; vazio se a lista não existir ou nenhuma combinar'),
+  cover_query: z.string().describe('3 a 6 palavras EM INGLÊS para buscar uma foto ATUAL que ilustre o tema: oficina mecânica moderna, clara e organizada, mecânico de uniforme trabalhando em carro recente (ex: "mechanic working modern car service"). Nunca carro antigo, vintage ou foto em preto e branco; sem marcas nem texto'),
+});
+
+const SYSTEM = `Você escreve o blog do MecânicoApp, plataforma brasileira que conecta oficinas mecânicas a mecânicos verificados para serviços sob demanda (o mecânico recebe chamados de oficinas da região, vê o valor antes e escolhe o que aceita; a oficina chama reforço só quando precisa, sem aumentar a folha fixa).
+
+Público: donos de oficina e mecânicos autônomos no Brasil. Tom: direto, prático, respeitoso, como um colega experiente. Português do Brasil, frases curtas.
+
+Regras:
+- Entre 600 e 900 palavras, com 3 a 5 subtítulos.
+- Conteúdo útil e verdadeiro. Não invente números, estatísticas, leis, preços ou depoimentos. Não prometa ganhos.
+- Não cite concorrentes. Fale do MecânicoApp no máximo em um parágrafo, perto do fim, sem exagero.
+- Formato do campo body (sem HTML, sem markdown além disto): parágrafos separados por uma linha em branco; subtítulo em linha própria começando com "## "; listas com linhas começando com "- "; **negrito** com moderação. Não repita o título no body.`;
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+
+  try {
+    const url = Deno.env.get('SUPABASE_URL')!;
+    const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+    const { data: settings } = await admin.from('app_settings').select('key, value')
+      .in('key', ['anthropic_api_key', 'ai_blog_model', 'blog_ai_enabled', 'blog_cron_secret', 'resend_api_key', 'resend_from_email', 'app_public_url', 'pixabay_api_key']);
+    const cfg: Record<string, string> = {};
+    for (const s of settings ?? []) cfg[s.key] = s.value;
+
+    // Autorização: segredo do cron OU admin logado
+    const fromCron = !!cfg.blog_cron_secret && req.headers.get('x-cron-secret') === cfg.blog_cron_secret;
+    if (!fromCron) {
+      const auth = req.headers.get('Authorization');
+      if (!auth) return json({ error: 'no auth' }, 401);
+      const userClient = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } } });
+      const { data: { user } } = await userClient.auth.getUser();
+      if (!user) return json({ error: 'unauthorized' }, 401);
+      const { data: p } = await admin.from('profiles').select('role').eq('id', user.id).maybeSingle();
+      if (p?.role !== 'admin') return json({ error: 'forbidden' }, 403);
+    } else if (cfg.blog_ai_enabled !== 'true') {
+      return json({ skipped: true, reason: 'desligado no admin' });
+    }
+
+    const apiKey = cfg.anthropic_api_key?.trim();
+    if (!apiKey) return json({ error: 'Chave da IA não configurada (Configurações > Inteligência Artificial).' }, 400);
+    const model = cfg.ai_blog_model?.trim() || 'claude-haiku-5-5';
+
+    // Tema: próximo da pauta, senão a IA escolhe evitando os títulos recentes
+    const { data: topic } = await admin.from('blog_topics').select('*').is('used_at', null)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle();
+    const { data: recent } = await admin.from('panel_articles').select('title').order('created_at', { ascending: false }).limit(25);
+    const recentTitles = (recent ?? []).map(r => `- ${r.title}`).join('\n') || '(nenhum ainda)';
+
+    // Biblioteca de ilustrações da marca (se existir, a capa sai daqui em vez de foto)
+    const { data: libRows } = await admin.from('brand_illustrations').select('id, url, slug, title, tags, audience, uses').eq('active', true);
+    const library = (libRows ?? []) as { id: string; url: string; slug: string | null; title: string; tags: string[]; audience: string; uses: number }[];
+    const libraryText = library.length
+      ? `\n\nIlustrações disponíveis para a capa (responda o código no campo illustration):\n${library.map(i => `- ${i.slug || i.id} | ${i.title} | público: ${i.audience} | temas: ${i.tags.join(', ')}`).join('\n')}`
+      : '';
+
+    const ask = topic
+      ? `Escreva um artigo sobre: "${topic.title}".\nPúblico principal: ${topic.audience === 'mechanic' ? 'mecânicos' : topic.audience === 'workshop' ? 'donos de oficina' : 'mecânicos e oficinas'}.${topic.notes ? `\nOrientações do editor: ${topic.notes}` : ''}`
+      : `Escolha você um tema novo e útil (alterne entre mecânicos e donos de oficina: renda extra, organização, atendimento ao cliente, gestão de equipe e agenda, boas práticas técnicas gerais, segurança no trabalho) e escreva o artigo.`;
+
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.parse({
+      model,
+      max_tokens: 8000,
+      system: SYSTEM,
+      output_config: { effort: 'low', format: zodOutputFormat(Article) },
+      messages: [{ role: 'user', content: `${ask}\n\nArtigos já publicados (não repita o tema nem o título):\n${recentTitles}${libraryText}` }],
+    });
+
+    if (response.stop_reason === 'refusal') return json({ error: 'A IA recusou o tema. Troque o tema da pauta.' }, 422);
+    const a = response.parsed_output;
+    if (!a) return json({ error: `Resposta incompleta da IA (${response.stop_reason}). Tente de novo.` }, 502);
+
+    // Endereço único
+    const base = a.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    // Até 70 caracteres sem quebrar palavra; tira "o/a/de…" soltos no fim
+    const words: string[] = [];
+    for (const w of base.split('-')) { if ([...words, w].join('-').length > 70) break; words.push(w); }
+    while (words.length > 3 && /^(o|a|os|as|e|de|da|do|das|dos|em|no|na|para|com|sem|um|uma)$/.test(words[words.length - 1])) words.pop();
+    let slug = words.join('-') || 'artigo';
+    for (let i = 2; i < 50; i++) {
+      const { data: hit } = await admin.from('panel_articles').select('id').eq('slug', slug).maybeSingle();
+      if (!hit) break;
+      slug = `${words.join('-') || 'artigo'}-${i}`;
+    }
+
+    // Capa: ilustração da biblioteca; senão, primeira foto moderna do Pixabay; senão, capa padrão
+    let cover_url: string | null = null, cover_credit: string | null = null;
+    const chosen = library.find(i => a.illustration && (i.slug === a.illustration.trim() || i.id === a.illustration.trim()));
+    if (chosen) {
+      cover_url = chosen.url;
+      await admin.from('brand_illustrations').update({ uses: (chosen.uses ?? 0) + 1 }).eq('id', chosen.id);
+    }
+    const pkey = cfg.pixabay_api_key?.trim();
+    if (!cover_url && pkey && a.cover_query) {
+      try {
+        const qs = new URLSearchParams({ key: pkey, q: a.cover_query.slice(0, 100), image_type: 'photo', safesearch: 'true', orientation: 'horizontal', min_width: '1200', per_page: '20', order: 'popular' });
+        const hits = ((await (await fetch(`https://pixabay.com/api/?${qs}`)).json()).hits ?? []) as { id: number; largeImageURL: string; user: string; tags: string }[];
+        const hit = hits.find(h => !OLD_LOOK.test(h.tags)) ?? null;  // fora carro antigo/sépia
+        if (hit) {
+          const img = await fetch(hit.largeImageURL);
+          const path = `capas/pixabay-${hit.id}.jpg`;
+          const { error: upErr } = await admin.storage.from('panel-banners').upload(path, new Uint8Array(await img.arrayBuffer()), { contentType: 'image/jpeg', upsert: true });
+          if (!upErr) {
+            cover_url = admin.storage.from('panel-banners').getPublicUrl(path).data.publicUrl;
+            cover_credit = `Foto: ${hit.user} / Pixabay`;
+          }
+        }
+      } catch { /* sem foto, segue com a capa padrão */ }
+    }
+
+    const { data: row, error } = await admin.from('panel_articles').insert({
+      audience: topic?.audience ?? a.audience,
+      slug, title: a.title.trim(), summary: a.summary.trim(), category: a.category,
+      body: a.body.trim(), social_caption: a.social_caption.trim(),
+      cover_query: a.cover_query.slice(0, 100), cover_url, cover_credit,
+      active: false, public: true, origin: 'ia', review_status: 'aguardando_revisao',
+      published_at: new Date().toISOString(),
+    }).select('id, title').single();
+    if (error) throw error;
+
+    if (topic) await admin.from('blog_topics').update({ used_at: new Date().toISOString(), article_id: row.id }).eq('id', topic.id);
+
+    // Aviso por e-mail aos admins (se o Resend estiver configurado)
+    if (cfg.resend_api_key) {
+      const { data: admins } = await admin.from('profiles').select('id').eq('role', 'admin');
+      const emails: string[] = [];
+      for (const ad of admins ?? []) {
+        const { data } = await admin.auth.admin.getUserById(ad.id);
+        if (data?.user?.email) emails.push(data.user.email);
+      }
+      const appUrl = (cfg.app_public_url || 'https://mecanicoapp.com.br').replace(/\/$/, '');
+      if (emails.length) {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cfg.resend_api_key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: `MecânicoApp <${cfg.resend_from_email || 'noreply@resend.dev'}>`,
+            to: emails,
+            subject: `📝 Rascunho do blog para revisar: ${row.title}`,
+            text: `O artigo da semana está pronto para revisão:\n\n${row.title}\n\nRevise e publique em: ${appUrl}/admin/marketing?aba=conteudo\n\nNada foi publicado ainda.`,
+          }),
+        }).catch(() => { /* aviso é opcional */ });
+      }
+    }
+
+    return json({ ok: true, id: row.id, title: row.title, model, usage: response.usage });
+  } catch (e) {
+    return json({ error: String(e instanceof Error ? e.message : e) }, 500);
+  }
+});

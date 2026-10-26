@@ -13,6 +13,7 @@ export interface PanelBanner {
   theme: BannerTheme;
   badge: BannerBadge | null;
   image_url: string | null;
+  illustration_url?: string | null;   // ilustração da biblioteca ao lado do texto
   starts_at: string;
   ends_at: string | null;
   active: boolean;
@@ -81,7 +82,7 @@ const THEME_STYLE: Record<BannerTheme, { box: CSSProperties; title: string; body
  * Sem imagem: desenho padrão com o tema da marca.
  */
 export function BannerCard({ b, onCta, onDismiss }: {
-  b: Pick<PanelBanner, 'title' | 'body' | 'cta_label' | 'cta_url' | 'theme' | 'badge' | 'image_url' | 'dismissible'>;
+  b: Pick<PanelBanner, 'title' | 'body' | 'cta_label' | 'cta_url' | 'theme' | 'badge' | 'image_url' | 'dismissible'> & { illustration_url?: string | null };
   onCta?: () => void;
   onDismiss?: () => void;
 }) {
@@ -114,6 +115,38 @@ export function BannerCard({ b, onCta, onDismiss }: {
           <img src={b.image_url} alt={b.title} className="w-full h-auto block" />
         </button>
         {close}
+      </div>
+    );
+  }
+
+  // Com ilustração: cartão editorial (imagem em cima no celular, ao lado no largo)
+  if (b.illustration_url) {
+    return (
+      <div ref={box} className={`relative rounded-2xl overflow-hidden ${wide ? 'flex items-stretch' : ''}`} style={s.box}>
+        <div className={wide ? 'w-[42%] shrink-0 order-2' : 'aspect-[16/9]'}>
+          <img src={b.illustration_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+        </div>
+        <div className={`min-w-0 flex-1 flex flex-col justify-center ${wide ? 'px-6 py-5 order-1' : 'px-5 py-4'}`}>
+          {badge && (
+            <span className={`self-start inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide rounded-full px-2.5 py-1 mb-2 ${s.badge}`}>
+              {badge.emoji} {badge.label}
+            </span>
+          )}
+          <div className={`font-display font-bold leading-snug ${wide ? 'text-xl' : 'text-lg'} ${s.title}`}>{b.title}</div>
+          {b.body && <p className={`text-sm mt-1 leading-relaxed ${s.body}`}>{b.body}</p>}
+          {hasCta && (
+            <button type="button" onClick={onCta}
+              className={`mt-3 self-start inline-flex items-center gap-1.5 rounded-xl px-4 min-h-[44px] text-sm font-bold ${s.cta}`}>
+              {b.cta_label} <span aria-hidden>→</span>
+            </button>
+          )}
+        </div>
+        {b.dismissible && onDismiss && (
+          <button onClick={onDismiss} aria-label="Fechar banner"
+            className="absolute top-1.5 right-1.5 h-10 w-10 grid place-items-center rounded-full bg-black/35 text-white">
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        )}
       </div>
     );
   }
