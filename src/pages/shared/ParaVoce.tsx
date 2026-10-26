@@ -98,15 +98,7 @@ export function ParaVoceArtigo() {
           className="text-sm font-semibold text-steel-500 hover:text-brand-600 min-h-[44px]">← Voltar</button>
         {a === undefined ? <Loading /> : a === null ? <Nothing text="Esse artigo não está disponível." /> : (
           <article>
-            {a.cover_url ? (
-              <>
-                <img src={a.cover_url} alt="" className="w-full rounded-2xl mb-4 max-h-80 object-cover" />
-                <div className="text-xs font-bold uppercase tracking-wide text-brand-600">{articleCategory(a.category)}</div>
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-steel-900 mt-1 leading-tight">{a.title}</h1>
-              </>
-            ) : (
-              <div className="h-64 sm:h-72 rounded-2xl overflow-hidden"><ArticleCover a={a} variant="hero" /></div>
-            )}
+            <div className="h-64 sm:h-72 rounded-2xl overflow-hidden"><ArticleCover a={a} variant="hero" /></div>
             <div className="text-sm text-steel-400 mt-2">
               {new Date(a.published_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })} · {readMinutes(a.body)} min de leitura
             </div>

@@ -43,6 +43,8 @@ export interface Article {
   origin?: 'manual' | 'ia';
   review_status?: 'aguardando_revisao' | 'revisado' | null;
   social_caption?: string | null;
+  cover_query?: string | null;     // busca de foto sugerida pela IA
+  cover_credit?: string | null;    // "Foto: Fulano / Pixabay"
 }
 
 export const AUDIENCE_LABEL: Record<Audience, string> = {

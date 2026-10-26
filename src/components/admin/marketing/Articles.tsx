@@ -1,3 +1,4 @@
+import CoverPicker from './CoverPicker';
 import ArticleCover from '@/components/paraVoce/ArticleCover';
 import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -109,13 +110,14 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
   const [tab, setTab] = useState<'escrever' | 'previa'>('escrever');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [picker, setPicker] = useState(false);
   const isNew = !initial.id;
   const up = <K extends keyof Draft>(k: K, v: Draft[K]) => setF(p => ({ ...p, [k]: v }));
 
   async function onCover(file?: File) {
     if (!file) return;
     setUploading(true);
-    try { up('cover_url', await uploadImage(file, 'artigos')); } catch (e) { toast.error((e as Error).message); }
+    try { up('cover_url', await uploadImage(file, 'artigos')); up('cover_credit', null); } catch (e) { toast.error((e as Error).message); }
     setUploading(false);
   }
 
@@ -128,7 +130,7 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
     setSaving(true);
     const row = {
       audience: f.audience, slug, title: f.title.trim(), summary: f.summary?.trim() || null, category: f.category,
-      cover_url: f.cover_url, body: f.body.trim(), published_at: f.published_at, active: publish, featured: f.featured,
+      cover_url: f.cover_url, cover_credit: f.cover_url ? f.cover_credit ?? null : null, cover_query: f.cover_query ?? null, body: f.body.trim(), published_at: f.published_at, active: publish, featured: f.featured,
       public: !!f.public, social_caption: f.social_caption?.trim() || null,
       review_status: f.origin === 'ia' ? (publish ? 'revisado' : f.review_status ?? 'aguardando_revisao') : null,
       updated_at: new Date().toISOString(),
@@ -158,14 +160,7 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
           <div className="space-y-4">
             <div className="max-w-[240px]"><ArticleCard a={{ ...f, title: f.title || 'Título do artigo' }} compact /></div>
             <article className="border border-steel-200 rounded-xl p-4">
-              {f.cover_url ? (
-                <>
-                  <img src={f.cover_url} alt="" className="w-full rounded-xl mb-3 max-h-56 object-cover" />
-                  <h1 className="text-2xl font-bold text-steel-900">{f.title || 'Título do artigo'}</h1>
-                </>
-              ) : (
-                <div className="h-56 rounded-xl overflow-hidden mb-2"><ArticleCover a={{ ...f, title: f.title || 'Título do artigo' }} variant="hero" /></div>
-              )}
+              <div className="h-56 rounded-xl overflow-hidden mb-2"><ArticleCover a={{ ...f, title: f.title || 'Título do artigo' }} variant="hero" /></div>
               {f.summary && <p className="text-steel-600 mt-2">{f.summary}</p>}
               <div className="mt-2">{renderArticleBody(f.body || 'O texto aparece aqui.')}</div>
             </article>
@@ -206,12 +201,23 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
                     onChange={e => { setSlugTouched(true); up('slug', slugify(e.target.value)); }} />
                 </div></div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <label className="btn-secondary text-sm cursor-pointer min-h-[40px] inline-flex items-center">
-                {uploading ? 'Enviando…' : f.cover_url ? 'Trocar capa' : 'Enviar imagem própria (opcional)'}
-                <input type="file" accept="image/*" className="hidden" onChange={e => { void onCover(e.target.files?.[0]); e.target.value = ''; }} />
-              </label>
-              {f.cover_url && <button type="button" className="text-sm text-steel-600" onClick={() => up('cover_url', null)}>Tirar capa</button>}
+            <div>
+              <div className="label">Capa</div>
+              <div className="h-40 rounded-xl overflow-hidden mb-2"><ArticleCover a={{ ...f, title: f.title || 'Título do artigo' }} /></div>
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <button type="button" className="btn-secondary text-sm min-h-[40px]" onClick={() => setPicker(v => !v)}>
+                  🖼️ {f.cover_url ? 'Trocar foto' : 'Escolher foto'}
+                </button>
+                <label className="btn-ghost text-sm cursor-pointer min-h-[40px] inline-flex items-center">
+                  {uploading ? 'Enviando…' : 'Subir foto própria'}
+                  <input type="file" accept="image/*" className="hidden" onChange={e => { void onCover(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                {f.cover_url && <button type="button" className="text-sm text-steel-600" onClick={() => { up('cover_url', null); up('cover_credit', null); }}>Usar capa sem foto</button>}
+              </div>
+              {picker && (
+                <CoverPicker articleId={initial.id} initialQuery={f.cover_query || ''}
+                  onPicked={r => { up('cover_url', r.url); up('cover_credit', r.credit); up('cover_query', r.query); setPicker(false); }} />
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="label">Data de publicação</label>

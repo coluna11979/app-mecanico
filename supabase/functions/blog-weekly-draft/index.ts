@@ -22,6 +22,7 @@ const Article = z.object({
   audience: z.enum(['mechanic', 'workshop', 'all']),
   body: z.string().describe('Texto do artigo no formato pedido'),
   social_caption: z.string().describe('Legenda para Instagram com emojis moderados, chamada para o link na bio e 4 a 6 hashtags'),
+  cover_query: z.string().describe('3 a 5 palavras EM INGLÊS para buscar uma foto real que ilustre o tema (ex: "mechanic repairing car engine"). Pessoas trabalhando, oficina, carro; sem marcas nem texto'),
 });
 
 const SYSTEM = `Você escreve o blog do MecânicoApp, plataforma brasileira que conecta oficinas mecânicas a mecânicos verificados para serviços sob demanda (o mecânico recebe chamados de oficinas da região, vê o valor antes e escolhe o que aceita; a oficina chama reforço só quando precisa, sem aumentar a folha fixa).
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
     const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
     const { data: settings } = await admin.from('app_settings').select('key, value')
-      .in('key', ['anthropic_api_key', 'ai_blog_model', 'blog_ai_enabled', 'blog_cron_secret', 'resend_api_key', 'resend_from_email', 'app_public_url']);
+      .in('key', ['anthropic_api_key', 'ai_blog_model', 'blog_ai_enabled', 'blog_cron_secret', 'resend_api_key', 'resend_from_email', 'app_public_url', 'pixabay_api_key']);
     const cfg: Record<string, string> = {};
     for (const s of settings ?? []) cfg[s.key] = s.value;
 
@@ -101,10 +102,30 @@ Deno.serve(async (req) => {
       slug = `${words.join('-') || 'artigo'}-${i}`;
     }
 
+    // Capa: primeira foto boa do Pixabay para a busca sugerida (sem chave, fica a capa padrão)
+    let cover_url: string | null = null, cover_credit: string | null = null;
+    const pkey = cfg.pixabay_api_key?.trim();
+    if (pkey && a.cover_query) {
+      try {
+        const qs = new URLSearchParams({ key: pkey, q: a.cover_query.slice(0, 100), image_type: 'photo', safesearch: 'true', orientation: 'horizontal', min_width: '1200', per_page: '5', order: 'popular' });
+        const hit = (await (await fetch(`https://pixabay.com/api/?${qs}`)).json()).hits?.[0];
+        if (hit) {
+          const img = await fetch(hit.largeImageURL);
+          const path = `capas/pixabay-${hit.id}.jpg`;
+          const { error: upErr } = await admin.storage.from('panel-banners').upload(path, new Uint8Array(await img.arrayBuffer()), { contentType: 'image/jpeg', upsert: true });
+          if (!upErr) {
+            cover_url = admin.storage.from('panel-banners').getPublicUrl(path).data.publicUrl;
+            cover_credit = `Foto: ${hit.user} / Pixabay`;
+          }
+        }
+      } catch { /* sem foto, segue com a capa padrão */ }
+    }
+
     const { data: row, error } = await admin.from('panel_articles').insert({
       audience: topic?.audience ?? a.audience,
       slug, title: a.title.trim(), summary: a.summary.trim(), category: a.category,
       body: a.body.trim(), social_caption: a.social_caption.trim(),
+      cover_query: a.cover_query.slice(0, 100), cover_url, cover_credit,
       active: false, public: true, origin: 'ia', review_status: 'aguardando_revisao',
       published_at: new Date().toISOString(),
     }).select('id, title').single();

@@ -113,15 +113,7 @@ export function BlogPost() {
         {a === undefined ? <div className="py-16 text-center text-steel-400">Carregando…</div>
           : a === null ? <div className="py-16 text-center text-steel-500">Esse artigo não está disponível.</div> : (
           <article className="mt-4">
-            {a.cover_url ? (
-              <>
-                <img src={a.cover_url} alt="" className="w-full rounded-2xl mb-5 max-h-96 object-cover" />
-                <div className="text-xs font-bold uppercase tracking-wide text-brand-600">{articleCategory(a.category)}</div>
-                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-steel-900 mt-1 leading-tight">{a.title}</h1>
-              </>
-            ) : (
-              <div className="h-72 sm:h-80 rounded-2xl overflow-hidden"><ArticleCover a={a} variant="hero" /></div>
-            )}
+            <div className="h-72 sm:h-80 rounded-2xl overflow-hidden"><ArticleCover a={a} variant="hero" /></div>
             <div className="text-sm text-steel-400 mt-2">
               {new Date(a.published_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })} · {readMinutes(a.body)} min de leitura
             </div>
