@@ -5,12 +5,14 @@ import Overview from '@/components/admin/marketing/Overview';
 import Campaigns from '@/components/admin/marketing/Campaigns';
 import Coupons from '@/components/admin/marketing/Coupons';
 import EmailBlasts from '@/components/admin/marketing/EmailBlasts';
+import Banners from '@/components/admin/marketing/Banners';
 
 const TABS = [
   { v: 'geral',     label: 'Visão geral', emoji: '📊' },
   { v: 'campanhas', label: 'Campanhas',   emoji: '📣' },
   { v: 'cupons',    label: 'Cupons',      emoji: '🎟️' },
   { v: 'email',     label: 'E-mail',      emoji: '✉️' },
+  { v: 'banners',   label: 'Banners nos painéis', emoji: '🪧' },
 ] as const;
 type Tab = typeof TABS[number]['v'];
 
@@ -60,6 +62,7 @@ export default function AdminMarketing() {
       {tab === 'campanhas' && <Campaigns />}
       {tab === 'cupons' && <Coupons />}
       {tab === 'email' && <EmailBlasts />}
+      {tab === 'banners' && <Banners />}
     </AdminLayout>
   );
 }

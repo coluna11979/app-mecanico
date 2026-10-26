@@ -1,3 +1,4 @@
+import PanelBanners from '@/components/banners/PanelBanners';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
@@ -375,6 +376,9 @@ export default function Inicio() {
             </div>
           )}
         </header>
+
+        {/* Banners do admin (novidades, promoções) */}
+        <PanelBanners />
 
         {!data || !v ? (
           <div className="space-y-4">
