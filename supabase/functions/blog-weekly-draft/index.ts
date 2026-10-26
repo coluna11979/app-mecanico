@@ -89,12 +89,16 @@ Deno.serve(async (req) => {
 
     // Endereço único
     const base = a.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'artigo';
-    let slug = base;
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    // Até 70 caracteres sem quebrar palavra; tira "o/a/de…" soltos no fim
+    const words: string[] = [];
+    for (const w of base.split('-')) { if ([...words, w].join('-').length > 70) break; words.push(w); }
+    while (words.length > 3 && /^(o|a|os|as|e|de|da|do|das|dos|em|no|na|para|com|sem|um|uma)$/.test(words[words.length - 1])) words.pop();
+    let slug = words.join('-') || 'artigo';
     for (let i = 2; i < 50; i++) {
       const { data: hit } = await admin.from('panel_articles').select('id').eq('slug', slug).maybeSingle();
       if (!hit) break;
-      slug = `${base}-${i}`;
+      slug = `${words.join('-') || 'artigo'}-${i}`;
     }
 
     const { data: row, error } = await admin.from('panel_articles').insert({

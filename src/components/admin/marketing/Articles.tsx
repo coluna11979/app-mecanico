@@ -1,3 +1,4 @@
+import ArticleCover from '@/components/paraVoce/ArticleCover';
 import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
@@ -157,8 +158,14 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
           <div className="space-y-4">
             <div className="max-w-[240px]"><ArticleCard a={{ ...f, title: f.title || 'Título do artigo' }} compact /></div>
             <article className="border border-steel-200 rounded-xl p-4">
-              {f.cover_url && <img src={f.cover_url} alt="" className="w-full rounded-xl mb-3 max-h-56 object-cover" />}
-              <h1 className="text-2xl font-bold text-steel-900">{f.title || 'Título do artigo'}</h1>
+              {f.cover_url ? (
+                <>
+                  <img src={f.cover_url} alt="" className="w-full rounded-xl mb-3 max-h-56 object-cover" />
+                  <h1 className="text-2xl font-bold text-steel-900">{f.title || 'Título do artigo'}</h1>
+                </>
+              ) : (
+                <div className="h-56 rounded-xl overflow-hidden mb-2"><ArticleCover a={{ ...f, title: f.title || 'Título do artigo' }} variant="hero" /></div>
+              )}
               {f.summary && <p className="text-steel-600 mt-2">{f.summary}</p>}
               <div className="mt-2">{renderArticleBody(f.body || 'O texto aparece aqui.')}</div>
             </article>
@@ -201,7 +208,7 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <label className="btn-secondary text-sm cursor-pointer min-h-[40px] inline-flex items-center">
-                {uploading ? 'Enviando…' : f.cover_url ? 'Trocar capa' : 'Enviar imagem de capa'}
+                {uploading ? 'Enviando…' : f.cover_url ? 'Trocar capa' : 'Enviar imagem própria (opcional)'}
                 <input type="file" accept="image/*" className="hidden" onChange={e => { void onCover(e.target.files?.[0]); e.target.value = ''; }} />
               </label>
               {f.cover_url && <button type="button" className="text-sm text-steel-600" onClick={() => up('cover_url', null)}>Tirar capa</button>}

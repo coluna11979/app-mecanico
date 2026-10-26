@@ -1,3 +1,4 @@
+import ArticleCover from '@/components/paraVoce/ArticleCover';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -72,10 +73,7 @@ export default function Blog() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
           {list.map(a => (
             <Link key={a.id} to={`/blog/${a.slug}`} className="group bg-white border border-steel-200 rounded-2xl overflow-hidden hover:border-brand-300 transition flex flex-col">
-              <div className="h-40 bg-gradient-to-br from-steel-800 to-steel-900 relative">
-                {a.cover_url ? <img src={a.cover_url} alt="" className="h-full w-full object-cover" /> : <div className="h-full grid place-items-center text-5xl opacity-70">📰</div>}
-                <span className="absolute top-3 left-3 text-[11px] font-bold uppercase tracking-wide bg-white/90 text-steel-800 rounded-full px-2 py-0.5">{articleCategory(a.category)}</span>
-              </div>
+              <div className="h-44"><ArticleCover a={a} /></div>
               <div className="p-4 flex flex-col flex-1">
                 <h2 className="font-bold text-lg text-steel-900 leading-snug group-hover:text-brand-700">{a.title}</h2>
                 {a.summary && <p className="text-sm text-steel-600 mt-1.5 line-clamp-3">{a.summary}</p>}
@@ -115,9 +113,15 @@ export function BlogPost() {
         {a === undefined ? <div className="py-16 text-center text-steel-400">Carregando…</div>
           : a === null ? <div className="py-16 text-center text-steel-500">Esse artigo não está disponível.</div> : (
           <article className="mt-4">
-            {a.cover_url && <img src={a.cover_url} alt="" className="w-full rounded-2xl mb-5 max-h-96 object-cover" />}
-            <div className="text-xs font-bold uppercase tracking-wide text-brand-600">{articleCategory(a.category)}</div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-steel-900 mt-1 leading-tight">{a.title}</h1>
+            {a.cover_url ? (
+              <>
+                <img src={a.cover_url} alt="" className="w-full rounded-2xl mb-5 max-h-96 object-cover" />
+                <div className="text-xs font-bold uppercase tracking-wide text-brand-600">{articleCategory(a.category)}</div>
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-steel-900 mt-1 leading-tight">{a.title}</h1>
+              </>
+            ) : (
+              <div className="h-72 sm:h-80 rounded-2xl overflow-hidden"><ArticleCover a={a} variant="hero" /></div>
+            )}
             <div className="text-sm text-steel-400 mt-2">
               {new Date(a.published_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })} · {readMinutes(a.body)} min de leitura
             </div>

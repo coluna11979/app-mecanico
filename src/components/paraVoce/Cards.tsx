@@ -1,3 +1,4 @@
+import ArticleCover from '@/components/paraVoce/ArticleCover';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from '@/components/ui/Toast';
@@ -50,18 +51,11 @@ export function PartnerCard({ p, preview = false }: { p: Partner; preview?: bool
 }
 
 /** Cartão de artigo: capa, categoria, título e tempo de leitura. */
-export function ArticleCard({ a, compact = false }: { a: Pick<Article, 'slug' | 'title' | 'summary' | 'category' | 'cover_url' | 'body'>; compact?: boolean }) {
+export function ArticleCard({ a, compact = false }: { a: Pick<Article, 'slug' | 'title' | 'summary' | 'category' | 'cover_url' | 'body' | 'audience'>; compact?: boolean }) {
   return (
     <Link to={`/para-voce/artigo/${a.slug}`}
       className="group bg-white border border-steel-200 rounded-2xl overflow-hidden flex flex-col h-full hover:border-brand-300 transition">
-      <div className={`${compact ? 'h-28' : 'h-36'} bg-gradient-to-br from-steel-800 to-steel-900 relative overflow-hidden`}>
-        {a.cover_url
-          ? <img src={a.cover_url} alt="" className="h-full w-full object-cover" />
-          : <div className="h-full w-full grid place-items-center text-4xl opacity-80">📰</div>}
-        <span className="absolute top-2 left-2 text-[11px] font-bold uppercase tracking-wide bg-white/90 text-steel-800 rounded-full px-2 py-0.5">
-          {articleCategory(a.category)}
-        </span>
-      </div>
+      <div className={compact ? 'h-28' : 'h-36'}><ArticleCover a={a} /></div>
       <div className="p-3 flex flex-col flex-1">
         <div className="font-bold text-steel-900 leading-snug line-clamp-2 group-hover:text-brand-700">{a.title}</div>
         {!compact && a.summary && <p className="text-sm text-steel-600 mt-1 line-clamp-2">{a.summary}</p>}
