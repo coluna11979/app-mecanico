@@ -18,6 +18,14 @@ PROIBIDO: qualquer texto, letra, número, logotipo ou marca de carro visível; a
 
 CENA: `;
 
+/**
+ * Reforço curto que vai NO COMEÇO de cada cena: sem ele o ChatGPT tende a fazer
+ * foto realista quando a cena descreve um ambiente real.
+ */
+export const SCENE_PREFIX = 'ILUSTRAÇÃO vetorial plana (flat illustration) estilo editorial de app, NÃO é foto e NÃO é 3D: formas chapadas, cores sólidas, sombras em blocos, sem detalhes realistas. Paleta: laranja #FF5C0A, grafite #0B1117, azul-petróleo escuro, cinza-claro e tons de pele quentes. Sem nenhum texto, letra, número, logo ou marca (carros sem emblema, roupas lisas). Formato horizontal 3:2. CENA: ';
+
+export const sceneText = (scene: string) => SCENE_PREFIX + scene;
+
 export interface Scene { slug: string; title: string; audience: 'workshop' | 'mechanic' | 'all'; tags: string[]; scene: string }
 
 export const SCENES: Scene[] = [
@@ -75,9 +83,9 @@ export const SCENES: Scene[] = [
 ];
 
 export const GENERATION_TIPS = [
-  'Use sempre a MESMA conversa no ChatGPT para todas as imagens: assim o estilo se mantém.',
-  'Na primeira imagem, cole o texto de estilo inteiro + a primeira cena.',
-  'Nas seguintes, escreva: "Mesmo estilo exato das imagens anteriores. CENA: ..." e cole a próxima cena.',
-  'Se alguma sair com texto, letra ou logo, peça: "Refaça sem nenhum texto ou logo".',
+  'Crie um Projeto no ChatGPT ("Ilustrações MecânicoApp") e cole o texto de estilo nas instruções do projeto.',
+  'Para cada cena, abra uma conversa dentro do projeto e cole o texto do botão Copiar (ele já começa reforçando que é ilustração, não foto).',
+  'Uma cena por mensagem. Se vier foto, 3D, texto ou logo, peça: "Refaça como ilustração plana (flat), sem nenhum texto ou logo".',
+  'Quando 2 ou 3 ficarem do jeito certo, adicione essas imagens aos arquivos do projeto como referência de estilo.',
   'Baixe cada imagem e suba aqui com o nome da cena (o nome do arquivo já preenche os temas).',
 ];

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { type Audience, AUDIENCE_LABEL } from '@/lib/paraVoce';
-import { GENERATION_TIPS, SCENES, STYLE_PROMPT } from '@/lib/illustrationGuide';
+import { GENERATION_TIPS, SCENES, STYLE_PROMPT, sceneText } from '@/lib/illustrationGuide';
 import { uploadImage } from './Partners';
 
 export interface Illustration {
@@ -103,7 +103,7 @@ export default function Illustrations() {
             </ol>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <div className="label !mb-0">Texto de estilo (primeira imagem)</div>
+                <div className="label !mb-0">Texto de estilo (instruções do projeto no ChatGPT)</div>
                 <button className="text-sm font-semibold text-brand-600 min-h-[36px]" onClick={() => copy(STYLE_PROMPT, 'Texto de estilo copiado')}>Copiar</button>
               </div>
               <pre className="text-xs bg-steel-50 border border-steel-200 rounded-xl p-3 whitespace-pre-wrap font-sans text-steel-700 max-h-48 overflow-auto">{STYLE_PROMPT}…</pre>
@@ -121,7 +121,7 @@ export default function Illustrations() {
                       <div className="text-xs text-steel-500">{AUDIENCE_LABEL[s.audience]} · {s.scene}</div>
                     </div>
                     <button className="text-xs font-semibold text-brand-600 shrink-0 min-h-[36px]"
-                      onClick={() => copy(i === 0 ? STYLE_PROMPT + s.scene : `Mesmo estilo exato das imagens anteriores. CENA: ${s.scene}`, 'Cena copiada')}>
+                      onClick={() => copy(sceneText(s.scene), 'Cena copiada')}>
                       Copiar
                     </button>
                   </li>
