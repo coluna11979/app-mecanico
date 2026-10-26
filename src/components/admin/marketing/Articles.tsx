@@ -160,7 +160,7 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
           <div className="space-y-4">
             <div className="max-w-[240px]"><ArticleCard a={{ ...f, title: f.title || 'Título do artigo' }} compact /></div>
             <article className="border border-steel-200 rounded-xl p-4">
-              <div className="h-56 rounded-xl overflow-hidden mb-2"><ArticleCover a={{ ...f, title: f.title || 'Título do artigo' }} variant="hero" /></div>
+              <div className="rounded-xl overflow-hidden mb-2"><ArticleCover a={{ ...f, title: f.title || 'Título do artigo' }} variant="hero" /></div>
               {f.summary && <p className="text-steel-600 mt-2">{f.summary}</p>}
               <div className="mt-2">{renderArticleBody(f.body || 'O texto aparece aqui.')}</div>
             </article>

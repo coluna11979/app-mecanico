@@ -12,6 +12,8 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+const OLD_LOOK = /vintage|retro|antique|classic|oldtimer|old car|old-timer|sepia|black and white|monochrome|nostalg|rust|abandoned|ruin/i;
+
 interface Hit { id: number; webformatURL: string; largeImageURL: string; user: string; pageURL: string; tags: string; imageWidth: number; imageHeight: number }
 
 async function pixabay(key: string, params: Record<string, string>) {
@@ -45,8 +47,11 @@ Deno.serve(async (req) => {
       const q = String(body.query ?? '').trim().slice(0, 100);
       if (!q) return json({ error: 'Digite o que buscar.' }, 400);
       // Busca em inglês costuma trazer mais fotos; o Pixabay entende português também
-      let hits = await pixabay(key, { q, orientation: 'horizontal', per_page: '12', min_width: '1200', order: 'popular' });
-      if (!hits.length) hits = await pixabay(key, { q, lang: 'pt', orientation: 'horizontal', per_page: '12', min_width: '1000' });
+      let hits = await pixabay(key, { q, orientation: 'horizontal', per_page: '40', min_width: '1200', order: 'popular' });
+      if (!hits.length) hits = await pixabay(key, { q, lang: 'pt', orientation: 'horizontal', per_page: '40', min_width: '1000' });
+      // Prioriza o visual moderno: carro antigo, sépia e preto e branco vão pro fim
+      const modern = hits.filter(h => !OLD_LOOK.test(h.tags));
+      hits = [...modern, ...hits.filter(h => OLD_LOOK.test(h.tags))].slice(0, 12);
       return json({ results: hits.map(h => ({ id: h.id, thumb: h.webformatURL, user: h.user, page: h.pageURL, tags: h.tags })) });
     }
 

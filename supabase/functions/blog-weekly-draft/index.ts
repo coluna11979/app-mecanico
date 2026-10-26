@@ -15,14 +15,16 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+const OLD_LOOK = /vintage|retro|antique|classic|oldtimer|old car|old-timer|sepia|black and white|monochrome|nostalg|rust|abandoned|ruin/i;
+
 const Article = z.object({
   title: z.string().describe('Título direto, até 80 caracteres, sem clickbait'),
   summary: z.string().describe('Resumo de 1 frase, até 150 caracteres'),
-  category: z.enum(['dicas', 'renda', 'gestao', 'tecnica', 'novidades']),
+  category: z.enum(['gestao', 'atendimento', 'equipe', 'renda', 'tecnica', 'dicas', 'novidades']),
   audience: z.enum(['mechanic', 'workshop', 'all']),
   body: z.string().describe('Texto do artigo no formato pedido'),
   social_caption: z.string().describe('Legenda para Instagram com emojis moderados, chamada para o link na bio e 4 a 6 hashtags'),
-  cover_query: z.string().describe('3 a 5 palavras EM INGLÊS para buscar uma foto real que ilustre o tema (ex: "mechanic repairing car engine"). Pessoas trabalhando, oficina, carro; sem marcas nem texto'),
+  cover_query: z.string().describe('3 a 6 palavras EM INGLÊS para buscar uma foto ATUAL que ilustre o tema: oficina mecânica moderna, clara e organizada, mecânico de uniforme trabalhando em carro recente (ex: "mechanic working modern car service"). Nunca carro antigo, vintage ou foto em preto e branco; sem marcas nem texto'),
 });
 
 const SYSTEM = `Você escreve o blog do MecânicoApp, plataforma brasileira que conecta oficinas mecânicas a mecânicos verificados para serviços sob demanda (o mecânico recebe chamados de oficinas da região, vê o valor antes e escolhe o que aceita; a oficina chama reforço só quando precisa, sem aumentar a folha fixa).
@@ -107,8 +109,9 @@ Deno.serve(async (req) => {
     const pkey = cfg.pixabay_api_key?.trim();
     if (pkey && a.cover_query) {
       try {
-        const qs = new URLSearchParams({ key: pkey, q: a.cover_query.slice(0, 100), image_type: 'photo', safesearch: 'true', orientation: 'horizontal', min_width: '1200', per_page: '5', order: 'popular' });
-        const hit = (await (await fetch(`https://pixabay.com/api/?${qs}`)).json()).hits?.[0];
+        const qs = new URLSearchParams({ key: pkey, q: a.cover_query.slice(0, 100), image_type: 'photo', safesearch: 'true', orientation: 'horizontal', min_width: '1200', per_page: '20', order: 'popular' });
+        const hits = ((await (await fetch(`https://pixabay.com/api/?${qs}`)).json()).hits ?? []) as { id: number; largeImageURL: string; user: string; tags: string }[];
+        const hit = hits.find(h => !OLD_LOOK.test(h.tags)) ?? null;  // fora carro antigo/sépia
         if (hit) {
           const img = await fetch(hit.largeImageURL);
           const path = `capas/pixabay-${hit.id}.jpg`;

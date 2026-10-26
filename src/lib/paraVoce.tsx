@@ -61,12 +61,14 @@ export const PARTNER_CATEGORIES: { v: string; label: string; emoji: string }[] =
   { v: 'outros',      label: 'Outros',       emoji: '🎁' },
 ];
 
-export const ARTICLE_CATEGORIES: { v: string; label: string }[] = [
-  { v: 'dicas',     label: 'Dicas' },
-  { v: 'renda',     label: 'Ganhar mais' },
-  { v: 'gestao',    label: 'Gestão da oficina' },
-  { v: 'tecnica',   label: 'Técnica' },
-  { v: 'novidades', label: 'Novidades do app' },
+export const ARTICLE_CATEGORIES: { v: string; label: string; emoji: string; desc: string }[] = [
+  { v: 'gestao',      label: 'Gestão da oficina',      emoji: '📊', desc: 'Agenda, organização, custos e rotina da oficina.' },
+  { v: 'atendimento', label: 'Atendimento ao cliente', emoji: '🤝', desc: 'Orçamento, comunicação e como fazer o cliente voltar.' },
+  { v: 'equipe',      label: 'Equipe e mão de obra',   emoji: '👥', desc: 'Contratar, montar a equipe e chamar reforço na hora certa.' },
+  { v: 'renda',       label: 'Ganhar mais',            emoji: '💰', desc: 'Renda extra e carreira para mecânicos.' },
+  { v: 'tecnica',     label: 'Técnica',                emoji: '🔧', desc: 'Boas práticas de serviço, diagnóstico e segurança.' },
+  { v: 'dicas',       label: 'Dicas rápidas',          emoji: '💡', desc: 'Dicas curtas para o dia a dia.' },
+  { v: 'novidades',   label: 'Novidades do app',       emoji: '🚀', desc: 'O que há de novo no MecânicoApp.' },
 ];
 
 export const partnerCategory = (v: string) => PARTNER_CATEGORIES.find(c => c.v === v) ?? PARTNER_CATEGORIES[PARTNER_CATEGORIES.length - 1];

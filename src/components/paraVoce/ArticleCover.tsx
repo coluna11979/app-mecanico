@@ -11,6 +11,8 @@ const BG: Record<string, CSSProperties> = {
   dicas: { background: 'linear-gradient(135deg, #FF7A38 0%, #E64500 100%)' },
   gestao: { background: 'repeating-linear-gradient(135deg, rgba(255,255,255,.04) 0 12px, transparent 12px 26px), linear-gradient(160deg, #151C24 0%, #222C37 100%)' },
   tecnica: { background: 'radial-gradient(90% 120% at 0% 100%, rgba(255,92,10,.35) 0%, rgba(255,92,10,0) 60%), #151C24' },
+  atendimento: { background: 'radial-gradient(100% 120% at 0% 0%, rgba(255,122,56,.45) 0%, rgba(255,122,56,0) 55%), #222C37' },
+  equipe: { background: 'repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 2px, transparent 2px 22px), radial-gradient(90% 110% at 100% 100%, rgba(255,92,10,.45), rgba(255,92,10,0) 60%), #0B1117' },
   novidades: { background: 'repeating-conic-gradient(from 200deg at 92% 0%, rgba(255,92,10,.16) 0deg 4deg, transparent 4deg 10deg), radial-gradient(80% 90% at 92% 0%, rgba(255,92,10,.5), rgba(255,92,10,0) 70%), #0B1117' },
 };
 
@@ -45,22 +47,22 @@ export default function ArticleCover({ a, variant = 'card', className = '' }: {
   // Com foto: a foto ligada ao assunto + acabamento da marca por cima (estilo editorial)
   if (a.cover_url) {
     return (
-      <div className={`relative w-full h-full overflow-hidden bg-steel-900 ${className}`}>
+      <div className={`relative w-full overflow-hidden bg-steel-900 ${hero ? 'min-h-[18rem] sm:min-h-[22rem]' : 'h-full'} ${className}`}>
         <img src={a.cover_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
         <div className="absolute inset-0" style={{ background: hero
           ? 'linear-gradient(180deg, rgba(11,17,23,.35) 0%, rgba(11,17,23,.05) 35%, rgba(11,17,23,.85) 100%)'
           : 'linear-gradient(180deg, rgba(11,17,23,.55) 0%, rgba(11,17,23,0) 45%)' }} />
         <div className="absolute left-0 bottom-0 h-1.5 w-1/3 bg-brand-500" />
-        <div className={`relative h-full flex flex-col ${hero ? 'p-6 sm:p-8' : 'p-3'}`}>
+        <div className={`relative flex flex-col ${hero ? 'min-h-[18rem] sm:min-h-[22rem] p-5 pb-9 sm:p-8 sm:pb-10' : 'h-full p-3'}`}>
           <BrandMark hero={hero} label={articleCategory(a.category)} />
           {hero && (
-            <h1 className="font-display font-bold text-white text-3xl sm:text-4xl leading-tight mt-auto max-w-[20ch] drop-shadow">
+            <h1 className="font-display font-bold text-white text-2xl sm:text-4xl leading-tight mt-auto pt-12 max-w-[22ch] drop-shadow">
               {a.title}
             </h1>
           )}
         </div>
         {hero && a.cover_credit && (
-          <span className="absolute bottom-2 right-3 text-[10px] text-white/60">{a.cover_credit}</span>
+          <span className="absolute bottom-2.5 right-3 text-[10px] text-white/60">{a.cover_credit}</span>
         )}
       </div>
     );
@@ -70,7 +72,7 @@ export default function ArticleCover({ a, variant = 'card', className = '' }: {
   const accent = onOrange ? '#0B1117' : '#FF7A38';
 
   return (
-    <div className={`relative w-full h-full overflow-hidden ${className}`} style={BG[a.category] ?? BG.renda}>
+    <div className={`relative w-full overflow-hidden ${hero ? 'min-h-[18rem] sm:min-h-[22rem]' : 'h-full'} ${className}`} style={BG[a.category] ?? BG.renda}>
       {/* Ícone grande do público, vazando pela direita */}
       <svg viewBox="0 0 24 24" aria-hidden
         className={`absolute ${hero ? '-right-6 -bottom-8 w-64 h-64 sm:w-80 sm:h-80' : '-right-4 -bottom-6 w-40 h-40'}`}
@@ -78,7 +80,7 @@ export default function ArticleCover({ a, variant = 'card', className = '' }: {
         {(ICON[a.audience] ?? ICON.all).map(d => <path key={d} d={d} />)}
       </svg>
 
-      <div className={`relative h-full flex flex-col ${hero ? 'p-6 sm:p-8 justify-end' : 'p-4 justify-between'}`}>
+      <div className={`relative flex flex-col ${hero ? 'min-h-[18rem] sm:min-h-[22rem] p-5 sm:p-8' : 'h-full p-4 justify-between'}`}>
         <div className="flex items-center gap-2">
           <svg viewBox="0 0 64 64" className={hero ? 'w-8 h-8' : 'w-6 h-6'} aria-hidden>
             <rect width="64" height="64" rx="14" fill="#0B1117" />
@@ -89,7 +91,7 @@ export default function ArticleCover({ a, variant = 'card', className = '' }: {
           </span>
         </div>
         {hero ? (
-          <h1 className="font-display font-bold text-white text-3xl sm:text-4xl leading-tight mt-auto pt-10 max-w-[18ch] drop-shadow-sm">
+          <h1 className="font-display font-bold text-white text-2xl sm:text-4xl leading-tight mt-auto pt-12 max-w-[20ch] drop-shadow-sm">
             {a.title}
           </h1>
         ) : (
