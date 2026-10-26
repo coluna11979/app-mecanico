@@ -7,6 +7,7 @@ import {
 } from '@/components/banners/BannerCard';
 import { Empty, Modal, pct } from './ui';
 import LibraryPicker, { countUse } from './LibraryPicker';
+import PanelPlacement from './PanelPlacement';
 
 const AUDIENCE_LABEL: Record<PanelBanner['audience'], string> = {
   workshop: '🏭 Oficinas', mechanic: '🔧 Mecânicos', all: '👥 Todos',
@@ -102,6 +103,8 @@ export default function Banners() {
 
   return (
     <div className="space-y-4">
+      <PanelPlacement />
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-steel-500 max-w-xl">
           Banners aparecem no topo do painel da oficina ou do mecânico. Use para novidades, promoções e avisos.

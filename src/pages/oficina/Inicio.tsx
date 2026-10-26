@@ -1,3 +1,4 @@
+import PanelSlot from '@/components/paraVoce/PanelSlot';
 import ParaVoceRows from '@/components/paraVoce/ParaVoceRows';
 import PanelBanners from '@/components/banners/PanelBanners';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
@@ -379,8 +380,7 @@ export default function Inicio() {
         </header>
 
         {/* Banners do admin (novidades, promoções) */}
-        <PanelBanners />
-        <ParaVoceRows />
+        <PanelSlot panel="oficina_inicio" at="topo" />
 
         {!data || !v ? (
           <div className="space-y-4">

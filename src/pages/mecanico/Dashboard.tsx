@@ -1,3 +1,4 @@
+import PanelSlot from '@/components/paraVoce/PanelSlot';
 import ParaVoceRows from '@/components/paraVoce/ParaVoceRows';
 import PanelBanners from '@/components/banners/PanelBanners';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -260,8 +261,7 @@ export default function MechanicDashboard() {
 
       <div className="px-4 pt-4 space-y-5">
         {/* Banners do admin (novidades, promoções) */}
-        <PanelBanners />
-        <ParaVoceRows />
+        <PanelSlot panel="mecanico" at="topo" />
 
         {/* ── Status: a ação mais importante do dia, compacta e sempre no topo ── */}
         <div className={`rounded-2xl border px-4 py-3 flex items-center gap-3 transition-colors ${
@@ -284,6 +284,8 @@ export default function MechanicDashboard() {
             <span className={`absolute top-1 left-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${online ? 'translate-x-6' : ''}`} />
           </button>
         </div>
+
+        <PanelSlot panel="mecanico" at="apos-status" />
 
         {/* ── Alerta no celular (push) ── */}
         <PushAlertCard />
@@ -395,6 +397,8 @@ export default function MechanicDashboard() {
             })}
           </section>
         )}
+
+        <PanelSlot panel="mecanico" at="apos-andamento" />
 
         {/* ── Avaliações pendentes ── */}
         {pendingRatings.length > 0 && (
@@ -523,6 +527,8 @@ export default function MechanicDashboard() {
           )}
         </section>
 
+        <PanelSlot panel="mecanico" at="apos-disponiveis" />
+
         {/* ── Seu desempenho ── */}
         <section className="space-y-2">
           <SectionTitle>Seu desempenho</SectionTitle>
@@ -576,6 +582,7 @@ export default function MechanicDashboard() {
             </ol>
           </details>
         </div>
+        <PanelSlot panel="mecanico" at="fim" />
       </div>
 
       {/* Modal "Você ganhou R$ X" pós-finalização */}

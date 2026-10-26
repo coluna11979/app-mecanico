@@ -1,3 +1,4 @@
+import PanelSlot from '@/components/paraVoce/PanelSlot';
 import PanelBanners from '@/components/banners/PanelBanners';
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -637,12 +638,13 @@ export default function WorkshopDashboard() {
       <div className="max-w-6xl mx-auto lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5 lg:items-start">
       <div className="min-w-0">
 
-      {/* Banners do admin (novidades, promoções) */}
-      <PanelBanners className="mb-4" />
+      {/* Conteúdo do admin (banners, dicas, benefícios): posições em Marketing → Banners */}
+      <PanelSlot panel="oficina_demandas" at="topo" className="mb-4" />
 
       {/* O que se faz aqui, em um botão */}
       <PlatformHero available={mechanics.length} onCall={() => openCreateModal()}
         disabled={shopLoading || hasPendingFees} locked={hasPendingFees} />
+      <PanelSlot panel="oficina_demandas" at="apos-nova-demanda" className="mb-4" />
 
       {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
@@ -652,16 +654,19 @@ export default function WorkshopDashboard() {
 
       {/* Como estão os pedidos (oficina que nunca pediu não vê quatro zeros) */}
       {!firstTime && <div className="lg:hidden">{counters()}</div>}
+      <PanelSlot panel="oficina_demandas" at="apos-contadores" className="mb-4" />
 
       {/* Atalhos dos serviços mais pedidos (um toque abre a demanda pronta) */}
       <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact
         storageKey={currentWorkshop?.id ? `oficina_atalhos_open:${currentWorkshop.id}` : null} />
+      <PanelSlot panel="oficina_demandas" at="apos-atalhos" className="mb-4" />
 
       {/* Meus preferidos (recolhido): quem a oficina marcou com ⭐, com "Chamar" direto */}
       <div className="lg:hidden">
         <FavoriteMechanics mechanics={favMechanics} onCall={openInvite} disabled={shopLoading || hasPendingFees}
           storageKey={currentWorkshop?.id ? `oficina_preferidos_open:${currentWorkshop.id}` : null} />
       </div>
+      <PanelSlot panel="oficina_demandas" at="apos-preferidos" className="mb-4" />
 
       {/* Números do período (gasto, tempos, ranking) ficam no Painel da Plataforma: esta é a tela de trabalho */}
 
@@ -777,6 +782,8 @@ export default function WorkshopDashboard() {
           </div>
         </section>
       )}
+
+      <PanelSlot panel="oficina_demandas" at="apos-avaliacoes" className="mb-6" />
 
       {/* Demandas ativas — agrupadas pela etapa em que estão */}
       {(() => {
@@ -909,6 +916,8 @@ export default function WorkshopDashboard() {
           </div>
         );
       })()}
+
+      <PanelSlot panel="oficina_demandas" at="apos-solicitacoes" className="mb-6" />
 
       {/* Histórico — fechado por padrão; a oficina escolhe abrir */}
       <div id="historico" className="scroll-mt-4"><HistorySection history={history} workshopId={currentWorkshop?.id ?? null}
