@@ -5,12 +5,14 @@ import { ArticleCard } from '@/components/paraVoce/Cards';
 import { type Article, type Audience, ARTICLE_CATEGORIES, AUDIENCE_LABEL, articleCategory, renderArticleBody, slugify } from '@/lib/paraVoce';
 import { uploadImage } from './Partners';
 import { Empty, Modal } from './ui';
+import BlogAI from './BlogAI';
 
 type Draft = Omit<Article, 'id' | 'reads' | 'created_at' | 'updated_at'> & { id?: string };
 
 const EMPTY: Draft = {
   audience: 'all', slug: '', title: '', summary: '', category: 'dicas', cover_url: null,
   body: '', published_at: new Date().toISOString(), active: true, featured: false,
+  public: true, origin: 'manual', review_status: null, social_caption: '',
 };
 
 const BODY_HELP = 'Linha em branco separa parágrafos · ## Subtítulo · - item de lista · **negrito** · [texto do link](https://site.com)';
@@ -43,7 +45,10 @@ export default function Articles() {
     setList(l => l.filter(x => x.id !== a.id));
   }
 
-  const status = (a: Article) => !a.active ? 'rascunho' : new Date(a.published_at) > new Date() ? 'agendado' : 'publicado';
+  const status = (a: Article) =>
+    a.review_status === 'aguardando_revisao' && !a.active ? '🤖 aguardando revisão'
+      : !a.active ? 'rascunho' : new Date(a.published_at) > new Date() ? 'agendado' : 'publicado';
+  const waiting = list.filter(a => a.review_status === 'aguardando_revisao' && !a.active).length;
 
   return (
     <div className="space-y-4">
@@ -53,6 +58,14 @@ export default function Articles() {
         </p>
         <button className="btn-primary min-h-[44px]" onClick={() => setEditing({ ...EMPTY, published_at: new Date().toISOString() })}>+ Novo artigo</button>
       </div>
+
+      <BlogAI onGenerated={load} />
+
+      {waiting > 0 && (
+        <div className="bg-pending-500/10 border border-pending-500/30 text-pending-800 rounded-2xl px-4 py-3 text-sm">
+          🤖 <b>{waiting}</b> rascunho(s) da IA aguardando sua revisão. Abra em <b>Editar</b>, corrija o que quiser e publique.
+        </div>
+      )}
 
       {loading ? (
         <div className="bg-white border border-steel-200 rounded-2xl p-10 text-center text-steel-500 text-sm">Carregando…</div>
@@ -64,12 +77,17 @@ export default function Articles() {
             <div key={a.id} className="p-3 sm:p-4 flex items-center gap-3 flex-wrap">
               <div className="min-w-0 flex-1">
                 <div className="font-semibold text-steel-900 truncate">{a.featured && '⭐ '}{a.title}</div>
+                <div className="flex gap-1.5 mt-0.5 flex-wrap">
+                  {a.review_status === 'aguardando_revisao' && !a.active && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5 bg-pending-500/15 text-pending-800">aguardando revisão</span>}
+                  {a.origin === 'ia' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5 bg-steel-100 text-steel-600">escrito pela IA</span>}
+                  {a.public && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5 bg-blue-50 text-blue-700">🌐 blog público</span>}
+                </div>
                 <div className="text-xs text-steel-500">
                   {status(a)} · {AUDIENCE_LABEL[a.audience]} · {articleCategory(a.category)} · {new Date(a.published_at).toLocaleDateString('pt-BR')} · <b>{a.reads}</b> leituras
                 </div>
               </div>
               <div className="flex gap-2">
-                <a className="btn-ghost text-sm" href={`/para-voce/artigo/${a.slug}`} target="_blank" rel="noreferrer">Ver</a>
+                <a className="btn-ghost text-sm" href={a.public ? `/blog/${a.slug}` : `/para-voce/artigo/${a.slug}`} target="_blank" rel="noreferrer">Ver</a>
                 <button className="btn-ghost text-sm" onClick={() => setEditing({ ...a })}>Editar</button>
                 <button className="btn-ghost text-sm" onClick={() => toggle(a)}>{a.active ? 'Despublicar' : 'Publicar'}</button>
                 <button className="btn-ghost text-sm text-steel-500 hover:text-alert-600" onClick={() => remove(a)}>Apagar</button>
@@ -110,6 +128,8 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
     const row = {
       audience: f.audience, slug, title: f.title.trim(), summary: f.summary?.trim() || null, category: f.category,
       cover_url: f.cover_url, body: f.body.trim(), published_at: f.published_at, active: publish, featured: f.featured,
+      public: !!f.public, social_caption: f.social_caption?.trim() || null,
+      review_status: f.origin === 'ia' ? (publish ? 'revisado' : f.review_status ?? 'aguardando_revisao') : null,
       updated_at: new Date().toISOString(),
     };
     const { error } = isNew
@@ -194,6 +214,23 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
                 <input type="checkbox" className="h-5 w-5 rounded border-steel-300 text-brand-500" checked={f.featured} onChange={e => up('featured', e.target.checked)} />
                 Destaque (aparece primeiro)
               </label>
+            </div>
+            <label className="flex items-start gap-2 text-sm text-steel-700 cursor-pointer bg-blue-50/60 border border-blue-100 rounded-xl p-3">
+              <input type="checkbox" className="mt-0.5 h-5 w-5 rounded border-steel-300 text-brand-500" checked={!!f.public} onChange={e => up('public', e.target.checked)} />
+              <span><b>Mostrar também no blog público</b> (mecanicoapp.com.br/blog): qualquer pessoa lê, aparece no Google e dá pra divulgar o link. Sem marcar, fica só dentro do app.</span>
+            </label>
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="label">Legenda para divulgar (Instagram)</label>
+                {f.social_caption && (
+                  <button type="button" className="text-xs font-semibold text-brand-600 min-h-[32px]"
+                    onClick={async () => { try { await navigator.clipboard.writeText(f.social_caption ?? ''); toast.success('Legenda copiada ✓'); } catch { toast.error('Não deu pra copiar.'); } }}>
+                    Copiar
+                  </button>
+                )}
+              </div>
+              <textarea className="input text-sm" rows={4} value={f.social_caption ?? ''} onChange={e => up('social_caption', e.target.value)}
+                placeholder="A IA preenche nos artigos dela. Use com o link do blog na bio." />
             </div>
           </>
         )}

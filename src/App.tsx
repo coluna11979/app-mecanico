@@ -100,6 +100,7 @@ import AdminMarketing from './pages/admin/Marketing';
 import AdminKitMarca from './pages/admin/KitMarca';
 import AdminMaterialGrafico from './pages/admin/MaterialGrafico';
 import ParaVoce, { ParaVoceArtigo } from './pages/shared/ParaVoce';
+import Blog, { BlogPost } from './pages/public/Blog';
 import CampaignLink from './pages/public/CampaignLink';
 import Unsubscribe from './pages/public/Unsubscribe';
 
@@ -133,6 +134,8 @@ export default function App() {
       <Route path="/recuperar-senha"    element={<ForgotPassword />} />
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
       <Route path="/checkup/:token"     element={<CheckupReport />} />
+      <Route path="/blog" element={<Blog />} />
+      <Route path="/blog/:slug" element={<BlogPost />} />
       <Route path="/c/:slug"            element={<CampaignLink />} />
       <Route path="/descadastrar/:token" element={<Unsubscribe />} />
       <Route path="/m/checkup/:token"   element={<MechanicCheckup />} />

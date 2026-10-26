@@ -39,6 +39,10 @@ export interface Article {
   reads: number;
   created_at: string;
   updated_at: string;
+  public?: boolean;                 // aparece no blog público (/blog)
+  origin?: 'manual' | 'ia';
+  review_status?: 'aguardando_revisao' | 'revisado' | null;
+  social_caption?: string | null;
 }
 
 export const AUDIENCE_LABEL: Record<Audience, string> = {
