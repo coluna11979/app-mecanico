@@ -24,6 +24,7 @@ const Article = z.object({
   audience: z.enum(['mechanic', 'workshop', 'all']),
   body: z.string().describe('Texto do artigo no formato pedido'),
   social_caption: z.string().describe('Legenda para Instagram com emojis moderados, chamada para o link na bio e 4 a 6 hashtags'),
+  illustration: z.string().describe('Código da ilustração da lista "Ilustrações disponíveis" que melhor combina com o tema; vazio se a lista não existir ou nenhuma combinar'),
   cover_query: z.string().describe('3 a 6 palavras EM INGLÊS para buscar uma foto ATUAL que ilustre o tema: oficina mecânica moderna, clara e organizada, mecânico de uniforme trabalhando em carro recente (ex: "mechanic working modern car service"). Nunca carro antigo, vintage ou foto em preto e branco; sem marcas nem texto'),
 });
 
@@ -73,6 +74,13 @@ Deno.serve(async (req) => {
     const { data: recent } = await admin.from('panel_articles').select('title').order('created_at', { ascending: false }).limit(25);
     const recentTitles = (recent ?? []).map(r => `- ${r.title}`).join('\n') || '(nenhum ainda)';
 
+    // Biblioteca de ilustrações da marca (se existir, a capa sai daqui em vez de foto)
+    const { data: libRows } = await admin.from('brand_illustrations').select('id, url, slug, title, tags, audience, uses').eq('active', true);
+    const library = (libRows ?? []) as { id: string; url: string; slug: string | null; title: string; tags: string[]; audience: string; uses: number }[];
+    const libraryText = library.length
+      ? `\n\nIlustrações disponíveis para a capa (responda o código no campo illustration):\n${library.map(i => `- ${i.slug || i.id} | ${i.title} | público: ${i.audience} | temas: ${i.tags.join(', ')}`).join('\n')}`
+      : '';
+
     const ask = topic
       ? `Escreva um artigo sobre: "${topic.title}".\nPúblico principal: ${topic.audience === 'mechanic' ? 'mecânicos' : topic.audience === 'workshop' ? 'donos de oficina' : 'mecânicos e oficinas'}.${topic.notes ? `\nOrientações do editor: ${topic.notes}` : ''}`
       : `Escolha você um tema novo e útil (alterne entre mecânicos e donos de oficina: renda extra, organização, atendimento ao cliente, gestão de equipe e agenda, boas práticas técnicas gerais, segurança no trabalho) e escreva o artigo.`;
@@ -83,7 +91,7 @@ Deno.serve(async (req) => {
       max_tokens: 8000,
       system: SYSTEM,
       output_config: { effort: 'low', format: zodOutputFormat(Article) },
-      messages: [{ role: 'user', content: `${ask}\n\nArtigos já publicados (não repita o tema nem o título):\n${recentTitles}` }],
+      messages: [{ role: 'user', content: `${ask}\n\nArtigos já publicados (não repita o tema nem o título):\n${recentTitles}${libraryText}` }],
     });
 
     if (response.stop_reason === 'refusal') return json({ error: 'A IA recusou o tema. Troque o tema da pauta.' }, 422);
@@ -104,10 +112,15 @@ Deno.serve(async (req) => {
       slug = `${words.join('-') || 'artigo'}-${i}`;
     }
 
-    // Capa: primeira foto boa do Pixabay para a busca sugerida (sem chave, fica a capa padrão)
+    // Capa: ilustração da biblioteca; senão, primeira foto moderna do Pixabay; senão, capa padrão
     let cover_url: string | null = null, cover_credit: string | null = null;
+    const chosen = library.find(i => a.illustration && (i.slug === a.illustration.trim() || i.id === a.illustration.trim()));
+    if (chosen) {
+      cover_url = chosen.url;
+      await admin.from('brand_illustrations').update({ uses: (chosen.uses ?? 0) + 1 }).eq('id', chosen.id);
+    }
     const pkey = cfg.pixabay_api_key?.trim();
-    if (pkey && a.cover_query) {
+    if (!cover_url && pkey && a.cover_query) {
       try {
         const qs = new URLSearchParams({ key: pkey, q: a.cover_query.slice(0, 100), image_type: 'photo', safesearch: 'true', orientation: 'horizontal', min_width: '1200', per_page: '20', order: 'popular' });
         const hits = ((await (await fetch(`https://pixabay.com/api/?${qs}`)).json()).hits ?? []) as { id: number; largeImageURL: string; user: string; tags: string }[];

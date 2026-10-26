@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 
@@ -28,6 +28,25 @@ export default function CoverPicker({ articleId, initialQuery, onPicked }: {
   const [results, setResults] = useState<Result[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [picking, setPicking] = useState<number | null>(null);
+  const [source, setSource] = useState<'ilustracoes' | 'fotos'>('ilustracoes');
+  const [library, setLibrary] = useState<{ id: string; url: string; title: string; tags: string[]; uses: number }[] | null>(null);
+  const [filter, setFilter] = useState('');
+
+  // Biblioteca de ilustrações da marca (se ainda não existir, abre direto nas fotos)
+  useEffect(() => {
+    supabase.from('brand_illustrations').select('id, url, title, tags, uses').eq('active', true).order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        const rows = error ? [] : (data ?? []);
+        setLibrary(rows as NonNullable<typeof library>);
+        if (!rows.length) setSource('fotos');
+      });
+  }, []);
+
+  async function pickIllustration(i: { id: string; url: string; uses: number }) {
+    await supabase.from('brand_illustrations').update({ uses: (i.uses ?? 0) + 1 }).eq('id', i.id);
+    onPicked({ url: i.url, credit: '', query: '' });
+    toast.success('Capa trocada ✓');
+  }
 
   async function search() {
     if (!q.trim()) return;
@@ -49,6 +68,33 @@ export default function CoverPicker({ articleId, initialQuery, onPicked }: {
 
   return (
     <div className="border border-steel-200 rounded-xl p-3 space-y-3">
+      <div className="flex gap-1 bg-steel-100 rounded-lg p-1">
+        {([['ilustracoes', `🎨 Ilustrações da marca${library ? ` (${library.length})` : ''}`], ['fotos', '📷 Fotos (Pixabay)']] as const).map(([v, l]) => (
+          <button key={v} type="button" onClick={() => setSource(v)}
+            className={`flex-1 min-h-[36px] rounded-md text-sm font-semibold ${source === v ? 'bg-white shadow text-steel-900' : 'text-steel-500'}`}>{l}</button>
+        ))}
+      </div>
+
+      {source === 'ilustracoes' && (
+        !library?.length ? (
+          <p className="text-sm text-steel-500">Ainda não há ilustrações. Crie no ChatGPT e suba em Marketing → Ilustrações.</p>
+        ) : (
+          <>
+            <input className="input text-sm" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filtrar por tema (ex: agenda, orçamento, renda)" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-80 overflow-auto">
+              {library.filter(i => !filter.trim() || `${i.title} ${i.tags.join(' ')}`.toLowerCase().includes(filter.trim().toLowerCase())).map(i => (
+                <button key={i.id} type="button" onClick={() => void pickIllustration(i)} title={i.title}
+                  className="relative aspect-[3/2] rounded-lg overflow-hidden bg-steel-100 ring-2 ring-transparent hover:ring-brand-500">
+                  <img src={i.url} alt={i.title} className="w-full h-full object-cover" loading="lazy" />
+                  <span className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[10px] px-1.5 py-0.5 truncate">{i.title}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )
+      )}
+
+      {source === 'fotos' && (<>
       {/* Sem <form>: este seletor fica dentro do formulário do artigo, e formulário dentro de formulário
           faz o navegador enviar o de fora (recarregava a página) */}
       <div className="flex gap-2">
@@ -69,6 +115,7 @@ export default function CoverPicker({ articleId, initialQuery, onPicked }: {
           ))}
         </div>
       )}
+      </>)}
     </div>
   );
 }
