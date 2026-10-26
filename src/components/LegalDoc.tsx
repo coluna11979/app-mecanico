@@ -44,14 +44,15 @@ function renderBlock(block: string, key: number) {
   if (first.startsWith('|') && lines[1]?.startsWith('|')) {
     return renderTable(lines, key);
   }
-  // Lista (-)
-  if (first.startsWith('- ')) {
+  // Lista (-), com ou sem frase de abertura antes ("Você se compromete a:\n- ...")
+  const listStart = lines.findIndex(l => l.startsWith('- '));
+  if (listStart >= 0) {
+    const intro = lines.slice(0, listStart).join('\n').trim();
     return (
-      <ul key={key} className="list-disc list-outside pl-6 space-y-1.5 my-3">
-        {lines.filter(l => l.startsWith('- ')).map((l, i) => (
-          <li key={i} className="leading-relaxed">{inline(l.slice(2))}</li>
-        ))}
-      </ul>
+      <div key={key}>
+        {intro && <p className="leading-relaxed">{inline(intro)}</p>}
+        {renderList(lines.slice(listStart))}
+      </div>
     );
   }
   // Lista numerada
@@ -66,6 +67,29 @@ function renderBlock(block: string, key: number) {
   }
   // Parágrafo
   return <p key={key} className="leading-relaxed">{inline(block)}</p>;
+}
+
+/** Lista com um nível de sub-itens ("  - " logo abaixo de um item). */
+function renderList(lines: string[]) {
+  const items: { text: string; sub: string[] }[] = [];
+  for (const l of lines) {
+    if (l.startsWith('- ')) items.push({ text: l.slice(2), sub: [] });
+    else if (/^\s+- /.test(l) && items.length) items[items.length - 1].sub.push(l.trim().slice(2));
+  }
+  return (
+    <ul className="list-disc list-outside pl-6 space-y-1.5 my-3">
+      {items.map((it, i) => (
+        <li key={i} className="leading-relaxed">
+          {inline(it.text)}
+          {it.sub.length > 0 && (
+            <ul className="list-[circle] list-outside pl-6 space-y-1 mt-1.5">
+              {it.sub.map((s, j) => <li key={j}>{inline(s)}</li>)}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function renderTable(lines: string[], key: number) {
@@ -137,11 +161,13 @@ function inline(text: string): React.ReactNode {
     if (before) parts.push(before);
 
     if (winner.type === 'bold') {
-      parts.push(<strong key={key++} className="font-bold text-steel-900">{winner.match[2]}</strong>);
+      parts.push(<strong key={key++} className="font-bold text-steel-900">{inline(winner.match[2])}</strong>);
     } else if (winner.type === 'italic') {
       parts.push(<em key={key++} className="italic">{winner.match[2]}</em>);
     } else if (winner.type === 'link') {
-      const url = winner.match[3];
+      // #general, #general-cancelamento… apontam para outra aba da página de termos
+      const raw = winner.match[3];
+      const url = raw.startsWith('#general') ? '/termos?tab=general' : raw;
       const isExternal = url.startsWith('http');
       parts.push(
         <a key={key++} href={url}
