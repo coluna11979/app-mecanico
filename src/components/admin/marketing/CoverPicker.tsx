@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 
@@ -29,8 +29,7 @@ export default function CoverPicker({ articleId, initialQuery, onPicked }: {
   const [loading, setLoading] = useState(false);
   const [picking, setPicking] = useState<number | null>(null);
 
-  async function search(e?: FormEvent) {
-    e?.preventDefault();
+  async function search() {
     if (!q.trim()) return;
     setLoading(true);
     try { setResults((await call<{ results: Result[] }>({ action: 'search', query: q.trim() })).results); }
@@ -50,10 +49,13 @@ export default function CoverPicker({ articleId, initialQuery, onPicked }: {
 
   return (
     <div className="border border-steel-200 rounded-xl p-3 space-y-3">
-      <form onSubmit={search} className="flex gap-2">
-        <input className="input" value={q} onChange={e => setQ(e.target.value)} placeholder="Ex: mechanic repairing car engine" />
-        <button className="btn-secondary shrink-0 min-h-[44px]" disabled={loading}>{loading ? '…' : 'Buscar fotos'}</button>
-      </form>
+      {/* Sem <form>: este seletor fica dentro do formulário do artigo, e formulário dentro de formulário
+          faz o navegador enviar o de fora (recarregava a página) */}
+      <div className="flex gap-2">
+        <input className="input" value={q} onChange={e => setQ(e.target.value)} placeholder="Ex: mechanic repairing car engine"
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void search(); } }} />
+        <button type="button" onClick={() => void search()} className="btn-secondary shrink-0 min-h-[44px]" disabled={loading}>{loading ? '…' : 'Buscar fotos'}</button>
+      </div>
       <p className="text-xs text-steel-500">Dica: em inglês aparecem mais fotos (mechanic, car repair, garage, workshop…). Fotos do Pixabay, gratuitas para uso comercial.</p>
       {results && results.length === 0 && <p className="text-sm text-steel-500">Nenhuma foto para essa busca. Tente outras palavras.</p>}
       {results && results.length > 0 && (

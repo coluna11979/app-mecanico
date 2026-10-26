@@ -146,7 +146,8 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
 
   return (
     <Modal title={isNew ? 'Novo artigo' : 'Editar artigo'} onClose={onClose}>
-      <form onSubmit={e => save(e, true)} className="space-y-4">
+      {/* Enter num campo não publica: só o botão Publicar */}
+      <form onSubmit={e => e.preventDefault()} className="space-y-4">
         <div className="flex gap-1 bg-steel-100 rounded-xl p-1">
           {(['escrever', 'previa'] as const).map(t => (
             <button key={t} type="button" onClick={() => setTab(t)}
@@ -250,7 +251,7 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
 
         <div className="grid grid-cols-2 gap-2">
           <button type="button" className="btn-secondary min-h-[44px]" disabled={saving || uploading} onClick={e => save(e, false)}>Salvar rascunho</button>
-          <button className="btn-primary min-h-[44px]" disabled={saving || uploading}>{saving ? 'Salvando…' : 'Publicar'}</button>
+          <button type="button" className="btn-primary min-h-[44px]" disabled={saving || uploading} onClick={e => save(e, true)}>{saving ? 'Salvando…' : 'Publicar'}</button>
         </div>
       </form>
     </Modal>
