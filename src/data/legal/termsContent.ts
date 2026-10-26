@@ -7,11 +7,12 @@
  * advogado antes de uso em produção real.
  */
 
-export const TERMS_VERSION = 'v1.1-2026-10-15';
-export const TERMS_DATE = '15 de outubro de 2026';
+export const TERMS_VERSION = 'v1.2-2026-10-26';
+export const TERMS_DATE = '26 de outubro de 2026';
 export const PLATFORM_NAME = 'MecânicoApp';
 export const PLATFORM_DOMAIN = 'mecanicoapp.com.br';
-export const PLATFORM_CNPJ = '[CNPJ a ser preenchido]';
+export const PLATFORM_CNPJ = '34.819.933/0001-27';
+export const PAYMENT_COMPANY = 'NextGo Marketing Ltda';
 export const PLATFORM_FORO = 'São Paulo/SP';
 export const PLATFORM_CONTACT_EMAIL = 'suporte@mecanicoapp.com.br';
 export const PLATFORM_FEE_PERCENT = 20;
@@ -70,15 +71,15 @@ A relação entre Mecânico e Oficina é **independente, comercial e direta**, r
 
 ## 4. Pagamentos
 
-4.1. **Processamento**: pagamentos são processados pela **Stripe Inc.** (parceira certificada). A Plataforma nunca tem acesso direto aos dados completos do cartão.
+4.1. **Processamento**: os pagamentos são feitos por **PIX ou cartão** e processados pela **${PAYMENT_COMPANY}** e pela **Stripe Inc.** A Plataforma nunca tem acesso direto aos dados completos do cartão.
 
-4.2. **Taxa da Plataforma**: ${PLATFORM_FEE_PERCENT}% sobre o valor de cada serviço, descontada do repasse ao Mecânico.
+4.2. **Taxa da Plataforma**: ${PLATFORM_FEE_PERCENT}% sobre o valor de cada serviço. Para o Mecânico, a taxa **já vem descontada no valor exibido** na demanda: ele vê, antes de aceitar, exatamente quanto vai receber.
 
 4.3. **Modelo de cobrança "pacote fechado"**: o valor publicado na demanda é fechado. Não há cobrança extra se o serviço passar do tempo previsto, nem desconto se terminar antes. Esse valor é pago integralmente pela Oficina e repassado ao Mecânico (descontada a taxa).
 
 4.4. **Repasse ao Mecânico**: realizado via PIX para a chave cadastrada pelo Mecânico, em até 24 horas úteis após confirmação da conclusão do serviço pela Oficina.
 
-4.5. **Estornos** seguem a política da Stripe e os critérios definidos nesta Plataforma (ver seção 5).
+4.5. **Estornos** são devolvidos pelo mesmo meio de pagamento usado (PIX ou cartão), conforme os critérios desta Plataforma (ver seção 5).
 
 ## 5. Política de Cancelamento
 
@@ -88,7 +89,7 @@ A relação entre Mecânico e Oficina é **independente, comercial e direta**, r
 |---|---|---|
 | Mecânico ainda não chegou — primeiros ${TOLERANCE_MINUTES} minutos | Tolerância de arrependimento | **Sem multa** |
 | Mecânico ainda não chegou — após ${TOLERANCE_MINUTES} minutos | Multa pelo deslocamento | **${CANCELLATION_FEE_PERCENT}% do valor** |
-| Mecânico chegou, ainda não pago | Multa pelo deslocamento e tempo | **${CANCELLATION_FEE_PERCENT}% do valor** (cobrado via cartão) |
+| Mecânico chegou, ainda não pago | Multa pelo deslocamento e tempo | **${CANCELLATION_FEE_PERCENT}% do valor** (paga por PIX ou cartão) |
 | Pago, mecânico ainda não iniciou | Multa, com estorno parcial | **${CANCELLATION_FEE_PERCENT}% retido**, restante estornado |
 | Mecânico já iniciou o serviço | Cancelamento bilateral, em acordo | Ver seção 5.3 |
 | Serviço concluído | Não permite cancelamento | Vira disputa (seção 6) |
@@ -100,12 +101,13 @@ A relação entre Mecânico e Oficina é **independente, comercial e direta**, r
 
 ### 5.3. Cancelamento durante o serviço (em acordo bilateral)
 
-Se o serviço já está em andamento, a Oficina pode iniciar pedido de cancelamento por motivo legítimo (ex.: percepção de incompetência técnica que coloque em risco a segurança/reputação da Oficina ou cliente final).
+Se o serviço já está em andamento, a Oficina pode pedir o cancelamento por motivo legítimo (ex.: percepção de incompetência técnica que coloque em risco a segurança/reputação da Oficina ou cliente final).
 
-- A Oficina deve descrever o motivo e, opcionalmente, anexar evidências
-- O Mecânico recebe notificação imediata e tem 2 opções:
+**Como pedir**: com o serviço em andamento, o botão de cancelar da demanda fica bloqueado. A Oficina faz o pedido **pelo suporte da Plataforma** (${PLATFORM_CONTACT_EMAIL}), informando a demanda, o motivo e, se tiver, fotos ou vídeos.
+
+- A Plataforma avisa o Mecânico na hora, e ele tem 2 opções:
   - **Aceitar o cancelamento**: recebe **50% do valor**, Oficina recebe **50% de estorno**
-  - **Recusar e abrir disputa**: caso vai para o Administrador, que decide o split final com base nas evidências apresentadas
+  - **Recusar**: o caso vira uma **Disputa** (seção 6) e a equipe da Plataforma decide quanto cada parte recebe
 - O resultado da disputa é vinculante para ambas as partes
 
 ### 5.4. Cancelamentos automáticos
@@ -117,11 +119,13 @@ A Plataforma pode cancelar automaticamente um job em casos de:
 
 ## 6. Disputas
 
-6.1. Em caso de divergência entre Mecânico e Oficina sobre execução, qualidade, dano ou cancelamento, qualquer parte pode abrir uma **Disputa** pela própria Plataforma.
+6.1. **O que é uma Disputa**: é quando Mecânico e Oficina **não chegam a um acordo** sobre um serviço (execução, qualidade, dano ou cancelamento). Nesse caso, em vez de as partes resolverem sozinhas, a **equipe da Plataforma faz a mediação**. O pagamento do serviço fica retido até a decisão.
 
-6.2. O Administrador da Plataforma analisará evidências apresentadas (mensagens, fotos, vídeos, histórico) e decidirá em até 7 dias úteis. A decisão é vinculante para ambas as partes no que diz respeito ao split do pagamento.
+6.2. **Como abrir**: qualquer parte pede a abertura pelo suporte da Plataforma (${PLATFORM_CONTACT_EMAIL}), informando a demanda e o motivo.
 
-6.3. Decisões administrativas **não impedem** o uso de meios legais e judiciais externos pelas partes.
+6.3. **Como é decidido**: a equipe da Plataforma analisa as evidências (mensagens, fotos, vídeos, histórico da demanda) e decide em até 7 dias úteis **quanto do valor vai para o Mecânico e quanto volta para a Oficina**. Essa decisão é vinculante para ambas as partes no que diz respeito ao pagamento.
+
+6.4. Decisões administrativas **não impedem** o uso de meios legais e judiciais externos pelas partes.
 
 ## 7. Avaliações
 
@@ -254,7 +258,7 @@ A Plataforma pode solicitar **documentos complementares** a qualquer momento par
 
 ## 4. Pagamento e Taxa
 
-4.1. Você recebe o valor publicado na demanda **descontada a taxa de ${PLATFORM_FEE_PERCENT}% da Plataforma**.
+4.1. **O valor que você vê na demanda é o valor que você recebe.** A taxa de ${PLATFORM_FEE_PERCENT}% da Plataforma já vem descontada antes de você aceitar: nada é descontado depois, você recebe exatamente o valor que viu.
 
 4.2. Os repasses são feitos via PIX na chave cadastrada, em até 24 horas úteis após confirmação da Oficina.
 
@@ -268,10 +272,11 @@ A Plataforma pode solicitar **documentos complementares** a qualquer momento par
 
 5.2. Após confirmar chegada, você não pode cancelar unilateralmente. Eventuais imprevistos devem ser comunicados à Oficina pelo chat e podem virar **Disputa** caso não haja acordo.
 
-5.3. Se a Oficina cancelar enquanto você já está em serviço:
-- Você é notificado imediatamente
-- Pode **aceitar** (recebe 50% do valor) ou **recusar** (vira disputa)
-- Detalhes em **[Termos Gerais, seção 5](#general-cancelamento)**
+5.3. Se a Oficina pedir para cancelar enquanto você já está em serviço:
+- A Oficina não consegue cancelar sozinha pelo app: o pedido passa pelo **suporte da Plataforma**, com o motivo
+- A Plataforma te avisa na hora
+- Você pode **aceitar** (recebe 50% do valor) ou **recusar** (vira Disputa: a equipe da Plataforma analisa e decide quanto cada parte recebe)
+- Detalhes em **[Termos Gerais, seções 5 e 6](#general-cancelamento)**
 
 ## 6. Não-burla da Plataforma
 
@@ -331,7 +336,8 @@ Para se cadastrar a Oficina deve fornecer e manter atualizados:
 - **Razão social** e nome fantasia
 - **Endereço comercial completo**
 - **Telefone de contato**
-- **Forma de pagamento** (cartão de crédito ou PIX cadastrado na Stripe)
+
+Não é preciso cadastrar cartão nem forma de pagamento: cada demanda é paga na hora, por PIX ou cartão (seção 4).
 
 A Plataforma pode solicitar **alvarás, comprovantes de endereço ou documentos complementares** a qualquer momento.
 
@@ -343,7 +349,7 @@ A Plataforma pode solicitar **alvarás, comprovantes de endereço ou documentos 
 - **Aguardar pontualmente** a chegada do Mecânico no horário agendado
 - Disponibilizar **ambiente adequado e seguro** para execução do serviço (iluminação, ferramentas básicas se aplicável, EPIs gerais)
 - Tratar o Mecânico com **respeito e profissionalismo**
-- Confirmar a conclusão do serviço **em até 24 horas** após o término
+- **Vistoriar o serviço imediatamente** assim que o Mecânico informar a conclusão e, em seguida, **confirmar a conclusão na Plataforma**
 - Avaliar com sinceridade
 
 3.2. Você é responsável por:
@@ -353,7 +359,11 @@ A Plataforma pode solicitar **alvarás, comprovantes de endereço ou documentos 
 
 ## 4. Pagamento
 
-4.1. **Pagamento antecipado**: a Oficina paga o valor integral antes do início do serviço, via cartão (Stripe) ou PIX (quando disponível).
+4.1. **Pagamento antes do início**: quando o Mecânico chega, a Oficina paga o valor integral pela própria Plataforma, antes de o serviço começar. Os pagamentos são recebidos pela **${PAYMENT_COMPANY}**, sem necessidade de cadastro prévio:
+- **PIX** (recomendado): código Copia e Cola ou QR Code, compensa na hora
+- **Cartão de crédito**: pelo checkout seguro, aberto na hora do pagamento. Se houver taxa do cartão, ela é mostrada antes de você pagar
+
+Os pagamentos também podem ser processados pela **Stripe Inc.**
 
 4.2. **Pacote fechado**: o valor publicado é fechado e não muda com base no tempo real de execução. Se o Mecânico terminar antes ou levar mais tempo, o valor é o mesmo.
 
@@ -364,8 +374,8 @@ A Plataforma pode solicitar **alvarás, comprovantes de endereço ou documentos 
 5.1. **A Oficina TEM o direito** de iniciar pedido de cancelamento durante a execução, em casos legítimos (ex.: percepção de incompetência técnica que coloque em risco a Oficina ou cliente final).
 
 5.2. O cancelamento **bilateral** é a primeira opção:
-- Oficina explica motivo + opcional evidências (foto/vídeo)
-- Mecânico aceita (50% pra ele, 50% estorno) ou recusa (vira Disputa)
+- Com o serviço em andamento, o botão de cancelar fica bloqueado: a Oficina pede pelo **suporte da Plataforma**, explicando o motivo + opcional evidências (foto/vídeo)
+- Mecânico aceita (50% pra ele, 50% estorno) ou recusa (vira Disputa, decidida pela equipe da Plataforma)
 - Detalhes em **[Termos Gerais, seção 5.3](#general-cancelamento-bilateral)**
 
 5.3. **A reputação da Oficina é também impactada** por cancelamentos durante o serviço — use com responsabilidade.
@@ -442,7 +452,7 @@ Esta Política descreve como o **${PLATFORM_NAME}** coleta, usa, armazena e prot
 - Avaliações dadas e recebidas
 
 ### 2.3. Dados de Pagamento
-- Os dados de cartão **NUNCA** são armazenados em nossos servidores. Eles são processados diretamente pela **Stripe Inc.**, certificada PCI-DSS Nível 1.
+- Os dados de cartão **NUNCA** são armazenados em nossos servidores. Eles são processados diretamente pelos parceiros de pagamento (**${PAYMENT_COMPANY}** e **Stripe Inc.**).
 - Mantemos apenas o ID da transação e metadados (valor, status, data).
 
 ### 2.4. Dados de Uso e Geolocalização
@@ -490,6 +500,7 @@ Compartilhamos dados estritamente necessários com:
 
 | Parceiro | Finalidade | Onde |
 |---|---|---|
+| **${PAYMENT_COMPANY}** | Recebimento de pagamentos (PIX e cartão) | Brasil |
 | **Stripe Inc.** | Processamento de pagamentos | EUA / UE (com cláusulas-padrão da LGPD/GDPR) |
 | **Supabase Inc.** | Hospedagem do banco de dados | EUA |
 | **Resend** | Envio de e-mails transacionais | EUA |
