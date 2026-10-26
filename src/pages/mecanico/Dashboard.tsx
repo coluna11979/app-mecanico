@@ -1,3 +1,4 @@
+import ParaVoceRows from '@/components/paraVoce/ParaVoceRows';
 import PanelBanners from '@/components/banners/PanelBanners';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { jobSummary } from '@/lib/jobDescription';
@@ -260,6 +261,7 @@ export default function MechanicDashboard() {
       <div className="px-4 pt-4 space-y-5">
         {/* Banners do admin (novidades, promoções) */}
         <PanelBanners />
+        <ParaVoceRows />
 
         {/* ── Status: a ação mais importante do dia, compacta e sempre no topo ── */}
         <div className={`rounded-2xl border px-4 py-3 flex items-center gap-3 transition-colors ${
