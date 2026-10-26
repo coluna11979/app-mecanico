@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import {
-  BANNER_BADGES, BANNER_THEMES, BannerCard,
+  BANNER_BADGES, BANNER_THEMES, BannerCard, DEMO_BANNERS,
   type BannerBadge, type BannerTheme, type PanelBanner,
 } from '@/components/banners/BannerCard';
 import { Empty, Modal, pct } from './ui';
@@ -79,7 +79,8 @@ export default function Banners() {
     const { data, error: err } = await supabase.from('panel_banners').select('*')
       .order('active', { ascending: false }).order('priority', { ascending: false }).order('created_at', { ascending: false });
     setError(err ? err.message : null);
-    setList((data ?? []) as PanelBanner[]);
+    // No localhost, sem a tabela no banco: mostra exemplos pra ver o visual
+    setList(err && import.meta.env.DEV ? DEMO_BANNERS : (data ?? []) as PanelBanner[]);
     setLoading(false);
   }
   useEffect(() => { void load(); }, []);
@@ -108,7 +109,13 @@ export default function Banners() {
         <button className="btn-primary min-h-[44px]" onClick={() => setEditing({ ...EMPTY, starts_at: new Date().toISOString() })}>+ Novo banner</button>
       </div>
 
-      {error && (
+      {error && import.meta.env.DEV && (
+        <div className="bg-pending-500/10 border border-pending-500/30 text-pending-800 rounded-2xl p-4 text-sm">
+          <b>Exemplos locais.</b> A tabela de banners ainda não foi criada no banco, então aqui aparecem banners de exemplo
+          só para ver o visual. Criar, editar e pausar passam a funcionar depois da tabela criada.
+        </div>
+      )}
+      {error && !import.meta.env.DEV && (
         <div className="bg-alert-500/10 text-alert-700 rounded-2xl p-4 text-sm">
           Não deu para carregar os banners: {error}
           {/relation .* does not exist|panel_banners/.test(error) && ' (a tabela ainda não foi criada no banco).'}

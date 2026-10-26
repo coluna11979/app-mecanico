@@ -23,6 +23,26 @@ export interface PanelBanner {
   created_at: string;
 }
 
+/** Só no localhost, quando a tabela ainda não existe no banco: banners de exemplo pra ver o visual. */
+const demo = (id: string, b: Partial<PanelBanner>): PanelBanner => ({
+  id, audience: 'all', title: '', body: null, cta_label: null, cta_url: null, theme: 'grafite', badge: null,
+  image_url: null, starts_at: new Date().toISOString(), ends_at: null, active: true, priority: 0,
+  dismissible: true, views: 0, clicks: 0, created_at: new Date().toISOString(), ...b,
+});
+export const DEMO_BANNERS: PanelBanner[] = [
+  demo('demo-1', { audience: 'mechanic', theme: 'laranja', badge: 'novidade', title: 'Indique mecânicos e ganhe com isso',
+    body: 'Vire embaixador: você recebe uma parte da nossa comissão pelos serviços de quem você indicar.',
+    cta_label: 'Quero ser embaixador', cta_url: '/mecanico/embaixador' }),
+  demo('demo-2', { audience: 'mechanic', theme: 'grafite', badge: 'aviso', title: 'Perfil completo recebe mais chamados',
+    body: 'Foto, especialidades e valor/hora em dia ajudam as oficinas a escolherem você.',
+    cta_label: 'Completar perfil', cta_url: '/mecanico/perfil' }),
+  demo('demo-3', { audience: 'workshop', theme: 'grafite', badge: 'novidade', title: 'Pátio cheio? Chame um mecânico em minutos',
+    body: 'Publique a demanda e profissionais verificados da sua região aceitam.',
+    cta_label: 'Chamar mecânico', cta_url: '/oficina/dashboard' }),
+  demo('demo-4', { audience: 'all', theme: 'impacto', badge: 'lancamento', title: 'Novidade no MecânicoApp',
+    body: 'Exemplo de banner para todos os usuários.' }),
+];
+
 export const BANNER_THEMES: { v: BannerTheme; label: string }[] = [
   { v: 'grafite', label: 'Grafite' },
   { v: 'laranja', label: 'Laranja' },
