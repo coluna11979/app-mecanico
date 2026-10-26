@@ -6,6 +6,7 @@ import {
   type BannerBadge, type BannerTheme, type PanelBanner,
 } from '@/components/banners/BannerCard';
 import { Empty, Modal, pct } from './ui';
+import LibraryPicker, { countUse } from './LibraryPicker';
 
 const AUDIENCE_LABEL: Record<PanelBanner['audience'], string> = {
   workshop: '🏭 Oficinas', mechanic: '🔧 Mecânicos', all: '👥 Todos',
@@ -184,6 +185,7 @@ function BannerForm({ initial, onClose, onSaved }: { initial: Draft; onClose: ()
     setUploading(false);
     if (error) return toast.error(`Upload falhou: ${error.message}`);
     up('image_url', supabase.storage.from('panel-banners').getPublicUrl(path).data.publicUrl);
+    up('illustration_url', null);
   }
 
   async function save(e: FormEvent) {
@@ -199,6 +201,8 @@ function BannerForm({ initial, onClose, onSaved }: { initial: Draft; onClose: ()
       cta_label: cta ? f.cta_label!.trim() : null, cta_url: cta || null,
       theme: f.theme, badge: f.badge, image_url: f.image_url, starts_at: f.starts_at, ends_at: f.ends_at,
       active: f.active, priority: f.priority, dismissible: f.dismissible,
+      // Só manda o campo quando há ilustração (ou havia): banner sem ilustração salva mesmo antes da coluna existir
+      ...(f.illustration_url || initial.illustration_url ? { illustration_url: f.illustration_url ?? null } : {}),
     };
     let err;
     if (isNew) {
@@ -293,6 +297,13 @@ function BannerForm({ initial, onClose, onSaved }: { initial: Draft; onClose: ()
               {BANNER_BADGES.map(b => <option key={b.v} value={b.v}>{b.emoji} {b.label}</option>)}
             </select>
           </div>
+        </div>
+
+        <div className="border border-steel-200 rounded-xl p-3">
+          <div className="label">🎨 Ilustração da biblioteca (opcional)</div>
+          <p className="text-xs text-steel-500 mb-2">Fica ao lado do texto (em cima, no celular), no estilo dos cartões de apps grandes.</p>
+          <LibraryPicker selected={f.illustration_url ?? null} audience={f.audience}
+            onPick={i => { up('illustration_url', i?.url ?? null); if (i) { up('image_url', null); countUse(i); } }} />
         </div>
 
         <div className="border border-steel-200 rounded-xl p-3">

@@ -1,3 +1,4 @@
+import LibraryPicker, { countUse } from './LibraryPicker';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { type Audience, canvasToBlob, download } from '@/lib/brandKit';
@@ -24,6 +25,8 @@ export default function PiecesStudio({ tracked }: { tracked: boolean }) {
   const [format, setFormat] = useState<FormatId>('post');
   const [messageId, setMessageId] = useState('ofi-mao-de-obra');
   const [theme, setTheme] = useState<ThemeId>('grafite');
+  const [illustration, setIllustration] = useState<string | null>(null);
+  const [showLib, setShowLib] = useState(false);
   const [edits, setEdits] = useState<Edits>(loadEdits);
   const [editing, setEditing] = useState(false);
   const [zipping, setZipping] = useState<string | null>(null);
@@ -48,13 +51,13 @@ export default function PiecesStudio({ tracked }: { tracked: boolean }) {
   const edited = !!edits[base.id] && Object.keys(edits[base.id]).length > 0;
 
   async function downloadOne(t: ThemeId) {
-    download(pieceFileName({ message, theme: t, format }), await renderPiecePng({ message, theme: t, format, tracked }));
+    download(pieceFileName({ message, theme: t, format }), await renderPiecePng({ message, theme: t, format, tracked, illustration }));
   }
 
   async function downloadAll() {
     setZipping('0');
     try {
-      const blob = await buildPiecesZip({ audience, format, themes: THEME_IDS, tracked }, (d, t) => setZipping(`${d}/${t}`));
+      const blob = await buildPiecesZip({ audience, format, themes: THEME_IDS, tracked, illustration }, (d, t) => setZipping(`${d}/${t}`));
       download(`mecanicoapp-${format}-${audience === 'oficina' ? 'oficinas' : 'mecanicos'}.zip`, blob);
       toast.success('Pacote baixado ✓');
     } catch (e) { toast.error((e as Error).message); }
@@ -102,10 +105,24 @@ export default function PiecesStudio({ tracked }: { tracked: boolean }) {
         </div>
       </div>
 
+      {/* Ilustração da biblioteca no topo da peça */}
+      <div className="border border-steel-200 rounded-2xl p-3">
+        <button type="button" onClick={() => setShowLib(v => !v)} className="w-full flex items-center justify-between min-h-[40px] text-left">
+          <span className="text-sm font-semibold text-steel-800">🎨 Ilustração {illustration ? '(escolhida)' : '(opcional)'}</span>
+          <span className="text-sm font-semibold text-brand-600">{showLib ? 'Fechar' : illustration ? 'Trocar' : 'Escolher'}</span>
+        </button>
+        {showLib && (
+          <div className="mt-2">
+            <LibraryPicker selected={illustration} audience={audience === 'oficina' ? 'workshop' : 'mechanic'}
+              onPick={i => { setIllustration(i?.url ?? null); if (i) countUse(i); }} />
+          </div>
+        )}
+      </div>
+
       {/* Temas lado a lado */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         {THEME_IDS.map(t => (
-          <ThemePreview key={t} t={t} selected={t === theme} message={message} format={format} tracked={tracked}
+          <ThemePreview key={t} t={t} selected={t === theme} message={message} format={format} tracked={tracked} illustration={illustration}
             onSelect={() => setTheme(t)} onDownload={() => downloadOne(t)} />
         ))}
       </div>
@@ -181,7 +198,8 @@ export default function PiecesStudio({ tracked }: { tracked: boolean }) {
   );
 }
 
-function ThemePreview({ t, selected, message, format, tracked, onSelect, onDownload }: {
+function ThemePreview({ t, selected, message, format, tracked, illustration, onSelect, onDownload }: {
+  illustration: string | null;
   t: ThemeId; selected: boolean; message: Message; format: FormatId; tracked: boolean;
   onSelect: () => void; onDownload: () => Promise<void>;
 }) {
@@ -193,13 +211,13 @@ function ThemePreview({ t, selected, message, format, tracked, onSelect, onDownl
     let url: string | null = null;
     // Espera a digitação parar antes de redesenhar
     const timer = setTimeout(async () => {
-      const c = await renderPiece({ message, theme: t, format, tracked, scale: 560 / f.w });
+      const c = await renderPiece({ message, theme: t, format, tracked, illustration, scale: 560 / f.w });
       const b = await canvasToBlob(c);
       url = URL.createObjectURL(b);
       if (alive) setSrc(url); else URL.revokeObjectURL(url);
     }, 250);
     return () => { alive = false; clearTimeout(timer); if (url) URL.revokeObjectURL(url); };
-  }, [t, message, format, tracked, f.w]);
+  }, [t, message, format, tracked, illustration, f.w]);
 
   return (
     <div className={`rounded-2xl border-2 p-2 transition ${selected ? 'border-brand-500 bg-brand-50' : 'border-transparent bg-white'}`}>

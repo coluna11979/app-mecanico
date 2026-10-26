@@ -340,6 +340,26 @@ export interface PieceOptions {
   format: FormatId;
   tracked: boolean;
   scale?: number;          // < 1 para pré-visualização rápida
+  illustration?: string | null;  // URL da ilustração da biblioteca (vai no topo da peça)
+}
+
+/** Cor de fundo onde a ilustração "derrete" em cada tema. */
+const ILLUS_FADE: Record<ThemeId, string> = {
+  grafite: '#0B1117', claro: '#FFFFFF', laranja: '#F2601B', impacto: '#151C24', lancamento: '#0B1117',
+};
+
+const imgCache = new Map<string, Promise<HTMLImageElement>>();
+function loadRemoteImage(url: string) {
+  if (!imgCache.has(url)) {
+    imgCache.set(url, new Promise((res, rej) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';           // sem isso o canvas não deixa exportar o PNG
+      img.onload = () => res(img);
+      img.onerror = () => { imgCache.delete(url); rej(new Error('Não deu pra carregar a ilustração.')); };
+      img.src = url;
+    }));
+  }
+  return imgCache.get(url)!;
 }
 
 export type Token = { text: string; color: string };
@@ -386,9 +406,37 @@ export async function renderPiece(o: PieceOptions) {
   const ctx = c.getContext('2d')!;
   th.paint(ctx, W, H);
 
-  // Logo
+  // Ilustração no topo, "derretendo" no fundo do tema
+  let illusBottom = 0;
+  if (o.illustration) {
+    const img = await loadRemoteImage(o.illustration);
+    const ratio = f.print && H / W > 2 ? 0.26 : o.format === 'story' ? 0.4 : o.format === 'post' ? 0.36 : f.print ? 0.28 : 0.34;
+    const ih = H * ratio;
+    const scaleImg = Math.max(W / img.width, ih / img.height);
+    const dw = img.width * scaleImg, dh = img.height * scaleImg;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, ih); ctx.clip();
+    ctx.drawImage(img, (W - dw) / 2, (ih - dh) / 2, dw, dh);
+    ctx.restore();
+    const fade = ctx.createLinearGradient(0, ih * 0.55, 0, ih);
+    fade.addColorStop(0, ILLUS_FADE[o.theme] + '00');
+    fade.addColorStop(1, ILLUS_FADE[o.theme]);
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, ih * 0.55, W, ih * 0.45 + 1);
+    illusBottom = ih;
+  }
+
+  // Logo (sobre a ilustração ganha uma pílula para ler bem)
   const logoH = u * (tight ? 7 : 8);
-  await drawLogoLockup(ctx, th, M, top, logoH);
+  if (o.illustration) {
+    ctx.font = `700 ${logoH * 0.575}px "Space Grotesk"`;
+    const lw = logoH * 1.275 + ctx.measureText('MecânicoApp').width;
+    const pad = logoH * 0.3;
+    ctx.fillStyle = o.theme === 'claro' ? 'rgba(255,255,255,0.88)' : 'rgba(11,17,23,0.6)';
+    roundRect(ctx, M - pad, top - pad, lw + pad * 2, logoH + pad * 2, (logoH + pad * 2) / 2); ctx.fill();
+  }
+  // Sobre a pílula escura o logo usa as cores do tema grafite (no laranja, o "App" escuro sumiria)
+  await drawLogoLockup(ctx, o.illustration && o.theme !== 'claro' ? THEMES.grafite : th, M, top, logoH);
   if (m.badge) drawBadge(ctx, m.badge, W - M, top - u * 2, u * (tight ? 9 : 10), o.theme === 'claro');
 
   // Bloco de baixo (fixo no rodapé): QR no impresso, botão nas redes
@@ -405,7 +453,7 @@ export async function renderPiece(o: PieceOptions) {
   const bulletsY = blockY - u * (tight ? 4 : 6) - bulletsH;
 
   // Kicker + título ocupam o espaço entre o logo e os bullets
-  const kickerY = top + logoH + u * (tight ? 6.5 : 9);
+  const kickerY = Math.max(top + logoH + u * (tight ? 6.5 : 9), illusBottom + u * (tight ? 3 : 4));
   ctx.font = `700 ${u * 2.9 * k}px "Inter"`;
   ctx.fillStyle = th.kicker;
   if (m.kicker.trim()) ctx.fillText(m.kicker.toUpperCase(), M, kickerY);
@@ -506,7 +554,7 @@ export const pieceFileName = (o: Pick<PieceOptions, 'message' | 'theme' | 'forma
   `${o.format}-${o.message.id}-${o.theme}.png`;
 
 /** Todas as mensagens de um público num formato e tema, ou em todos os temas. */
-export async function buildPiecesZip(opts: { audience: Audience | 'all'; format: FormatId; themes: ThemeId[]; tracked: boolean },
+export async function buildPiecesZip(opts: { audience: Audience | 'all'; format: FormatId; themes: ThemeId[]; tracked: boolean; illustration?: string | null },
   onProgress?: (done: number, total: number) => void) {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
@@ -517,7 +565,7 @@ export async function buildPiecesZip(opts: { audience: Audience | 'all'; format:
     const folder = zip.folder(m.audience === 'oficina' ? 'oficinas' : 'mecanicos')!;
     for (const t of opts.themes) {
       folder.file(pieceFileName({ message: m, theme: t, format: opts.format }),
-        await renderPiecePng({ message: m, theme: t, format: opts.format, tracked: opts.tracked }));
+        await renderPiecePng({ message: m, theme: t, format: opts.format, tracked: opts.tracked, illustration: opts.illustration }));
       onProgress?.(++done, total);
     }
     if (!FORMATS[opts.format].print) folder.file(`legenda-${m.id}.txt`, m.caption);
