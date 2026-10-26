@@ -43,7 +43,12 @@ export default function Illustrations() {
         const url = await uploadImage(file, 'ilustracoes');
         // Nome do arquivo = cena do guia? Então já vem com título, público e temas
         const base = file.name.toLowerCase().replace(/\.[a-z0-9]+$/, '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        const scene = SCENES.find(s => base.includes(s.slug));
+        // Reconhece a cena pelas palavras do nome (o ChatGPT costuma sugerir nomes mais longos,
+        // ex: dono-oficina-agenda-tablet.png → dono-agenda)
+        const words = new Set(base.split('-'));
+        const scene = SCENES.find(s => base.includes(s.slug))
+          ?? SCENES.filter(s => s.slug.split('-').every(w => words.has(w)))
+            .sort((a, b) => b.slug.split('-').length - a.slug.split('-').length)[0];
         const { error: err } = await supabase.from('brand_illustrations').insert({
           url, slug: scene?.slug ?? null, title: scene?.title ?? base.replace(/-/g, ' '),
           audience: scene?.audience ?? 'all', tags: scene?.tags ?? [],
