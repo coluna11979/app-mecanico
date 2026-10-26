@@ -1,3 +1,4 @@
+import PanelBanners from '@/components/banners/PanelBanners';
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
@@ -635,6 +636,9 @@ export default function WorkshopDashboard() {
           Celular: uma coluna só, na mesma ordem de antes. */}
       <div className="max-w-6xl mx-auto lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5 lg:items-start">
       <div className="min-w-0">
+
+      {/* Banners do admin (novidades, promoções) */}
+      <PanelBanners className="mb-4" />
 
       {/* O que se faz aqui, em um botão */}
       <PlatformHero available={mechanics.length} onCall={() => openCreateModal()}
