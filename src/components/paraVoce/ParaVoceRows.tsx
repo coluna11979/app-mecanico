@@ -39,15 +39,15 @@ export function PartnersRow({ className = '' }: { className?: string }) {
 }
 
 export function ArticlesRow({ className = '' }: { className?: string }) {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const [articles, setArticles] = useState<Article[]>([]);
   useEffect(() => {
     if (!session?.user?.id) return;
     let alive = true;
-    (articlesReq ??= loadArticles()).then(a => { if (alive) setArticles(a); })
+    (articlesReq ??= loadArticles(profile?.role)).then(a => { if (alive) setArticles(a); })
       .finally(() => { setTimeout(() => { articlesReq = null; }, 30_000); });
     return () => { alive = false; };
-  }, [session?.user?.id]);
+  }, [session?.user?.id, profile?.role]);
 
   if (!articles.length) return null;
   return (

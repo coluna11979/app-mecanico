@@ -349,7 +349,7 @@ const ILLUS_FADE: Record<ThemeId, string> = {
 };
 
 const imgCache = new Map<string, Promise<HTMLImageElement>>();
-function loadRemoteImage(url: string) {
+export function loadRemoteImage(url: string) {
   if (!imgCache.has(url)) {
     imgCache.set(url, new Promise((res, rej) => {
       const img = new Image();
@@ -426,17 +426,11 @@ export async function renderPiece(o: PieceOptions) {
     illusBottom = ih;
   }
 
-  // Logo (sobre a ilustração ganha uma pílula para ler bem)
+  // Logo: com ilustração, desce para a borda onde a imagem já "derreteu" no fundo,
+  // para não cair em cima do rosto do personagem
   const logoH = u * (tight ? 7 : 8);
-  if (o.illustration) {
-    ctx.font = `700 ${logoH * 0.575}px "Space Grotesk"`;
-    const lw = logoH * 1.275 + ctx.measureText('MecânicoApp').width;
-    const pad = logoH * 0.3;
-    ctx.fillStyle = o.theme === 'claro' ? 'rgba(255,255,255,0.88)' : 'rgba(11,17,23,0.6)';
-    roundRect(ctx, M - pad, top - pad, lw + pad * 2, logoH + pad * 2, (logoH + pad * 2) / 2); ctx.fill();
-  }
-  // Sobre a pílula escura o logo usa as cores do tema grafite (no laranja, o "App" escuro sumiria)
-  await drawLogoLockup(ctx, o.illustration && o.theme !== 'claro' ? THEMES.grafite : th, M, top, logoH);
+  const logoY = o.illustration ? illusBottom - logoH * 0.6 : top;
+  await drawLogoLockup(ctx, th, M, logoY, logoH);
   if (m.badge) drawBadge(ctx, m.badge, W - M, top - u * 2, u * (tight ? 9 : 10), o.theme === 'claro');
 
   // Bloco de baixo (fixo no rodapé): QR no impresso, botão nas redes
@@ -453,7 +447,7 @@ export async function renderPiece(o: PieceOptions) {
   const bulletsY = blockY - u * (tight ? 4 : 6) - bulletsH;
 
   // Kicker + título ocupam o espaço entre o logo e os bullets
-  const kickerY = Math.max(top + logoH + u * (tight ? 6.5 : 9), illusBottom + u * (tight ? 3 : 4));
+  const kickerY = o.illustration ? logoY + logoH + u * (tight ? 5 : 6.5) : top + logoH + u * (tight ? 6.5 : 9);
   ctx.font = `700 ${u * 2.9 * k}px "Inter"`;
   ctx.fillStyle = th.kicker;
   if (m.kicker.trim()) ctx.fillText(m.kicker.toUpperCase(), M, kickerY);

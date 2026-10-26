@@ -26,6 +26,26 @@ export const SCENE_PREFIX = 'ILUSTRAÇÃO vetorial plana (flat illustration) est
 
 export const sceneText = (scene: string) => SCENE_PREFIX + scene;
 
+// O app aparece na cena como a solução: a tela é desenhada sem texto (só blocos e botão laranja)
+const APP_SCREEN = 'a tela mostra uma interface de app simplificada, só com cartões e um botão laranja em destaque, sem nenhuma letra';
+
+const ARTICLE_SCENE: Record<string, string> = {
+  workshop: `Mostre o dono da oficina numa oficina moderna e organizada, vivendo essa situação e resolvendo pelo celular: ele está pedindo um mecânico no painel de demandas do app (${APP_SCREEN}), com expressão de alívio e controle. Ao fundo, a oficina segue funcionando.`,
+  mechanic: `Mostre um mecânico autônomo numa oficina moderna, vivendo essa situação e olhando o celular: chegou uma nova demanda de serviço no app (${APP_SCREEN}) e ele está aceitando, confiante.`,
+  all: `Mostre o dono da oficina pedindo um mecânico pelo celular no painel de demandas do app (${APP_SCREEN}) e, ao lado, o mecânico chegando com a caixa de ferramentas para ajudar, numa oficina moderna e organizada.`,
+};
+ARTICLE_SCENE.blog = ARTICLE_SCENE.all;
+
+/** Pedido de capa para o ChatGPT a partir do título e do resumo do artigo. */
+export function articleArtPrompt(a: { title: string; summary?: string | null; audience: string }) {
+  const resumo = a.summary?.trim() ? ` O artigo fala sobre: ${a.summary.trim()}` : '';
+  return sceneText(
+    `capa de um artigo de blog chamado "${a.title.trim()}".${resumo} ` +
+    `${ARTICLE_SCENE[a.audience] ?? ARTICLE_SCENE.all} Dê para entender a ideia do artigo só pela imagem. Uniformes lisos laranja e grafite. ` +
+    `Deixe a faixa de baixo e o canto superior esquerdo mais limpos (só fundo), porque o título e a categoria do artigo vão por cima.`,
+  );
+}
+
 export interface Scene { slug: string; title: string; audience: 'workshop' | 'mechanic' | 'all'; tags: string[]; scene: string }
 
 export const SCENES: Scene[] = [

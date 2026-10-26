@@ -22,6 +22,7 @@ function RoleLayout({ children }: { children: ReactNode }) {
 
 /** "Para você": todos os benefícios de parceiros e os artigos, com filtro. */
 export default function ParaVoce() {
+  const { profile } = useAuth();
   const [params, setParams] = useSearchParams();
   const tab = params.get('aba') === 'conteudo' ? 'conteudo' : 'beneficios';
   const [partners, setPartners] = useState<Partner[] | null>(null);
@@ -31,8 +32,8 @@ export default function ParaVoce() {
 
   useEffect(() => {
     loadPartners().then(setPartners);
-    loadArticles().then(setArticles);
-  }, []);
+    loadArticles(profile?.role).then(setArticles);
+  }, [profile?.role]);
 
   const cats = PARTNER_CATEGORIES.filter(c => partners?.some(p => p.category === c.v));
   const shown = (partners ?? []).filter(p => !cat || p.category === cat);

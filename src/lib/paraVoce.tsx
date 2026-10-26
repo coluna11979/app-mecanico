@@ -4,6 +4,8 @@ import { supabase } from './supabase';
 /** "Para você": parceiros (benefícios) e artigos (conteúdo) dos painéis. */
 
 export type Audience = 'workshop' | 'mechanic' | 'all';
+/** Artigo pode ainda ficar só no blog público, fora dos painéis. */
+export type ArticleAudience = Audience | 'blog';
 
 export interface Partner {
   id: string;
@@ -26,7 +28,7 @@ export interface Partner {
 
 export interface Article {
   id: string;
-  audience: Audience;
+  audience: ArticleAudience;
   slug: string;
   title: string;
   summary: string | null;
@@ -50,6 +52,8 @@ export interface Article {
 export const AUDIENCE_LABEL: Record<Audience, string> = {
   mechanic: '🔧 Mecânicos', workshop: '🏭 Oficinas', all: '👥 Todos',
 };
+
+export const ARTICLE_AUDIENCE_LABEL: Record<ArticleAudience, string> = { ...AUDIENCE_LABEL, blog: '🌐 Só no blog' };
 
 export const PARTNER_CATEGORIES: { v: string; label: string; emoji: string }[] = [
   { v: 'autopecas',   label: 'Autopeças',    emoji: '🔩' },
@@ -87,11 +91,16 @@ export async function loadPartners() {
   return (data ?? []) as Partner[];
 }
 
-export async function loadArticles() {
+/**
+ * Artigos do painel de quem está logado. O blog público também é legível por
+ * quem está logado, então filtra aqui: nada de "só no blog" nem do outro público.
+ */
+export async function loadArticles(role?: string | null) {
   const { data } = await supabase.from('panel_articles')
     .select('id, audience, slug, title, summary, category, cover_url, published_at, featured, reads, active, created_at, updated_at, body')
     .order('featured', { ascending: false }).order('published_at', { ascending: false });
-  return (data ?? []) as Article[];
+  return ((data ?? []) as Article[]).filter(a =>
+    a.audience !== 'blog' && (a.audience === 'all' || !(role === 'workshop' || role === 'mechanic') || a.audience === role));
 }
 
 export const readMinutes = (body: string) => Math.max(1, Math.round(body.split(/\s+/).filter(Boolean).length / 200));

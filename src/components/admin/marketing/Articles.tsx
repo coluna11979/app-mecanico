@@ -4,10 +4,12 @@ import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { ArticleCard } from '@/components/paraVoce/Cards';
-import { type Article, type Audience, ARTICLE_CATEGORIES, AUDIENCE_LABEL, articleCategory, renderArticleBody, slugify } from '@/lib/paraVoce';
+import { type Article, type ArticleAudience, ARTICLE_AUDIENCE_LABEL, ARTICLE_CATEGORIES, articleCategory, renderArticleBody, slugify } from '@/lib/paraVoce';
 import { uploadImage } from './Partners';
 import { Empty, Modal } from './ui';
 import BlogAI from './BlogAI';
+import ArticlePost from './ArticlePost';
+import { articleArtPrompt } from '@/lib/illustrationGuide';
 
 type Draft = Omit<Article, 'id' | 'reads' | 'created_at' | 'updated_at'> & { id?: string };
 
@@ -24,6 +26,7 @@ export default function Articles() {
   const [list, setList] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Draft | null>(null);
+  const [posting, setPosting] = useState<Article | null>(null);
 
   async function load() {
     setLoading(true);
@@ -85,12 +88,13 @@ export default function Articles() {
                   {a.public && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5 bg-blue-50 text-blue-700">🌐 blog público</span>}
                 </div>
                 <div className="text-xs text-steel-500">
-                  {status(a)} · {AUDIENCE_LABEL[a.audience]} · {articleCategory(a.category)} · {new Date(a.published_at).toLocaleDateString('pt-BR')} · <b>{a.reads}</b> leituras
+                  {status(a)} · {ARTICLE_AUDIENCE_LABEL[a.audience]} · {articleCategory(a.category)} · {new Date(a.published_at).toLocaleDateString('pt-BR')} · <b>{a.reads}</b> leituras
                 </div>
               </div>
               <div className="flex gap-2">
                 <a className="btn-ghost text-sm" href={a.public ? `/blog/${a.slug}` : `/para-voce/artigo/${a.slug}`} target="_blank" rel="noreferrer">Ver</a>
                 <button className="btn-ghost text-sm" onClick={() => setEditing({ ...a })}>Editar</button>
+                <button className="btn-ghost text-sm" onClick={() => setPosting(a)}>📱 Post</button>
                 <button className="btn-ghost text-sm" onClick={() => toggle(a)}>{a.active ? 'Despublicar' : 'Publicar'}</button>
                 <button className="btn-ghost text-sm text-steel-500 hover:text-alert-600" onClick={() => remove(a)}>Apagar</button>
               </div>
@@ -99,6 +103,7 @@ export default function Articles() {
         </div>
       )}
 
+      {posting && <ArticlePost article={posting} onClose={() => setPosting(null)} />}
       {editing && <ArticleForm initial={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); }} />}
     </div>
   );
@@ -131,7 +136,7 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
     const row = {
       audience: f.audience, slug, title: f.title.trim(), summary: f.summary?.trim() || null, category: f.category,
       cover_url: f.cover_url, cover_credit: f.cover_url ? f.cover_credit ?? null : null, cover_query: f.cover_query ?? null, body: f.body.trim(), published_at: f.published_at, active: publish, featured: f.featured,
-      public: !!f.public, social_caption: f.social_caption?.trim() || null,
+      public: f.audience === 'blog' || !!f.public, social_caption: f.social_caption?.trim() || null,
       review_status: f.origin === 'ia' ? (publish ? 'revisado' : f.review_status ?? 'aguardando_revisao') : null,
       updated_at: new Date().toISOString(),
     };
@@ -170,14 +175,17 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
           <>
             <div>
               <div className="label">Quem vê</div>
-              <div className="grid grid-cols-3 gap-2">
-                {(['mechanic', 'workshop', 'all'] as Audience[]).map(a => (
-                  <button key={a} type="button" onClick={() => up('audience', a)}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(['mechanic', 'workshop', 'all', 'blog'] as ArticleAudience[]).map(a => (
+                  <button key={a} type="button" onClick={() => { up('audience', a); if (a === 'blog') up('public', true); }}
                     className={`min-h-[44px] rounded-lg border-2 text-sm font-semibold ${f.audience === a ? 'border-brand-500 text-brand-700 bg-brand-50' : 'border-steel-200 text-steel-600'}`}>
-                    {AUDIENCE_LABEL[a]}
+                    {ARTICLE_AUDIENCE_LABEL[a]}
                   </button>
                 ))}
               </div>
+              {f.audience === 'blog' && (
+                <p className="text-xs text-steel-500 mt-1">Não aparece no painel da oficina nem no do mecânico: só em mecanicoapp.com.br/blog.</p>
+              )}
             </div>
             <div><label className="label">Título</label>
               <input className="input" value={f.title} maxLength={110}
@@ -215,6 +223,18 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
                 </label>
                 {f.cover_url && <button type="button" className="text-sm text-steel-600" onClick={() => { up('cover_url', null); up('cover_credit', null); }}>Usar capa sem foto</button>}
               </div>
+              <div className="rounded-xl bg-steel-50 border border-steel-200 p-3 mb-2 flex items-center gap-3 flex-wrap">
+                <button type="button" className="btn-secondary text-sm min-h-[44px]" disabled={f.title.trim().length < 5}
+                  onClick={async () => {
+                    try { await navigator.clipboard.writeText(articleArtPrompt(f)); toast.success('Pedido copiado ✓ Cole no seu projeto do ChatGPT.'); }
+                    catch { toast.error('Não deu pra copiar. Tente de novo.'); }
+                  }}>
+                  🎨 Pedir arte no ChatGPT
+                </button>
+                <span className="text-xs text-steel-500 flex-1 min-w-[200px]">
+                  Copia o pedido da capa já com o tema do artigo. Cole no projeto do ChatGPT, suba a imagem em <b>Ilustrações</b> e escolha em <b>Trocar foto → Ilustrações</b>.
+                </span>
+              </div>
               {picker && (
                 <CoverPicker articleId={initial.id} initialQuery={f.cover_query || ''}
                   onPicked={r => { up('cover_url', r.url); up('cover_credit', r.credit); up('cover_query', r.query); setPicker(false); }} />
@@ -229,10 +249,10 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
                 Destaque (aparece primeiro)
               </label>
             </div>
-            <label className="flex items-start gap-2 text-sm text-steel-700 cursor-pointer bg-blue-50/60 border border-blue-100 rounded-xl p-3">
+            {f.audience !== 'blog' && <label className="flex items-start gap-2 text-sm text-steel-700 cursor-pointer bg-blue-50/60 border border-blue-100 rounded-xl p-3">
               <input type="checkbox" className="mt-0.5 h-5 w-5 rounded border-steel-300 text-brand-500" checked={!!f.public} onChange={e => up('public', e.target.checked)} />
               <span><b>Mostrar também no blog público</b> (mecanicoapp.com.br/blog): qualquer pessoa lê, aparece no Google e dá pra divulgar o link. Sem marcar, fica só dentro do app.</span>
-            </label>
+            </label>}
             <div>
               <div className="flex items-center justify-between">
                 <label className="label">Legenda para divulgar (Instagram)</label>
