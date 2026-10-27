@@ -410,13 +410,14 @@ export async function renderPiece(o: PieceOptions) {
   let illusBottom = 0;
   if (o.illustration) {
     const img = await loadRemoteImage(o.illustration);
-    const ratio = f.print && H / W > 2 ? 0.26 : o.format === 'story' ? 0.4 : o.format === 'post' ? 0.36 : f.print ? 0.28 : 0.34;
+    const ratio = f.print && H / W > 2 ? 0.26 : o.format === 'story' ? 0.4 : o.format === 'post' ? 0.4 : f.print ? 0.28 : 0.38;
     const ih = H * ratio;
     const scaleImg = Math.max(W / img.width, ih / img.height);
     const dw = img.width * scaleImg, dh = img.height * scaleImg;
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, W, ih); ctx.clip();
-    ctx.drawImage(img, (W - dw) / 2, (ih - dh) / 2, dw, dh);
+    // Corte puxado para cima: nas ilustrações o rosto fica no terço de cima
+    ctx.drawImage(img, (W - dw) / 2, (ih - dh) * 0.15, dw, dh);
     ctx.restore();
     const fade = ctx.createLinearGradient(0, ih * 0.55, 0, ih);
     fade.addColorStop(0, ILLUS_FADE[o.theme] + '00');

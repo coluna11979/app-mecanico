@@ -25,14 +25,14 @@ const ICON: Record<string, string[]> = {
 
 const SHAPE = 'M32 10c-7.2 0-13 5.8-13 13 0 4.6 2.4 8.6 6 10.9V50a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V33.9c3.6-2.3 6-6.3 6-10.9 0-7.2-5.8-13-13-13Zm0 6.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Z';
 
-function BrandMark({ hero, label, light = true }: { hero: boolean; label: string; light?: boolean }) {
+function BrandMark({ hero, label, light = true }: { hero: boolean; label?: string; light?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <svg viewBox="0 0 64 64" className={hero ? 'w-8 h-8' : 'w-6 h-6'} aria-hidden>
         <rect width="64" height="64" rx="14" fill="#0B1117" />
         <path fill="#FF5C0A" d={SHAPE} />
       </svg>
-      <span className={`font-bold uppercase tracking-wider ${hero ? 'text-xs' : 'text-[10px]'} ${light ? 'text-white/90' : 'text-steel-900'}`}>{label}</span>
+      {label && <span className={`font-bold uppercase tracking-wider ${hero ? 'text-xs' : 'text-[10px]'} ${light ? 'text-white/90' : 'text-steel-900'}`}>{label}</span>}
     </div>
   );
 }
@@ -51,10 +51,11 @@ export default function ArticleCover({ a, variant = 'card', className = '' }: {
         <img src={a.cover_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
         <div className="absolute inset-0" style={{ background: hero
           ? 'linear-gradient(180deg, rgba(11,17,23,.35) 0%, rgba(11,17,23,.05) 35%, rgba(11,17,23,.85) 100%)'
-          : 'linear-gradient(180deg, rgba(11,17,23,.55) 0%, rgba(11,17,23,0) 45%)' }} />
+          : 'linear-gradient(180deg, rgba(11,17,23,.3) 0%, rgba(11,17,23,0) 35%)' }} />
         <div className="absolute left-0 bottom-0 h-1.5 w-1/3 bg-brand-500" />
         <div className={`relative flex flex-col ${hero ? 'min-h-[18rem] sm:min-h-[22rem] p-5 pb-9 sm:p-8 sm:pb-10' : 'h-full p-3'}`}>
-          <BrandMark hero={hero} label={articleCategory(a.category)} />
+          {/* No cartão fica só o ícone: o nome da categoria cobria a ilustração */}
+          <BrandMark hero={hero} label={hero ? articleCategory(a.category) : undefined} />
           {hero && (
             <h1 className="font-display font-bold text-white text-2xl sm:text-4xl leading-tight mt-auto pt-12 max-w-[22ch] drop-shadow">
               {a.title}

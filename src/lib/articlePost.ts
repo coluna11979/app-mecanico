@@ -70,7 +70,8 @@ export async function renderArticlePost(a: PostArticle, theme: ThemeId, format: 
     const dw = img.width * s, dh = img.height * s;
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, W, ih); ctx.clip();
-    ctx.drawImage(img, (W - dw) / 2, (ih - dh) / 2, dw, dh);
+    // Corte puxado para cima: nas ilustrações o rosto fica no terço de cima
+    ctx.drawImage(img, (W - dw) / 2, (ih - dh) * 0.15, dw, dh);
     ctx.restore();
     const fadeColor = FADE[theme] ?? '#0B1117';
     const g = ctx.createLinearGradient(0, ih * 0.6, 0, ih);
