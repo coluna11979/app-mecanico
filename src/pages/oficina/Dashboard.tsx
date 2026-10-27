@@ -19,6 +19,7 @@ import type { Job } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import { jobDraftKey, jobDraftOriginKey, markPlatformItems } from '@/lib/callMechanic';
 import StackBoard from '@/components/marketplace/StackBoard';
+import VehiclePicker from '@/components/marketplace/VehiclePicker';
 import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
@@ -1017,12 +1018,10 @@ export default function WorkshopDashboard() {
               {!editingId && !form.service_order_id && !form.stacked_service_ids?.length && (
                 <div>
                   <label className="label" htmlFor="job-vehicle">Veículo</label>
-                  <div className="relative">
-                    <IconCar className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-400" />
-                    <input id="job-vehicle" className="input !pl-11" placeholder="Ex.: Gol prata 2015 · ABC1D23" autoComplete="off"
-                      value={form.vehicle ?? ''} onChange={set('vehicle')} />
-                  </div>
-                  <div className="text-xs text-steel-500 mt-1.5">Modelo, cor e placa. O mecânico vê em qual carro vai trabalhar.</div>
+                  <VehiclePicker value={form.vehicle ?? ''}
+                    icon={<IconCar className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-400 pointer-events-none" />}
+                    onChange={val => setForm(f => { const next = { ...f, vehicle: val }; persistDraft(next); return next; })} />
+                  <div className="text-xs text-steel-500 mt-1.5">Digite o carro e escolha na lista. O mecânico vê em qual carro vai trabalhar.</div>
                 </div>
               )}
 
