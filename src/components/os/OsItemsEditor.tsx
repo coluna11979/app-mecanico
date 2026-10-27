@@ -459,7 +459,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           return svc && laborKeys.has(svc.key) ? idOf.get(svc.key)! : null;
         })(),
         service_type: r.kind === 'labor' ? effType(r, rows, grp) : null,
-        ...(r.kind === 'part' && r.standalone ? { standalone: true } : {}),
+        // Sempre manda o campo: o salvamento é em lote e linha sem o campo chegava vazia ao banco
+        standalone: r.kind === 'part' && !!r.standalone,
         position: idx,
       }));
       const savedIds = new Set(rows.filter(r => r.id).map(r => r.id!));
