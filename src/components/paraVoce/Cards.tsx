@@ -55,7 +55,7 @@ export function ArticleCard({ a, compact = false }: { a: Pick<Article, 'slug' | 
   return (
     <Link to={`/para-voce/artigo/${a.slug}`}
       className="group bg-white border border-steel-200 rounded-2xl overflow-hidden flex flex-col h-full hover:border-brand-300 transition">
-      <div className={compact ? 'h-28' : 'h-36'}><ArticleCover a={a} /></div>
+      <div className={compact ? 'h-24 sm:h-28' : 'h-36'}><ArticleCover a={a} /></div>
       <div className="p-3 flex flex-col flex-1">
         <div className="font-bold text-steel-900 leading-snug line-clamp-2 group-hover:text-brand-700">{a.title}</div>
         {!compact && a.summary && <p className="text-sm text-steel-600 mt-1 line-clamp-2">{a.summary}</p>}

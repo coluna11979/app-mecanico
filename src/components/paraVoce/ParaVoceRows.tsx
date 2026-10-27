@@ -76,7 +76,7 @@ function Row({ title, more, count, children, className = '' }: { title: string; 
         <h2 className="font-bold text-steel-900">{title}</h2>
         {count > 2 && <Link to={more} className="text-sm font-semibold text-brand-600 min-h-[36px] grid place-items-center">Ver todos →</Link>}
       </div>
-      <div className="flex gap-3 overflow-x-auto snap-x pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-3 overflow-x-auto snap-x scroll-px-4 pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 lg:scroll-px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {children}
       </div>
     </section>
