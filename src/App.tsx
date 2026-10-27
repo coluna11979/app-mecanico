@@ -5,6 +5,7 @@ import { UpdatePrompt } from './components/UpdatePrompt';
 import { Toaster } from './components/ui/Toast';
 
 import Landing from './pages/public/Landing';
+import { isStandalone } from './lib/push';
 import LandingMecanico from './pages/public/LandingMecanico';
 import LandingOficina from './pages/public/LandingOficina';
 import Login from './pages/public/Login';
@@ -122,7 +123,9 @@ export default function App() {
     <Toaster />
     <Routes>
       {/* Público */}
-      <Route path="/" element={<Landing />} />
+      {/* App instalado não mostra a página de apresentação: vai direto ao login (o iPhone e apps
+          instalados antes ignoram o start_url do manifesto, por isso o desvio também aqui) */}
+      <Route path="/" element={isStandalone() ? <Navigate to="/login" replace /> : <Landing />} />
       <Route path="/mecanico" element={<LandingMecanico />} />
       <Route path="/oficina" element={<LandingOficina />} />
       <Route path="/login" element={<Login />} />

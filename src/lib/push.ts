@@ -17,7 +17,8 @@ export type PushState =
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches
+/** Aberto pelo app instalado (tela inicial), não pelo navegador */
+export const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches
   || (navigator as unknown as { standalone?: boolean }).standalone === true;
 
 /** Registro do service worker, sem travar se não houver (ex.: modo dev) */

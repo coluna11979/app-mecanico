@@ -18,7 +18,8 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
-        start_url: '/',
+        // App instalado abre no login (logado, o login já leva direto para o painel)
+        start_url: '/login',
         lang: 'pt-BR',
         icons: [
           {
