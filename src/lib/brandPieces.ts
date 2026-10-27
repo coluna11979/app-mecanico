@@ -417,7 +417,9 @@ export async function renderPiece(o: PieceOptions) {
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, W, ih); ctx.clip();
     // Corte puxado para cima: nas ilustrações o rosto fica no terço de cima
+    ctx.filter = 'saturate(0.75)';   // ilustrações vêm muito saturadas; cansa a vista
     ctx.drawImage(img, (W - dw) / 2, (ih - dh) * 0.15, dw, dh);
+    ctx.filter = 'none';
     ctx.restore();
     const fade = ctx.createLinearGradient(0, ih * 0.55, 0, ih);
     fade.addColorStop(0, ILLUS_FADE[o.theme] + '00');

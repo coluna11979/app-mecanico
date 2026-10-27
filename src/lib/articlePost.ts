@@ -71,7 +71,9 @@ export async function renderArticlePost(a: PostArticle, theme: ThemeId, format: 
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, W, ih); ctx.clip();
     // Corte puxado para cima: nas ilustrações o rosto fica no terço de cima
+    ctx.filter = 'saturate(0.75)';   // ilustrações vêm muito saturadas; cansa a vista
     ctx.drawImage(img, (W - dw) / 2, (ih - dh) * 0.15, dw, dh);
+    ctx.filter = 'none';
     ctx.restore();
     const fadeColor = FADE[theme] ?? '#0B1117';
     const g = ctx.createLinearGradient(0, ih * 0.6, 0, ih);

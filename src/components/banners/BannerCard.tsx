@@ -124,7 +124,7 @@ export function BannerCard({ b, onCta, onDismiss }: {
     return (
       <div ref={box} className={`relative rounded-2xl overflow-hidden ${wide ? 'flex items-stretch' : ''}`} style={s.box}>
         <div className={wide ? 'w-[42%] shrink-0 order-2' : 'aspect-[16/9]'}>
-          <img src={b.illustration_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+          <img src={b.illustration_url} alt="" className="w-full h-full object-cover saturate-[.75]" loading="lazy" />
         </div>
         <div className={`min-w-0 flex-1 flex flex-col justify-center ${wide ? 'px-6 py-5 order-1' : 'px-5 py-4'}`}>
           {badge && (
