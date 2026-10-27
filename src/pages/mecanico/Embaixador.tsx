@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { formatMoney } from '@/lib/payment';
 import { supabase } from '@/lib/supabase';
+import { PERGUNTAS, type Respostas, pesquisaCompleta } from '@/lib/embaixadorPesquisa';
 
 type Resumo = {
   codigo_indicacao: string;
@@ -72,20 +73,11 @@ export default function MecanicoEmbaixador() {
     window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
   }
 
-  // Se não é embaixador, tela informativa
+  // Ainda não é embaixador: explica o programa e deixa pedir (o admin aprova)
   if (!loading && !resumo?.codigo_indicacao) {
     return (
       <MechanicLayout>
-        <div className="p-4">
-          <div className="card !bg-steel-800 border border-steel-700 text-center py-12">
-            <div className="text-5xl mb-3">🌟</div>
-            <h1 className="text-xl font-bold text-white">Você ainda não é embaixador</h1>
-            <p className="text-steel-400 text-sm mt-2 max-w-sm mx-auto">
-              O programa de embaixador é liberado pela equipe pra mecânicos selecionados.
-              Se acha que se encaixa, fala com a gente pelo suporte.
-            </p>
-          </div>
-        </div>
+        <PedirEmbaixador />
       </MechanicLayout>
     );
   }
@@ -240,6 +232,114 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
     <div className="card !bg-steel-800 border border-steel-700">
       <div className="text-[10px] uppercase tracking-widest text-steel-400 font-bold">{label}</div>
       <div className={`text-2xl font-bold font-display mt-1 ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+type Pedido = { status: 'pendente' | 'aprovado' | 'recusado'; created_at: string; decided_at: string | null };
+
+function PedirEmbaixador() {
+  const [pedido, setPedido] = useState<Pedido | null | undefined>(undefined);
+  const [motivo, setMotivo] = useState('');
+  const [resp, setResp] = useState<Respostas>({});
+  const [sending, setSending] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.rpc('meu_pedido_embaixador').then(({ data }) => {
+      const row = Array.isArray(data) ? data[0] : data;
+      setPedido((row as Pedido) ?? null);
+    });
+  }, []);
+
+  async function pedir() {
+    if (!pesquisaCompleta(resp)) { setErro('Responda todas as perguntas para enviar.'); return; }
+    setSending(true); setErro(null);
+    const { error } = await supabase.rpc('pedir_embaixador', { p_motivo: motivo, p_respostas: resp });
+    setSending(false);
+    if (error) { setErro('Não deu pra enviar agora. Tente de novo em instantes.'); return; }
+    setPedido({ status: 'pendente', created_at: new Date().toISOString(), decided_at: null });
+  }
+
+  const pendente = pedido?.status === 'pendente';
+  const recusado = pedido?.status === 'recusado';
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="card !bg-steel-800 border border-steel-700">
+        <div className="text-4xl mb-2">🌟</div>
+        <h1 className="text-xl font-bold text-white">Programa de embaixadores</h1>
+        <p className="text-steel-400 text-sm mt-1">
+          Indique mecânicos para o MecânicoApp e ganhe uma parte da nossa comissão em cada serviço que eles fizerem.
+        </p>
+        <ul className="mt-4 space-y-2.5 text-sm text-steel-200">
+          <li className="flex gap-2"><span>🔗</span><span>Você ganha um <b className="text-white">link e um código</b> só seus para indicar.</span></li>
+          <li className="flex gap-2"><span>💸</span><span>Recebe <b className="text-white">20% da comissão da plataforma</b> nos serviços de quem entrou pelo seu link. Não sai nada do ganho deles.</span></li>
+          <li className="flex gap-2"><span>📊</span><span>Acompanha aqui quem entrou, quantos serviços fizeram e quanto você tem a receber.</span></li>
+        </ul>
+        <div className="mt-4 rounded-xl bg-steel-900/60 border border-steel-700 p-3 text-xs text-steel-400">
+          Exemplo: serviço de R$ 500 → nossa comissão R$ 100 → <b className="text-brand-400">você recebe R$ 20</b>.
+        </div>
+      </div>
+
+      {pedido === undefined ? null : pendente ? (
+        <div className="card !bg-steel-800 border border-pending-500/40">
+          <div className="font-bold text-white">⏳ Pedido enviado</div>
+          <p className="text-steel-400 text-sm mt-1">
+            Recebemos seu pedido em {new Date(pedido!.created_at).toLocaleDateString('pt-BR')}. A equipe analisa e, quando aprovar,
+            seu link de indicação aparece aqui nesta tela.
+          </p>
+        </div>
+      ) : (
+        <div className="card !bg-steel-800 border border-steel-700 space-y-3">
+          {recusado && (
+            <p className="text-sm text-steel-400">
+              Seu último pedido não foi aprovado. Continue fazendo serviços bem avaliados e peça de novo quando quiser.
+            </p>
+          )}
+          <div>
+            <div className="font-bold text-white">Conte um pouco sobre você</div>
+            <p className="text-xs text-steel-400">Leva menos de 1 minuto. A equipe usa para analisar o pedido.</p>
+          </div>
+          {PERGUNTAS.map(q => {
+            const atual = resp[q.id];
+            const marcado = (v: string) => (Array.isArray(atual) ? atual.includes(v) : atual === v);
+            function toggle(v: string) {
+              setErro(null);
+              setResp(r => {
+                if (!q.multipla) return { ...r, [q.id]: v };
+                const lista = Array.isArray(r[q.id]) ? (r[q.id] as string[]) : [];
+                return { ...r, [q.id]: lista.includes(v) ? lista.filter(x => x !== v) : [...lista, v] };
+              });
+            }
+            return (
+              <fieldset key={q.id}>
+                <legend className="text-sm font-semibold text-white mb-1.5">
+                  {q.texto} {q.multipla && <span className="font-normal text-steel-400">(pode marcar mais de um)</span>}
+                </legend>
+                <div className="flex flex-wrap gap-2">
+                  {q.opcoes.map(o => (
+                    <button key={o.v} type="button" onClick={() => toggle(o.v)}
+                      className={`min-h-[44px] px-3.5 rounded-xl border text-sm font-semibold transition ${marcado(o.v)
+                        ? 'bg-brand-500 border-brand-500 text-white' : 'border-steel-600 text-steel-200'}`}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            );
+          })}
+          <label className="block">
+            <span className="text-sm font-semibold text-white">Quer contar mais alguma coisa? (opcional)</span>
+            <textarea className="input mt-1 text-sm" rows={3} maxLength={300} value={motivo} onChange={e => setMotivo(e.target.value)}
+              placeholder="Ex.: conheço vários mecânicos do meu bairro e de um grupo de WhatsApp de autônomos." />
+          </label>
+          {erro && <p className="text-sm text-alert-400">{erro}</p>}
+          <button className="btn-primary w-full min-h-[48px]" disabled={sending} onClick={pedir}>
+            {sending ? 'Enviando…' : 'Quero ser embaixador'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -72,7 +72,7 @@ const THEME_STYLE: Record<BannerTheme, { box: CSSProperties; title: string; body
     title: 'text-steel-900', body: 'text-steel-600', cta: 'bg-steel-900 text-white', badge: 'bg-brand-500/10 text-brand-700', close: 'text-steel-400',
   },
   impacto: {
-    box: { background: 'repeating-linear-gradient(135deg, rgba(255,255,255,.03) 0 10px, transparent 10px 22px), linear-gradient(100deg, #151C24 62%, #E64500 62.2%, #FF7A38 100%)' },
+    box: { background: 'repeating-linear-gradient(135deg, rgba(255,255,255,.03) 0 10px, transparent 10px 22px), linear-gradient(100deg, #151C24 84%, #E64500 84.2%, #FF7A38 100%)' },
     title: 'text-white', body: 'text-steel-300', cta: 'bg-white text-steel-900', badge: 'bg-brand-500/20 text-brand-300', close: 'text-white/80',
   },
 };
@@ -109,7 +109,7 @@ export function BannerCard({ b, onCta, onDismiss }: {
 
   if (b.image_url) {
     return (
-      <div ref={box} className="relative rounded-2xl overflow-hidden bg-steel-100">
+      <div ref={box} className="mech-keep-dark relative rounded-2xl overflow-hidden bg-steel-100">
         <button type="button" onClick={hasCta ? onCta : undefined} className={`block w-full ${hasCta ? '' : 'cursor-default'}`}
           aria-label={b.title}>
           <img src={b.image_url} alt={b.title} className="w-full h-auto block" />
@@ -122,29 +122,31 @@ export function BannerCard({ b, onCta, onDismiss }: {
   // Com ilustração: cartão editorial (imagem em cima no celular, ao lado no largo)
   if (b.illustration_url) {
     return (
-      <div ref={box} className={`relative rounded-2xl overflow-hidden ${wide ? 'flex items-stretch' : ''}`} style={s.box}>
-        <div className={wide ? 'w-[42%] shrink-0 order-2' : 'aspect-[16/9]'}>
+      <div ref={box} className="mech-keep-dark relative rounded-2xl overflow-hidden flex items-stretch" style={s.box}>
+        <div className={`shrink-0 order-2 ${wide ? 'w-[40%]' : 'w-[34%]'}`}>
           <img src={b.illustration_url} alt="" className="w-full h-full object-cover saturate-[.75]" loading="lazy" />
         </div>
-        <div className={`min-w-0 flex-1 flex flex-col justify-center ${wide ? 'px-6 py-5 order-1' : 'px-5 py-4'}`}>
+        <div className={`min-w-0 flex-1 flex flex-col justify-center order-1 ${wide ? 'px-6 py-5' : 'px-4 py-3'}`}>
           {badge && (
-            <span className={`self-start inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide rounded-full px-2.5 py-1 mb-2 ${s.badge}`}>
+            <span className={`self-start inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 mb-1.5 ${s.badge}`}>
               {badge.emoji} {badge.label}
             </span>
           )}
-          <div className={`font-display font-bold leading-snug ${wide ? 'text-xl' : 'text-lg'} ${s.title}`}>{b.title}</div>
-          {b.body && <p className={`text-sm mt-1 leading-relaxed ${s.body}`}>{b.body}</p>}
+          <div className={`font-display font-bold leading-snug ${wide ? 'text-xl' : 'text-base'} ${s.title}`}>{b.title}</div>
+          {b.body && <p className={`mt-0.5 leading-snug line-clamp-2 ${wide ? 'text-sm' : 'text-[13px]'} ${s.body}`}>{b.body}</p>}
           {hasCta && (
             <button type="button" onClick={onCta}
-              className={`mt-3 self-start inline-flex items-center gap-1.5 rounded-xl px-4 min-h-[44px] text-sm font-bold ${s.cta}`}>
+              className={`mt-2 self-start inline-flex items-center gap-1.5 rounded-xl px-3.5 min-h-[44px] text-sm font-bold ${s.cta}`}>
               {b.cta_label} <span aria-hidden>→</span>
             </button>
           )}
         </div>
         {b.dismissible && onDismiss && (
           <button onClick={onDismiss} aria-label="Fechar banner"
-            className="absolute top-1.5 right-1.5 h-10 w-10 grid place-items-center rounded-full bg-black/35 text-white">
-            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            className="absolute top-1 right-1 h-11 w-11 grid place-items-center">
+            <span className="h-7 w-7 grid place-items-center rounded-full bg-black/40 text-white">
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </span>
           </button>
         )}
       </div>
@@ -152,20 +154,21 @@ export function BannerCard({ b, onCta, onDismiss }: {
   }
 
   return (
-    <div ref={box} className={`relative rounded-2xl overflow-hidden min-h-[128px] flex flex-col justify-center ${wide ? 'px-6 py-5' : 'px-5 py-4'}`} style={s.box}>
+    // mech-keep-dark: o banner tem fundo próprio; o modo claro do mecânico não pode inverter as cores dele
+    <div ref={box} className={`mech-keep-dark relative rounded-2xl overflow-hidden flex flex-col justify-center ${wide ? 'px-6 py-5' : 'px-4 py-3'}`} style={s.box}>
       <div className={`${wide ? 'flex items-center gap-6' : ''} ${b.dismissible && onDismiss ? 'pr-10' : ''}`}>
         <div className="min-w-0 flex-1">
           {badge && (
-            <span className={`inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide rounded-full px-2.5 py-1 mb-2 ${s.badge}`}>
+            <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 mb-1.5 ${s.badge}`}>
               {badge.emoji} {badge.label}
             </span>
           )}
-          <div className={`font-display font-bold leading-snug ${wide ? 'text-xl' : 'text-lg'} ${s.title}`}>{b.title}</div>
-          {b.body && <p className={`text-sm mt-1 leading-relaxed ${s.body}`}>{b.body}</p>}
+          <div className={`font-display font-bold leading-snug ${wide ? 'text-xl' : 'text-base'} ${s.title}`}>{b.title}</div>
+          {b.body && <p className={`mt-0.5 leading-snug line-clamp-2 ${wide ? 'text-sm' : 'text-[13px]'} ${s.body}`}>{b.body}</p>}
         </div>
         {hasCta && (
           <button type="button" onClick={onCta}
-            className={`${wide ? '' : 'mt-3'} shrink-0 inline-flex items-center gap-1.5 rounded-xl px-4 min-h-[44px] text-sm font-bold ${s.cta}`}>
+            className={`${wide ? '' : 'mt-2'} shrink-0 inline-flex items-center gap-1.5 rounded-xl px-4 min-h-[44px] text-sm font-bold ${s.cta}`}>
             {b.cta_label} <span aria-hidden>→</span>
           </button>
         )}

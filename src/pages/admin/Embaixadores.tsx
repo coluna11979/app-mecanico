@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
+import { PERGUNTAS, type Respostas, labelResposta, notaPerfil } from '@/lib/embaixadorPesquisa';
 
 type Row = {
   mechanic_id: string;
@@ -73,6 +74,8 @@ export default function AdminEmbaixadores() {
           </p>
         </div>
       </div>
+
+      <PedidosEmbaixador onDecided={load} />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
@@ -185,6 +188,85 @@ function StatMini({ label, value, highlight = false }: { label: string; value: s
     <div className={`rounded-xl p-2 text-center ${highlight ? 'bg-signal-500/10' : 'bg-steel-50'}`}>
       <div className="text-[9px] uppercase tracking-wider text-steel-500 font-bold">{label}</div>
       <div className={`font-bold text-sm mt-0.5 ${highlight ? 'text-signal-700' : 'text-steel-900'}`}>{value}</div>
+    </div>
+  );
+}
+
+type Pedido = {
+  id: string; mechanic_id: string; profile_id: string; full_name: string; phone: string | null;
+  city: string | null; state: string | null; rating: number | null; total_jobs: number | null;
+  motivo: string | null; respostas: Respostas | null; created_at: string;
+};
+
+const NIVEL = {
+  forte: { label: 'Perfil forte', cls: 'bg-signal-500/15 text-signal-700' },
+  medio: { label: 'Perfil médio', cls: 'bg-pending-500/15 text-pending-800' },
+  fraco: { label: 'Perfil fraco', cls: 'bg-alert-500/10 text-alert-700' },
+};
+
+/** Pedidos feitos pelo app (botão "Quero ser embaixador"): aprovar gera o código na hora. */
+function PedidosEmbaixador({ onDecided }: { onDecided: () => void }) {
+  const [pedidos, setPedidos] = useState<Pedido[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function load() {
+    const { data } = await supabase.rpc('admin_listar_pedidos_embaixador');
+    setPedidos((data as Pedido[]) ?? []);
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function decidir(p: Pedido, aprovar: boolean) {
+    if (!aprovar && !confirm(`Recusar o pedido de ${p.full_name}? Ele poderá pedir de novo depois.`)) return;
+    setBusy(p.id);
+    const { error } = await supabase.rpc('admin_decidir_pedido_embaixador', { p_id: p.id, p_aprovar: aprovar });
+    setBusy(null);
+    if (error) { alert('Erro: ' + error.message); return; }
+    await load();
+    if (aprovar) onDecided();
+  }
+
+  if (!pedidos.length) return null;
+  return (
+    <div className="card border-2 border-pending-500/40 bg-pending-500/5 mb-6">
+      <div className="font-bold text-steel-900 mb-3">⏳ Pedidos para ser embaixador ({pedidos.length})</div>
+      <div className="divide-y divide-steel-100">
+        {pedidos.map(p => {
+          const n = notaPerfil(p.respostas, p);
+          return (
+          <div key={p.id} className="py-3 flex flex-col sm:flex-row sm:items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Link to={`/admin/usuario/${p.profile_id}`} className="font-semibold text-steel-900 hover:text-brand-500">{p.full_name}</Link>
+                <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${NIVEL[n.nivel].cls}`}>{NIVEL[n.nivel].label} · {n.pontos}/{n.max}</span>
+              </div>
+              <div className="text-xs text-steel-500 flex flex-wrap gap-x-3">
+                {p.city && <span>📍 {p.city}{p.state ? `/${p.state}` : ''}</span>}
+                <span>🔧 {p.total_jobs ?? 0} serviços</span>
+                {p.rating != null && <span>⭐ {Number(p.rating).toFixed(1)}</span>}
+                {p.phone && <span>📱 {p.phone}</span>}
+                <span>Pediu em {new Date(p.created_at).toLocaleDateString('pt-BR')}</span>
+              </div>
+              <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                {PERGUNTAS.map(q => (
+                  <div key={q.id}>
+                    <dt className="text-steel-500">{q.texto}</dt>
+                    <dd className="font-semibold text-steel-800">{labelResposta(q, p.respostas?.[q.id])}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="text-xs text-steel-500 mt-1">Na plataforma: {n.motivos.join(' · ')}</p>
+              {p.motivo && <p className="text-sm text-steel-700 mt-1">“{p.motivo}”</p>}
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button className="btn-primary text-sm min-h-[40px]" disabled={busy === p.id} onClick={() => decidir(p, true)}>
+                {busy === p.id ? '…' : '✓ Aprovar'}
+              </button>
+              <button className="btn-ghost text-sm min-h-[40px] text-steel-500" disabled={busy === p.id} onClick={() => decidir(p, false)}>Recusar</button>
+            </div>
+          </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
