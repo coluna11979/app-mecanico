@@ -48,7 +48,7 @@ export default function ArticleCover({ a, variant = 'card', className = '' }: {
   if (a.cover_url) {
     return (
       <div className={`relative w-full overflow-hidden bg-steel-900 ${hero ? 'min-h-[18rem] sm:min-h-[22rem]' : 'h-full'} ${className}`}>
-        <img src={a.cover_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+        <img src={a.cover_url} alt="" className="absolute inset-0 w-full h-full object-cover saturate-[.75]" loading="lazy" />
         <div className="absolute inset-0" style={{ background: hero
           ? 'linear-gradient(180deg, rgba(11,17,23,.35) 0%, rgba(11,17,23,.05) 35%, rgba(11,17,23,.85) 100%)'
           : 'linear-gradient(180deg, rgba(11,17,23,.3) 0%, rgba(11,17,23,0) 35%)' }} />

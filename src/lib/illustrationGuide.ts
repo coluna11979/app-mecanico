@@ -8,10 +8,12 @@ export const STYLE_PROMPT = `Crie uma ilustração editorial plana (flat), no es
 
 ESTILO (mantenha igual em todas as imagens desta conversa):
 - Formas simples e chapadas, sem contorno preto, sombras suaves em blocos de cor, leve textura granulada.
-- Paleta limitada: laranja vivo #FF5C0A como cor de destaque, grafite #0B1117 e azul-petróleo escuro nas sombras, cinza-claro #F5F7FA e tons de pele quentes e variados.
+- Cores SUAVES e pouco saturadas, confortáveis de olhar. Base da imagem em cinza-claro #F5F7FA, branco-gelo, cinza-azulado suave e grafite #0B1117 só nas sombras.
+- Laranja #FF5C0A só em DETALHES (uniforme, um botão, uma ferramenta): no máximo 10% da imagem. Nada de céu, chão ou parede laranja.
+- Tons de pele quentes e variados.
 - Pessoas brasileiras, diversas, proporções realistas, expressões naturais e simpáticas.
 - Ambientes atuais: oficina mecânica moderna, limpa e organizada, carros recentes.
-- Enquadramento com bastante respiro, composição de cinema, luz de fim de tarde.
+- Enquadramento com bastante respiro, luz natural de dia, clara e neutra. SEM pôr do sol e sem brilho alaranjado.
 - Formato horizontal 3:2 (1536 x 1024).
 
 PROIBIDO: qualquer texto, letra, número, logotipo ou marca de carro visível; aparência 3D ou foto realista; estilo infantil ou cartoon exagerado.
@@ -22,7 +24,7 @@ CENA: `;
  * Reforço curto que vai NO COMEÇO de cada cena: sem ele o ChatGPT tende a fazer
  * foto realista quando a cena descreve um ambiente real.
  */
-export const SCENE_PREFIX = 'ILUSTRAÇÃO vetorial plana (flat illustration) estilo editorial de app, NÃO é foto e NÃO é 3D: formas chapadas, cores sólidas, sombras em blocos, sem detalhes realistas. Paleta: laranja #FF5C0A, grafite #0B1117, azul-petróleo escuro, cinza-claro e tons de pele quentes. Sem nenhum texto, letra, número, logo ou marca (carros sem emblema, roupas lisas). Formato horizontal 3:2. CENA: ';
+export const SCENE_PREFIX = 'ILUSTRAÇÃO vetorial plana (flat illustration) estilo editorial de app, NÃO é foto e NÃO é 3D: formas chapadas, cores sólidas, sombras em blocos, sem detalhes realistas. Cores suaves e pouco saturadas: base em cinza-claro, branco-gelo e cinza-azulado, grafite só nas sombras, laranja #FF5C0A só em detalhes (no máximo 10% da imagem), luz natural de dia, sem pôr do sol. Tons de pele quentes. Sem nenhum texto, letra, número, logo ou marca (carros sem emblema, roupas lisas). Formato horizontal 3:2. CENA: ';
 
 export const sceneText = (scene: string) => SCENE_PREFIX + scene;
 
