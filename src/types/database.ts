@@ -356,6 +356,8 @@ export interface ServiceOrderItem {
   stacked_at?: string | null;
   /** Tempo estimado do serviço, em minutos (editável na OS) */
   estimated_minutes?: number | null;
+  /** Só peças: item próprio da OS (com preço), não pertence ao serviço de cima */
+  standalone?: boolean | null;
   position: number;
   created_at: string;
 }

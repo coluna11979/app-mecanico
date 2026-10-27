@@ -26,6 +26,8 @@ type Row = {
   mechanic_id: string;
   /** Só peças: key da linha do serviço em que foi usada ('' = nenhum) — a comissão da peça segue quem fez esse serviço */
   used_in: string;
+  /** Só peças: item próprio da OS (preço de venda), não fica dentro do serviço de cima */
+  standalone?: boolean;
   /** Só serviços: 'servico' / 'mao_de_obra'. Com peça da loja abaixo → 4% sobre serviço + peças; sem peça → 10% */
   stype: '' | 'servico' | 'mao_de_obra';
   /** Só serviços: comissão digitada para quem fez (R$, substitui a regra deste serviço); '' = regra */
@@ -39,6 +41,7 @@ function groupOf(rs: Row[]): Map<string, Row | null> {
   let cur: Row | null = rs.find(r => r.kind === 'labor') ?? null;
   for (const r of rs) {
     if (r.kind === 'labor') cur = r;
+    else if (r.standalone) g.set(r.key, null); // item próprio: não entra no serviço de cima
     else g.set(r.key, cur);
   }
   return g;
@@ -96,6 +99,7 @@ function toRow(i: ServiceOrderItem): Row {
     unit_cost: i.unit_cost != null ? moneyInput(Number(i.unit_cost)) : '', part_id: i.part_id ?? null,
     mechanic_id: i.executor === 'platform' ? PLATFORM_ITEM : i.workshop_mechanic_id ?? '',
     used_in: i.used_in_item_id ?? '',
+    standalone: i.kind === 'part' ? !!i.standalone : undefined,
     stype: i.kind === 'labor' ? i.service_type ?? '' : '',
     comm: i.kind === 'labor' && i.commission_amount != null ? moneyInput(Number(i.commission_amount)) : '',
   };
@@ -295,7 +299,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   function addRow(kind: OsItemKind | 'mao_de_obra') {
+    // Peça lançada pelo botão de cima é item próprio (com preço); a peça de dentro de um item vem de "+ detalhar peça"
     setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
+      standalone: kind === 'part' && rs.some(r => r.kind === 'labor') ? true : undefined,
       stype: kind === 'part' ? '' : 'servico', comm: '' }]);
   }
   /** Peça já dentro de um serviço: entra logo abaixo dele (e das peças que ele já tem) */
@@ -321,7 +327,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       unit_cost: sg.cost ? moneyInput(sg.cost) : '', part_id: sg.part_id ?? null, mechanic_id: '', used_in: '', stype: '', comm: '' };
     setRows(rs => {
       const i = targetKey ? rs.findIndex(r => r.key === targetKey) : -1;
-      if (i < 0) return [...rs, row];
+      if (i < 0) return [...rs, { ...row, standalone: rs.some(x => x.kind === 'labor') ? true : undefined }];
       let j = i + 1;
       while (j < rs.length && rs[j].kind === 'part') j++;
       // Dentro de um item, a peça é só custo: o preço que o cliente paga já está no item
@@ -364,6 +370,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         const s = suggestions.find(x => x.description.toLowerCase() === patch.description!.trim().toLowerCase());
         if (s) {
           next.kind = s.kind;
+          if (r.kind === 'labor' && s.kind === 'part') { next.standalone = true; next.stype = ''; }
           // Serviço da tabela sem preço fixo: o valor é digitado na OS
           if (!r.unit_price && s.unit_price > 0) next.unit_price = moneyInput(s.unit_price);
           // Serviço já cobrado neste modelo de veículo: o último preço dele vale mais que o da tabela
@@ -452,6 +459,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           return svc && laborKeys.has(svc.key) ? idOf.get(svc.key)! : null;
         })(),
         service_type: r.kind === 'labor' ? effType(r, rows, grp) : null,
+        ...(r.kind === 'part' && r.standalone ? { standalone: true } : {}),
         position: idx,
       }));
       const savedIds = new Set(rows.filter(r => r.id).map(r => r.id!));
@@ -525,6 +533,16 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                     ➕ Cadastrar peça nova
                   </button>
                 </div>
+              )}
+              {!readOnly && r.kind === 'part' && nested && (
+                <button type="button" className="text-[11px] font-semibold text-brand-700 hover:underline mt-1"
+                  title="A peça deixa de ser só custo do item de cima e vira um item da OS, com preço de venda e estoque"
+                  onClick={() => {
+                    const sp = suggestions.find(x => x.part_id && x.part_id === r.part_id)?.unit_price;
+                    update(r.key, { standalone: true, ...(sp && sp > 0 ? { unit_price: moneyInput(sp) } : {}) });
+                  }}>
+                  ⤴ Tornar item separado (com preço)
+                </button>
               )}
               {!readOnly && r.kind === 'part' && r.description.trim().length >= 2 && !r.part_id && (
                 showCost ? (
@@ -660,12 +678,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 + Item
               </button>
             )}
-            {saleMode && (
-              <button type="button" onClick={() => addRow('part')}
-                className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
-                + Peça
-              </button>
-            )}
+            <button type="button" onClick={() => addRow('part')}
+              title={saleMode ? undefined : 'Peça vendida como item da OS, com preço (a peça só de custo fica dentro de um item, em “+ detalhar peça”)'}
+              className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
+              {saleMode ? '+ Peça' : '+ Peça (com preço)'}
+            </button>
             <button type="button" onClick={() => setCatalogOpen(true)}
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
               🧭 Escolher serviço e peças
