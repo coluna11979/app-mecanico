@@ -14,7 +14,7 @@ import EmptyState from '@/components/os/EmptyState';
 import OsSkeleton from '@/components/os/OsSkeleton';
 import { toast } from '@/components/ui/Toast';
 import NewOsModal, { type NewOsPreset } from '@/components/os/NewOsModal';
-import { OS_STATUS_FLOW, openPause, statusChange } from '@/components/os/osHelpers';
+import { OS_STATUS_FLOW, openPause, osStatusLabel, statusChange } from '@/components/os/osHelpers';
 import { sessionAllows, useOperator } from '@/lib/operators';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { MyCommissionSummary, useMyCommission } from '@/components/os/MyCommission';
@@ -249,13 +249,14 @@ export default function ServiceOrders() {
   const mine = (o: OsRow) => !!access.mechanicId
     && o.status !== 'cancelled'
     && (o.workshop_mechanic_id === access.mechanicId || !!myOsIds?.has(o.id));
-  const base = list.filter(o => {
+  /** Passa nos filtros de mecânico, período e busca (o período pode ser desligado: o quadro usa isso nas colunas de trabalho) */
+  const passes = (o: OsRow, withPeriod: boolean) => {
     if (mech) { if (!mine(o)) return false; }
     else if (filterMech !== 'all') {
       const who = o.executor === 'platform' ? 'platform' : o.workshop_mechanic_id ?? 'none';
       if (who !== filterMech) return false;
     }
-    if (!inPeriod(o)) return false;
+    if (withPeriod && !inPeriod(o)) return false;
     if (search) {
       const q = search.toLowerCase();
       return (
@@ -267,7 +268,10 @@ export default function ServiceOrders() {
       );
     }
     return true;
-  });
+  };
+  const base = list.filter(o => passes(o, true));
+  /** Quadro: o que está pendente (aberta, aprovada, em andamento) aparece sempre; o período vale para as concluídas */
+  const boardBase = list.filter(o => passes(o, !ACTIVE_STATUSES.includes(o.status)));
   const isScheduled = (o: OsRow) => !!o.scheduled_at && PRE_START.includes(o.status);
   const scheduledCount = base.filter(isScheduled).length;
   const byStatus = filterStatus === 'all' ? base : base.filter(o => o.status === filterStatus);
@@ -389,11 +393,28 @@ export default function ServiceOrders() {
           </select>}
         </div>
 
+        {hasFilters && (() => {
+          const labels = [
+            filterPeriod !== 'all' && `📆 ${PERIOD_LABEL[filterPeriod]}`,
+            onlyScheduled && '📅 Só agendadas',
+            filterStatus !== 'all' && `Situação: ${osStatusLabel({ status: filterStatus })}`,
+            !mech && filterMech !== 'all' && `Responsável: ${filterMech === 'none' ? 'sem responsável' : filterMech === 'platform' ? 'plataforma' : internalMechs.find(m => m.id === filterMech)?.name ?? '—'}`,
+            search && `Busca: “${search}”`,
+          ].filter(Boolean) as string[];
+          return (
+            <div className="rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-900 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-semibold">Filtros ativos: {labels.join(' · ')}</span>
+              <span className="text-brand-700">Outra pessoa ou outro computador pode estar com filtros diferentes.</span>
+              <button type="button" onClick={clearFilters} className="ml-auto font-bold underline">Limpar filtros</button>
+            </div>
+          );
+        })()}
+
         {loading || (mech && (!access.ready || (!!access.mechanicId && myOsIds === null))) ? (
           <OsSkeleton count={3} />
         ) : view === 'colunas' && typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches ? (
           <OsBoard
-            list={onlyScheduled ? base.filter(isScheduled) : base}
+            list={onlyScheduled ? boardBase.filter(isScheduled) : boardBase}
             mechanicView={mech}
             onOpen={openOs}
             onMove={(os, to) => updateStatus(os, to)}
