@@ -5,7 +5,8 @@ import { fmtBRL, fmtPhone, moneyInput, parseMoney } from '@/components/os/osHelp
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { METHODS, RECEIVE_METHODS, type PayMethod } from '@/lib/cash';
 import { useOperator } from '@/lib/operators';
-import { ensureCatalogParts, partKey, partNameForVehicle } from '@/lib/parts';
+import { ensureCatalogParts, loadAllParts, loadDefaultMargin, partKey, partNameForVehicle, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import PartSearchInput, { type CatalogPart } from './PartSearchInput';
 import { COMMISSION_COLS, RULE, commissionFor, pcts, type CommissionMech } from '@/lib/commission';
 import { OsCommission, useDraftCommission, type AutoCommission } from '@/components/cash/OsCommission';
 import { isExcluded, itemExtra, loadItemRules, type ItemRule } from '@/lib/commissionRules';
@@ -15,6 +16,8 @@ import ServiceTitleInput from './ServiceTitleInput';
 
 /** who: '' = o responsável geral da nota · id do mecânico · PLATFORM */
 type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string; who: string;
+  /** Só peças: escolhida no cadastro (fica ligada a ela; não cria peça nova) */
+  part_id?: string | null; part_cost?: number;
   /** Só serviços: 'servico' = serviço + peças (ex.: troca de óleo já com óleo e filtro) · 'mao_de_obra' = só o trabalho */
   stype?: 'servico' | 'mao_de_obra' };
 /** Serviço que já inclui o material no valor (troca de óleo/filtro): na nota vem numa linha só */
@@ -90,6 +93,20 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
   const [paid, setPaid] = useState(() => !editOs || editOs.payments.length > 0 || !!editOs.pay_later_due);
   /** Peças da nota vão para o cadastro (preço da nota; custo pela margem da loja) */
   const [toCatalog, setToCatalog] = useState(true);
+  /** Cadastro de peças da loja, para buscar ao corrigir a nota */
+  const [catalogParts, setCatalogParts] = useState<CatalogPart[]>([]);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      loadAllParts<Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>>(
+        imp.workshop_id, 'id, name, code, brand, cost, margin_percent, sale_price, stock_qty, unit'),
+      loadDefaultMargin(imp.workshop_id),
+    ]).then(([ps, m]) => {
+      if (!alive) return;
+      setCatalogParts(ps.map(p => ({ id: p.id, name: p.name, code: p.code, brand: p.brand, price: salePriceOf(p, m), cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit })));
+    });
+    return () => { alive = false; };
+  }, [imp.workshop_id]);
   const [pays, setPays] = useState<PayRow[]>(() => {
     const list = (x?.pagamentos ?? []).map(p => ({
       key: ++seq, method: p.forma as PayRow['method'], amount: p.valor != null ? moneyInput(p.valor) : '', installments: p.parcelas || 1,
@@ -358,7 +375,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
       let catalog = new Map<string, { id: string; cost: number }>();
       if (toCatalog) {
         try {
-          catalog = (await ensureCatalogParts(wid, items.filter(r => r.tipo === 'part' && r.descricao.trim())
+          catalog = (await ensureCatalogParts(wid, items.filter(r => r.tipo === 'part' && !r.part_id && r.descricao.trim())
             .map(r => ({ name: catalogName(r.descricao), price: parseMoney(r.valor || '0') })))).map;
         } catch (err) {
           console.warn('[ImportReview] peças não foram para o cadastro:', err);
@@ -371,7 +388,9 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
           quantity: parseMoney(r.quantidade),
           unit_price: parseMoney(r.valor || '0'),
           position: idx,
-          ...(r.tipo === 'part' && catalog.get(partKey(catalogName(r.descricao)))
+          ...(r.tipo === 'part' && r.part_id
+            ? { part_id: r.part_id, unit_cost: (r.part_cost ?? 0) > 0 ? r.part_cost : null }
+            : r.tipo === 'part' && catalog.get(partKey(catalogName(r.descricao)))
             ? { part_id: catalog.get(partKey(catalogName(r.descricao)))!.id,
                 unit_cost: catalog.get(partKey(catalogName(r.descricao)))!.cost > 0 ? catalog.get(partKey(catalogName(r.descricao)))!.cost : null }
             : {}),
@@ -759,8 +778,14 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
                     <option value="servico">Serviço + peças</option>
                     <option value="mao_de_obra">Mão de obra</option>
                   </select>
-                  <input className={`${cls(`itens[${idx}].descricao`)} col-span-9`} placeholder="Descrição" value={r.descricao}
-                    onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: e.target.value } : i))} />
+                  {r.tipo === 'part' ? (
+                    <PartSearchInput className={cls(`itens[${idx}].descricao`)} value={r.descricao} partId={r.part_id ?? null} catalog={catalogParts}
+                      onType={v => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: v, part_id: null, part_cost: undefined } : i))}
+                      onPick={p => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: p.name, part_id: p.id, part_cost: p.cost, valor: i.valor || moneyInput(p.price) } : i))} />
+                  ) : (
+                    <input className={`${cls(`itens[${idx}].descricao`)} col-span-9`} placeholder="Descrição" value={r.descricao}
+                      onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: e.target.value } : i))} />
+                  )}
                   <label className="col-span-3 text-[10px] text-steel-400 uppercase">
                     Qtd
                     <input className={`${cls(`itens[${idx}].quantidade`)} text-right mt-0.5`} inputMode="decimal" value={r.quantidade}
