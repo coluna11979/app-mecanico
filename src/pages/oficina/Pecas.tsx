@@ -40,6 +40,8 @@ export default function Pecas() {
   const [q, setQ]               = useState('');
   const [supplierF, setSupplierF] = useState('');
   const [cat, setCat]           = useState<PartCategory | ''>('');
+  /** Só as peças que vieram da planilha do sistema antigo */
+  const [fromSheet, setFromSheet] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const [more, setMore]         = useState(false);
   const [limit, setLimit]       = useState(PAGE);
@@ -96,7 +98,7 @@ export default function Pecas() {
     setParams(p => { const n = new URLSearchParams(p); n.delete('peca'); n.delete('nova'); return n; }, { replace: true });
   }, [data, params, setParams]);
 
-  useEffect(() => { setLimit(PAGE); }, [q, situation, supplierF, cat, showInactive, vBrand, vModel, vYear, noVehicle]);
+  useEffect(() => { setLimit(PAGE); }, [q, situation, supplierF, cat, fromSheet, showInactive, vBrand, vModel, vYear, noVehicle]);
 
   const parts = data?.parts ?? null;
   const supplierName = useMemo(() => new Map(suppliers.map(x => [x.id, x.name])), [suppliers]);
@@ -124,13 +126,14 @@ export default function Pecas() {
       && matchSituation(p, situation, data)
       && (!supplierF || p.supplier_id === supplierF)
       && (!cat || p.category === cat)
+      && (!fromSheet || p.origin === 'planilha')
       && (!noVehicle || (!p.universal && !vehicles.get(p.id)?.length))
       && (!hasVehicleFilter || p.universal || fitsVehicle(vehicles.get(p.id), vBrand, vModel, yearNum))
       && (!t || p.name.toLowerCase().includes(t) || p.code?.toLowerCase().includes(t)
         || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supplierName.get(p.supplier_id)?.toLowerCase().includes(t))
         || partCategory(p.category).label.toLowerCase().includes(t)))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [data, parts, q, showInactive, situation, supplierF, cat, supplierName, vehicles, vBrand, vModel, yearNum, hasVehicleFilter, noVehicle]);
+  }, [data, parts, q, showInactive, situation, supplierF, cat, fromSheet, supplierName, vehicles, vBrand, vModel, yearNum, hasVehicleFilter, noVehicle]);
 
   const counts = useMemo(() => {
     const c = {} as Record<Situation, number>;
@@ -159,6 +162,7 @@ export default function Pecas() {
     );
   }
 
+  const sheetCount = (parts ?? []).filter(p => p.active && p.origin === 'planilha').length;
   const inactiveCount = (parts ?? []).filter(p => !p.active).length;
   const usedSuppliers = suppliers.filter(s => (parts ?? []).some(p => p.supplier_id === s.id));
   const extraFilters = showInactive ? 1 : 0;
@@ -224,6 +228,11 @@ export default function Pecas() {
               <QuickChip on={situation === 'com_estoque'} onClick={() => setSituation(situation === 'com_estoque' ? 'todas' : 'com_estoque')}>
                 Com estoque ({counts.com_estoque ?? 0})
               </QuickChip>
+              {sheetCount > 0 && (
+                <QuickChip on={fromSheet} onClick={() => setFromSheet(v => !v)}>
+                  📄 Planilha do sistema antigo ({sheetCount})
+                </QuickChip>
+              )}
               {catCounts.length > 1 && (
                 <select value={cat} onChange={e => setCat(e.target.value as PartCategory | '')}
                   className={`text-xs font-semibold pl-3 pr-7 py-1.5 rounded-full border bg-white ${cat ? 'border-steel-900 text-steel-900' : 'border-steel-200 text-steel-600'}`}>

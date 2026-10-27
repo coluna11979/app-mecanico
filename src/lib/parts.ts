@@ -13,6 +13,8 @@ export type WorkshopPart = {
   margin_percent: number | null; sale_price: number | null;
   stock_qty: number; min_qty: number; category: PartCategory;
   universal: boolean; active: boolean; created_at: string; updated_at: string;
+  /** De onde veio: 'planilha' = cadastro importado do sistema antigo; null = cadastro normal */
+  origin?: string | null;
 };
 
 /**
