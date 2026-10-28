@@ -25,8 +25,8 @@ const num = (s: string) => { const n = parseMoney(s); return Number.isFinite(n) 
 const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
 /** "10190 SILENCIOSO INT." com código 10190 → "SILENCIOSO INT." (a leitura às vezes repete o código no nome) */
-const stripCode = (name: string, code: string) => {
-  const c = code.trim();
+const stripCode = (name: string, code: string | null) => {
+  const c = (code ?? '').trim();
   return c && name.trim().startsWith(`${c} `) ? name.trim().slice(c.length).trim() : name.trim();
 };
 

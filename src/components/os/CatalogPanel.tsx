@@ -4,6 +4,20 @@ import { fmtBRL, parseMoney } from './osHelpers';
 import type { Suggestion } from './OsItemsEditor';
 
 const norm = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+const LIST_MAX = 80;
+
+/** Ordena o que bateu na busca: código exato › nome começa com a 1ª palavra › com estoque › resto (ordem original) */
+function rankHits(hits: Suggestion[], words: string[]) {
+  if (!words.length) return hits;
+  const score = (s: Suggestion) => {
+    const n = norm(s.description);
+    return (s.code && words.includes(norm(s.code)) ? 4 : 0)
+      + (n.startsWith(words[0]) ? 2 : n.split(/[^a-z0-9]+/).some(t => t.startsWith(words[0])) ? 1 : 0)
+      + ((s.stock ?? 0) > 0 ? 1 : 0);
+  };
+  return hits.map((s, i) => ({ s, i, k: score(s) })).sort((a, b) => b.k - a.k || a.i - b.i).map(x => x.s);
+}
 type Tab = 'servico' | 'peca';
 
 /** Serviço que acabou de entrar na OS: aqui escolhe/descreve as peças dele (opcional) */
@@ -66,13 +80,15 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
     return [...m.entries()].sort((a, b) => Number(a[0] === 'Já usados antes') - Number(b[0] === 'Já usados antes') || b[1] - a[1]);
   }, [suggestions]);
 
-  const list = useMemo(() => {
+  // Muitas peças batem com uma palavra só ("óleo" = 130 na Jota Car): as mais prováveis vêm primeiro
+  // (código exato, nome começando pela busca, com estoque) e o resto aparece ao refinar a busca
+  const matches = useMemo(() => {
     const words = norm(q).split(/\s+/).filter(Boolean);
-    return suggestions
+    return rankHits(suggestions
       .filter(s => (tab === 'peca' ? s.kind === 'part' : isLabor(s) && (!cat || catOf(s) === cat)))
-      .filter(s => { const n = norm(`${s.description} ${s.code ?? ''}`); return words.every(w => n.includes(w)); })
-      .slice(0, 80);
+      .filter(s => { const n = norm(`${s.description} ${s.code ?? ''}`); return words.every(w => n.includes(w)); }), words);
   }, [suggestions, tab, q, cat]);
+  const list = matches.slice(0, LIST_MAX);
 
   // O destino pode sumir (serviço removido) — cai para o último
   const validTarget = services.some(s => s.key === target) ? target : services.at(-1)?.key ?? '';
@@ -85,7 +101,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   const partHits = useMemo(() => {
     const words = norm(pq).split(/\s+/).filter(Boolean);
     if (!words.length) return [];
-    return suggestions.filter(s => s.kind === 'part' && words.every(w => norm(`${s.description} ${s.code ?? ''}`).includes(w))).slice(0, 6);
+    return rankHits(suggestions.filter(s => s.kind === 'part' && words.every(w => norm(`${s.description} ${s.code ?? ''}`).includes(w))), words).slice(0, 6);
   }, [suggestions, pq]);
 
   function openVehicle() {
@@ -323,6 +339,11 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
                 </li>
               );
             })}
+            {matches.length > LIST_MAX && (
+              <li className="px-4 py-3 text-center text-xs text-steel-500">
+                Mostrando {LIST_MAX} de {matches.length}. Digite mais uma palavra (ex.: medida, marca ou código) para achar a peça.
+              </li>
+            )}
           </ul>
         )}
 
