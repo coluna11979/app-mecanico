@@ -339,8 +339,11 @@ function ApprovalDrawer({
     // Notifica o cadastrado quando a decisão exige resposta/retorno dele —
     // aprovado, rejeitado ou em espera por região. "Em análise" e "reaberto"
     // sao movimentos internos da fila do admin e nao viram email.
+    // O template HTML especifico so existe pra approved/rejected; awaiting_region
+    // usa o template generico (conteudo amigavel ja vem no proprio content).
     if (isFinalDecision) {
-      void sendApprovalEmail(row.id, content, kind, status);
+      const template = status === 'approved' || status === 'rejected' ? status : undefined;
+      void sendApprovalEmail(row.id, content, kind, template);
     }
 
     setBusy(null);
