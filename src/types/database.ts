@@ -1,5 +1,5 @@
 export type Role = 'mechanic' | 'workshop' | 'admin';
-export type ProfileStatus = 'pending' | 'under_review' | 'approved' | 'rejected';
+export type ProfileStatus = 'pending' | 'under_review' | 'approved' | 'rejected' | 'awaiting_region';
 export type JobStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'disputed' | 'cancelled';
 export type TxStatus = 'held' | 'released' | 'refunded';
 

@@ -8,15 +8,27 @@ import type { Mechanic, Profile } from '@/types/database';
 type Row = Mechanic & { profile: Profile };
 
 const STATUS_LABEL: Record<string, string> = {
-  approved:     'Aprovado',
-  rejected:     'Rejeitado',
-  under_review: 'Em análise',
-  pending:      'Pendente',
+  approved:        'Aprovado',
+  rejected:        'Rejeitado',
+  under_review:    'Em análise',
+  pending:         'Pendente',
+  awaiting_region: 'Aguardando região',
 };
+
+type StatusFilter = 'all' | 'approved' | 'pending' | 'under_review' | 'awaiting_region' | 'rejected';
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'all',             label: 'Todos' },
+  { key: 'approved',        label: '✅ Ativos' },
+  { key: 'pending',         label: '🆕 Pendentes' },
+  { key: 'under_review',    label: '🔍 Em análise' },
+  { key: 'awaiting_region', label: '📍 Aguardando região' },
+  { key: 'rejected',        label: '❌ Rejeitados' },
+];
 
 export default function AdminMechanics() {
   const [rows, setRows] = useState<Row[]>([]);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   useEffect(() => {
     supabase
@@ -26,21 +38,50 @@ export default function AdminMechanics() {
       .then(({ data }) => setRows((data as unknown as Row[]) ?? []));
   }, []);
 
-  const filtered = rows.filter(r =>
-    r.profile.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    r.cpf?.includes(search)
-  );
+  const filtered = rows.filter(r => {
+    if (statusFilter !== 'all' && r.profile.status !== statusFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const hay = [
+      r.profile.full_name, r.cpf,
+      r.city, r.neighborhood, r.cep, r.state,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+
+  const statusCounts = STATUS_FILTERS.reduce((acc, f) => {
+    acc[f.key] = f.key === 'all' ? rows.length : rows.filter(r => r.profile.status === f.key).length;
+    return acc;
+  }, {} as Record<StatusFilter, number>);
 
   return (
     <AdminLayout>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Mecânicos ({rows.length})</h1>
         <input
           className="input max-w-xs"
-          placeholder="Buscar por nome ou CPF…"
+          placeholder="Buscar por nome, CPF, cidade, bairro ou CEP…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+      </div>
+
+      {/* Filtro por status */}
+      <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-6 overflow-x-auto">
+        {STATUS_FILTERS.map(f => (
+          <button
+            key={f.key}
+            onClick={() => setStatusFilter(f.key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+              statusFilter === f.key
+                ? 'bg-white shadow text-steel-900'
+                : 'text-steel-500 hover:text-steel-700'
+            }`}
+          >
+            <span>{f.label}</span>
+            <span className="text-[10px] text-steel-400">{statusCounts[f.key] ?? 0}</span>
+          </button>
+        ))}
       </div>
 
       {/* Desktop table */}
@@ -50,6 +91,7 @@ export default function AdminMechanics() {
             <tr>
               <th className="py-2 pr-4">Nome</th>
               <th className="pr-4">CPF</th>
+              <th className="pr-4">Localização</th>
               <th className="pr-4">Skills</th>
               <th className="pr-4">R$/h</th>
               <th className="pr-4">★</th>
@@ -63,6 +105,7 @@ export default function AdminMechanics() {
               <tr key={r.id} className="hover:bg-steel-50 transition">
                 <td className="py-3 pr-4 font-semibold">{r.profile.full_name}</td>
                 <td className="pr-4 text-steel-500">{r.cpf}</td>
+                <td className="pr-4 text-steel-500"><LocationCell cep={r.cep} neighborhood={r.neighborhood} city={r.city} state={r.state} /></td>
                 <td className="pr-4 text-steel-500">{r.skills.slice(0, 3).join(', ')}</td>
                 <td className="pr-4">R$ {r.hourly_rate.toFixed(0)}</td>
                 <td className="pr-4">{r.rating.toFixed(1)}</td>
@@ -90,6 +133,11 @@ export default function AdminMechanics() {
               <div className="flex-1 min-w-0">
                 <div className="font-bold truncate">{r.profile.full_name}</div>
                 <div className="text-xs text-steel-500 mt-0.5">{r.cpf}</div>
+                {(r.city || r.neighborhood) && (
+                  <div className="text-xs text-steel-400 mt-1">
+                    📍 <LocationCell cep={r.cep} neighborhood={r.neighborhood} city={r.city} state={r.state} />
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-1 mt-2">
                   {r.skills.slice(0, 4).map(s => (
                     <span key={s} className="badge bg-steel-100 text-steel-700">{s}</span>
@@ -115,11 +163,29 @@ export default function AdminMechanics() {
   );
 }
 
+function LocationCell({ cep, neighborhood, city, state }: {
+  cep: string | null; neighborhood: string | null; city: string | null; state: string | null;
+}) {
+  const parts: string[] = [];
+  if (neighborhood) parts.push(neighborhood);
+  if (city) parts.push(state ? `${city}/${state}` : city);
+  const main = parts.join(' · ');
+  if (!main && !cep) return <span className="text-steel-300">—</span>;
+  return (
+    <span className="inline-flex flex-col">
+      {main && <span>{main}</span>}
+      {cep && <span className="text-[11px] text-steel-400 font-mono">{cep}</span>}
+    </span>
+  );
+}
+
 function StatusBadge({ s }: { s: string }) {
   const cls =
-    s === 'approved'     ? 'badge-success' :
-    s === 'rejected'     ? 'badge-alert'   :
-    s === 'under_review' ? 'badge-pending' : 'badge-pending';
+    s === 'approved'        ? 'badge-success' :
+    s === 'rejected'        ? 'badge-alert'   :
+    s === 'under_review'    ? 'badge-pending' :
+    s === 'awaiting_region' ? 'badge bg-steel-200 text-steel-700' :
+                              'badge-pending';
   return <span className={cls}>{STATUS_LABEL[s] ?? s}</span>;
 }
 
