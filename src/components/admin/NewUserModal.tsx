@@ -43,6 +43,10 @@ export function NewUserModal({ onClose, onCreated }: Props) {
       setErr('Selecione ao menos 1 especialidade.');
       return;
     }
+    if (f.cep.replace(/\D/g, '').length !== 8) {
+      setErr('CEP é obrigatório — informe os 8 dígitos (ex.: 00000-000).');
+      return;
+    }
 
     setLoading(true);
 
@@ -206,8 +210,8 @@ export function NewUserModal({ onClose, onCreated }: Props) {
           <div className="pt-2 border-t border-steel-200">
             <div className="text-xs font-bold text-steel-500 uppercase tracking-widest mb-2">📍 Localização</div>
             <div className="grid sm:grid-cols-2 gap-3">
-              <div><label className="label">CEP</label>
-                <input className="input" value={f.cep} onChange={e => up('cep', e.target.value)} placeholder="00000-000" /></div>
+              <div><label className="label">CEP *</label>
+                <input className="input" required value={f.cep} onChange={e => up('cep', e.target.value)} placeholder="00000-000" /></div>
               <div><label className="label">Bairro</label>
                 <input className="input" value={f.neighborhood} onChange={e => up('neighborhood', e.target.value)} /></div>
               <div className="sm:col-span-2 grid grid-cols-[1fr_100px] gap-3">

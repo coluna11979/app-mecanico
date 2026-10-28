@@ -72,6 +72,10 @@ export default function SignupWorkshop() {
       setErr('Você precisa aceitar os Termos de Uso para continuar.');
       return;
     }
+    if (f.cep.replace(/\D/g, '').length !== 8) {
+      setErr('CEP é obrigatório — informe os 8 dígitos (ex.: 00000-000).');
+      return;
+    }
     setLoading(true); setErr(null);
 
     const { data, error } = await supabase.auth.signUp({
@@ -143,7 +147,7 @@ export default function SignupWorkshop() {
                 <input className="input" required value={f.business_name} onChange={e => up('business_name', e.target.value)} /></div>
               <div><label className="label">CNPJ</label>
                 <input className="input" required value={f.cnpj} onChange={e => up('cnpj', e.target.value)} placeholder="00.000.000/0000-00" /></div>
-              <div><label className="label">CEP</label>
+              <div><label className="label">CEP *</label>
                 <input className="input" required value={f.cep} onChange={e => up('cep', e.target.value)} placeholder="00000-000" /></div>
             </div>
 

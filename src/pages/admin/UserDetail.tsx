@@ -7,16 +7,18 @@ import { sendApprovalEmail } from '@/lib/approvalEmail';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 const STATUS_LABEL: Record<ProfileStatus, string> = {
-  pending:      '🆕 Novo',
-  under_review: '🔍 Em análise',
-  approved:     '✅ Aprovado',
-  rejected:     '❌ Rejeitado',
+  pending:         '🆕 Novo',
+  under_review:    '🔍 Em análise',
+  approved:        '✅ Aprovado',
+  rejected:        '❌ Rejeitado',
+  awaiting_region: '📍 Aguardando região',
 };
 const STATUS_COLOR: Record<ProfileStatus, string> = {
-  pending:      'bg-brand-50 text-brand-700 border-brand-200',
-  under_review: 'bg-pending-500/10 text-pending-700 border-pending-300',
-  approved:     'bg-signal-500/10 text-signal-700 border-signal-300',
-  rejected:     'bg-alert-500/10 text-alert-700 border-alert-300',
+  pending:         'bg-brand-50 text-brand-700 border-brand-200',
+  under_review:    'bg-pending-500/10 text-pending-700 border-pending-300',
+  approved:        'bg-signal-500/10 text-signal-700 border-signal-300',
+  rejected:        'bg-alert-500/10 text-alert-700 border-alert-300',
+  awaiting_region: 'bg-steel-100 text-steel-700 border-steel-300',
 };
 
 export default function AdminUserDetail() {

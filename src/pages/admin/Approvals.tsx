@@ -9,46 +9,76 @@ import { sendApprovalEmail } from '@/lib/approvalEmail';
 import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
 
 type Row = Profile & { mechanic?: Mechanic; workshop?: Workshop };
-type TabKey = 'pending' | 'under_review' | 'approved' | 'rejected';
+type TabKey = 'pending' | 'under_review' | 'approved' | 'rejected' | 'awaiting_region';
+type RoleFilter = 'all' | 'mechanic' | 'workshop';
 
 const TABS: { key: TabKey; label: string; emoji: string; color: string }[] = [
-  { key: 'pending',      label: 'Novos',          emoji: '🆕', color: 'text-brand-600 bg-brand-50' },
-  { key: 'under_review', label: 'Em análise',     emoji: '🔍', color: 'text-pending-600 bg-pending-500/10' },
-  { key: 'approved',     label: 'Aprovados',      emoji: '✅', color: 'text-signal-600 bg-signal-500/10' },
-  { key: 'rejected',     label: 'Rejeitados',     emoji: '❌', color: 'text-alert-600 bg-alert-500/10' },
+  { key: 'pending',         label: 'Novos',             emoji: '🆕', color: 'text-brand-600 bg-brand-50' },
+  { key: 'under_review',    label: 'Em análise',        emoji: '🔍', color: 'text-pending-600 bg-pending-500/10' },
+  { key: 'approved',        label: 'Aprovados',         emoji: '✅', color: 'text-signal-600 bg-signal-500/10' },
+  { key: 'awaiting_region', label: 'Aguardando região', emoji: '📍', color: 'text-steel-600 bg-steel-100' },
+  { key: 'rejected',        label: 'Rejeitados',        emoji: '❌', color: 'text-alert-600 bg-alert-500/10' },
 ];
+
+/** Texto padrão da solicitação de docs — o admin pode editar antes de enviar. */
+const REQUEST_DOCS_TEMPLATE = `Olá! 👋
+
+Pra darmos continuidade ao seu cadastro, por favor envie as fotos de:
+
+📄 CNH OU RG (frente e verso — qualquer um dos dois serve)
+🏠 Comprovante de endereço atual (conta de luz, água, internet ou gás dos últimos 90 dias)
+
+É só anexar os arquivos aqui mesmo nesta tela. Assim que recebermos, voltamos a te avisar por aqui.
+
+— Equipe Mecânico App`;
+
+/** Texto padrão de recusa por região — o admin pode editar antes de enviar. */
+const REGION_REJECTION_TEMPLATE = `Olá!
+
+Agradecemos muito seu interesse em fazer parte do Mecânico App.
+
+No momento, ainda não estamos atendendo a sua região. Estamos expandindo pra novas cidades aos poucos — assim que chegarmos aí, nós mesmos entramos em contato pra reabrir seu cadastro.
+
+Seus dados ficam salvos no sistema. Obrigado pela compreensão!
+
+— Equipe Mecânico App`;
 
 export default function AdminApprovals() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
-  const [counts, setCounts] = useState<Record<TabKey, number>>({ pending: 0, under_review: 0, approved: 0, rejected: 0 });
+  const [counts, setCounts] = useState<Record<TabKey, number>>({ pending: 0, under_review: 0, approved: 0, rejected: 0, awaiting_region: 0 });
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
+  const [search, setSearch] = useState('');
   const [tab, setTab] = useState<TabKey>('pending');
   const [loading, setLoading] = useState(true);
   const [opened, setOpened] = useState<Row | null>(null);
   const [newUserOpen, setNewUserOpen] = useState(false);
 
-  useEffect(() => { load(); }, [tab]);
+  useEffect(() => { load(); }, [tab, roleFilter]);
 
   async function load() {
     setLoading(true);
 
-    // Carrega contagens de todos os status (pra mostrar nas abas)
-    const allCounts = await Promise.all(
-      TABS.map(t =>
-        supabase.from('profiles').select('id', { count: 'exact', head: true })
-          .eq('status', t.key).neq('role', 'admin')
-          .then(({ count }) => [t.key, count ?? 0] as const)
-      )
-    );
+    // Carrega contagens de todos os status (respeitando filtro de role, pra os
+    // badges baterem com o que o admin vê na lista)
+    const countsPromises = TABS.map(t => {
+      let q = supabase.from('profiles').select('id', { count: 'exact', head: true })
+        .eq('status', t.key).neq('role', 'admin');
+      if (roleFilter !== 'all') q = q.eq('role', roleFilter);
+      return q.then(({ count }) => [t.key, count ?? 0] as const);
+    });
+    const allCounts = await Promise.all(countsPromises);
     setCounts(Object.fromEntries(allCounts) as Record<TabKey, number>);
 
     // Carrega rows da tab selecionada
-    const { data: profiles } = await supabase
+    let profilesQuery = supabase
       .from('profiles')
       .select('*')
       .eq('status', tab)
       .neq('role', 'admin')
       .order('created_at', { ascending: false });
+    if (roleFilter !== 'all') profilesQuery = profilesQuery.eq('role', roleFilter);
+    const { data: profiles } = await profilesQuery;
 
     const result: Row[] = [];
     for (const p of (profiles ?? []) as Profile[]) {
@@ -77,7 +107,7 @@ export default function AdminApprovals() {
       <p className="text-steel-500 text-sm mb-6">Analise, solicite documentos e aprove os cadastros de mecânicos e oficinas.</p>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-steel-100 rounded-2xl p-1 mb-6 overflow-x-auto">
+      <div className="flex gap-1 bg-steel-100 rounded-2xl p-1 mb-4 overflow-x-auto">
         {TABS.map(t => (
           <button
             key={t.key}
@@ -99,22 +129,70 @@ export default function AdminApprovals() {
         ))}
       </div>
 
-      {loading ? (
-        <div className="space-y-3">
-          {[1,2,3].map(i => <div key={i} className="card h-28 animate-pulse bg-steel-100" />)}
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="card text-center py-16 text-steel-500">
-          <div className="text-4xl mb-3">{TABS.find(t => t.key === tab)?.emoji}</div>
-          <div className="font-semibold">Nenhum cadastro {TABS.find(t => t.key === tab)?.label.toLowerCase()}</div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {rows.map(r => (
-            <RowCard key={r.id} row={r} onOpen={() => setOpened(r)} />
+      {/* Filtros: tipo + busca */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-6">
+        <div className="flex gap-1 bg-steel-100 rounded-xl p-1">
+          {(['all','mechanic','workshop'] as RoleFilter[]).map(r => (
+            <button
+              key={r}
+              onClick={() => setRoleFilter(r)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                roleFilter === r
+                  ? 'bg-white shadow text-steel-900'
+                  : 'text-steel-500 hover:text-steel-700'
+              }`}
+            >
+              {r === 'all' ? 'Todos' : r === 'mechanic' ? '🔧 Mecânicos' : '🏪 Oficinas'}
+            </button>
           ))}
         </div>
-      )}
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Buscar por nome, cidade, bairro, CEP ou CPF…"
+          className="input text-sm flex-1"
+        />
+      </div>
+
+      {(() => {
+        const q = search.trim().toLowerCase();
+        const filtered = !q ? rows : rows.filter(r => {
+          const hay = [
+            r.full_name,
+            r.mechanic?.city, r.mechanic?.neighborhood, r.mechanic?.cep, r.mechanic?.state, r.mechanic?.cpf,
+            r.workshop?.city, r.workshop?.neighborhood, r.workshop?.cep, r.workshop?.state,
+            r.workshop?.business_name, r.workshop?.cnpj,
+          ].filter(Boolean).join(' ').toLowerCase();
+          return hay.includes(q);
+        });
+
+        if (loading) {
+          return (
+            <div className="space-y-3">
+              {[1,2,3].map(i => <div key={i} className="card h-28 animate-pulse bg-steel-100" />)}
+            </div>
+          );
+        }
+        if (filtered.length === 0) {
+          const emptyLabel = q
+            ? `Nenhum resultado pra "${search}"`
+            : `Nenhum cadastro ${TABS.find(t => t.key === tab)?.label.toLowerCase()}`;
+          return (
+            <div className="card text-center py-16 text-steel-500">
+              <div className="text-4xl mb-3">{TABS.find(t => t.key === tab)?.emoji}</div>
+              <div className="font-semibold">{emptyLabel}</div>
+            </div>
+          );
+        }
+        return (
+          <div className="space-y-3">
+            {filtered.map(r => (
+              <RowCard key={r.id} row={r} onOpen={() => setOpened(r)} />
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Drawer de detalhes / ações */}
       {opened && user && (
@@ -145,12 +223,14 @@ function RowCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
     under_review: '🔍 Em análise',
     approved: '✅ Aprovado',
     rejected: '❌ Rejeitado',
+    awaiting_region: '📍 Aguardando região',
   };
   const statusColor: Record<ProfileStatus, string> = {
     pending: 'bg-brand-50 text-brand-700',
     under_review: 'bg-pending-500/10 text-pending-700',
     approved: 'bg-signal-500/10 text-signal-700',
     rejected: 'bg-alert-500/10 text-alert-700',
+    awaiting_region: 'bg-steel-100 text-steel-700',
   };
 
   return (
@@ -209,6 +289,10 @@ function ApprovalDrawer({
   const [rejOpen, setRejOpen] = useState(false);
   const [rejText, setRejText] = useState('');
 
+  // Modal: fora da região atendida
+  const [regionOpen, setRegionOpen] = useState(false);
+  const [regionText, setRegionText] = useState('');
+
   useEffect(() => { loadMessages(); loadEmail(); }, [row.id]);
 
   async function loadMessages() {
@@ -231,16 +315,18 @@ function ApprovalDrawer({
 
     // Registra no histórico
     const labels: Record<ProfileStatus, string> = {
-      pending:      'cadastro reaberto como pendente',
-      under_review: 'cadastro marcado como em análise',
-      approved:     'cadastro aprovado',
-      rejected:     'cadastro rejeitado',
+      pending:         'cadastro reaberto como pendente',
+      under_review:    'cadastro marcado como em análise',
+      approved:        'cadastro aprovado',
+      rejected:        'cadastro rejeitado',
+      awaiting_region: 'cadastro em espera — região ainda não atendida',
     };
     const content = message
       ? `${labels[status]} — ${message}`
       : labels[status];
 
-    const kind = status === 'rejected' || status === 'approved' ? 'status_change' : 'note';
+    const isFinalDecision = status === 'rejected' || status === 'approved' || status === 'awaiting_region';
+    const kind = isFinalDecision ? 'status_change' : 'note';
 
     await supabase.from('approval_messages').insert({
       profile_id: row.id,
@@ -250,15 +336,27 @@ function ApprovalDrawer({
       content,
     });
 
-    // Só notifica o cadastrado quando a decisão é final (aprovado/rejeitado).
-    // "Em análise" e "reaberto" sao movimentos internos da fila do admin —
-    // enviar email nesses estados vira ruido e cria expectativa falsa de resposta.
-    if (status === 'approved' || status === 'rejected') {
-      void sendApprovalEmail(row.id, content, kind, status);
+    // Notifica o cadastrado quando a decisão exige resposta/retorno dele —
+    // aprovado, rejeitado ou em espera por região. "Em análise" e "reaberto"
+    // sao movimentos internos da fila do admin e nao viram email.
+    // O template HTML especifico so existe pra approved/rejected; awaiting_region
+    // usa o template generico (conteudo amigavel ja vem no proprio content).
+    if (isFinalDecision) {
+      const template = status === 'approved' || status === 'rejected' ? status : undefined;
+      void sendApprovalEmail(row.id, content, kind, template);
     }
 
     setBusy(null);
     onChanged();
+  }
+
+  async function rejectByRegion() {
+    if (!regionText.trim()) return;
+    // Marca como awaiting_region (fila separada de rejeitados): grava histórico
+    // e manda email amigável avisando que entraremos em contato quando a região abrir.
+    await changeStatus('awaiting_region', regionText.trim());
+    setRegionOpen(false);
+    setRegionText('');
   }
 
   async function requestDocuments() {
@@ -475,7 +573,7 @@ function ApprovalDrawer({
               🔍 Em análise
             </button>
             <button
-              onClick={() => setReqOpen(true)}
+              onClick={() => { setReqText(REQUEST_DOCS_TEMPLATE); setReqOpen(true); }}
               disabled={busy !== null}
               className="btn-ghost text-sm py-2.5 border border-steel-300 disabled:opacity-50"
             >
@@ -496,6 +594,13 @@ function ApprovalDrawer({
               {busy === 'approved' ? '…' : '✅ Aprovar'}
             </button>
           </div>
+          <button
+            onClick={() => { setRegionText(REGION_REJECTION_TEMPLATE); setRegionOpen(true); }}
+            disabled={busy !== null || row.status === 'awaiting_region'}
+            className="w-full text-xs py-2 border border-steel-200 rounded-lg text-steel-600 hover:bg-steel-50 disabled:opacity-50"
+          >
+            📍 Ainda não atendemos essa região
+          </button>
         </div>
       </div>
 
@@ -506,7 +611,7 @@ function ApprovalDrawer({
             <div>
               <h3 className="text-lg font-bold">📋 Solicitar documentação</h3>
               <p className="text-sm text-steel-500 mt-1">
-                O cadastro será marcado como "Em análise" e o usuário receberá esta mensagem.
+                Mensagem padrão já preenchida — edite se precisar antes de enviar. O cadastro será marcado como "Em análise".
               </p>
             </div>
             <textarea
@@ -557,6 +662,38 @@ function ApprovalDrawer({
                 className="btn-ghost border border-alert-500 text-alert-700 flex-1 disabled:opacity-50"
               >
                 {busy === 'rejected' ? '…' : 'Rejeitar cadastro'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: fora da região */}
+      {regionOpen && (
+        <div className="fixed inset-0 z-[60] bg-steel-900/70 grid place-items-center p-4" onClick={() => setRegionOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold">📍 Ainda não atendemos essa região</h3>
+              <p className="text-sm text-steel-500 mt-1">
+                Mensagem padrão já preenchida — edite se precisar (ex.: citar a cidade). O cadastro vai pra aba "Aguardando região" (não é rejeição) pra você conseguir acompanhar demanda por área.
+              </p>
+            </div>
+            <textarea
+              className="input text-sm resize-none"
+              rows={9}
+              placeholder="Mensagem pro cadastrado…"
+              value={regionText}
+              onChange={e => setRegionText(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setRegionOpen(false)} className="btn-ghost flex-1">Cancelar</button>
+              <button
+                onClick={rejectByRegion}
+                disabled={busy !== null || !regionText.trim()}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {busy === 'awaiting_region' ? '…' : 'Enviar e marcar como aguardando região'}
               </button>
             </div>
           </div>

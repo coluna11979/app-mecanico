@@ -35,6 +35,12 @@ const STATUS_META = {
     description: 'Tudo certo!',
     color: 'text-signal-700 bg-signal-500/10 border-signal-300',
   },
+  awaiting_region: {
+    emoji: '📍',
+    title: 'Ainda não atendemos sua região',
+    description: 'Agradecemos seu interesse! Seus dados ficam salvos aqui e, assim que abrirmos atendimento na sua região, nós mesmos entramos em contato pra reabrir seu cadastro.',
+    color: 'text-steel-700 bg-steel-100 border-steel-300',
+  },
 } as const;
 
 // Formatos aceitos — cobre casos reais de celulares BR:
