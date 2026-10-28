@@ -8,10 +8,11 @@ import { salesOf, type PanelItem, type PanelOs, type Range } from '@/lib/worksho
 
 const RULES: { name: string; re: RegExp }[] = [
   // Casos específicos primeiro (vencem as regras gerais)
-  { name: 'Pneus, alinhamento e balanceamento', re: /bicos? de rodas?|contrapeso|^montage(m|ns)$|montage(m|ns) (de |do |dos )?pneus?|cambage(m|ns)/ },
+  // "Jogo centralizador" sai junto com alinhamento/balanceamento: é o centralizador da roda, não o da embreagem
+  { name: 'Pneus, alinhamento e balanceamento', re: /bicos? de rodas?|contrapeso|^montage(m|ns)$|montage(m|ns) (de |do |dos )?pneus?|cambage(m|ns)|centralizador(?!.*embreagem)/ },
   { name: 'Revisão e diagnóstico', re: /passagem (do |de |da )?(aparelho|computador|scanner)|diagnostico|scanner|inspecao|check-?up/ },
   { name: 'Correia dentada / distribuição', re: /correia dentada|distribuicao|kit (da )?correia|tensor (da )?correia dentada/ },
-  { name: 'Embreagem', re: /embreagem|(?:^|[^a-z])plato|atuador do pedal|centralizador/ },
+  { name: 'Embreagem', re: /embreagem|(?:^|[^a-z])plato|atuador do pedal/ },
   { name: 'Freios (discos, pastilhas, lonas)', re: /pastilha|disco|(?:^|[^a-z])lona|tambor|sapata|pinca|freio|cilindros? de rodas?|cilindro mestre|(?:^|[^a-z])servo|sangria/ },
   { name: 'Suspensão (amortecedores, bandejas, buchas)', re: /coxim (do |da |de )?(amortecedor|suspensao)|amortecedor|(?:^|[^a-z])mola|bandeja|pivo|bucha|estabilizadora|bieleta|batente|suspensao|rolamentos? (de |da )?roda|rolamentos? (traseiro|dianteiro)|(?:^|[^a-z])cubo|bolachao|kit (de )?coxim/ },
   { name: 'Correias do motor (acessórios)', re: /coxins? (do )?tensor/ },
@@ -33,9 +34,16 @@ const RULES: { name: string; re: RegExp }[] = [
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
+/**
+ * Itens que sozinhos não dizem o serviço: "Bicos" numa OS de pneu é bico de roda; numa de injeção, bico injetor.
+ * Ficam sem serviço próprio e vão para o serviço principal da OS (ver servicesExecuted).
+ */
+const AMBIGUOUS = /^(montagem (de |do |dos )?)?bicos?( usados)?$/;
+
 /** Serviço que a peça/mão de obra representa (null = ainda não identificado) */
 export function serviceOf(description: string): string | null {
-  const d = norm(description);
+  const d = norm(description).trim();
+  if (AMBIGUOUS.test(d)) return null;
   return RULES.find(r => r.re.test(d))?.name ?? null;
 }
 
