@@ -275,6 +275,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         if (!seen.has(k)) seen.set(k, { description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true, category: s.category ?? undefined });
       }
       for (const d of (hist.data ?? []) as Suggestion[]) {
+        // Peça só vem do catálogo ativo (com estoque e custo): peça usada antes, sem cadastro, não é sugerida
+        if (d.kind === 'part') continue;
         const k = d.description.trim().toLowerCase();
         if (!seen.has(k)) seen.set(k, { description: d.description.trim(), kind: d.kind, unit_price: Number(d.unit_price) });
       }
