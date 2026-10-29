@@ -44,7 +44,7 @@ export default function CatalogTab({ wid, kind }: { wid: string; kind: 'service'
     <div className="space-y-3">
       <div className="flex gap-2">
         <input className="input flex-1" type="search" placeholder={isService ? '🔍 Buscar serviço' : '🔍 Buscar peça'} value={q} onChange={e => setQ(e.target.value)} />
-        <button type="button" onClick={() => setEditing('new')}
+        <button type="button" onClick={() => setEditing('new')} data-tour="acao"
           className="shrink-0 h-11 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.98]">＋ {isService ? 'Serviço' : 'Peça'}</button>
       </div>
 
@@ -57,7 +57,7 @@ export default function CatalogTab({ wid, kind }: { wid: string; kind: 'service'
           </p>
         </div>
       ) : (
-        <ul className="rounded-2xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
+        <ul data-tour="lista" className="rounded-2xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
           {shown.map(i => (
             <li key={i.id}>
               <button type="button" onClick={() => setEditing(i)}

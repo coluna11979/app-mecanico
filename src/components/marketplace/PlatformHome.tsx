@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
 import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { Logo } from '@/components/Logo';
-import { IconChevronDown, IconInfo, IconPlus, IconStar } from '@/components/mecanico/icons';
+import { IconChevronDown, IconPlus, IconStar } from '@/components/mecanico/icons';
+import { TourHelpButton } from '@/components/marketplace/PanelTour';
 
 /** Mecânico disponível com o que o carrossel mostra (foto e especialidades são opcionais) */
 export type HomeMechanic = {
@@ -30,12 +31,7 @@ export function PlatformHero({ available, onCall, disabled, locked, onHelp }: {
         </div>
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-bold tracking-tight text-steel-900">Demandas</h1>
-          {onHelp && (
-            <button type="button" onClick={onHelp} data-tour="ajuda"
-              className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-xs font-semibold text-steel-500 hover:bg-steel-100 hover:text-steel-800 transition">
-              <IconInfo className="w-4 h-4" />Como usar
-            </button>
-          )}
+          {onHelp && <TourHelpButton onClick={onHelp} />}
         </div>
         <p className="mt-1 flex items-center gap-1.5 text-sm text-steel-600">
           <span className={`h-2 w-2 rounded-full shrink-0 ${available > 0 ? 'bg-signal-500' : 'bg-steel-300'}`} aria-hidden />

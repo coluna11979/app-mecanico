@@ -8,12 +8,51 @@ import { jobDraftKey, jobDraftOriginKey } from '@/lib/callMechanic';
 import { formatBRL } from '@/lib/payment';
 import CatalogTab from '@/components/plataforma/CatalogTab';
 import QuotesTab from '@/components/plataforma/QuotesTab';
+import { PanelTour, TourHelpButton, useFirstVisitTour, type TourStep } from '@/components/marketplace/PanelTour';
 
 type Tab = 'clientes' | 'orcamentos' | 'servicos' | 'pecas';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'clientes', label: '👤 Clientes' }, { key: 'orcamentos', label: '🧾 Orçamentos' },
   { key: 'servicos', label: '🔧 Serviços' }, { key: 'pecas', label: '📦 Peças' },
 ];
+
+/**
+ * Guia da tela: as quatro abas na ordem do dia a dia (cadastro → orçamento → mecânico),
+ * depois o botão e a lista da aba aberta. Blocos que não estão na tela são pulados.
+ */
+const TAB_ACTION: Record<Tab, { action: string; list: string }> = {
+  clientes: {
+    action: 'Cadastre o cliente com o carro. Na ficha dele você chama no WhatsApp, faz um orçamento ou chama um mecânico já com o carro preenchido.',
+    list: 'Toque num cliente para abrir a ficha. A busca acha por nome, telefone ou placa.',
+  },
+  orcamentos: {
+    action: 'Monte o orçamento tocando nos serviços e peças salvos e mande pelo WhatsApp para o cliente aprovar.',
+    list: 'Toque num orçamento para ver, editar ou marcar como aprovado. Aprovado, você chama um mecânico ou empilha para juntar com outros.',
+  },
+  servicos: {
+    action: 'Salve os serviços que você mais faz, com o preço que cobra e o tempo. No orçamento é só tocar.',
+    list: 'Toque num serviço para mudar o preço ou o tempo.',
+  },
+  pecas: {
+    action: 'Salve as peças que você mais usa, com o preço de venda. No orçamento é só tocar.',
+    list: 'Toque numa peça para mudar o preço.',
+  },
+};
+function cadastrosTour(tab: Tab): TourStep[] {
+  return [
+    { target: 'aba-clientes', title: 'Clientes e carros',
+      body: 'Cadastre uma vez o cliente e o carro. Depois tudo já vem preenchido: orçamento, WhatsApp e a demanda para o mecânico.' },
+    { target: 'aba-servicos', title: 'Serviços salvos',
+      body: 'Sua tabela de serviços com o preço que você cobra. Monta o orçamento em poucos toques.' },
+    { target: 'aba-pecas', title: 'Peças salvas',
+      body: 'As peças que você mais usa, com o preço de venda, para entrar no orçamento junto com o serviço.' },
+    { target: 'aba-orcamentos', title: 'Orçamentos',
+      body: 'Junte serviços e peças, mande para o cliente pelo WhatsApp e acompanhe: aguardando, aprovado ou não aprovado.' },
+    { target: 'acao', title: 'Por onde começar aqui', body: TAB_ACTION[tab].action },
+    { target: 'lista', title: 'Seus cadastros', body: TAB_ACTION[tab].list },
+    { target: 'ajuda', title: 'Pronto!', body: 'Quando quiser rever este guia, toque em "Como usar" aqui no topo.' },
+  ];
+}
 
 type Vehicle = { id: string; make: string; model: string; year: number | null; plate: string; color: string | null };
 type Customer = { id: string; full_name: string; phone: string | null; notes: string | null; created_at: string; vehicles: Vehicle[] };
@@ -43,7 +82,7 @@ const EMPTY_CAR: CarForm = { make: '', model: '', year: '', plate: '', color: ''
  * "Chamar mecânico" (no carro ou no orçamento) abre a Nova demanda já preenchida.
  */
 export default function PlataformaClientes() {
-  const { currentWorkshop } = useAuth();
+  const { user, currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const nav = useNavigate();
   const [list, setList] = useState<Customer[] | null>(null);
@@ -81,6 +120,10 @@ export default function PlataformaClientes() {
 
   const current = list?.find(c => c.id === openId) ?? null;
 
+  const tourKey = user?.id ? `oficina_tour_cadastros_v1:${user.id}` : null;
+  const [tourOpen, setTourOpen] = useFirstVisitTour(tourKey, list != null && !current && !form && !quoteFor);
+  const tourSteps = useMemo(() => cadastrosTour(tab), [tab]);
+
   /** Nova demanda já com o carro e o cliente (o rascunho é aberto pelo ?nova=os do Demandas) */
   function callFor(c: Customer, v: Vehicle | null) {
     if (!wid) return;
@@ -95,12 +138,15 @@ export default function PlataformaClientes() {
   return (
     <WorkshopLayout>
       <div className="max-w-3xl mx-auto space-y-4">
-        <h1 className="font-display text-2xl font-bold text-steel-900">📇 Meus cadastros</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="font-display text-2xl font-bold text-steel-900">📇 Meus cadastros</h1>
+          {tourKey && <TourHelpButton onClick={() => setTourOpen(true)} />}
+        </div>
 
         {/* Abas: rolam de lado no celular */}
         <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] -mx-1 px-1">
           {TABS.map(t => (
-            <button key={t.key} type="button" onClick={() => goTab(t.key)}
+            <button key={t.key} type="button" onClick={() => goTab(t.key)} data-tour={`aba-${t.key}`}
               className={`shrink-0 h-10 px-4 rounded-full text-sm font-semibold border transition ${
                 tab === t.key ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-steel-700 border-steel-200'}`}>
               {t.label}
@@ -119,7 +165,7 @@ export default function PlataformaClientes() {
           <p className="text-sm text-steel-500 min-w-0">
             {list == null ? 'Carregando…' : `${list.length} ${list.length === 1 ? 'cliente' : 'clientes'} · busque por nome, telefone ou placa`}
           </p>
-          <button type="button" onClick={() => setForm({ mode: 'new' })}
+          <button type="button" onClick={() => setForm({ mode: 'new' })} data-tour="acao"
             className="shrink-0 h-11 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.98] hover:bg-brand-600">
             ＋ Novo cliente
           </button>
@@ -134,7 +180,7 @@ export default function PlataformaClientes() {
             <p className="text-sm text-steel-600 mt-1">Cadastre o cliente e o carro uma vez. Depois é só tocar em "Chamar mecânico" que a demanda já vem com o carro.</p>
           </div>
         ) : (
-          <ul className="rounded-2xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
+          <ul data-tour="lista" className="rounded-2xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
             {shown.map(c => (
               <li key={c.id}>
                 <button type="button" onClick={() => setOpenId(c.id)}
@@ -171,6 +217,8 @@ export default function PlataformaClientes() {
           onClose={() => setForm(null)}
           onSaved={id => { setForm(null); setOpenId(id); load(); }} />
       )}
+
+      {tourOpen && tourKey && <PanelTour steps={tourSteps} storageKey={tourKey} onClose={() => setTourOpen(false)} />}
     </WorkshopLayout>
   );
 }

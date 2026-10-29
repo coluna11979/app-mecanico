@@ -72,7 +72,7 @@ export default function QuotesTab({ wid, customers, startWith, onStarted }: {
 
   return (
     <div className="space-y-3">
-      <button type="button" onClick={() => setEditor({ customerId: null, vehicleId: null })}
+      <button type="button" onClick={() => setEditor({ customerId: null, vehicleId: null })} data-tour="acao"
         className="w-full h-12 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">＋ Novo orçamento</button>
 
       {list != null && list.length === 0 ? (
@@ -82,7 +82,7 @@ export default function QuotesTab({ wid, customers, startWith, onStarted }: {
           <p className="text-sm text-steel-600 mt-1">Monte com os serviços e peças salvos, mande pelo WhatsApp e, aprovado, chame o mecânico num toque.</p>
         </div>
       ) : (
-        <ul className="rounded-2xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
+        <ul data-tour="lista" className="rounded-2xl bg-white ring-1 ring-steel-200/70 divide-y divide-steel-100 overflow-hidden">
           {(list ?? []).map(q => {
             const c = q.customer_id ? byId.get(q.customer_id) : null;
             const v = c?.vehicles.find(x => x.id === q.vehicle_id);
