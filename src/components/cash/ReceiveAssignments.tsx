@@ -17,9 +17,12 @@ import type { ServiceOrderItem, WorkshopMechanic } from '@/types/database';
  * OS antiga sem itens (valores digitados) continua com um responsável só.
  */
 
-type Item = Pick<ServiceOrderItem, 'id' | 'kind' | 'description' | 'quantity' | 'unit_price' | 'executor' | 'workshop_mechanic_id' | 'used_in_item_id' | 'service_type' | 'commission_amount'>;
+type Item = Pick<ServiceOrderItem, 'id' | 'kind' | 'description' | 'quantity' | 'unit_price' | 'executor' | 'workshop_mechanic_id' | 'used_in_item_id' | 'service_type' | 'commission_amount' | 'standalone'>;
 type Team = Pick<WorkshopMechanic, 'id' | 'name'>[];
 export type ReceiveOs = { id: string; executor: 'workshop' | 'platform' | null; workshop_mechanic_id: string | null };
+
+/** Peça que é item próprio da OS (não pertence ao serviço de cima) */
+const isItemPart = (i: Pick<Item, 'kind' | 'standalone'>) => i.kind === 'part' && !!i.standalone;
 
 const amount = (i: Item) => Math.round(Number(i.quantity) * Number(i.unit_price) * 100) / 100;
 
@@ -30,13 +33,14 @@ export function useReceiveAssignments(os: ReceiveOs, team: Team) {
 
   useEffect(() => {
     let alive = true;
-    supabase.from('service_order_items').select('id, kind, description, quantity, unit_price, executor, workshop_mechanic_id, used_in_item_id, service_type, commission_amount')
+    supabase.from('service_order_items').select('id, kind, description, quantity, unit_price, executor, workshop_mechanic_id, used_in_item_id, service_type, commission_amount, standalone')
       .eq('service_order_id', os.id).order('position')
       .then(({ data }) => {
         if (!alive) return;
         const list = (data as Item[]) ?? [];
         const osWho = os.executor === 'platform' ? PLATFORM : os.workshop_mechanic_id ?? '';
-        const labor = list.filter(x => x.kind === 'labor');
+        // Serviço e peça-item (peça vendida como item próprio) têm quem fez
+        const labor = list.filter(x => x.kind === 'labor' || isItemPart(x));
         const w: Record<string, string> = {};
         for (const i of labor) w[i.id] = i.executor === 'platform' ? PLATFORM : i.workshop_mechanic_id ?? osWho;
         setItems(list); setWho(w);
@@ -45,9 +49,11 @@ export function useReceiveAssignments(os: ReceiveOs, team: Team) {
   }, [os.id, os.executor, os.workshop_mechanic_id]);
 
   const labor = useMemo(() => (items ?? []).filter(i => i.kind === 'labor'), [items]);
+  /** Tudo o que alguém executa: serviços e peças-item */
+  const assignables = useMemo(() => (items ?? []).filter(i => i.kind === 'labor' || isItemPart(i)), [items]);
   const parts = useMemo(() => (items ?? []).filter(i => i.kind === 'part'), [items]);
   const noItems = items !== null && items.length === 0;
-  const missing = labor.filter(i => !who[i.id]);
+  const missing = labor.filter(i => !who[i.id]); // só serviço é obrigatório
   // Peça pertence ao serviço logo acima dela na OS (ordem dos itens) — automático, não precisa escolher
   const partsOf = useMemo(() => {
     const m = new Map<string, Item[]>();
@@ -55,7 +61,7 @@ export function useReceiveAssignments(os: ReceiveOs, team: Team) {
     let cur: Item | null = (items ?? []).find(i => i.kind === 'labor') ?? null;
     if (cur) m.set(cur.id, []);
     for (const i of items ?? []) {
-      if (i.kind === 'labor') { cur = i; if (!m.has(i.id)) m.set(i.id, []); } else if (cur) m.get(cur.id)!.push(i);
+      if (i.kind === 'labor') { cur = i; if (!m.has(i.id)) m.set(i.id, []); } else if (cur && !isItemPart(i)) m.get(cur.id)!.push(i);
     }
     return m;
   }, [items]);
@@ -63,7 +69,7 @@ export function useReceiveAssignments(os: ReceiveOs, team: Team) {
 
   async function save(): Promise<{ error: { message: string } | null }> {
     if (noItems) return legacy !== responsibleOf(os) ? saveResponsible(os.id, legacy) : { error: null };
-    for (const i of labor) {
+    for (const i of assignables) {
       const v = who[i.id];
       if (!v) continue; // serviço ainda sem dono: não mexe
       const cur = i.executor === 'platform' ? PLATFORM : i.workshop_mechanic_id ?? '';
@@ -83,7 +89,7 @@ export function useReceiveAssignments(os: ReceiveOs, team: Team) {
   const callPlatform = labor.some(i => who[i.id] === PLATFORM && i.executor !== 'platform')
     || (noItems && legacy === PLATFORM && os.executor !== 'platform');
 
-  return { items, labor, parts, partsOf, noItems, who, setWho, legacy, setLegacy, missing, valid, save, callPlatform };
+  return { items, labor, assignables, parts, partsOf, noItems, who, setWho, legacy, setLegacy, missing, valid, save, callPlatform };
 }
 
 /** Quem da equipe tem mais mão de obra na OS */
@@ -107,9 +113,9 @@ export function ReceiveAssignments({ a, team }: { a: ReturnType<typeof useReceiv
     <div className="mt-4">
       <div className="label">Responsáveis pelos serviços <span className="text-alert-600">*</span></div>
       <p className="text-[11px] text-steel-500 -mt-1 mb-2">Vêm da OS. Troque só se o mecânico mudou de última hora.</p>
-      {a.labor.length === 0 && <p className="text-xs text-steel-500">Esta OS só tem peças.</p>}
+      {a.assignables.length === 0 && <p className="text-xs text-steel-500">Esta OS só tem peças.</p>}
       <div className="space-y-2">
-        {a.labor.map(i => (
+        {a.assignables.map(i => (
           <div key={i.id} className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate">{i.description}</div>
