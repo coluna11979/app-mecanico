@@ -50,6 +50,7 @@ const NAV_GROUPS: NavGroup[] = [
     { to: '/admin/modulos',       label: 'Módulos',       icon: IconGrid },
     { to: '/admin/avisos',        label: 'Avisos',        icon: IconMegaphone },
     { to: '/admin/embaixadores',  label: 'Embaixadores',  icon: IconUsers },
+    { to: '/admin/treinamentos',  label: 'Treinamentos',  icon: IconVideo },
     { to: '/admin/configuracoes', label: 'Configurações', icon: IconCog },
   ]},
 ];
@@ -194,6 +195,7 @@ function IconChart(p: IP)     { return <Svg {...p}><path d="M3 3v18h18" /><path 
 function IconSpark(p: IP)     { return <Svg {...p}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8" /></Svg>; }
 function IconGrid(p: IP)      { return <Svg {...p}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></Svg>; }
 function IconMegaphone(p: IP) { return <Svg {...p}><path d="M3 11v2a2 2 0 002 2h2l5 4V5L7 9H5a2 2 0 00-2 2z" /><path d="M18 5v14" /></Svg>; }
+function IconVideo(p: IP)     { return <Svg {...p}><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M16 10l6-3v10l-6-3z" /></Svg>; }
 function IconUsers(p: IP)     { return <Svg {...p}><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" transform="translate(2 0)" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" /></Svg>; }
 function IconCog(p: IP)       { return <Svg {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" /></Svg>; }
 function IconLogout(p: IP)    { return <Svg {...p}><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></Svg>; }
