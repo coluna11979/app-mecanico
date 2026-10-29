@@ -274,7 +274,9 @@ export default function ServiceOrders() {
   const boardBase = list.filter(o => passes(o, !ACTIVE_STATUSES.includes(o.status)));
   const isScheduled = (o: OsRow) => !!o.scheduled_at && PRE_START.includes(o.status);
   const scheduledCount = base.filter(isScheduled).length;
-  const byStatus = filterStatus === 'all' ? base : base.filter(o => o.status === filterStatus);
+  // "Todas" não mostra cancelada (igual ao quadro); quem quer ver escolhe o chip "Canceladas"
+  const notCancelled = base.filter(o => o.status !== 'cancelled');
+  const byStatus = filterStatus === 'all' ? notCancelled : base.filter(o => o.status === filterStatus);
   // Agendadas: só as que ainda não começaram, da mais próxima para a mais distante
   const filtered = onlyScheduled
     ? byStatus.filter(isScheduled).sort((a, b) => a.scheduled_at!.localeCompare(b.scheduled_at!))
@@ -347,7 +349,7 @@ export default function ServiceOrders() {
           </div>
 
           <div className={view === 'colunas' ? 'md:hidden' : ''}>
-            <StatusChips value={filterStatus} counts={counts} total={base.length} onChange={setFilterStatus} />
+            <StatusChips value={filterStatus} counts={counts} total={notCancelled.length} onChange={setFilterStatus} />
           </div>
 
           <div className="flex items-center gap-3">
