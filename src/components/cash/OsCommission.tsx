@@ -3,7 +3,7 @@ import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import { brl, moneyStr, parseMoney } from '@/lib/cash';
 import { RULE } from '@/lib/commission';
-import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
+import { isExcluded, loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { useReceiveAssignments, type ReceiveOs } from '@/components/cash/ReceiveAssignments';
 import type { WorkshopMechanic } from '@/types/database';
@@ -105,12 +105,16 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   }, [a.assignables, a.who, a.partsOf, brought, fixed, itemRules]);
 
   /** Base das %: o que a pessoa faz (serviços dela + peças desses serviços). Sem divisão de serviços, o total da OS */
+  // Item com regra da loja "sem comissão" (ex.: pneu, alinhamento) não entra na base das %
+  const keep = (desc: string) => !isExcluded(desc, itemRules);
   const baseFor = (id: string) => {
     if (!a.assignables.length) return osTotal;
-    return r2(a.assignables.filter(l => a.who[l.id] === id)
-      .reduce((s, l) => s + amt(l) + (a.partsOf.get(l.id) ?? []).reduce((x, p) => x + amt(p), 0), 0));
+    return r2(a.assignables.filter(l => a.who[l.id] === id && keep(l.description))
+      .reduce((s, l) => s + amt(l) + (a.partsOf.get(l.id) ?? []).filter(p => keep(p.description)).reduce((x, p) => x + amt(p), 0), 0));
   };
   const baseOf = (r: Row) => baseFor(r.mechanic_id);
+  /** Itens da pessoa que não geram comissão pela regra da loja (para avisar na tela) */
+  const excludedOf = (r: Row) => a.assignables.filter(l => a.who[l.id] === r.mechanic_id && !keep(l.description)).map(l => l.description);
 
   // OS com comissão manual já salva: assim que os serviços carregam, acerta o modo (%) de cada pessoa
   // e recoloca o mecânico da plataforma (ele não tem valor salvo, só serviço atribuído)
@@ -158,12 +162,12 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     return { error };
   }
 
-  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf };
+  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf, excludedOf };
 }
 
 /** O que o quadro precisa (serve para a OS salva e para a conferência de nota, antes de a OS existir) */
 type CommissionCtl = Pick<ReturnType<typeof useOsCommission>,
-  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf' | 'baseOf'>;
+  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf' | 'baseOf' | 'excludedOf'>;
 
 export type AutoCommission = { mechanic_id: string; value: number; base: string };
 
@@ -194,7 +198,7 @@ export function useDraftCommission(auto: AutoCommission[], osTotal: number, defa
     });
     return { error };
   }
-  return { loaded: true, editing, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf: () => osTotal };
+  return { loaded: true, editing, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf: () => osTotal, excludedOf: () => [] as string[] };
 }
 
 /** Serviços da OS e quem faz cada um (liga o quadro às atribuições dos itens) */
@@ -306,6 +310,9 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
               </div>
               )}
               {r.mode !== 'fixo' && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} sobre {brl(c.baseOf(r))} ({c.baseOf(r) === c.osTotal ? 'total da OS' : 'os serviços dele'})</div>}
+              {c.excludedOf(r).length > 0 && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && (
+                <div className="text-[11px] text-steel-500">Sem comissão pela regra da loja: {c.excludedOf(r).join(', ')}</div>
+              )}
             </div>
           ))}
           {c.rows.length === 0 && (
