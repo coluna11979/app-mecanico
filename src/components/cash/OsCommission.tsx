@@ -3,7 +3,7 @@ import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import { brl, moneyStr, parseMoney } from '@/lib/cash';
 import { RULE } from '@/lib/commission';
-import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
+import { isExcluded, itemExtra, loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { useReceiveAssignments, type ReceiveOs } from '@/components/cash/ReceiveAssignments';
 import type { WorkshopMechanic } from '@/types/database';
@@ -105,12 +105,30 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   }, [a.assignables, a.who, a.partsOf, brought, fixed, itemRules]);
 
   /** Base das %: o que a pessoa faz (serviços dela + peças desses serviços). Sem divisão de serviços, o total da OS */
+  // Item com regra da loja "sem comissão" (ex.: pneu, alinhamento) não entra na base das %
+  const keep = (desc: string) => !isExcluded(desc, itemRules);
   const baseFor = (id: string) => {
     if (!a.assignables.length) return osTotal;
-    return r2(a.assignables.filter(l => a.who[l.id] === id)
-      .reduce((s, l) => s + amt(l) + (a.partsOf.get(l.id) ?? []).reduce((x, p) => x + amt(p), 0), 0));
+    return r2(a.assignables.filter(l => a.who[l.id] === id && keep(l.description))
+      .reduce((s, l) => s + amt(l) + (a.partsOf.get(l.id) ?? []).filter(p => keep(p.description)).reduce((x, p) => x + amt(p), 0), 0));
   };
   const baseOf = (r: Row) => baseFor(r.mechanic_id);
+  /** Regra por pessoa da loja (ex.: alinhamento = 10% para quem fez): vale mesmo o item estando fora dos 4% / 10% gerais */
+  const extraOf = (r: Row): { value: number; labels: string[] } => {
+    let value = 0; const labels: string[] = [];
+    for (const l of a.assignables.filter(x => a.who[x.id] === r.mechanic_id)) {
+      for (const it of [l, ...(a.partsOf.get(l.id) ?? [])]) {
+        const fx = itemExtra(it.description, r.mechanic_id, Number(it.quantity), amt(it), itemRules);
+        if (fx.value > 0) { value += fx.value; labels.push(`${it.description}: ${fx.label}`); }
+      }
+    }
+    return { value: r2(value), labels };
+  };
+  /** Itens da pessoa que não geram comissão nenhuma (fora da conta geral e sem regra por pessoa) */
+  const excludedOf = (r: Row) => a.assignables
+    .filter(l => a.who[l.id] === r.mechanic_id && !keep(l.description)
+      && itemExtra(l.description, r.mechanic_id, Number(l.quantity), amt(l), itemRules).value <= 0)
+    .map(l => l.description);
 
   // OS com comissão manual já salva: assim que os serviços carregam, acerta o modo (%) de cada pessoa
   // e recoloca o mecânico da plataforma (ele não tem valor salvo, só serviço atribuído)
@@ -144,7 +162,7 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   const valueOf = (r: Row) => {
     if (noComm(r)) return 0;
     const pct = MODES.find(m => m.key === r.mode)?.pct;
-    return pct != null ? r2(baseOf(r) * pct / 100) : r2(parseMoney(r.amount));
+    return pct != null ? r2(baseOf(r) * pct / 100 + extraOf(r).value) : r2(parseMoney(r.amount));
   };
   const valid = !editing || rows.every(r => r.mechanic_id && valueOf(r) >= 0);
   const total = editing ? r2(rows.reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
@@ -158,12 +176,12 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     return { error };
   }
 
-  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf };
+  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf, excludedOf, extraOf };
 }
 
 /** O que o quadro precisa (serve para a OS salva e para a conferência de nota, antes de a OS existir) */
 type CommissionCtl = Pick<ReturnType<typeof useOsCommission>,
-  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf' | 'baseOf'>;
+  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf' | 'baseOf' | 'excludedOf' | 'extraOf'>;
 
 export type AutoCommission = { mechanic_id: string; value: number; base: string };
 
@@ -194,7 +212,7 @@ export function useDraftCommission(auto: AutoCommission[], osTotal: number, defa
     });
     return { error };
   }
-  return { loaded: true, editing, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf: () => osTotal };
+  return { loaded: true, editing, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf: () => osTotal, excludedOf: () => [] as string[], extraOf: () => ({ value: 0, labels: [] as string[] }) };
 }
 
 /** Serviços da OS e quem faz cada um (liga o quadro às atribuições dos itens) */
@@ -306,6 +324,12 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
               </div>
               )}
               {r.mode !== 'fixo' && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} sobre {brl(c.baseOf(r))} ({c.baseOf(r) === c.osTotal ? 'total da OS' : 'os serviços dele'})</div>}
+              {r.mode !== 'fixo' && c.extraOf(r).value > 0 && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && (
+                <div className="text-[11px] text-signal-700">+ regra da loja: {c.extraOf(r).labels.join(' · ')}</div>
+              )}
+              {c.excludedOf(r).length > 0 && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && (
+                <div className="text-[11px] text-steel-500">Sem comissão pela regra da loja: {c.excludedOf(r).join(', ')}</div>
+              )}
             </div>
           ))}
           {c.rows.length === 0 && (
