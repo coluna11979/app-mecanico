@@ -24,7 +24,7 @@ import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
 import { FavoriteMechanics, PlatformHero, StatusCounters, type HomeMechanic } from '@/components/marketplace/PlatformHome';
-import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
+import { QuickCall, SERVICE_SHORTCUTS, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
 import { PanelTour, tourSeen, type TourStep } from '@/components/marketplace/PanelTour';
 import {
   IconAlert, IconArchive, IconArrowLeft, IconArrowRight, IconBell, IconCalendar, IconCar, IconCheck, IconChevronDown, IconClipboardCheck,
@@ -365,7 +365,7 @@ export default function WorkshopDashboard() {
     const next: NewJob = {
       ...EMPTY,
       title: one ? list[0].title : `${list[0].title} + ${list.length - 1} serviço(s)`,
-      description: one ? list[0].description : ['Serviços a realizar:', ...list.map(s => `• ${s.title} — ${s.description}`)].join('\n'),
+      description: one ? list[0].description : ['Serviços a realizar:', ...list.map(s => `• ${s.title}`)].join('\n'),
       pricing: 'fixed', max_hours: String(hours), total: '',
     };
     setEditingId(null); setDraftRestored(false); setDraftOrigin(null); setFormError(null);
@@ -1051,6 +1051,25 @@ export default function WorkshopDashboard() {
                 <label className="label" htmlFor="job-title">Serviço</label>
                 <input id="job-title" className="input" placeholder="Ex.: Troca de pastilha de freio" autoComplete="off"
                   value={form.title} onChange={set('title')} />
+                {/* Atalhos: um toque preenche serviço, detalhes e tempo (o carro e o valor ficam como estão) */}
+                {!editingId && !form.service_order_id && !form.stacked_service_ids?.length && (
+                  <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Atalhos de serviço">
+                    {SERVICE_SHORTCUTS.map(s => {
+                      const on = form.title === s.title;
+                      return (
+                        <button key={s.label} type="button" aria-pressed={on}
+                          onClick={() => setForm(f => {
+                            const next = { ...f, title: s.title, description: s.description, pricing: 'fixed' as const, max_hours: String(s.hours) };
+                            persistDraft(next); return next;
+                          })}
+                          className={`min-h-[36px] px-3 inline-flex items-center gap-1.5 rounded-full border text-xs font-semibold active:scale-95 transition ${
+                            on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-steel-200 bg-white text-steel-700 hover:border-brand-300'}`}>
+                          <s.icon className="w-3.5 h-3.5" />{s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Veículo: só na demanda avulsa (a que vem de OS/empilhados já traz os carros) */}

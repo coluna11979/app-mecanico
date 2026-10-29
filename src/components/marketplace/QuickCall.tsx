@@ -14,21 +14,21 @@ export type ServiceShortcut = { icon: (p: { className?: string }) => JSX.Element
 
 export const SERVICE_SHORTCUTS: ServiceShortcut[] = [
   { icon: IconDroplet, label: 'Troca de óleo',  hours: 1,   title: 'Troca de óleo e filtros',
-    description: 'Troca de óleo do motor e filtro de óleo (filtro de ar/combustível se precisar). Peças por conta da oficina.' },
+    description: 'Troca de óleo e filtros' },
   { icon: IconDisc, label: 'Freios',         hours: 1.5, title: 'Troca de pastilhas / discos de freio',
-    description: 'Substituição de pastilhas e, se necessário, discos de freio. Conferir fluido e sangria.' },
+    description: 'Troca de pastilhas e discos de freio' },
   { icon: IconActivity, label: 'Suspensão',      hours: 2,   title: 'Serviço de suspensão',
-    description: 'Troca de amortecedores, bandejas, buchas ou pivôs conforme diagnóstico.' },
+    description: 'Amortecedores, bandejas, buchas e pivôs' },
   { icon: IconSearch, label: 'Diagnóstico',    hours: 1,   title: 'Diagnóstico com scanner',
-    description: 'Leitura de falhas com scanner e diagnóstico do problema relatado pelo cliente.' },
+    description: 'Diagnóstico com scanner' },
   { icon: IconZap, label: 'Elétrica',       hours: 1.5, title: 'Serviço de elétrica automotiva',
-    description: 'Diagnóstico e reparo elétrico (bateria, alternador, motor de arranque, chicote, iluminação).' },
+    description: 'Bateria, alternador, motor de arranque e iluminação' },
   { icon: IconCog, label: 'Embreagem',      hours: 3,   title: 'Troca de kit de embreagem',
-    description: 'Substituição do kit de embreagem (platô, disco e rolamento). Peças por conta da oficina.' },
+    description: 'Troca do kit de embreagem' },
   { icon: IconClipboardCheck, label: 'Revisão',        hours: 2,   title: 'Revisão preventiva',
-    description: 'Revisão geral: fluidos, filtros, freios, suspensão, correias e itens de segurança.' },
+    description: 'Revisão preventiva' },
   { icon: IconSnowflake, label: 'Ar-cond.', hours: 1.5, title: 'Serviço de ar-condicionado',
-    description: 'Higienização, carga de gás ou diagnóstico do ar-condicionado.' },
+    description: 'Higienização, carga de gás ou diagnóstico do ar-condicionado' },
 ];
 
 /** Valor/hora "do meio" entre os mecânicos disponíveis (null = ninguém disponível) */
