@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
-import { IconArrowLeft, IconArrowRight, IconX } from '@/components/mecanico/icons';
+import { IconArrowLeft, IconArrowRight, IconInfo, IconX } from '@/components/mecanico/icons';
 
 /** Um passo do tour: `target` é o valor de data-tour do bloco destacado (sem target = cartão no meio da tela) */
 export type TourStep = { target?: string; title: string; body: string };
@@ -23,6 +23,30 @@ export function tourSeen(key: string) {
 }
 function markSeen(key: string) {
   try { localStorage.setItem(key, '1'); } catch { /* sem armazenamento: tudo bem */ }
+}
+
+/**
+ * Abre sozinho no primeiro acesso deste usuário à tela (espera os blocos carregarem);
+ * depois só pelo botão "Como usar". `ready` = a tela já pode mostrar o guia (carregou, nada aberto por cima).
+ */
+export function useFirstVisitTour(storageKey: string | null, ready: boolean) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!storageKey || !ready || tourSeen(storageKey)) return;
+    const t = setTimeout(() => setOpen(true), 1000);
+    return () => clearTimeout(t);
+  }, [storageKey, ready]);
+  return [open, setOpen] as const;
+}
+
+/** "Como usar": reabre o guia da tela (é o último passo do tour, com data-tour="ajuda") */
+export function TourHelpButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} data-tour="ajuda"
+      className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-xs font-semibold text-steel-500 hover:bg-steel-100 hover:text-steel-800 transition">
+      <IconInfo className="w-4 h-4" />Como usar
+    </button>
+  );
 }
 
 /**
