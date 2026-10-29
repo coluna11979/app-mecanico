@@ -6,6 +6,8 @@ import { recordConsent } from '@/lib/consent';
 import { CouponField } from '@/components/CouponField';
 import { attributeSignup } from '@/lib/marketingAttribution';
 import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
+import { lookupCep } from '@/lib/cep';
+import { maskCep, onlyDigits } from '@/lib/customers';
 
 function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
   try {
@@ -31,6 +33,7 @@ export default function SignupWorkshop() {
   const [err, setErr] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [coupon, setCoupon] = useState<string | null>(null);
+  const [cepStatus, setCepStatus] = useState<'idle' | 'loading' | 'found' | 'notfound' | 'error'>('idle');
   const [f, setF] = useState({
     full_name: '', email: '', password: '', phone: '',
     business_name: '', cnpj: '',
@@ -38,6 +41,28 @@ export default function SignupWorkshop() {
     city: '', state: 'SP', description: '',
   });
   function up<K extends keyof typeof f>(k: K, v: typeof f[K]) { setF(p => ({ ...p, [k]: v })); }
+
+  /* ── ViaCEP: preenche rua, bairro, cidade e UF ── */
+  async function onCepChange(raw: string) {
+    const masked = maskCep(raw);
+    up('cep', masked);
+    if (onlyDigits(masked).length < 8) { setCepStatus('idle'); return; }
+    setCepStatus('loading');
+    try {
+      const found = await lookupCep(masked);
+      if (!found) { setCepStatus('notfound'); return; }
+      setF(prev => ({
+        ...prev,
+        address:      found.street       || prev.address,
+        neighborhood: found.neighborhood || prev.neighborhood,
+        city:         found.city         || prev.city,
+        state:        found.state        || prev.state,
+      }));
+      setCepStatus('found');
+    } catch {
+      setCepStatus('error');
+    }
+  }
 
   // Pré-preenche com os dados capturados no gate da home (se houver)
   useEffect(() => {
@@ -147,8 +172,25 @@ export default function SignupWorkshop() {
                 <input className="input" required value={f.business_name} onChange={e => up('business_name', e.target.value)} /></div>
               <div><label className="label">CNPJ</label>
                 <input className="input" required value={f.cnpj} onChange={e => up('cnpj', e.target.value)} placeholder="00.000.000/0000-00" /></div>
-              <div><label className="label">CEP *</label>
-                <input className="input" required value={f.cep} onChange={e => up('cep', e.target.value)} placeholder="00000-000" /></div>
+              <div>
+                <label className="label">CEP *</label>
+                <input
+                  className="input"
+                  required
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  value={f.cep}
+                  onChange={e => onCepChange(e.target.value)}
+                  placeholder="00000-000"
+                />
+                <p className={`text-xs mt-1 ${cepStatus === 'notfound' || cepStatus === 'error' ? 'text-alert-600' : 'text-steel-500'}`}>
+                  {cepStatus === 'loading'  && 'Buscando endereço…'}
+                  {cepStatus === 'found'    && '✓ Endereço encontrado — confira abaixo.'}
+                  {cepStatus === 'notfound' && 'CEP não encontrado. Preencha o endereço à mão.'}
+                  {cepStatus === 'error'    && 'Não deu pra buscar o CEP. Preencha o endereço à mão.'}
+                  {cepStatus === 'idle'     && 'Digite o CEP que a gente preenche o resto.'}
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-[1fr_120px] gap-3">
