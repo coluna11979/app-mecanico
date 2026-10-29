@@ -25,6 +25,7 @@ import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
 import { FavoriteMechanics, PlatformHero, StatusCounters, type HomeMechanic } from '@/components/marketplace/PlatformHome';
 import { QuickCall, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
+import { PanelTour, tourSeen, type TourStep } from '@/components/marketplace/PanelTour';
 import {
   IconAlert, IconArchive, IconArrowLeft, IconArrowRight, IconBell, IconCalendar, IconCar, IconCheck, IconChevronDown, IconClipboardCheck,
   IconClock, IconFileText, IconInfo, IconLayers, IconMap, IconMegaphone, IconPencil, IconPlus, IconRepeat, IconSearch, IconStar,
@@ -58,6 +59,26 @@ type MechanicOption = {
   skills?: string[] | null; avatar?: string | null;
 };
 type JobMode = 'open' | 'favorites' | 'direct';
+
+/** Guia da tela de Demandas (blocos que não estão na tela são pulados) */
+const TOUR_STEPS: TourStep[] = [
+  { target: 'hero', title: 'Chame um mecânico em minutos',
+    body: 'Em "Nova demanda" você diz o serviço, o carro, o valor e quando precisa. Os mecânicos disponíveis recebem na hora e o primeiro que aceitar vai até a oficina.' },
+  { target: 'empilhados', title: 'Serviços empilhados',
+    body: 'O que a equipe separou para um mecânico da plataforma fica aqui. Envie um, ou marque vários para um mecânico só fazer tudo junto.' },
+  { target: 'contadores', title: 'Seus pedidos num relance',
+    body: 'Quantas demandas estão em busca, aceitas, em execução e concluídas. Toque num número para ir direto à lista.' },
+  { target: 'atalhos', title: 'Atalhos de serviço',
+    body: 'Os serviços mais pedidos já com a descrição pronta. Um toque abre a demanda preenchida, é só conferir e publicar.' },
+  { target: 'preferidos', title: 'Meus preferidos',
+    body: 'Marque com a estrela os mecânicos em quem você confia. Aqui você vê quem está disponível e chama direto, com um toque.' },
+  { target: 'solicitacoes', title: 'Acompanhe cada demanda',
+    body: 'Aqui você vê quem aceitou, quando o mecânico chega e o andamento do serviço. No fim, avalie o mecânico.' },
+  { target: 'historico', title: 'Histórico',
+    body: 'Demandas concluídas e canceladas ficam guardadas aqui. Dá para repetir uma demanda antiga sem digitar tudo de novo.' },
+  { target: 'ajuda', title: 'Pronto!',
+    body: 'Quando quiser rever este guia, toque em "Como usar" aqui no topo.' },
+];
 
 const EMPTY: NewJob = { title: '', description: '', price_per_hour: '', max_hours: '1', scheduled_at: '', pricing: 'fixed', total: '', vehicle: '' };
 
@@ -607,6 +628,16 @@ export default function WorkshopDashboard() {
     return () => { document.body.style.overflow = prev; };
   }, [modal]);
 
+  // Guia da tela: abre sozinho no primeiro acesso de cada usuário; depois só pelo "Como usar"
+  const tourKey = `oficina_tour_demandas_v1:${user?.id ?? ''}`;
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (!user?.id || shopLoading || modal || tourSeen(tourKey)) return;
+    const t = setTimeout(() => setTourOpen(true), 800); // espera os blocos carregarem
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, shopLoading]);
+
   const estimated = form.pricing === 'fixed' ? Number(form.total) : Number(form.price_per_hour) * Number(form.max_hours);
   // Estimativa pelo valor/hora dos mecânicos disponíveis × tempo previsto (o mesmo que a oficina pagaria contratando direto)
   const rateNow = medianRate(mechanics);
@@ -644,26 +675,30 @@ export default function WorkshopDashboard() {
 
       {/* O que se faz aqui, em um botão */}
       <PlatformHero available={mechanics.length} onCall={() => openCreateModal()}
-        disabled={shopLoading || hasPendingFees} locked={hasPendingFees} />
+        disabled={shopLoading || hasPendingFees} locked={hasPendingFees} onHelp={() => setTourOpen(true)} />
       <PanelSlot panel="oficina_demandas" at="apos-nova-demanda" className="mb-4" />
 
       {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
 
       {/* Serviços empilhados: esperando mecânico da plataforma (a gestão junta e gera a demanda) */}
-      {currentWorkshop?.id && !hasPendingFees && <StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={() => openCreateModal(true)} />}
+      {currentWorkshop?.id && !hasPendingFees && (
+        <div data-tour="empilhados"><StackBoard wid={currentWorkshop.id} reloadKey={stackVer} onGenerate={() => openCreateModal(true)} /></div>
+      )}
 
       {/* Como estão os pedidos (oficina que nunca pediu não vê quatro zeros) */}
-      {!firstTime && <div className="lg:hidden">{counters()}</div>}
+      {!firstTime && <div className="lg:hidden" data-tour="contadores">{counters()}</div>}
       <PanelSlot panel="oficina_demandas" at="apos-contadores" className="mb-4" />
 
       {/* Atalhos dos serviços mais pedidos (um toque abre a demanda pronta) */}
-      <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact
-        storageKey={currentWorkshop?.id ? `oficina_atalhos_open:${currentWorkshop.id}` : null} />
+      <div data-tour="atalhos">
+        <QuickCall mechanics={mechanics} disabled={shopLoading || hasPendingFees} onShortcut={openShortcut} compact
+          storageKey={currentWorkshop?.id ? `oficina_atalhos_open:${currentWorkshop.id}` : null} />
+      </div>
       <PanelSlot panel="oficina_demandas" at="apos-atalhos" className="mb-4" />
 
       {/* Meus preferidos (recolhido): quem a oficina marcou com ⭐, com "Chamar" direto */}
-      <div className="lg:hidden">
+      <div className="lg:hidden" data-tour="preferidos">
         <FavoriteMechanics mechanics={favMechanics} onCall={openInvite} disabled={shopLoading || hasPendingFees}
           storageKey={currentWorkshop?.id ? `oficina_preferidos_open:${currentWorkshop.id}` : null} />
       </div>
@@ -858,7 +893,7 @@ export default function WorkshopDashboard() {
 
         if (active.length === 0) {
           return (
-            <section id="minhas-solicitacoes" className="mb-8 scroll-mt-4">
+            <section id="minhas-solicitacoes" data-tour="solicitacoes" className="mb-8 scroll-mt-4">
               <h2 className="text-[15px] lg:text-lg font-bold mb-3">Minhas solicitações</h2>
               <div className="rounded-xl bg-white border border-steel-200 text-center px-5 py-8">
                 <IconClipboardCheck className="mx-auto w-7 h-7 text-steel-300" />
@@ -874,7 +909,7 @@ export default function WorkshopDashboard() {
         }
 
         return (
-          <div id="minhas-solicitacoes" className="mb-8 scroll-mt-4">
+          <div id="minhas-solicitacoes" data-tour="solicitacoes" className="mb-8 scroll-mt-4">
             {ACTIVE_GROUPS.map(g => {
               const jobs = buckets[g.key];
               if (jobs.length === 0) return null;
@@ -921,17 +956,21 @@ export default function WorkshopDashboard() {
       <PanelSlot panel="oficina_demandas" at="apos-solicitacoes" className="mb-6" />
 
       {/* Histórico — fechado por padrão; a oficina escolhe abrir */}
-      <div id="historico" className="scroll-mt-4"><HistorySection history={history} workshopId={currentWorkshop?.id ?? null}
+      <div id="historico" data-tour="historico" className="scroll-mt-4"><HistorySection history={history} workshopId={currentWorkshop?.id ?? null}
         names={inviteNames} onRepeat={hasPendingFees ? undefined : openRepeat} /></div>
       </div>
 
       {/* Coluna lateral (só no computador) */}
       <aside className="hidden lg:block space-y-4 sticky top-4">
-        {!firstTime && counters(true)}
-        <FavoriteMechanics mechanics={favMechanics} onCall={openInvite} disabled={shopLoading || hasPendingFees} list
-          storageKey={currentWorkshop?.id ? `oficina_preferidos_open:${currentWorkshop.id}` : null} />
+        {!firstTime && <div data-tour="contadores">{counters(true)}</div>}
+        <div data-tour="preferidos">
+          <FavoriteMechanics mechanics={favMechanics} onCall={openInvite} disabled={shopLoading || hasPendingFees} list
+            storageKey={currentWorkshop?.id ? `oficina_preferidos_open:${currentWorkshop.id}` : null} />
+        </div>
       </aside>
       </div>
+
+      {tourOpen && <PanelTour steps={TOUR_STEPS} storageKey={tourKey} onClose={() => setTourOpen(false)} />}
 
       {/* Avaliar o mecânico sem sair da tela */}
       {rating && (
