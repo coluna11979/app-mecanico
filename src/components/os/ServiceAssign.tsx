@@ -19,7 +19,7 @@ export default function ServiceAssign({ items, team, osMechanicId, onChanged }: 
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
-  const services = items.filter(i => i.kind === 'labor');
+  const services = items.filter(i => i.kind === 'labor' || (i.kind === 'part' && i.standalone)); // serviço e peça-item
   if (!services.length) return null;
   const osName = osMechanicId ? team.find(m => m.id === osMechanicId)?.name : null;
   const valueOf = (i: ServiceOrderItem) => (i.executor === 'platform' ? PLATFORM_ITEM : i.workshop_mechanic_id ?? '');

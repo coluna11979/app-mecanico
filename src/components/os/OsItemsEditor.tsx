@@ -452,7 +452,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         unit_price: parseMoney(r.unit_price || '0'),
         unit_cost: r.kind === 'part' && r.unit_cost.trim() ? parseMoney(r.unit_cost) : null,
         part_id: r.kind === 'part' ? r.part_id : null,
-        ...whoPatch(r.kind === 'labor' ? r.mechanic_id : ''),
+        ...whoPatch(r.kind === 'labor' || (r.kind === 'part' && r.standalone) ? r.mechanic_id : ''),
         commission_amount: r.kind === 'labor' && r.comm.trim() ? Math.max(0, parseMoney(r.comm)) : null,
         // Peça → serviço/mão de obra logo acima (com peça, a comissão vira 4% sobre serviço + peças)
         used_in_item_id: (() => {

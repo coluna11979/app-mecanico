@@ -79,11 +79,11 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   /** Pela regra, com os responsáveis da tela */
   const auto = useMemo(() => {
     const by = new Map<string, { value: number; base: string[] }>();
-    for (const l of a.labor) {
+    for (const l of a.assignables) {
       const w = a.who[l.id];
       if (!w || w === PLATFORM || fixed.has(w)) continue;
       const parts = a.partsOf.get(l.id) ?? [];
-      const type = l.service_type ?? (parts.length ? 'servico' : 'mao_de_obra');
+      const type = l.kind === 'part' ? 'servico' : l.service_type ?? (parts.length ? 'servico' : 'mao_de_obra');
       const e = by.get(w) ?? { value: 0, base: [] };
       // Comissão digitada no serviço (na OS) substitui a regra desse serviço e das peças dele
       if (l.commission_amount != null) {
@@ -102,12 +102,12 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     }
     return [...by.entries()].filter(([, e]) => e.value > 0)
       .map(([id, e]) => ({ mechanic_id: id, value: r2(e.value), base: e.base.join(' + ') }));
-  }, [a.labor, a.who, a.partsOf, brought, fixed, itemRules]);
+  }, [a.assignables, a.who, a.partsOf, brought, fixed, itemRules]);
 
   /** Base das %: o que a pessoa faz (serviços dela + peças desses serviços). Sem divisão de serviços, o total da OS */
   const baseFor = (id: string) => {
-    if (!a.labor.length) return osTotal;
-    return r2(a.labor.filter(l => a.who[l.id] === id)
+    if (!a.assignables.length) return osTotal;
+    return r2(a.assignables.filter(l => a.who[l.id] === id)
       .reduce((s, l) => s + amt(l) + (a.partsOf.get(l.id) ?? []).reduce((x, p) => x + amt(p), 0), 0));
   };
   const baseOf = (r: Row) => baseFor(r.mechanic_id);
@@ -132,7 +132,7 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   function startEdit() {
     const base: Row[] = auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, baseFor(x.mechanic_id)), amount: moneyStr(x.value) }));
     // Serviço já entregue ao mecânico da plataforma aparece como pessoa (sem comissão da equipe)
-    if (a.labor.some(l => a.who[l.id] === PLATFORM)) base.push({ key: ++seq, mechanic_id: PLATFORM, mode: 'fixo', amount: '' });
+    if (a.assignables.some(l => a.who[l.id] === PLATFORM)) base.push({ key: ++seq, mechanic_id: PLATFORM, mode: 'fixo', amount: '' });
     setRows(base.length ? base : [{ key: ++seq, mechanic_id: '', mode: 'fixo', amount: '' }]);
     setEditing(true);
   }
@@ -267,7 +267,7 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
               </div>
               {assign && assign.labor.length > 0 && r.mechanic_id && (
                 <div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500 mb-1.5">Serviços que faz</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500 mb-1.5">Itens que faz</div>
                   <div className="flex flex-wrap gap-1.5">
                     {assign.labor.map(l => {
                       const on = assign.who[l.id] === r.mechanic_id;
@@ -378,7 +378,7 @@ function CardInner({ os, team, wid, sid, onSaved }: { os: ReceiveOs; team: Team;
 
   if (a.items === null || !c.loaded) return null;
   return (
-    <OsCommission c={c} team={team} assign={a.noItems ? undefined : { labor: a.labor, who: a.who, setWho: a.setWho }} className="card">
+    <OsCommission c={c} team={team} assign={a.noItems ? undefined : { labor: a.assignables, who: a.who, setWho: a.setWho }} className="card">
       {pending && (
         <div className="flex justify-end mt-3">
           <button onClick={save} disabled={busy || !c.valid} className="btn-primary text-sm">
