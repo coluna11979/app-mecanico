@@ -59,7 +59,8 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   const [tab, setTab] = useState<Tab>('servico');
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<string | null>(null);
-  const [target, setTarget] = useState(services.at(-1)?.key ?? '');
+  /** '' = peça entra como item novo da OS (com preço); senão, key do item que a recebe só como custo */
+  const [target, setTarget] = useState('');
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [step, setStep] = useState<Step | null>(null);
   /** Nomes das peças já adicionadas neste passo (kit, estoque ou texto livre) */
@@ -91,7 +92,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   const list = matches.slice(0, LIST_MAX);
 
   // O destino pode sumir (serviço removido) — cai para o último
-  const validTarget = services.some(s => s.key === target) ? target : services.at(-1)?.key ?? '';
+  const validTarget = target && services.some(s => s.key === target) ? target : '';
 
   const modelHits = useMemo(() => {
     const words = norm(vq).split(/\s+/).filter(Boolean);
@@ -213,9 +214,10 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
               )}
               {tab === 'peca' && services.length > 0 && (
                 <label className="mt-3 flex items-center gap-2 text-xs text-steel-500">
-                  <span className="shrink-0">Peças entram no item:</span>
+                  <span className="shrink-0">A peça entra:</span>
                   <select className="input !py-1.5 !px-2 text-xs flex-1 min-w-0" value={validTarget} onChange={e => setTarget(e.target.value)}>
-                    {services.map(s => <option key={s.key} value={s.key}>{s.name || 'sem nome'}</option>)}
+                    <option value="">Como item novo (com preço)</option>
+                    {services.map(s => <option key={s.key} value={s.key}>Dentro de “{s.name || 'sem nome'}” (só custo)</option>)}
                   </select>
                 </label>
               )}
@@ -330,7 +332,8 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
                       </span>
                     </span>
                     <span className="text-sm font-bold text-steel-900 shrink-0">
-                      {vp ? fmtBRL(vp.price) : s.unit_price > 0 ? fmtBRL(s.unit_price) : 'a definir'}
+                      {s.kind === 'part' && validTarget && partsAsCost ? partLabel(s)
+                        : vp ? fmtBRL(vp.price) : s.unit_price > 0 ? fmtBRL(s.unit_price) : 'a definir'}
                     </span>
                     <span className={`h-11 w-11 shrink-0 rounded-xl grid place-items-center text-lg font-bold transition ${justAdded === s.description ? 'bg-signal-500 text-white' : 'bg-brand-50 text-brand-700'}`}>
                       {justAdded === s.description ? '✓' : '+'}
