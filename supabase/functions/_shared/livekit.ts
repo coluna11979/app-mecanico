@@ -3,6 +3,7 @@
 import {
   EgressClient, EncodedFileOutput, EncodedFileType, RoomServiceClient, S3Upload,
 } from 'npm:livekit-server-sdk@2.19.2';
+import { AwsClient } from 'npm:aws4fetch@1.0.20';
 
 function env(name: string): string {
   const v = Deno.env.get(name);
@@ -33,6 +34,8 @@ export async function startRoomRecording(roomName: string): Promise<string> {
   const file = new EncodedFileOutput({
     fileType: EncodedFileType.MP4,
     filepath,
+    // Sem o .json de manifesto ao lado do vídeo: ficaria órfão ao excluir a gravação
+    disableManifest: true,
     output: {
       case: 's3',
       value: new S3Upload({
@@ -47,4 +50,23 @@ export async function startRoomRecording(roomName: string): Promise<string> {
   });
   await egressClient().startRoomCompositeEgress(roomName, file, { layout: 'speaker' });
   return `${env('R2_PUBLIC_URL').replace(/\/$/, '')}/${filepath}`;
+}
+
+// Apaga do R2 o MP4 de uma URL pública gerada por startRoomRecording.
+// Só aceita arquivos da pasta treinamentos/ do nosso bucket.
+export async function deleteRecordingFile(publicUrl: string): Promise<void> {
+  const prefix = `${env('R2_PUBLIC_URL').replace(/\/$/, '')}/`;
+  if (!publicUrl.startsWith(prefix)) throw new Error('gravação fora do bucket');
+  const key = publicUrl.slice(prefix.length);
+  if (!/^treinamentos\/[\w.-]+\.mp4$/.test(key)) throw new Error('gravação inválida');
+
+  const r2 = new AwsClient({
+    accessKeyId: env('R2_ACCESS_KEY_ID'),
+    secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
+    service: 's3',
+    region: 'auto',
+  });
+  const res = await r2.fetch(`${env('R2_ENDPOINT').replace(/\/$/, '')}/${env('R2_BUCKET')}/${key}`, { method: 'DELETE' });
+  // 404 = já não existe; segue como apagado
+  if (!res.ok && res.status !== 404) throw new Error(`R2 respondeu ${res.status}`);
 }

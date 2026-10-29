@@ -54,6 +54,7 @@ export default function AdminTreinamentos() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [openRec, setOpenRec] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -94,6 +95,21 @@ export default function AdminTreinamentos() {
     try { await navigator.clipboard.writeText(text); } catch { prompt('Copie o convite:', text); }
     setCopied(s.id);
     setTimeout(() => setCopied(c => (c === s.id ? null : c)), 2000);
+  }
+
+  // Apaga do Cloudflare de verdade (não tem lixeira) — por isso a confirmação
+  async function remove(s: Session, url?: string) {
+    const msg = url
+      ? 'Excluir esta gravação? O vídeo é apagado de vez e não dá pra recuperar.'
+      : `Excluir o treinamento "${s.title}" e todas as gravações? Não dá pra recuperar.`;
+    if (!confirm(msg)) return;
+    setDeleting(url ?? s.id);
+    const { data, error: err } = await supabase.functions.invoke('training-room', {
+      body: url ? { action: 'delete_recording', session_id: s.id, url } : { action: 'delete_session', session_id: s.id },
+    });
+    setDeleting(null);
+    if (err || data?.error) return alert(data?.error ?? 'Não foi possível excluir.');
+    load();
   }
 
   async function cancel(s: Session) {
@@ -198,6 +214,12 @@ export default function AdminTreinamentos() {
                       Cancelar
                     </button>
                   )}
+                  {s.status !== 'live' && (
+                    <button onClick={() => remove(s)} disabled={deleting === s.id}
+                      className="text-sm text-steel-500 hover:text-alert-600 px-2 disabled:opacity-60">
+                      {deleting === s.id ? 'Excluindo…' : 'Excluir treinamento'}
+                    </button>
+                  )}
                 </div>
 
                 {openRec === s.id && (
@@ -209,7 +231,15 @@ export default function AdminTreinamentos() {
                       <div key={url}>
                         {s.recording_segments.length > 1 && <p className="text-xs font-bold text-steel-600 mb-1">Parte {i + 1}</p>}
                         <video src={url} controls preload="metadata" className="w-full rounded-xl bg-black" />
-                        <a href={url} target="_blank" rel="noreferrer" className="text-xs text-brand-600 font-bold">Abrir / baixar</a>
+                        <div className="flex items-center gap-4 mt-1">
+                          <a href={url} target="_blank" rel="noreferrer" className="text-xs text-brand-600 font-bold">Abrir / baixar</a>
+                          {s.recording_status !== 'recording' && (
+                            <button onClick={() => remove(s, url)} disabled={deleting === url}
+                              className="text-xs text-alert-600 font-bold disabled:opacity-60">
+                              {deleting === url ? 'Excluindo…' : 'Excluir gravação'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

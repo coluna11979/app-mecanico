@@ -5,9 +5,13 @@
 //   host_token  { session_id }                         → entra como apresentador (admin)
 //   record      { session_id, on: boolean }            → começa/para de gravar (admin); entrar não grava
 //   end         { session_id }                         → para a gravação e fecha a sala (admin)
+//   delete_recording { session_id, url }               → apaga um trecho gravado do R2 (admin)
+//   delete_session   { session_id }                    → apaga o treinamento e as gravações (admin)
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { AccessToken, TrackSource } from 'npm:livekit-server-sdk@2.19.2';
-import { egressClient, livekitKeys, livekitWsUrl, roomService, startRoomRecording } from '../_shared/livekit.ts';
+import {
+  deleteRecordingFile, egressClient, livekitKeys, livekitWsUrl, roomService, startRoomRecording,
+} from '../_shared/livekit.ts';
 
 async function stopRecordings(room: string) {
   try {
@@ -139,6 +143,29 @@ Deno.serve(async (req) => {
       await admin.from('training_sessions')
         .update({ status: 'completed', ended_at: new Date().toISOString() })
         .eq('id', s.id);
+      return json({ ok: true });
+    }
+
+    if (action === 'delete_recording' || action === 'delete_session') {
+      if (s.recording_status === 'recording') {
+        return json({ error: 'pare a gravação antes de excluir' }, 409);
+      }
+      const segments: string[] = s.recording_segments ?? [];
+      const targets = action === 'delete_session' ? segments : segments.filter((u) => u === body.url);
+      if (action === 'delete_recording' && targets.length === 0) return json({ error: 'gravação não encontrada' }, 404);
+      for (const u of targets) await deleteRecordingFile(u);
+
+      if (action === 'delete_session') {
+        try { await roomService().deleteRoom(s.livekit_room_name); } catch { /* sala já fechada */ }
+        await admin.from('training_sessions').delete().eq('id', s.id);
+        return json({ ok: true });
+      }
+      const rest = segments.filter((u) => u !== body.url);
+      await admin.from('training_sessions').update({
+        recording_segments: rest,
+        recording_url: rest[0] ?? null,
+        recording_status: rest.length ? s.recording_status : 'off',
+      }).eq('id', s.id);
       return json({ ok: true });
     }
 
