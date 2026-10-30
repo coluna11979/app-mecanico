@@ -683,24 +683,27 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             <div className="bg-steel-50 rounded-xl px-4 py-3 text-sm font-semibold text-steel-700 truncate">
               📋 {arrivalAlert.title}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setArrivalAlert(null)}
-                className="btn-ghost flex-1"
-              >
-                Depois
-              </button>
-              <button
-                onClick={() => {
-                  const target = `/oficina/job/${arrivalAlert.jobId}/tracking`;
-                  setArrivalAlert(null);
-                  nav(target);
-                }}
-                className="btn-primary flex-[2] btn-lg"
-              >
-                💳 Pagar agora
-              </button>
-            </div>
+            {/* Sem "depois": o mecânico só começa depois do pagamento. Cancelar (com multa) fica na tela do serviço */}
+            <button
+              onClick={() => {
+                const target = `/oficina/job/${arrivalAlert.jobId}/tracking`;
+                setArrivalAlert(null);
+                nav(target);
+              }}
+              className="btn-primary w-full btn-lg"
+            >
+              💳 Pagar agora
+            </button>
+            <button
+              onClick={() => {
+                const target = `/oficina/job/${arrivalAlert.jobId}/tracking`;
+                setArrivalAlert(null);
+                nav(target);
+              }}
+              className="w-full min-h-[44px] text-xs font-semibold text-steel-500 underline underline-offset-2 hover:text-alert-600"
+            >
+              Não vai seguir? Cancelar com multa
+            </button>
           </div>
         </div>
       )}

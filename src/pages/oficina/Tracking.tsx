@@ -1081,6 +1081,15 @@ export default function WorkshopTracking() {
               </div>
             )}
             </>)}
+
+            {/* Sem "depois": o mecânico está esperando. A única outra saída é cancelar, com multa */}
+            {cancellation?.allowed && (
+              <button type="button"
+                onClick={() => { setCancelOpen(true); setCancelReason(''); setCancelError(null); }}
+                className="w-full min-h-[44px] text-xs font-semibold text-steel-500 underline underline-offset-2 hover:text-alert-600">
+                Não vai seguir? Cancelar com multa{(cancellation.fee ?? 0) > 0 ? ` de R$ ${formatBRL(cancellation.fee ?? 0)}` : ''}
+              </button>
+            )}
           </div>
         </div>
       )}
