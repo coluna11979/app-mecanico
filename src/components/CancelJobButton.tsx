@@ -74,8 +74,13 @@ function analyseJob(job: Job): Cancellation | null {
   return null;
 }
 
-/** Motivos rápidos (um toque); "Outro" pede texto */
-const REASONS = ['Ninguém aceitou', 'Demorou demais', 'Cliente desistiu', 'Vou fazer com a equipe', 'Publiquei errado', 'Outro'] as const;
+/** Motivos rápidos (um toque) conforme a etapa; o campo de texto fica sempre aberto para outro motivo */
+function reasonsFor(scenario: Cancellation['scenario']): string[] {
+  if (scenario === 'open') return ['Ninguém aceitou', 'Demorou demais', 'Cliente desistiu', 'Vou fazer com a equipe', 'Publiquei errado'];
+  // Mecânico já chegou (ou já foi pago): cancelar é sempre com multa
+  if (scenario === 'arrived_unpaid' || scenario === 'paid') return ['Cliente desistiu', 'Vou fazer com a equipe', 'Publiquei errado', 'Problema com o mecânico'];
+  return ['Mecânico atrasou', 'Cliente desistiu', 'Vou fazer com a equipe', 'Publiquei errado'];
+}
 type Linked = { osNumbers: string[]; osItems: number; free: number };
 
 export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', className = '' }: Props) {
@@ -92,8 +97,9 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
   const cancellation = analyseJob(job);
   if (!cancellation || cancellation.scenario === 'blocked') return null;
   const isAd = cancellation.scenario === 'open';
-  const fullReason = reasonKey === 'Outro' ? reason.trim() : [reasonKey, reason.trim()].filter(Boolean).join(' — ');
-  const canConfirm = !!fullReason && (reasonKey !== 'Outro' || !!reason.trim());
+  // Motivo = o toque, o texto, ou os dois juntos
+  const fullReason = [reasonKey, reason.trim()].filter(Boolean).join(' — ');
+  const canConfirm = !!fullReason;
   const hasLinked = !!linked && (linked.osItems > 0 || linked.free > 0);
   /** Demanda criada direto (sem OS nem empilhado): pode ser guardada nos Empilhados para depois */
   const direct = isAd && !!linked && !hasLinked;
@@ -301,9 +307,11 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
                 Por que está cancelando? *
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {REASONS.map(r => (
-                  <button key={r} type="button" disabled={busy}
+                {reasonsFor(cancellation.scenario).map(r => (
+                  <button key={r} type="button" disabled={busy} aria-pressed={reasonKey === r}
                     onClick={() => {
+                      // Tocar de novo desmarca (pode ficar só o texto)
+                      if (reasonKey === r) { setReasonKey(''); return; }
                       setReasonKey(r);
                       if (r === 'Vou fazer com a equipe') setDest(direct ? 'nada' : 'equipe');
                       else if (direct && r === 'Cliente desistiu') setDest('nada');
@@ -313,16 +321,16 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
                   </button>
                 ))}
               </div>
-              {reasonKey && (
-                <textarea
-                  className="input text-sm resize-none mt-2"
-                  rows={2}
-                  placeholder={reasonKey === 'Outro' ? 'Conte o motivo' : 'Algum detalhe? (opcional)'}
-                  value={reason}
-                  onChange={e => setReason(e.target.value)}
-                  disabled={busy}
-                />
-              )}
+              <textarea
+                className="input text-sm resize-none mt-2"
+                rows={2}
+                aria-label="Descreva o motivo"
+                placeholder={reasonKey ? 'Algum detalhe? (opcional)' : 'Outro motivo? Descreva aqui'}
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                disabled={busy}
+              />
+              {!canConfirm && <div className="text-[11px] text-steel-500 mt-1">Escolha um motivo acima ou descreva o seu.</div>}
             </div>
 
             {error && (
