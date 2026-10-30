@@ -11,14 +11,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { unlockAudio, attachAutoUnlock } from '@/lib/alertSound';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
+import { mechanicNet, formatMoney } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
 import { PushAlertCard } from '@/components/mecanico/PushAlertCard';
 import { declineInvite, isPendingInvite } from '@/lib/jobInvite';
 import type { Job, Mechanic, Workshop } from '@/types/database';
 import {
-  IconAlert, IconBuilding, IconCalendar, IconChevronDown, IconChevronRight, IconClock, IconDollar,
+  IconAlert, IconBuilding, IconCalendar, IconChevronDown, IconChevronRight, IconDollar,
   IconGift, IconInfo, IconMap, IconMapPin, IconNavigation, IconStar, IconWrench, IconX,
 } from '@/components/mecanico/icons';
 
@@ -244,7 +244,7 @@ export default function MechanicDashboard() {
                 </div>
                 <div className="font-bold truncate">{capitalize(t.job.title)}</div>
                 <div className="text-xs opacity-90">
-                  R$ {formatMoney(mechanicNet(cap))} no seu PIX · {previstas(t.job)}
+                  R$ {formatMoney(mechanicNet(cap))} no seu PIX
                 </div>
               </div>
               <button
@@ -335,7 +335,6 @@ export default function MechanicDashboard() {
                           <IconMapPin className="w-3.5 h-3.5" /> {ws.city}{ws.state ? `/${ws.state}` : ''}
                         </span>
                       )}
-                      <span className="inline-flex items-center gap-1"><IconClock className="w-3.5 h-3.5" /> {previstas(j)}</span>
                       {j.scheduled_at && (
                         <span className="inline-flex items-center gap-1"><IconCalendar className="w-3.5 h-3.5" /> {formatScheduled(j.scheduled_at)}</span>
                       )}
@@ -376,9 +375,6 @@ export default function MechanicDashboard() {
                         {enRoute ? 'A caminho' : 'Em serviço'}
                       </span>
                       <div className="font-bold text-lg leading-snug mt-2 line-clamp-2">{capitalize(j.title)}</div>
-                      <div className="text-sm text-white/80 mt-1 flex items-center gap-1">
-                        <IconClock className="w-3.5 h-3.5" /> {previstas(j)}
-                      </div>
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-xs text-white/80">você recebe</div>
@@ -490,9 +486,6 @@ export default function MechanicDashboard() {
                             {km != null && <strong className="text-brand-400 font-semibold">· {formatDistance(km)}</strong>}
                           </span>
                         )}
-                        <span className="inline-flex items-center gap-1">
-                          <IconClock className="w-3.5 h-3.5" /> {previstas(j)}
-                        </span>
                         {ws && (ws.rating > 0 || ws.total_jobs > 0) && (
                           <span className="inline-flex items-center gap-1">
                             <IconStar className="w-3.5 h-3.5 text-pending-500" filled /> {ws.rating.toFixed(1)}
@@ -680,10 +673,6 @@ function Skeleton() {
 /** Oficina às vezes digita tudo minúsculo — "fazer motor…" vira "Fazer motor…" */
 function capitalize(s: string | null | undefined) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-}
-/** "2h previstas" — ou "Preço fechado" na demanda pelo serviço sem tempo informado */
-function previstas(j: Parameters<typeof hoursLabel>[0]) {
-  return hoursLabel(j) ?? 'Preço fechado';
 }
 
 /** A oficina aumentou o valor (24 h): mostra quanto era, no líquido que o mecânico recebe */
