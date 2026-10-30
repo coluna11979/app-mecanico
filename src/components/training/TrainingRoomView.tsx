@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { LiveKitRoom, VideoConference, useIsRecording } from '@livekit/components-react';
 import '@livekit/components-styles';
 
@@ -16,6 +16,7 @@ export default function TrainingRoomView({
   onRecord?: (on: boolean) => Promise<string | null>;
   topRight?: ReactNode;
 }) {
+  useHideOwnTabFromScreenShare();
   return (
     <div data-lk-theme="default" className="h-[100dvh] bg-[#111]">
       <LiveKitRoom
@@ -75,4 +76,19 @@ function RecordingControl({ onRecord }: { onRecord?: (on: boolean) => Promise<st
       )}
     </>
   );
+}
+
+// Na hora de compartilhar a tela, a aba da própria sala some da lista do Chrome:
+// compartilhar ela mesma vira um "espelho infinito". O ControlBar do LiveKit não deixa
+// passar essa opção, então ela entra no getDisplayMedia enquanto a sala está aberta.
+function useHideOwnTabFromScreenShare() {
+  useEffect(() => {
+    const media = navigator.mediaDevices;
+    if (!media?.getDisplayMedia) return;
+    const original = media.getDisplayMedia.bind(media);
+    media.getDisplayMedia = (opts?: DisplayMediaStreamOptions) =>
+      // o LiveKit manda selfBrowserSurface: undefined, por isso o ?? em vez de só espalhar
+      original({ ...opts, selfBrowserSurface: (opts as { selfBrowserSurface?: string })?.selfBrowserSurface ?? 'exclude' } as DisplayMediaStreamOptions);
+    return () => { media.getDisplayMedia = original; };
+  }, []);
 }
