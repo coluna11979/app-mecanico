@@ -4,11 +4,12 @@
 //   guest_token { share_token, name, phone?, store? }  → entra como convidado (público)
 //   host_token  { session_id }                         → entra como apresentador (admin)
 //   record      { session_id, on: boolean }            → começa/para de gravar (admin); entrar não grava
+//   screen      { session_id, identity, on: boolean }  → libera/tira a tela de um convidado (admin)
 //   end         { session_id }                         → para a gravação e fecha a sala (admin)
 //   delete_recording { session_id, url }               → apaga um trecho gravado do R2 (admin)
 //   delete_session   { session_id }                    → apaga o treinamento e as gravações (admin)
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { AccessToken, TrackSource } from 'npm:livekit-server-sdk@2.19.2';
+import { AccessToken, ParticipantPermission, TrackSource } from 'npm:livekit-server-sdk@2.19.2';
 import {
   deleteRecordingFile, egressClient, livekitKeys, livekitWsUrl, roomService, startRoomRecording,
 } from '../_shared/livekit.ts';
@@ -134,6 +135,20 @@ Deno.serve(async (req) => {
       }
       await stopRecordings(s.livekit_room_name);
       return json({ ok: true, recording: false });
+    }
+
+    if (action === 'screen') {
+      // Suporte: o apresentador deixa um convidado mostrar a tela dele, e tira depois
+      const identity = clean(body.identity, 80);
+      if (!identity.startsWith('guest-')) return json({ error: 'participante inválido' }, 400);
+      const sources = [TrackSource.MICROPHONE, TrackSource.CAMERA];
+      if (body.on) sources.push(TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO);
+      await roomService().updateParticipant(s.livekit_room_name, identity, {
+        permission: new ParticipantPermission({
+          canSubscribe: true, canPublish: true, canPublishData: true, canPublishSources: sources,
+        }),
+      });
+      return json({ ok: true, screen: !!body.on });
     }
 
     if (action === 'end') {
