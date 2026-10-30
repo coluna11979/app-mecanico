@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
+import { CancellationFeesPanel } from '@/components/admin/CancellationFeesPanel';
 
 const STATUS_OPTIONS = [
   { value: '',            label: 'Todos os status' },
@@ -59,6 +60,8 @@ export default function AdminJobs() {
           ))}
         </select>
       </div>
+
+      <CancellationFeesPanel />
 
       {/* Desktop table */}
       <div className="card overflow-x-auto hidden md:block">
