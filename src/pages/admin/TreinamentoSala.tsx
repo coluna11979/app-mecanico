@@ -30,6 +30,14 @@ export default function TreinamentoSala() {
     return null;
   }
 
+  async function screen(identity: string, on: boolean): Promise<string | null> {
+    const { data, error: err } = await supabase.functions.invoke('training-room', {
+      body: { action: 'screen', session_id: id, identity, on },
+    });
+    if (err || data?.error) return data?.error ?? 'Não foi possível mudar a tela do convidado.';
+    return null;
+  }
+
   async function endForAll() {
     if (!confirm('Encerrar o treinamento para todos? A gravação será finalizada.')) return;
     setEnding(true);
@@ -57,6 +65,7 @@ export default function TreinamentoSala() {
       host
       onLeave={() => navigate('/admin/treinamentos')}
       onRecord={record}
+      onScreen={screen}
       topRight={
         <button
           onClick={endForAll}
