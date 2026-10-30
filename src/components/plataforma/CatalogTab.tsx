@@ -8,15 +8,20 @@ import { brl, moneyStr, parseMoney } from '@/lib/cash';
  * Mesmas tabelas da Tabela de serviços (workshop_services) e de Peças (workshop_parts):
  * ligar esses módulos depois não precisa migrar nada. Remover = desativar (some das listas).
  */
-export type CatalogItem = { id: string; name: string; brand?: string | null; price: number; cost: number; minutes: number | null };
+export type CatalogItem = { id: string; name: string; brand?: string | null; price: number; cost: number; minutes: number | null;
+  /** Serviço: quanto a oficina paga ao mecânico (0 = não definido) */ pay?: number };
 /** Nome com a marca da peça ("Pastilha · Cobreq") */
 export const catalogLabel = (i: CatalogItem) => [i.name, i.brand].filter(Boolean).join(' · ');
 
 export async function loadCatalog(wid: string, kind: 'service' | 'part'): Promise<CatalogItem[]> {
   if (kind === 'service') {
-    const { data } = await supabase.from('workshop_services').select('id, name, price, estimated_minutes')
+    const q = (cols: string) => supabase.from('workshop_services').select(cols)
       .eq('workshop_id', wid).eq('active', true).order('name').limit(2000);
-    return (data ?? []).map(s => ({ id: s.id, name: s.name, price: Number(s.price ?? 0), cost: 0, minutes: s.estimated_minutes ?? null }));
+    let r = await q('id, name, price, estimated_minutes, mechanic_pay');
+    // Coluna do valor do mecânico ainda não existe no banco (migration 0148): a lista não pode sumir por isso
+    if (r.error) r = await q('id, name, price, estimated_minutes');
+    type Row = { id: string; name: string; price: number | null; estimated_minutes: number | null; mechanic_pay?: number | null };
+    return ((r.data ?? []) as unknown as Row[]).map(s => ({ id: s.id, name: s.name, price: Number(s.price ?? 0), cost: 0, minutes: s.estimated_minutes ?? null, pay: Number(s.mechanic_pay ?? 0) }));
   }
   const { data } = await supabase.from('workshop_parts').select('id, name, brand, sale_price, cost')
     .eq('workshop_id', wid).eq('active', true).order('name').limit(2000);
@@ -67,7 +72,14 @@ export default function CatalogTab({ wid, kind }: { wid: string; kind: 'service'
                   {isService && i.minutes != null && <span className="block text-xs text-steel-500">~{fmtMinutes(i.minutes)}</span>}
                   {!isService && i.cost > 0 && <span className="block text-xs text-steel-500">custo {brl(i.cost)}</span>}
                 </span>
-                <span className="shrink-0 font-bold text-steel-900">{i.price > 0 ? brl(i.price) : <span className="text-xs text-steel-400 font-normal">sem preço</span>}</span>
+                <span className="shrink-0 text-right">
+                  <span className="block font-bold text-steel-900">{i.price > 0 ? brl(i.price) : <span className="text-xs text-steel-400 font-normal">sem preço</span>}</span>
+                  {isService && (
+                    <span className="block text-[11px] text-steel-500 mt-0.5">
+                      mecânico: {(i.pay ?? 0) > 0 ? <strong className="text-steel-800">{brl(i.pay!)}</strong> : <span className="text-steel-400">definir</span>}
+                    </span>
+                  )}
+                </span>
               </button>
             </li>
           ))}
@@ -92,6 +104,7 @@ function CatalogForm({ wid, kind, item, onClose, onSaved }: {
   const [name, setName] = useState(item?.name ?? '');
   const [price, setPrice] = useState(item && item.price > 0 ? moneyStr(item.price) : '');
   const [cost, setCost] = useState(item && item.cost > 0 ? moneyStr(item.cost) : '');
+  const [pay, setPay] = useState(item && (item.pay ?? 0) > 0 ? moneyStr(item.pay!) : '');
   const [hours, setHours] = useState(item?.minutes != null ? String(Math.round((item.minutes / 60) * 10) / 10).replace('.', ',') : '');
   const [busy, setBusy] = useState(false);
 
@@ -103,7 +116,7 @@ function CatalogForm({ wid, kind, item, onClose, onSaved }: {
     setBusy(true);
     const minutes = hours.trim() ? Math.round(parseMoney(hours) * 60) || null : null;
     const row = isService
-      ? { name: name.trim(), price: p, estimated_minutes: minutes }
+      ? { name: name.trim(), price: p, estimated_minutes: minutes, mechanic_pay: parseMoney(pay || '0') || 0 }
       // Peça editada aqui não mexe em marca/código/estoque (isso é do módulo Peças)
       : { name: name.trim(), sale_price: p || null, cost: parseMoney(cost || '0') || 0 };
     const table = isService ? 'workshop_services' : 'workshop_parts';
@@ -145,6 +158,11 @@ function CatalogForm({ wid, kind, item, onClose, onSaved }: {
               <input className="input" inputMode="decimal" placeholder="R$ 0,00" value={cost} onChange={e => setCost(e.target.value)} /></div>
           )}
         </div>
+        {isService && (
+          <div><label className="label">Quanto pago ao mecânico (opcional)</label>
+            <input className="input" inputMode="decimal" placeholder="R$ 0,00" value={pay} onChange={e => setPay(e.target.value)} />
+            <p className="text-[11px] text-steel-400 mt-1">O valor que o mecânico recebe por este serviço. Só você vê.</p></div>
+        )}
         <div className="flex gap-2 pt-1">
           {item && <button type="button" onClick={remove} disabled={busy} className="btn-ghost text-alert-700">Remover</button>}
           <button type="button" onClick={onClose} disabled={busy} className="btn-ghost flex-1">Cancelar</button>
