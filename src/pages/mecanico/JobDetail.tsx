@@ -4,7 +4,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { formatBRL, mechanicNet, hoursLabel } from '@/lib/payment';
+import { formatBRL, mechanicNet } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { WorkshopReviews } from '@/components/WorkshopReviews';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
@@ -140,10 +140,10 @@ export default function MechanicJobDetail() {
           </div>
         )}
 
-        {/* Pacote (sem expor R$/h ou bruto — só horas previstas) */}
+        {/* Pacote (sem expor R$/h, bruto ou horas previstas — o mecânico só vê o valor fechado) */}
         <div className="card !bg-steel-800 text-center">
           <div className="text-[10px] text-steel-500 uppercase tracking-wider">Pacote</div>
-          <div className="text-xl font-bold text-white font-display mt-1">{hoursLabel(job) ?? 'Preço fechado'}</div>
+          <div className="text-xl font-bold text-white font-display mt-1">Valor fechado</div>
           <div className="text-xs text-steel-500 mt-1">valor fechado · não muda com o tempo real</div>
         </div>
 
