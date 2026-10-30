@@ -4,6 +4,7 @@ import type { Job } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
 import { toast } from '@/components/ui/Toast';
 import { splitJobVehicle } from '@/lib/jobDescription';
+import { notifyPendingFeesChanged } from '@/components/PendingFeesGate';
 import { ACCEPT_TOLERANCE_MS, acceptedAt, arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
 
 interface Props {
@@ -119,6 +120,11 @@ export function CancelJobButton({ job, onCancelled, onEdit, variant = 'link', cl
         setError(data?.error ?? error?.message ?? 'Erro ao cancelar');
         setBusy(false);
         return;
+      }
+      // Multa registrada: avisa na hora e atualiza o aviso/bloqueio do painel
+      if (Number(data?.fee) > 0) {
+        toast.error(`Demanda cancelada com multa de R$ ${formatBRL(Number(data.fee))}. Quite para publicar novas demandas.`);
+        notifyPendingFeesChanged();
       }
       // O banco já devolveu os serviços para a pilha; "equipe" tira da pilha e devolve para a loja
       if (dest === 'equipe') await backToTeam();

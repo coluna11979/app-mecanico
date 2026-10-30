@@ -14,6 +14,9 @@ interface PendingFees {
 /** Evento global disparado quando as multas pendentes mudam (ex.: foram pagas) */
 const PENDING_FEES_CHANGED = 'pending-fees-changed';
 
+/** Avisa banner e bloqueio que as multas mudaram (ex.: cancelamento com multa) — sem recarregar a página */
+export const notifyPendingFeesChanged = () => window.dispatchEvent(new Event(PENDING_FEES_CHANGED));
+
 interface Props {
   workshopId: string | null;
   /** Disparado quando o usuário efetivamente paga as multas pendentes */
@@ -41,7 +44,13 @@ export function PendingFeesBanner({ workshopId, onPaid }: Props) {
     else setPending(null);
   };
 
-  useEffect(() => { loadPending(); }, [workshopId]);
+  useEffect(() => {
+    loadPending();
+    // Cancelamento com multa (ou pagamento) em outro ponto da tela: aparece/some na hora
+    window.addEventListener(PENDING_FEES_CHANGED, loadPending);
+    return () => window.removeEventListener(PENDING_FEES_CHANGED, loadPending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workshopId]);
 
   if (!pending || pending.total <= 0) return null;
 
@@ -75,8 +84,7 @@ export function PendingFeesBanner({ workshopId, onPaid }: Props) {
             setOpen(false);
             setPending(null);
             onPaid?.();
-            loadPending();
-            window.dispatchEvent(new Event(PENDING_FEES_CHANGED));
+            notifyPendingFeesChanged();
           }}
         />
       )}
