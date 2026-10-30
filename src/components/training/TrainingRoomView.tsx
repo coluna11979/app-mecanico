@@ -93,8 +93,8 @@ function useHideOwnTabFromScreenShare() {
     if (!media?.getDisplayMedia) return;
     const original = media.getDisplayMedia.bind(media);
     media.getDisplayMedia = (opts?: DisplayMediaStreamOptions) =>
-      // o LiveKit manda selfBrowserSurface: undefined, por isso o ?? em vez de só espalhar
-      original({ ...opts, selfBrowserSurface: (opts as { selfBrowserSurface?: string })?.selfBrowserSurface ?? 'exclude' } as DisplayMediaStreamOptions);
+      // o ControlBar do LiveKit manda selfBrowserSurface: 'include' de propósito; aqui sempre exclui
+      original({ ...opts, selfBrowserSurface: 'exclude' } as DisplayMediaStreamOptions);
     return () => { media.getDisplayMedia = original; };
   }, []);
 }
