@@ -17,6 +17,12 @@ export default function TrainingRoomView({
   topRight?: ReactNode;
 }) {
   useHideOwnTabFromScreenShare();
+  // Nome próprio na aba: fácil de achar e de não confundir com a aba do sistema ao compartilhar
+  useEffect(() => {
+    const before = document.title;
+    document.title = `🎥 Sala: ${title}`;
+    return () => { document.title = before; };
+  }, [title]);
   return (
     <div data-lk-theme="default" className="h-[100dvh] bg-[#111]">
       <LiveKitRoom
