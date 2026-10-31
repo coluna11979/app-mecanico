@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
+import { BrandSignature } from '@/components/BrandSignature';
 
 type Target = 'all' | 'mechanic' | 'workshop';
 const EMOJIS = ['🔔', '🎉', '⚠️', '💡', '🛠️', '📋', '💰', '🚀', '📢', '✅'];
@@ -147,7 +148,10 @@ export default function AdminAvisos() {
             <label className="text-xs font-bold text-steel-700 uppercase tracking-wider">Mensagem *</label>
             <textarea className="input mt-1 resize-none" rows={4} maxLength={500} value={body}
               onChange={e => setBody(e.target.value)} placeholder="Escreva o comunicado…" />
-            <div className="text-[10px] text-steel-400 text-right mt-0.5">{body.length}/500</div>
+            <div className="flex justify-between gap-2 text-[10px] text-steel-400 mt-0.5">
+              <span>A assinatura da MecânicoApp (logo + slogan) entra sozinha no fim — não precisa digitar.</span>
+              <span className="shrink-0">{body.length}/500</span>
+            </div>
           </div>
 
           {/* Link opcional */}
@@ -167,7 +171,8 @@ export default function AdminAvisos() {
               <div className="text-2xl">{icon}</div>
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm text-steel-900">{title || 'Título do aviso'}</div>
-                <div className="text-sm text-steel-600 mt-0.5">{body || 'Sua mensagem aparece aqui.'}</div>
+                <div className="text-sm text-steel-600 mt-0.5 whitespace-pre-line">{body || 'Sua mensagem aparece aqui.'}</div>
+                <BrandSignature />
               </div>
             </div>
           </div>
