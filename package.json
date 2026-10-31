@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev:site": "vite -c vite.sites.config.ts",
+    "build": "tsc -b && vite build && vite build -c vite.sites.config.ts",
     "preview": "vite preview",
     "lint": "eslint ."
   },
