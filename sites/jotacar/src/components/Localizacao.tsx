@@ -8,7 +8,7 @@ export default function Localizacao() {
   const hoje = diaSP();
 
   return (
-    <section id="localizacao" aria-labelledby="loc-title" className="bg-black px-6 py-32 md:py-44">
+    <section id="localizacao" aria-labelledby="loc-title" className="bg-black px-6 py-36 md:py-56">
       <div className="mx-auto grid max-w-[1120px] items-stretch gap-16 lg:grid-cols-2 lg:gap-24">
         <Reveal>
           <Eyebrow tone="gold">Localização</Eyebrow>
@@ -16,16 +16,16 @@ export default function Localizacao() {
             Venha nos visitar.
           </h2>
 
-          <address className="mt-12 not-italic">
-            <p className="text-[21px] font-semibold tracking-tight text-white">{CONFIG.endereco}</p>
+          <address className="mt-14 not-italic">
+            <p className="text-[24px] font-semibold tracking-[-0.02em] text-white">{CONFIG.endereco}</p>
             <p className="mt-1 text-[17px] text-mist">{CONFIG.cidade} · {CONFIG.regiao}</p>
           </address>
 
-          <ul className="mt-10 border-t border-white/10" aria-label="Horário de funcionamento">
+          <ul className="mt-12 border-t border-white/10" aria-label="Horário de funcionamento">
             {CONFIG.horarios.map((h) => {
               const eHoje = (h.semana as readonly number[]).includes(hoje);
               return (
-                <li key={h.dias} className="flex justify-between border-b border-white/10 py-4 text-[17px] tracking-tight">
+                <li key={h.dias} className="flex justify-between border-b border-white/10 py-5 text-[17px] tracking-[-0.01em]">
                   <span className={eHoje ? 'text-white' : 'text-mist'}>{h.dias}{eHoje && <span className="ml-2 text-gold">· hoje</span>}</span>
                   <span className={eHoje ? 'text-white' : 'text-mist'}>{h.horas}</span>
                 </li>
@@ -34,7 +34,7 @@ export default function Localizacao() {
           </ul>
           <p className="mt-3 text-[13px] text-white/40">Em feriados, confirme pelo WhatsApp.</p>
 
-          <div className="mt-12 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-14 flex flex-col gap-3 sm:flex-row">
             <Button href={wa(CONFIG.mensagens.geral)} id="wa_final"><Icon.wa />Falar com a Jota Car</Button>
             <Button href={CONFIG.rota} id="rota_google" variant="outline-dark">Como chegar</Button>
           </div>
@@ -44,8 +44,8 @@ export default function Localizacao() {
           </div>
         </Reveal>
 
-        <Reveal delay={150} className="min-h-[360px]">
-          <div className="relative h-full min-h-[360px] overflow-hidden rounded-3xl bg-white/[0.04] ring-1 ring-white/[0.08]">
+        <Reveal delay={150} className="min-h-[420px]">
+          <div className="relative h-full min-h-[420px] overflow-hidden rounded-[32px] bg-white/[0.04] ring-1 ring-white/[0.08]">
             <iframe
               title={`Mapa: Jota Car na ${CONFIG.endereco}`}
               src={CONFIG.mapaEmbed}

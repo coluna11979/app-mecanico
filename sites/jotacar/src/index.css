@@ -12,6 +12,9 @@
     @apply bg-black font-sans text-white antialiased;
     font-feature-settings: 'ss01', 'cv11';
   }
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
   ::selection {
     @apply bg-gold text-black;
   }

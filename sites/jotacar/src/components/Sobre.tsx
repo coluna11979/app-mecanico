@@ -12,19 +12,19 @@ const pilares = [
 
 export default function Sobre() {
   return (
-    <section id="sobre" aria-labelledby="sobre-title" className="bg-white px-6 py-32 text-black md:py-44">
+    <section id="sobre" aria-labelledby="sobre-title" className="bg-white px-6 py-36 text-black md:py-56">
       <div className="mx-auto grid max-w-[1120px] items-center gap-16 lg:grid-cols-2 lg:gap-24">
         <Reveal>
           <figure>
-            <div className="overflow-hidden rounded-3xl bg-snow">
+            <div className="overflow-hidden rounded-[28px] bg-snow">
               <img
                 src={CONFIG.fotoFachada}
                 alt="Fachada da Jota Car Serviços Automotivo na Estrada do M'Boi Mirim, 9000"
                 width={1360}
                 height={1020}
-                loading="lazy"
+                loading="eager"
                 decoding="async"
-                className="aspect-[4/5] w-full object-cover object-[36%_50%] transition-transform duration-[1.6s] ease-apple hover:scale-[1.02] max-lg:aspect-[4/3]"
+                className="aspect-[4/5] w-full rounded-[28px] object-cover object-[36%_50%] transition-transform duration-[1.6s] ease-apple hover:scale-[1.02] max-lg:aspect-[4/3]"
               />
             </div>
             <figcaption className="mt-4 text-[13px] tracking-tight text-mist">Nossa oficina · {CONFIG.endereco}</figcaption>
@@ -43,13 +43,13 @@ export default function Sobre() {
             </p>
           </Reveal>
 
-          <ol className="mt-14 space-y-10">
+          <ol className="mt-16 space-y-14 md:space-y-16">
             {pilares.map((p, i) => (
               <Reveal key={p.n} delay={i * 100}>
-                <li className="grid grid-cols-[56px_1fr] gap-4 md:grid-cols-[72px_1fr]">
-                  <span className="text-[28px] font-light tracking-tighter text-mist md:text-[34px]">{p.n}</span>
+                <li className="grid grid-cols-[64px_1fr] gap-5 md:grid-cols-[96px_1fr]">
+                  <span className="-mt-1 text-[40px] font-extralight leading-none tracking-[-0.05em] text-black/25 tabular-nums md:text-[52px]">{p.n}</span>
                   <div>
-                    <h3 className="text-[21px] font-semibold tracking-tight">{p.titulo}</h3>
+                    <h3 className="text-[21px] font-semibold tracking-[-0.02em]">{p.titulo}</h3>
                     <p className="mt-2 text-[17px] leading-relaxed text-mist">{p.texto}</p>
                   </div>
                 </li>
@@ -57,7 +57,7 @@ export default function Sobre() {
             ))}
           </ol>
 
-          <Reveal className="mt-14 flex flex-wrap gap-x-8 gap-y-2">
+          <Reveal className="mt-16 flex flex-wrap gap-x-8 gap-y-2">
             <ArrowLink href={CONFIG.googleAvaliacoes} id="ver_avaliacoes_google" className="text-[15px] text-black">Avaliações no Google</ArrowLink>
             <ArrowLink href={CONFIG.instagram} id="instagram" className="text-[15px] text-black">Instagram</ArrowLink>
           </Reveal>

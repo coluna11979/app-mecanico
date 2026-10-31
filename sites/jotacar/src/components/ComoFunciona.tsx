@@ -28,74 +28,76 @@ export default function ComoFunciona() {
   useEffect(() => {
     const el = linha.current;
     if (!el || !('IntersectionObserver' in window)) { setAtivo(true); return; }
-    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setAtivo(true); io.disconnect(); } }, { threshold: 0.4 });
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setAtivo(true); io.disconnect(); } }, { threshold: 0.35 });
     io.observe(el);
     return () => io.disconnect();
   }, []);
 
   return (
-    <section id="como-funciona" aria-labelledby="como-title" className="bg-snow px-6 py-32 text-black md:py-44">
+    <section id="como-funciona" aria-labelledby="como-title" className="bg-snow px-6 py-36 text-black md:py-56">
       <div className="mx-auto max-w-[1120px]">
         <Reveal className="text-center">
           <Eyebrow>Como funciona</Eyebrow>
-          <h2 id="como-title" className="mx-auto mt-3 max-w-[640px] text-[40px] font-semibold leading-[1.06] tracking-tighter md:text-[56px]">
+          <h2 id="como-title" className="mx-auto mt-4 max-w-[640px] text-[40px] font-semibold leading-[1.04] tracking-[-0.04em] md:text-[56px]">
             Simples do começo ao fim.
           </h2>
         </Reveal>
 
-        {/* Linha do tempo: horizontal no desktop, vertical no celular */}
-        <ol ref={linha} className="relative mt-20 grid gap-12 md:mt-24 md:grid-cols-3 md:gap-8">
-          <span aria-hidden="true" className="absolute bottom-6 left-[19px] top-6 w-px bg-black/10 md:bottom-auto md:left-[16.66%] md:right-[16.66%] md:top-[19px] md:h-px md:w-auto" />
+        {/* ---------------- Linha do tempo: horizontal no desktop, vertical no celular ---------------- */}
+        <ol ref={linha} className="relative mt-24 grid gap-16 md:mt-32 md:grid-cols-3 md:gap-10">
+          {/* trilho */}
+          <span aria-hidden="true" className="absolute bottom-2 left-[4px] top-2 w-px bg-black/10 md:bottom-auto md:left-[16.66%] md:right-[16.66%] md:top-[4px] md:h-px md:w-auto" />
+          {/* progresso */}
           <span
             aria-hidden="true"
-            className={`absolute bottom-6 left-[19px] top-6 w-px origin-top bg-black transition-transform duration-[1.6s] ease-apple md:bottom-auto md:left-[16.66%] md:right-[16.66%] md:top-[19px] md:h-px md:w-auto md:origin-left ${ativo ? 'scale-100' : 'max-md:scale-y-0 md:scale-x-0'}`}
+            className={`absolute bottom-2 left-[4px] top-2 w-px origin-top bg-black/60 transition-transform duration-[1800ms] ease-apple md:bottom-auto md:left-[16.66%] md:right-[16.66%] md:top-[4px] md:h-px md:w-auto md:origin-left ${ativo ? 'scale-100' : 'max-md:scale-y-0 md:scale-x-0'}`}
           />
           {passos.map((p, i) => (
-            <li key={p.titulo} className="relative grid grid-cols-[40px_1fr] gap-5 md:block md:text-center">
+            <li key={p.titulo} className="relative grid grid-cols-[9px_1fr] gap-8 md:block md:text-center">
               <span
-                style={{ transitionDelay: `${300 + i * 450}ms` }}
-                className={`relative z-10 grid h-10 w-10 place-items-center rounded-full text-[15px] font-semibold transition-colors duration-500 md:mx-auto ${ativo ? 'bg-black text-white' : 'bg-white text-black ring-1 ring-black/10'}`}
-              >
-                {i + 1}
-              </span>
-              <div className="md:mt-8">
-                <h3 className="text-[21px] font-semibold tracking-tight">{p.titulo}</h3>
-                <p className="mt-2 text-[17px] text-mist">{p.texto}</p>
+                aria-hidden="true"
+                style={{ transitionDelay: `${300 + i * 500}ms` }}
+                className={`relative z-10 mt-[6px] block h-[9px] w-[9px] rounded-full transition-colors duration-500 md:mx-auto md:mt-0 ${ativo ? 'bg-black' : 'bg-black/15'}`}
+              />
+              <div className="md:mt-10">
+                <p className="text-[13px] font-medium tabular-nums tracking-[0.08em] text-mist">0{i + 1}</p>
+                <h3 className="mt-2 text-[21px] font-semibold tracking-[-0.02em]">{p.titulo}</h3>
+                <p className="mt-2 text-[17px] leading-relaxed text-mist">{p.texto}</p>
               </div>
             </li>
           ))}
         </ol>
 
-        <Reveal className="mx-auto mt-20 max-w-[620px] text-center">
+        <Reveal className="mx-auto mt-24 max-w-[560px] text-center md:mt-28">
           <p className="text-[17px] leading-relaxed text-mist">
             Na oficina você recebe o orçamento explicado e decide. <span className="text-black">Nenhum serviço começa sem a sua aprovação.</span>
           </p>
         </Reveal>
 
-        {/* FAQ — accordion limpo */}
-        <div className="mx-auto mt-28 max-w-[760px]">
+        {/* ---------------- FAQ: accordion minimalista ---------------- */}
+        <div className="mx-auto mt-36 max-w-[720px] md:mt-44">
           <Reveal>
-            <h3 className="text-[28px] font-semibold tracking-tight">Perguntas frequentes</h3>
+            <h3 className="text-[28px] font-semibold tracking-[-0.03em] md:text-[32px]">Perguntas frequentes</h3>
           </Reveal>
-          <div className="mt-8 border-t border-black/10">
+          <div className="mt-10">
             {faq.map((f, i) => {
               const open = aberto === i;
               return (
-                <div key={f.p} className="border-b border-black/10">
+                <div key={f.p} className="border-b border-black/[0.08]">
                   <button
                     type="button"
                     onClick={() => setAberto(open ? null : i)}
                     aria-expanded={open}
                     aria-controls={`faq-${i}`}
-                    className="flex min-h-[64px] w-full items-center justify-between gap-6 py-5 text-left text-[17px] font-medium tracking-tight"
+                    className="group flex min-h-[72px] w-full items-center justify-between gap-8 py-6 text-left text-[17px] font-medium tracking-[-0.01em] md:text-[19px]"
                   >
-                    {f.p}
-                    <span className={`shrink-0 text-mist transition-transform duration-300 ease-apple ${open ? 'rotate-45' : ''}`}><Icon.plus /></span>
+                    <span className="transition-colors duration-300 group-hover:text-black/70">{f.p}</span>
+                    <span className={`shrink-0 text-mist transition-transform duration-500 ease-apple ${open ? 'rotate-45' : ''}`}><Icon.plus /></span>
                   </button>
                   <div id={`faq-${i}`} className={`grid transition-all duration-500 ease-apple ${open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
-                    <p className="min-h-0 overflow-hidden pr-10 text-[17px] leading-relaxed text-mist">
-                      <span className="block pb-6">{f.r}</span>
-                    </p>
+                    <div className="min-h-0 overflow-hidden">
+                      <p className="max-w-[600px] pb-8 text-[17px] leading-relaxed text-mist">{f.r}</p>
+                    </div>
                   </div>
                 </div>
               );

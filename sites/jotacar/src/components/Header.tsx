@@ -27,7 +27,8 @@ export default function Header() {
 
   return (
     <>
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.06] bg-black/80 backdrop-blur-xl backdrop-saturate-150">
+    {/* Preto absoluto sempre: sobre o topo é invisível; sobre as seções brancas nunca vira cinza */}
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-black">
       <div className="mx-auto flex h-14 max-w-[1168px] items-center justify-between px-6">
         <a href="#topo" className="text-[19px] font-semibold tracking-tight text-white" aria-label="Jota Car, voltar ao topo">
           Jota Car<span className="text-gold">.</span>
