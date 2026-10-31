@@ -67,6 +67,13 @@ export function parseFeeRef(ref: string | null | undefined) {
   return m ? { rowId: m[1], method: m[2] as 'pix' | 'card' } : null;
 }
 
+/** externalRef dos depósitos na carteira: wallet:<id em workshop_wallet_deposits>:<pix|card>:<ts> */
+export const walletRef = (depositId: string, method: 'pix' | 'card') => `wallet:${depositId}:${method}:${Date.now()}`;
+export function parseWalletRef(ref: string | null | undefined) {
+  const m = /^wallet:([0-9a-f-]{36}):(pix|card):/.exec(ref ?? '');
+  return m ? { depositId: m[1], method: m[2] as 'pix' | 'card' } : null;
+}
+
 /** Valor no cartão com a taxa repassada: total ÷ (1 − taxa), quando card_fee_passthrough está ligado */
 export async function cardTotal(admin: SupabaseClient, base: number): Promise<number> {
   const { data } = await admin.from('app_settings').select('key, value').in('key', ['card_fee_passthrough', 'card_fee_percent']);

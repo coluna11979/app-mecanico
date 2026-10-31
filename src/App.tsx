@@ -40,6 +40,7 @@ import WorkshopCustomers from './pages/oficina/Customers';
 import WorkshopMensagens from './pages/oficina/Mensagens';
 import WorkshopNovaOficina from './pages/oficina/NovaOficina';
 import WorkshopAvisos from './pages/oficina/Avisos';
+import WorkshopCarteira from './pages/oficina/Carteira';
 import WorkshopOsDetail from './pages/oficina/OsDetail';
 import WorkshopPainel from './pages/oficina/Painel';
 import WorkshopInicio from './pages/oficina/Inicio';
@@ -84,6 +85,7 @@ import AdminWorkshops from './pages/admin/Workshops';
 import AdminJobs from './pages/admin/Jobs';
 import AdminSettings from './pages/admin/Settings';
 import AdminRepasses from './pages/admin/Repasses';
+import AdminCarteiras from './pages/admin/Carteiras';
 import AdminUserDetail from './pages/admin/UserDetail';
 import AdminFinancial from './pages/admin/Financial';
 import AdminLeads from './pages/admin/Leads';
@@ -211,6 +213,7 @@ export default function App() {
       <Route path="/oficina/perfil" element={<ProtectedRoute allow={['workshop']}><WorkshopProfile /></ProtectedRoute>} />
       <Route path="/oficina/nova"   element={<ProtectedRoute allow={['workshop']}><WorkshopNovaOficina /></ProtectedRoute>} />
       <Route path="/oficina/avisos" element={<ProtectedRoute allow={['workshop']}><WorkshopAvisos /></ProtectedRoute>} />
+      <Route path="/oficina/carteira" element={<ProtectedRoute allow={['workshop']}><WorkshopCarteira /></ProtectedRoute>} />
 
       {/* Admin */}
       <Route path="/admin/dashboard" element={<ProtectedRoute allow={['admin']}><AdminDashboard /></ProtectedRoute>} />
@@ -235,6 +238,7 @@ export default function App() {
       <Route path="/admin/usuario/:id"   element={<ProtectedRoute allow={['admin']}><AdminUserDetail /></ProtectedRoute>} />
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
+      <Route path="/admin/carteiras"     element={<ProtectedRoute allow={['admin']}><AdminCarteiras /></ProtectedRoute>} />
       <Route path="/admin/financeiro"    element={<ProtectedRoute allow={['admin']}><AdminFinancial /></ProtectedRoute>} />
       <Route path="/admin/avisos"        element={<ProtectedRoute allow={['admin']}><AdminAvisos /></ProtectedRoute>} />
       <Route path="/admin/embaixadores"  element={<ProtectedRoute allow={['admin']}><AdminEmbaixadores /></ProtectedRoute>} />

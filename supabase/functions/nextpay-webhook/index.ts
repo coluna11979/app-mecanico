@@ -4,8 +4,9 @@
 // mesmo campo do stripe-webhook (jobs.pix_paid_at), então o resto do fluxo não muda.
 // Multa de cancelamento (externalRef fee:<nextpay_fee_charges.id>:…): marca cancellation_fee_paid_at
 // nas multas daquela cobrança.
+// Depósito na carteira (externalRef wallet:<workshop_wallet_deposits.id>:…): credita o saldo da oficina.
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { nextpay, nextpayConfig, parseFeeRef, parseJobRef, type NextpayCharge } from '../_shared/nextpay.ts';
+import { nextpay, nextpayConfig, parseFeeRef, parseJobRef, parseWalletRef, type NextpayCharge } from '../_shared/nextpay.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -64,6 +65,18 @@ async function markFeesPaid(admin: SupabaseClient, data: NextpayCharge) {
   await admin.from('nextpay_fee_charges').update({ paid_at: paidAt, charge_id: charge.id }).eq('id', row.id);
 }
 
+async function creditWallet(admin: SupabaseClient, data: NextpayCharge) {
+  const meta = data.metadata ?? {};
+  const ref = parseWalletRef(data.externalRef) ?? parseWalletRef(`wallet:${meta.deposit_id ?? ''}:${meta.method ?? ''}:`);
+  if (!ref || !data.id) return;
+  const charge = await nextpay<NextpayCharge | null>(admin, 'GET', `/charges/${data.id}`);
+  if (!charge || charge.status !== 'paid') return;
+  const { error } = await admin.rpc('wallet_credit_deposit', {
+    p_deposit_id: ref.depositId, p_charge_id: charge.id, p_paid_at: charge.paidAt ?? new Date().toISOString(),
+  });
+  if (error) throw error;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: true });
   const raw = await req.text();
@@ -89,7 +102,8 @@ Deno.serve(async (req) => {
 
   if (payload.event === 'charge.paid' && d) {
     try {
-      if (parseFeeRef(d.externalRef) || d.metadata?.kind === 'cancellation_fee') await markFeesPaid(admin, d);
+      if (parseWalletRef(d.externalRef) || d.metadata?.kind === 'wallet_deposit') await creditWallet(admin, d);
+      else if (parseFeeRef(d.externalRef) || d.metadata?.kind === 'cancellation_fee') await markFeesPaid(admin, d);
       else await markJobPaid(admin, d);
     }
     catch (e) { console.error('[nextpay-webhook] marcar pago', e); return json({ error: 'retry' }, 500); }

@@ -192,8 +192,8 @@ export interface Job {
   /** Tempo previsto da demanda de preço fechado (só informação) */
   estimated_hours?: number | null;
   /** Pagamento da oficina (0108): gateway, meio, valor pago e taxa do cartão repassada */
-  payment_gateway?: 'stripe' | 'nextpay' | null;
-  payment_method?: 'card' | 'pix' | null;
+  payment_gateway?: 'stripe' | 'nextpay' | 'wallet' | null;
+  payment_method?: 'card' | 'pix' | 'wallet' | null;
   paid_amount?: number | null;
   card_fee_amount?: number | null;
   /** Valor aumentou (0130): quando subiu e o total bruto de antes */

@@ -12,6 +12,8 @@ import { ROLES, sessionAllows, useOperator, type OperatorRole } from '@/lib/oper
 import OperatorLock from '@/components/operator/OperatorLock';
 import { isPlatformOnly, moduleAllows, moduleEntry, useWorkshopModules } from '@/lib/modules';
 import { useInboxAlerts } from '@/hooks/useInboxAlerts';
+import { useWallet } from '@/lib/wallet';
+import WalletChip from '@/components/wallet/WalletChip';
 import { Icon, type IconName } from '@/components/home/ui';
 
 type ArrivalAlert = { jobId: string; title: string };
@@ -80,6 +82,7 @@ const SECTIONS: NavGroup[] = [
   ] },
   { key: 'plataforma', title: 'MecânicoApp', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },
+    { to: '/oficina/carteira',   icon: '💰', label: 'Carteira'             },
     { to: '/oficina/plataforma/painel', icon: '📊', label: 'Painel da plataforma' },
     { to: '/oficina/plataforma/clientes', icon: '📇', label: 'Clientes e orçamentos' },
     { to: '/oficina/buscar',     icon: '🔍', label: 'Buscar profissionais' },
@@ -258,6 +261,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   }, []);
 
   const shopId = currentWorkshop?.id ?? null;
+  // Carteira (saldo pré-pago): item do menu e saldo no topo só com ela ligada em Configurações
+  const wallet = useWallet(shopId);
 
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Oficina';
   const initials  = (profile?.full_name ?? 'O')
@@ -506,6 +511,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const allowed = (to: string) => !(platformOnly && to === HOME)
     // Meus cadastros é o básico de quem não tem o módulo Clientes: com ele ligado, usa o completo
     && !(to === '/oficina/plataforma/clientes' && !mods.disabled.includes('clientes'))
+    && !(to === '/oficina/carteira' && !wallet.enabled)
     && moduleAllows(mods.disabled, to) && (!role || sessionAllows(op.session!, to));
   // WhatsApp: conversas não lidas no menu + som de mensagem nova (só para quem pode abrir o Inbox)
   const inboxUnread = useInboxAlerts(shopId, allowed('/oficina/inbox'), role);
@@ -734,6 +740,9 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             <WorkshopSwitcher workshops={workshops} current={currentWorkshop} light={sideTheme === 'light'}
               onSelect={(w) => setCurrentWorkshop(w)} onAddNew={() => nav('/oficina/nova')} />
           ))}
+          {!rail && wallet.balance && allowed('/oficina/carteira') && (
+            <WalletChip total={wallet.balance.total} light={sideTheme === 'light'} />
+          )}
           <button onClick={() => setPalette(true)} title="Buscar tela (Ctrl+K)"
             className={`w-full flex items-center rounded-lg transition ${T.tool} ${rail ? 'h-10 justify-center' : 'h-9 gap-2.5 px-3'}`}>
             <Icon name="search" size={16} />
@@ -923,6 +932,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           ) : (
             <div className="flex-1"><Logo /></div>
           )}
+
+          {wallet.balance && allowed('/oficina/carteira') && <WalletChip total={wallet.balance.total} compact />}
 
           {/* Sino de avisos (mobile) */}
           <button

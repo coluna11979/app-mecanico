@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import NextpayPayment from '@/components/payment/NextpayPayment';
+import WalletPayOption from '@/components/wallet/WalletPayOption';
 import { CustomerChargeCard } from '@/components/marketplace/CustomerCharge';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
@@ -351,7 +352,9 @@ export default function WorkshopTracking() {
       const refund = Number((cap - fee).toFixed(2));
       return { allowed: true, scenario: 'paid' as const, fee, refund,
         title: `Cancelar com estorno parcial`,
-        message: `Pagamento já feito. Você receberá estorno de R$ ${refund.toFixed(2)} (70%) e a plataforma retém R$ ${fee.toFixed(2)} (30%) de multa.` };
+        message: job.payment_gateway === 'wallet'
+          ? `Pago com saldo. R$ ${refund.toFixed(2)} (70%) voltam para sua carteira na hora e a plataforma retém R$ ${fee.toFixed(2)} (30%) de multa.`
+          : `Pagamento já feito. Você receberá estorno de R$ ${refund.toFixed(2)} (70%) e a plataforma retém R$ ${fee.toFixed(2)} (30%) de multa.` };
     }
     return { allowed: false, reason: 'Estado inválido pra cancelamento.' };
   })();
@@ -939,6 +942,11 @@ export default function WorkshopTracking() {
                 Valor não muda se o mecânico terminar antes ou levar mais tempo
               </div>
             </div>
+
+            {/* Saldo da carteira (só aparece se a oficina tem saldo) */}
+            {job && gateway !== null && (
+              <WalletPayOption workshopId={job.workshop_id} jobId={job.id} amount={cap} onPaid={load} />
+            )}
 
             {gateway === null ? (
               <div className="flex justify-center py-6">

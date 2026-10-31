@@ -10,14 +10,16 @@ type ChargeResult = {
 };
 
 /**
- * Pagamento pela NextPay (gateway = nextpay em Configurações): serviço da demanda ou multa de cancelamento.
+ * Pagamento pela NextPay (gateway = nextpay em Configurações): serviço da demanda, multa de cancelamento
+ * ou depósito na carteira.
  * PIX em primeiro ("cai na hora"); cartão abre o checkout seguro da NextPay em outra aba.
  * Quem dá baixa é o webhook (jobs.pix_paid_at / cancellation_fee_paid_at) — quem usa este componente
  * fecha a tela sozinho quando o pagamento cai.
  */
 export default function NextpayPayment({ request, service, feePassthrough, feePercent }: {
-  /** Função que gera a cobrança e o corpo (sem o método): nextpay-charge { job_id } ou nextpay-fee-charge { workshop_id } */
-  request: { fn: 'nextpay-charge' | 'nextpay-fee-charge'; body: Record<string, unknown> };
+  /** Função que gera a cobrança e o corpo (sem o método): nextpay-charge { job_id }, nextpay-fee-charge { workshop_id }
+   *  ou wallet-deposit { workshop_id, amount } */
+  request: { fn: 'nextpay-charge' | 'nextpay-fee-charge' | 'wallet-deposit'; body: Record<string, unknown> };
   /** Valor a pagar sem taxa do cartão (serviço fechado ou total das multas) */
   service: number;
   /** Cobrar a taxa do cartão da oficina (senão: "por nossa conta no lançamento") */
@@ -57,6 +59,7 @@ export default function NextpayPayment({ request, service, feePassthrough, feePe
 
   const cardTotal = feePassthrough ? Math.round((service / (1 - feePercent / 100)) * 100) / 100 : service;
   const pctLabel = String(feePercent).replace('.', ',');
+  const what = request.fn === 'nextpay-fee-charge' ? 'Multa' : request.fn === 'wallet-deposit' ? 'Depósito' : 'Serviço';
 
   const option = (m: Method, title: string, sub: string, badge?: string) => (
     <button type="button" onClick={() => setMethod(m)}
@@ -138,7 +141,7 @@ export default function NextpayPayment({ request, service, feePassthrough, feePe
           <div className="space-y-3">
             {feePassthrough ? (
               <div className="bg-steel-50 rounded-2xl p-4 text-sm space-y-1">
-                <div className="flex justify-between"><span className="text-steel-600">{request.fn === 'nextpay-fee-charge' ? 'Multa' : 'Serviço'}</span><span className="font-semibold">R$ {formatBRL(service)}</span></div>
+                <div className="flex justify-between"><span className="text-steel-600">{what}</span><span className="font-semibold">R$ {formatBRL(service)}</span></div>
                 <div className="flex justify-between"><span className="text-steel-600">Taxa do cartão ({pctLabel}%)</span><span className="font-semibold">R$ {formatBRL(current.card_fee)}</span></div>
                 <div className="flex justify-between border-t border-steel-200 pt-1 mt-1"><span className="font-bold">Total no cartão</span><span className="font-bold">R$ {formatBRL(current.total)}</span></div>
                 <p className="text-[11px] text-steel-500 pt-1">No PIX você paga só R$ {formatBRL(service)}.</p>
@@ -146,7 +149,7 @@ export default function NextpayPayment({ request, service, feePassthrough, feePe
             ) : (
               <div className="bg-signal-500/10 rounded-2xl px-4 py-3 text-center">
                 <p className="text-sm font-semibold text-signal-700">🎉 Taxa do cartão por nossa conta no lançamento</p>
-                <p className="text-xs text-signal-600 mt-0.5">{request.fn === 'nextpay-fee-charge' ? 'Você paga só o valor da multa.' : 'Você paga só o valor do serviço.'}</p>
+                <p className="text-xs text-signal-600 mt-0.5">{`Você paga só o valor ${what === 'Multa' ? 'da multa' : what === 'Depósito' ? 'do depósito' : 'do serviço'}.`}</p>
               </div>
             )}
             <a href={current.payment_url} target="_blank" rel="noopener noreferrer"
