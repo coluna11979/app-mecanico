@@ -5,6 +5,7 @@
 // Segmento: { audience: mechanic|workshop|all, status: approved|pending|all, state: UF|'', include_leads }.
 // Descadastrados (marketing_unsubscribes) nunca recebem; leads só com consentimento.
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { signatureHtml, signatureText } from '../_shared/brandSignature.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -79,7 +80,7 @@ async function resolveRecipients(admin: SupabaseClient, seg: Segment): Promise<R
   return [...out.values()];
 }
 
-function render(c: Content, r: Recipient, unsubUrl: string | null) {
+function render(c: Content, r: Recipient, unsubUrl: string | null, appUrl: string) {
   const first = (r.name || '').trim().split(/\s+/)[0] || 'parceiro';
   const fill = (s: string) => s.replaceAll('{nome}', first);
   const paragraphs = fill(c.body).split(/\n{2,}/).map((p) =>
@@ -102,14 +103,15 @@ function render(c: Content, r: Recipient, unsubUrl: string | null) {
     </div>
     <div style="padding:32px;">
       ${paragraphs}${cta}
-      <p style="font-size:11px;color:#CBD3DD;margin:28px 0 0;line-height:1.6;">
+      ${signatureHtml(appUrl)}
+      <p style="font-size:11px;color:#CBD3DD;margin:20px 0 0;line-height:1.6;">
         Você recebe este e-mail por ter cadastro ou interesse no Mecânico App.<br>${unsub}
       </p>
     </div>
   </div>
 </body>
 </html>`;
-  const text = `${fill(c.heading)}\n\n${fill(c.body)}\n${c.cta_label && c.cta_url ? `\n${c.cta_label}: ${c.cta_url}\n` : ''}\n— Equipe Mecânico App${unsubUrl ? `\n\nDescadastrar: ${unsubUrl}` : ''}`;
+  const text = `${fill(c.heading)}\n\n${fill(c.body)}\n${c.cta_label && c.cta_url ? `\n${c.cta_label}: ${c.cta_url}\n` : ''}\n${signatureText(appUrl)}${unsubUrl ? `\n\nDescadastrar: ${unsubUrl}` : ''}`;
   return { subject: fill(c.subject), html, text };
 }
 
@@ -157,7 +159,7 @@ Deno.serve(async (req) => {
 
     if (action === 'test') {
       if (!caller.email) return json({ error: 'admin sem e-mail' }, 400);
-      const m = render(content, { email: caller.email, name: callerProfile?.full_name ?? '' }, null);
+      const m = render(content, { email: caller.email, name: callerProfile?.full_name ?? '' }, null, appUrl);
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -183,7 +185,7 @@ Deno.serve(async (req) => {
     for (let i = 0; i < list.length; i += 100) {
       const chunk = list.slice(i, i + 100).map((r) => ({ ...r, token: crypto.randomUUID() }));
       const payload = chunk.map((r) => {
-        const m = render(content, r, `${appUrl}/descadastrar/${r.token}`);
+        const m = render(content, r, `${appUrl}/descadastrar/${r.token}`, appUrl);
         return {
           from, to: [r.email], subject: m.subject, html: m.html, text: m.text,
           headers: { 'List-Unsubscribe': `<${appUrl}/descadastrar/${r.token}>` },

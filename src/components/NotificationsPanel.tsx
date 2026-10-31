@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { BrandSignature } from '@/components/BrandSignature';
 
 interface Notification {
   id: string;
   title: string;
   body: string;
   icon: string | null;
+  /** 'broadcast' = comunicado da MecânicoApp (Admin → Avisos): sai com a assinatura da marca */
+  type: string | null;
   link: string | null;
   read: boolean;
   created_at: string;
@@ -78,10 +81,11 @@ export function NotificationsPanel({ dark = false }: { dark?: boolean }) {
                 <h3 className={`font-bold text-sm leading-tight ${titleC}`}>{n.title}</h3>
                 <span className={`text-[10px] shrink-0 ${muted}`}>{timeAgo(n.created_at)}</span>
               </div>
-              <p className={`text-sm mt-1 leading-relaxed ${bodyC}`}>{n.body}</p>
+              <p className={`text-sm mt-1 leading-relaxed whitespace-pre-line ${bodyC}`}>{n.body}</p>
               {n.link && (
                 <div className="text-xs text-brand-400 font-semibold mt-2">Abrir →</div>
               )}
+              {n.type === 'broadcast' && <BrandSignature dark={dark} />}
             </div>
           </div>
         );

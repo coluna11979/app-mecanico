@@ -2,6 +2,7 @@
 // `template`: 'approved' / 'rejected' têm texto próprio; sem template usa o `kind`
 // do histórico (documentos solicitados, mensagem, atualização) com o `content` livre.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { signatureHtml, signatureText } from '../_shared/brandSignature.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -136,6 +137,7 @@ Deno.serve(async (req) => {
         Faça login com seu email <strong>${esc(user.email)}</strong> e a senha que você criou no cadastro.<br>
         Esqueceu a senha? Use a opção <em>Esqueci minha senha</em> na tela de login.
       </p>
+      ${signatureHtml(appUrl)}
       <p style="font-size:11px;color:#CBD3DD;margin:16px 0 0;">${esc(meta.footer)}</p>
     </div>
   </div>
@@ -143,7 +145,7 @@ Deno.serve(async (req) => {
 </html>`;
 
     const plainSteps = meta.steps ? '\n' + meta.steps.map((s, i) => `${i + 1}. ${s.replace(/<[^>]+>/g, '')}`).join('\n') + '\n' : '';
-    const text = `Fala ${firstName},\n\n${meta.intro}\n${plainSteps}${note ? `\n${note}\n` : ''}\n${meta.cta}: ${link}\n\nFaça login com seu email ${user.email} e a senha do cadastro.\n\n— Equipe Mecânico App`;
+    const text = `Fala ${firstName},\n\n${meta.intro}\n${plainSteps}${note ? `\n${note}\n` : ''}\n${meta.cta}: ${link}\n\nFaça login com seu email ${user.email} e a senha do cadastro.\n\n${signatureText(appUrl)}`;
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
