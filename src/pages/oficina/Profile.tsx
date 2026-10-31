@@ -61,24 +61,69 @@ export default function WorkshopProfile() {
     setCepLoading(false);
   }
 
-  /* ── Geocodifica o endereço cadastrado (Nominatim / OpenStreetMap) ── */
+  /* ── Geocodifica o endereço cadastrado (Nominatim / OpenStreetMap) ──
+   * Vai tentando queries em cascata, da mais específica pra mais genérica,
+   * pra evitar "endereço não encontrado" quando o Nominatim não tem a casa
+   * mas tem a rua, ou não tem a rua mas tem o CEP/bairro. */
   async function geocodeAddress() {
     if (!shop) return;
+
+    const digitsCep = (shop.cep ?? '').replace(/\D/g, '');
+    const cityUf    = [shop.city, shop.state].filter(Boolean).join(', ');
+    const cepMasked = digitsCep.length === 8 ? digitsCep.replace(/(\d{5})(\d{3})/, '$1-$2') : '';
+
+    // Monta tentativas em ordem de precisão. Cada "tentativa" é uma query
+    // de texto livre pro Nominatim — a primeira que achar algo vence.
+    const attempts: string[] = [];
     const street = [shop.address, shop.number].filter(Boolean).join(', ');
-    const query  = [street, shop.neighborhood, shop.city, shop.state, 'Brasil'].filter(Boolean).join(', ');
-    if (!query.trim()) { alert('Preencha o endereço antes de localizar.'); return; }
+
+    if (street && shop.neighborhood && cityUf) {
+      attempts.push([street, shop.neighborhood, cityUf, 'Brasil'].join(', '));
+    }
+    if (street && cityUf) {
+      attempts.push([street, cityUf, 'Brasil'].join(', '));
+    }
+    if (shop.address && cityUf) {
+      // Sem o número, pega o meio da rua — ainda útil pro Mapbox
+      attempts.push([shop.address, cityUf, 'Brasil'].join(', '));
+    }
+    if (cepMasked && cityUf) {
+      // CEP + cidade/UF — muito comum funcionar
+      attempts.push([cepMasked, cityUf, 'Brasil'].join(', '));
+    }
+    if (shop.neighborhood && cityUf) {
+      // Fallback mais frouxo: só o bairro na cidade
+      attempts.push([shop.neighborhood, cityUf, 'Brasil'].join(', '));
+    }
+    if (cityUf) {
+      attempts.push([cityUf, 'Brasil'].join(', '));
+    }
+
+    if (attempts.length === 0) {
+      alert('Preencha pelo menos cidade e UF antes de localizar.');
+      return;
+    }
 
     setGeoLoading(true);
     try {
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`;
-      const res  = await fetch(url, { headers: { 'Accept-Language': 'pt-BR' } });
-      const data = await res.json();
-      if (!data?.length) {
-        alert('Endereço não encontrado no mapa. Verifique o endereço cadastrado e tente novamente.');
-        setGeoLoading(false);
-        return;
+      let lat: number | null = null;
+      let lng: number | null = null;
+      for (const q of attempts) {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`;
+        const res  = await fetch(url, { headers: { 'Accept-Language': 'pt-BR' } });
+        const data = await res.json();
+        if (Array.isArray(data) && data.length) {
+          lat = parseFloat(data[0].lat);
+          lng = parseFloat(data[0].lon);
+          break;
+        }
       }
-      setShop({ ...shop, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+
+      if (lat === null || lng === null) {
+        alert('Não consegui achar o endereço nem com busca aproximada. Confira a rua/CEP ou preencha latitude e longitude manualmente abaixo.');
+      } else {
+        setShop({ ...shop, lat, lng });
+      }
     } catch {
       alert('Erro ao buscar localização. Verifique sua conexão.');
     }
