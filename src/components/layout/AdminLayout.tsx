@@ -43,6 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
   { label: 'Financeiro', items: [
     { to: '/admin/repasses',   label: 'Repasses',   icon: IconCash,
       badge: b => b.repassesPendentes, badgeTone: 'brand' },
+    { to: '/admin/carteiras',  label: 'Carteiras',  icon: IconWallet },
     { to: '/admin/financeiro', label: 'Financeiro', icon: IconChart },
   ]},
   { label: 'Sistema', items: [
@@ -191,6 +192,7 @@ function IconBolt(p: IP)      { return <Svg {...p}><path d="M13 2L4 14h7l-1 8 9-
 function IconWrench(p: IP)    { return <Svg {...p}><path d="M14.7 6.3a4 4 0 015.6 5.6l-9.9 9.9-5.6-5.6 9.9-9.9z" /><path d="M9 11l4 4" /></Svg>; }
 function IconBuilding(p: IP)  { return <Svg {...p}><rect x="3" y="4" width="18" height="18" rx="1" /><path d="M9 22V12h6v10M9 8h.01M15 8h.01M9 12h.01M15 12h.01" /></Svg>; }
 function IconCash(p: IP)      { return <Svg {...p}><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" /></Svg>; }
+function IconWallet(p: IP)    { return <Svg {...p}><path d="M3 7a2 2 0 012-2h13v4" /><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M17 13.5h.01" /></Svg>; }
 function IconChart(p: IP)     { return <Svg {...p}><path d="M3 3v18h18" /><path d="M7 15l4-4 3 3 5-6" /></Svg>; }
 function IconSpark(p: IP)     { return <Svg {...p}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8" /></Svg>; }
 function IconGrid(p: IP)      { return <Svg {...p}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></Svg>; }

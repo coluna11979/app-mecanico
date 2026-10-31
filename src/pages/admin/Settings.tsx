@@ -9,6 +9,8 @@ interface FieldDef {
   type?: 'text' | 'password' | 'number' | 'toggle' | 'key' | 'choice';
   /** Opções do tipo 'choice' */
   options?: { value: string; label: string }[];
+  /** Unidade do tipo 'number' (padrão: %) */
+  unit?: string;
   section: string;
 }
 
@@ -20,6 +22,9 @@ const FIELDS: FieldDef[] = [
   { key: 'payment_gateway',        label: 'Quem recebe o pagamento da oficina', description: 'Stripe = cartão pela Stripe (como antes). NextPay = PIX + cartão pela NextGo. Vale na hora para os próximos pagamentos.', type: 'choice', options: [{ value: 'stripe', label: 'Stripe' }, { value: 'nextpay', label: 'NextPay' }], section: 'Pagamentos' },
   { key: 'card_fee_passthrough',   label: 'Cobrar a taxa do cartão da oficina', description: 'Desligado = "taxa do cartão por nossa conta no lançamento". Ligado = a oficina paga serviço + taxa no cartão (PIX continua sem taxa). Só vale com NextPay.', type: 'toggle', section: 'Pagamentos' },
   { key: 'card_fee_percent',       label: 'Taxa do cartão (%)',        description: 'Taxa da NextPay no cartão à vista. Usada para somar a taxa quando a cobrança está ligada.', type: 'number', section: 'Pagamentos' },
+  { key: 'wallet_enabled',         label: 'Carteira da oficina ligada', description: 'Liga a Carteira no painel da oficina (depositar saldo pela NextPay e "Pagar com saldo" quando o mecânico chega). Desligada, nada muda para a oficina.', type: 'toggle', section: 'Carteira' },
+  { key: 'wallet_min_deposit',     label: 'Depósito mínimo (R$)',      description: 'Menor valor que a oficina pode depositar na carteira.', type: 'number', unit: 'R$', section: 'Carteira' },
+  { key: 'wallet_low_balance',     label: 'Aviso de saldo baixo (R$)', description: 'Abaixo deste saldo, o painel da oficina mostra o aviso para depositar.', type: 'number', unit: 'R$', section: 'Carteira' },
   { key: 'stripe_publishable_key', label: 'Chave pública LIVE (pk_live_…)',  description: 'Usada no frontend em modo produção.',  type: 'key',      section: 'Stripe — Produção' },
   { key: 'stripe_secret_key',      label: 'Chave secreta LIVE (sk_live_…)',  description: 'Usada nas Edge Functions em modo produção.', type: 'password', section: 'Stripe — Produção' },
   { key: 'stripe_webhook_secret',  label: 'Webhook secret LIVE (whsec_…)',   description: 'Valida eventos do webhook LIVE.',      type: 'password', section: 'Stripe — Produção' },
@@ -62,6 +67,7 @@ const SECTIONS: Record<string, Section> = {
   'Captação (Google Places)': { label: 'Captação (Google Places)', icon: '🎯', color: 'text-brand-700', bg: 'bg-brand-50' },
   NextPay:                { label: 'NextPay',              icon: '🟠',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
   Pagamentos:             { label: 'Pagamentos',           icon: '💳',  color: 'text-brand-700',  bg: 'bg-brand-50'   },
+  Carteira:               { label: 'Carteira da oficina',  icon: '👛',  color: 'text-signal-700', bg: 'bg-signal-50'  },
 };
 
 export default function AdminSettings() {
@@ -280,12 +286,12 @@ export default function AdminSettings() {
                         <div className="relative w-32">
                           <input
                             type="number"
-                            min={0} max={100} step={0.01}
+                            min={0} max={f.unit ? undefined : 100} step={0.01}
                             className="w-full rounded-xl border border-steel-200 bg-steel-50 px-3 py-2.5 pr-8 text-sm font-semibold text-steel-800 focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
                             value={vals[f.key] ?? ''}
                             onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-xs font-bold">%</span>
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 text-xs font-bold">{f.unit ?? '%'}</span>
                         </div>
 
                       ) : (

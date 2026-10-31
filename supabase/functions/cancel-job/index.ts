@@ -178,15 +178,21 @@ Deno.serve(async (req) => {
       scenario = 'paid_not_started';
       fee = feeAmount;
       refund = refundAmount;
-      if (!job.stripe_payment_intent_id) {
-        return new Response(JSON.stringify({ error: 'no payment intent to refund' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
+      if (job.payment_gateway === 'wallet') {
+        // Pago com saldo: o estorno volta para a carteira na hora (sem gateway)
+        const { error: walletErr } = await admin.rpc('wallet_refund_job', { p_job_id: job.id, p_refund: refund });
+        if (walletErr) return new Response(JSON.stringify({ error: 'wallet refund failed', details: walletErr.message }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
+      } else {
+        if (!job.stripe_payment_intent_id) {
+          return new Response(JSON.stringify({ error: 'no payment intent to refund' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
+        }
+        const stripeKey = await getStripeKey(admin, 'secret') ?? Deno.env.get('STRIPE_SECRET_KEY');
+        if (!stripeKey) return new Response(JSON.stringify({ error: 'stripe key not configured' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
+        const refundCents = Math.round(refund * 100);
+        const refundRes = await refundPartial(stripeKey, job.stripe_payment_intent_id, refundCents, reason);
+        if (refundRes.error) return new Response(JSON.stringify({ error: 'stripe refund failed', details: refundRes.error }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
+        refundId = refundRes.id;
       }
-      const stripeKey = await getStripeKey(admin, 'secret') ?? Deno.env.get('STRIPE_SECRET_KEY');
-      if (!stripeKey) return new Response(JSON.stringify({ error: 'stripe key not configured' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
-      const refundCents = Math.round(refund * 100);
-      const refundRes = await refundPartial(stripeKey, job.stripe_payment_intent_id, refundCents, reason);
-      if (refundRes.error) return new Response(JSON.stringify({ error: 'stripe refund failed', details: refundRes.error }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
-      refundId = refundRes.id;
     }
 
     await admin.from('jobs').update({

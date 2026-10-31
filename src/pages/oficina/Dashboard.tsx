@@ -11,6 +11,7 @@ import { saveCharge } from '@/components/marketplace/CustomerCharge';
 import { localInput } from '@/lib/agenda';
 import { PendingFeesBanner, usePendingFees } from '@/components/PendingFeesGate';
 import { CancelJobButton } from '@/components/CancelJobButton';
+import WalletBanner from '@/components/wallet/WalletBanner';
 import { MechanicReviews } from '@/components/MechanicReviews';
 import { formatScheduled } from '@/lib/scheduling';
 import { arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
@@ -680,6 +681,9 @@ export default function WorkshopDashboard() {
 
       {/* Banner de multa pendente — bloqueia novas demandas até quitar */}
       <PendingFeesBanner workshopId={currentWorkshop?.id ?? null} />
+
+      {/* Carteira: saldo baixo ou novidade */}
+      <WalletBanner workshopId={currentWorkshop?.id ?? null} className="mb-4" />
 
       {/* Serviços empilhados: esperando mecânico da plataforma (a gestão junta e gera a demanda) */}
       {currentWorkshop?.id && !hasPendingFees && (
