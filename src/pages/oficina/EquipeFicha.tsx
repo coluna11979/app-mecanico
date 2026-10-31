@@ -507,14 +507,14 @@ function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, ow
     <div className="card mb-4 !py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-sm font-bold text-steel-900">💰 Comissão</div>
-        <div className="text-[11px] text-steel-500">Regra da loja, igual para todos · conta sobre o que ele fizer na OS</div>
+        <div className="text-[11px] text-steel-500">Regra da loja, igual para todos · o salário fica na aba Pagamento</div>
       </div>
 
       <label className={`mt-3 flex items-start gap-2 rounded-xl border px-3 py-2.5 cursor-pointer ${fixed ? 'border-pending-300 bg-pending-50' : 'border-steel-200'}`}>
         <input type="checkbox" className="mt-0.5" checked={fixed} onChange={e => onFixed(e.target.checked)} />
         <span>
-          <span className="text-sm font-semibold">Salário fixo — não recebe comissão</span>
-          <span className="block text-[11px] text-steel-500">Marcado: a regra de 4% / 10% e o % do faturamento não valem para ele. O que ele fizer continua aparecendo nos relatórios.</span>
+          <span className="text-sm font-semibold">Só salário fixo — sem nenhuma comissão</span>
+          <span className="block text-[11px] text-steel-500">Marcado: ele recebe só o salário (aba Pagamento). Não ganha 4% / 10% nem % do faturamento. O que ele fizer continua aparecendo nos relatórios.</span>
         </span>
       </label>
       {!fixed && <>
@@ -522,8 +522,8 @@ function CommissionBox({ value, onChange, parts, onParts, revenue, onRevenue, ow
       <label className={`mt-3 flex items-start gap-2 rounded-xl border px-3 py-2.5 cursor-pointer ${revOnly ? 'border-brand-300 bg-brand-50' : 'border-steel-200'}`}>
         <input type="checkbox" className="mt-0.5" checked={revOnly} onChange={e => onRevOnly(e.target.checked)} />
         <span>
-          <span className="text-sm font-semibold">Só ganha a % do faturamento da loja</span>
-          <span className="block text-[11px] text-steel-500">Marcado: a regra de 4% / 10% não vale para ele. Recebe apenas a % sobre tudo que a loja fatura (preencha abaixo). Ex.: gerente 1,5%.</span>
+          <span className="text-sm font-semibold">Comissão do gerente: só a % do faturamento da loja</span>
+          <span className="block text-[11px] text-steel-500">O salário continua na aba Pagamento. Marcado: ele não ganha 4% / 10% sobre o serviço; a comissão é só a % sobre tudo que a loja fatura (preencha abaixo). Ex.: gerente 1,5%.</span>
         </span>
       </label>
 
