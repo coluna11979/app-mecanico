@@ -9,13 +9,15 @@ import { todayISO } from '@/lib/purchasing';
  * ligada ao colaborador — a Folha desconta do salário do mês, igual ao vale lançado no Caixa.
  * Vale em dinheiro da gaveta continua em Caixa → Movimentações → Vale.
  */
-export default function BankValeModal({ wid, team, onClose, onDone }: {
+export default function BankValeModal({ wid, team, edit, onClose, onDone }: {
   wid: string; team: { id: string; name: string }[]; onClose: () => void; onDone: () => void;
+  /** Corrigir um vale já registrado pelo banco */
+  edit?: { id: string; mechanicId: string; amount: number; date: string; note: string | null };
 }) {
-  const [mechanic, setMechanic] = useState(team[0]?.id ?? '');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(todayISO());
-  const [note, setNote] = useState('');
+  const [mechanic, setMechanic] = useState(edit?.mechanicId ?? team[0]?.id ?? '');
+  const [amount, setAmount] = useState(edit ? moneyInput(edit.amount) : '');
+  const [date, setDate] = useState(edit?.date ?? todayISO());
+  const [note, setNote] = useState(edit?.note ?? '');
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -25,6 +27,21 @@ export default function BankValeModal({ wid, team, onClose, onDone }: {
     if (!Number.isFinite(value) || value <= 0) return toast.error('Informe o valor do vale');
     if (!date) return toast.error('Informe a data');
     setBusy(true);
+    if (edit) {
+      // Conta paga não aceita edição direta: desfaz o pagamento, corrige e paga de novo pelo banco (volta ao que era se algo falhar)
+      const back = () => supabase.rpc('payable_pay', { p_payable: edit.id, p_from: 'banco', p_paid_at: edit.date, p_session: null });
+      const u0 = await supabase.rpc('payable_unpay', { p_payable: edit.id, p_session: null });
+      if (u0.error) { setBusy(false); return toast.error('Não foi possível corrigir: ' + u0.error.message); }
+      const u1 = await supabase.from('payables').update({
+        mechanic_id: mechanic, competence: date.slice(0, 7), description: `Vale · ${who.name}`, amount: value, due_date: date, notes: note.trim() || null,
+      }).eq('id', edit.id);
+      if (u1.error) { await back(); setBusy(false); return toast.error('Não foi possível corrigir: ' + u1.error.message); }
+      const u2 = await supabase.rpc('payable_pay', { p_payable: edit.id, p_from: 'banco', p_paid_at: date, p_session: null });
+      if (u2.error) { setBusy(false); return toast.error('O vale foi corrigido mas ficou sem pagamento marcado: ' + u2.error.message + ' — confira em Contas a pagar'); }
+      setBusy(false);
+      toast.success('Vale corrigido ✓');
+      return onDone();
+    }
     const { data, error } = await supabase.from('payables').insert({
       workshop_id: wid, category: 'Vales', mechanic_id: mechanic, competence: date.slice(0, 7),
       description: `Vale · ${who.name}`, amount: value, due_date: date, notes: note.trim() || null,
@@ -48,7 +65,7 @@ export default function BankValeModal({ wid, team, onClose, onDone }: {
       <div className="bg-white rounded-3xl w-full max-w-md max-h-[92vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold">Registrar vale</h2>
+            <h2 className="text-xl font-bold">{edit ? 'Corrigir vale' : 'Registrar vale'}</h2>
             <p className="text-sm text-steel-500 mt-0.5">Pago pelo banco ou PIX, fora do caixa. Entra no desconto da folha.</p>
           </div>
           <button onClick={onClose} className="text-steel-400 hover:text-steel-700 text-xl leading-none" aria-label="Fechar">×</button>
@@ -77,7 +94,7 @@ export default function BankValeModal({ wid, team, onClose, onDone }: {
 
         <div className="flex gap-2 mt-5">
           <button onClick={onClose} className="btn-ghost flex-1">Cancelar</button>
-          <button onClick={save} disabled={busy} className="btn-primary flex-[2]">{busy ? 'Registrando…' : 'Registrar vale'}</button>
+          <button onClick={save} disabled={busy} className="btn-primary flex-[2]">{busy ? 'Salvando…' : edit ? 'Salvar correção' : 'Registrar vale'}</button>
         </div>
       </div>
     </div>

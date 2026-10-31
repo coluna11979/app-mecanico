@@ -12,6 +12,7 @@ import { breakdown, calcNet, loadPayroll, type PayrollRow } from '@/lib/payroll'
 import { Restricted } from './Fornecedores';
 import TeamTabs from '@/components/team/TeamTabs';
 import BankValeModal from '@/components/team/BankValeModal';
+import ValesModal from '@/components/team/ValesModal';
 
 type Edit = { days: string; other: string; include: boolean };
 
@@ -35,6 +36,8 @@ export default function Folha() {
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [busy, setBusy] = useState(false);
   const [valeOpen, setValeOpen] = useState(false);
+  /** Colaborador cujos vales do mês estão abertos para ver/corrigir */
+  const [valesOf, setValesOf] = useState<{ id: string; name: string; locked: boolean } | null>(null);
   /** Situação das contas de salário geradas */
   const [paid, setPaid] = useState<Record<string, { paid_at: string | null; due_date: string | null }>>({});
   /** Mês anterior com salário sem fechar */
@@ -271,7 +274,11 @@ export default function Folha() {
                     {closed && Number(closed.commission) > 0
                       ? <Cell label="Comissão" value={`+ ${fmtBRL(closed.commission)}`} tone="text-signal-700" />
                       : <Cell label="Comissão" value="quinzenal" sub="dias 15 e 30" muted />}
-                    <Cell label="Vales" value={`− ${fmtBRL(vales)}`} sub={!closed && r.carryIn > 0 ? `inclui ${fmtBRL(r.carryIn)} do mês anterior` : undefined} tone="text-alert-600" />
+                    <button type="button" className="text-right rounded-lg hover:bg-brand-50 transition px-1 -mx-1"
+                      onClick={() => setValesOf({ id: r.mechanicId, name: r.name, locked: !!closed })} title="Ver, corrigir ou excluir os vales do mês">
+                      <Cell label="Vales" value={`− ${fmtBRL(vales)}`} sub={!closed && r.carryIn > 0 ? `inclui ${fmtBRL(r.carryIn)} do mês anterior` : undefined} tone="text-alert-600" />
+                      <span className="block text-[10px] font-semibold text-brand-700 underline">ver / corrigir</span>
+                    </button>
                     <div className="text-right">
                       <span className="lg:hidden text-[10px] text-steel-400 uppercase block">Faltas (dias)</span>
                       {locked ? <span className="text-sm">{closed ? Number(closed.absence_days) : '—'}</span> : (
@@ -320,6 +327,11 @@ export default function Folha() {
           Mês anterior: <button className="underline" onClick={() => setCompetence(addMonthsISO(`${competence}-01`, -1).slice(0, 7))}>{fmtCompetence(addMonthsISO(`${competence}-01`, -1).slice(0, 7))}</button>
         </p>
       </div>
+      {valesOf && wid && (
+        <ValesModal wid={wid} competence={competence} mechanic={valesOf} locked={valesOf.locked}
+          team={(rows ?? []).filter(r => r.active).map(r => ({ id: r.mechanicId, name: r.name }))}
+          onClose={() => setValesOf(null)} onChanged={load} />
+      )}
       {valeOpen && wid && (
         <BankValeModal wid={wid} team={(rows ?? []).filter(r => r.active).map(r => ({ id: r.mechanicId, name: r.name }))}
           onClose={() => setValeOpen(false)} onDone={() => { setValeOpen(false); load(); }} />

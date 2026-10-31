@@ -135,3 +135,29 @@ export async function loadPayroll(wid: string, competence: string): Promise<Payr
       };
     });
 }
+
+export type ValeItem = { id: string; source: 'banco' | 'caixa'; mechanicId: string; amount: number; date: string; note: string | null };
+
+/** Vales do mês de um colaborador: os do Caixa (dinheiro) e os pagos pelo banco/PIX */
+export async function loadVales(wid: string, competence: string, mechanicId: string): Promise<ValeItem[]> {
+  const { from, to } = monthRange(competence);
+  const [cy, cm] = competence.split('-').map(Number);
+  const monthFirst = `${competence}-01`;
+  const next = new Date(cy, cm, 1);
+  const nextFirst = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`;
+  const [cash, bank] = await Promise.all([
+    supabase.from('cash_entries').select('id, mechanic_id, amount, description, created_at')
+      .eq('workshop_id', wid).eq('kind', 'vale').eq('mechanic_id', mechanicId).is('cancelled_at', null)
+      .gte('created_at', from).lt('created_at', to).order('created_at'),
+    supabase.from('payables').select('id, mechanic_id, amount, notes, due_date')
+      .eq('workshop_id', wid).eq('category', 'Vales').eq('mechanic_id', mechanicId).is('cancelled_at', null)
+      .gte('due_date', monthFirst).lt('due_date', nextFirst).order('due_date'),
+  ]);
+  const toDay = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  return [
+    ...((cash.data ?? []) as { id: string; mechanic_id: string; amount: number; description: string | null; created_at: string }[])
+      .map(c => ({ id: c.id, source: 'caixa' as const, mechanicId: c.mechanic_id, amount: Number(c.amount), date: toDay(c.created_at), note: c.description })),
+    ...((bank.data ?? []) as { id: string; mechanic_id: string; amount: number; notes: string | null; due_date: string }[])
+      .map(b => ({ id: b.id, source: 'banco' as const, mechanicId: b.mechanic_id, amount: Number(b.amount), date: b.due_date, note: b.notes })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+}
