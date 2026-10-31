@@ -11,6 +11,7 @@ import { addMonthsCompetence, fmtCompetence } from '@/lib/payableForms';
 import { breakdown, calcNet, loadPayroll, type PayrollRow } from '@/lib/payroll';
 import { Restricted } from './Fornecedores';
 import TeamTabs from '@/components/team/TeamTabs';
+import BankValeModal from '@/components/team/BankValeModal';
 
 type Edit = { days: string; other: string; include: boolean };
 
@@ -33,6 +34,7 @@ export default function Folha() {
   const [rows, setRows] = useState<PayrollRow[] | null>(null);
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [busy, setBusy] = useState(false);
+  const [valeOpen, setValeOpen] = useState(false);
   /** Situação das contas de salário geradas */
   const [paid, setPaid] = useState<Record<string, { paid_at: string | null; due_date: string | null }>>({});
   /** Mês anterior com salário sem fechar */
@@ -169,6 +171,7 @@ export default function Folha() {
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
+            <button className="btn-secondary !py-2.5" onClick={() => setValeOpen(true)} disabled={!rows?.length}>➕ Registrar vale</button>
             <div>
               <label className="label">Competência</label>
               <input type="month" className="input !w-auto" value={competence} onChange={e => setCompetence(e.target.value || todayISO().slice(0, 7))} />
@@ -317,6 +320,10 @@ export default function Folha() {
           Mês anterior: <button className="underline" onClick={() => setCompetence(addMonthsISO(`${competence}-01`, -1).slice(0, 7))}>{fmtCompetence(addMonthsISO(`${competence}-01`, -1).slice(0, 7))}</button>
         </p>
       </div>
+      {valeOpen && wid && (
+        <BankValeModal wid={wid} team={(rows ?? []).filter(r => r.active).map(r => ({ id: r.mechanicId, name: r.name }))}
+          onClose={() => setValeOpen(false)} onDone={() => { setValeOpen(false); load(); }} />
+      )}
     </WorkshopLayout>
   );
 }

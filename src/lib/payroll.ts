@@ -73,7 +73,11 @@ export function breakdown(p: { base: number; commission: number; commissionPct: 
 /** Tudo o que a tela precisa para fechar a folha do mês */
 export async function loadPayroll(wid: string, competence: string): Promise<PayrollRow[]> {
   const { from, to } = monthRange(competence);
-  const [mechs, priv, base, sales, vales, prev, cur, manual] = await Promise.all([
+  // Mês da competência em datas (AAAA-MM-DD) para filtrar vales pagos pelo banco
+  const [cy, cm] = competence.split('-').map(Number);
+  const monthFirst = `${competence}-01`;
+  const nextFirst = `${new Date(cy, cm, 1).getFullYear()}-${String(new Date(cy, cm, 1).getMonth() + 1).padStart(2, '0')}-01`;
+  const [mechs, priv, base, sales, vales, bankVales, prev, cur, manual] = await Promise.all([
     supabase.from('workshop_mechanics').select(`id, name, active, ${COMMISSION_COLS}`).eq('workshop_id', wid).order('name'),
     supabase.from('workshop_mechanic_private').select('mechanic_id, salary').eq('workshop_id', wid),
     loadCommissionBase(wid, from, to),
@@ -85,6 +89,9 @@ export async function loadPayroll(wid: string, competence: string): Promise<Payr
     fetchAll((a, b) => supabase.from('cash_entries').select('id, mechanic_id, amount')
       .eq('workshop_id', wid).eq('kind', 'vale').is('cancelled_at', null)
       .gte('created_at', from).lt('created_at', to).order('id').range(a, b)),
+    // Vales pagos pelo banco/PIX (fora do caixa): contas da categoria "Vales" ligadas ao colaborador
+    supabase.from('payables').select('mechanic_id, amount').eq('workshop_id', wid).eq('category', 'Vales')
+      .is('cancelled_at', null).not('mechanic_id', 'is', null).gte('due_date', monthFirst).lt('due_date', nextFirst),
     supabase.from('payroll_items').select('mechanic_id, competence, carry_out').eq('workshop_id', wid)
       .lt('competence', competence).order('competence', { ascending: false }),
     supabase.from('payroll_items').select('*').eq('workshop_id', wid).eq('competence', competence),
@@ -97,6 +104,9 @@ export async function loadPayroll(wid: string, competence: string): Promise<Payr
   const revenue = ((sales.data ?? []) as { price: number }[]).reduce((a, o) => a + Number(o.price), 0);
   const valeBy = new Map<string, number>();
   for (const v of (vales.data ?? []) as { mechanic_id: string | null; amount: number }[]) {
+    if (v.mechanic_id) valeBy.set(v.mechanic_id, (valeBy.get(v.mechanic_id) ?? 0) + Number(v.amount));
+  }
+  for (const v of (bankVales.data ?? []) as { mechanic_id: string | null; amount: number }[]) {
     if (v.mechanic_id) valeBy.set(v.mechanic_id, (valeBy.get(v.mechanic_id) ?? 0) + Number(v.amount));
   }
   // Último fechamento anterior de cada um → o que sobrou de vale
