@@ -7,11 +7,11 @@ import CheckupMockup from './CheckupMockup';
    ===================================================================== */
 export default function Diagnostico() {
   return (
-    <section id="diagnostico" aria-labelledby="diag-title" className="bg-black px-6 py-32 md:py-44">
-      <div className="mx-auto grid max-w-[1120px] items-center gap-20 lg:grid-cols-2 lg:gap-24">
+    <section id="diagnostico" aria-labelledby="diag-title" className="bg-black px-6 py-36 md:py-56">
+      <div className="mx-auto grid max-w-[1120px] items-center gap-20 lg:grid-cols-2 lg:gap-28">
         <Reveal>
           <Eyebrow tone="gold">Diagnóstico</Eyebrow>
-          <h2 id="diag-title" className="mt-3 text-[40px] font-semibold leading-[1.06] tracking-tighter text-white md:text-[56px]">
+          <h2 id="diag-title" className="mt-4 text-[40px] font-semibold leading-[1.04] tracking-[-0.04em] text-white md:text-[56px]">
             Seu carro dá sinais.
             <br />
             <span className="text-mist">A gente ajuda a entender.</span>

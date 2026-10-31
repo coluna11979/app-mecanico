@@ -27,7 +27,7 @@ export default function Services() {
   const [verTodos, setVerTodos] = useState(false);
 
   return (
-    <section id="servicos" aria-labelledby="servicos-title" className="bg-white px-6 py-32 text-black md:py-44">
+    <section id="servicos" aria-labelledby="servicos-title" className="bg-white px-6 py-36 text-black md:py-56">
       <div className="mx-auto max-w-[1120px]">
         <Reveal>
           <Eyebrow>Serviços</Eyebrow>
@@ -37,15 +37,15 @@ export default function Services() {
           </h2>
         </Reveal>
 
-        <div className="mt-16 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 md:mt-20">
+        <div className="mt-20 grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-7 md:mt-28">
           {principais.map((s, i) => (
             <Reveal key={s.titulo} delay={i * 80}>
-              <article className="flex h-full flex-col rounded-3xl bg-snow p-8 transition-transform duration-500 ease-apple hover:-translate-y-1">
+              <article className="flex h-full flex-col rounded-3xl bg-white p-10 lg:p-8 xl:p-9 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.06] transition-all duration-500 ease-apple hover:-translate-y-1 hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.12)]">
                 <span className="text-black"><s.icon /></span>
-                <h3 className="mt-14 text-[21px] font-semibold tracking-tight">{s.titulo}</h3>
+                <h3 className="mt-20 text-[21px] font-semibold tracking-[-0.02em]">{s.titulo}</h3>
                 <p className="mt-2 text-[15px] leading-relaxed text-mist">{s.texto}</p>
-                <div className="mt-auto pt-8">
-                  <ArrowLink href={wa(`Olá, Jota Car! Vim pelo site e quero um orçamento de ${s.msg}.`)} id={`wa_servico_${i + 1}`} className="text-[15px] text-black">
+                <div className="mt-auto pt-10">
+                  <ArrowLink href={wa(`Olá, Jota Car! Vim pelo site e quero um orçamento de ${s.msg}.`)} id={`wa_servico_${i + 1}`} className="whitespace-nowrap text-[15px] text-black">
                     Solicitar atendimento
                   </ArrowLink>
                 </div>
@@ -55,7 +55,7 @@ export default function Services() {
         </div>
 
         {/* Lista completa, sem poluir a tela */}
-        <Reveal className="mt-10">
+        <Reveal className="mt-14">
           <button
             type="button"
             onClick={() => setVerTodos((v) => !v)}
