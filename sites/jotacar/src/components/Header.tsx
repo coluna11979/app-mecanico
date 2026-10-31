@@ -26,6 +26,7 @@ export default function Header() {
   const agendar = wa(CONFIG.mensagens.agendar);
 
   return (
+    <>
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.06] bg-black/80 backdrop-blur-xl backdrop-saturate-150">
       <div className="mx-auto flex h-14 max-w-[1168px] items-center justify-between px-6">
         <a href="#topo" className="text-[19px] font-semibold tracking-tight text-white" aria-label="Jota Car, voltar ao topo">
@@ -65,11 +66,12 @@ export default function Header() {
           </button>
         </div>
       </div>
+    </header>
 
-      {/* Menu mobile em tela cheia */}
-      <div
+    {/* Menu mobile em tela cheia — fora do <header>: o backdrop-blur dele prenderia o "fixed" na altura do cabeçalho */}
+    <div
         id="menu-mobile"
-        className={`fixed inset-x-0 bottom-0 top-14 bg-black transition-all duration-500 ease-apple md:hidden ${open ? 'visible opacity-100' : 'invisible opacity-0'}`}
+        className={`fixed inset-x-0 bottom-0 top-14 z-40 bg-black transition-all duration-500 ease-apple md:hidden ${open ? 'visible opacity-100' : 'invisible opacity-0'}`}
       >
         <nav className="flex flex-col px-8 pt-8" aria-label="Seções">
           {links.map((l, i) => (
@@ -85,6 +87,6 @@ export default function Header() {
           ))}
         </nav>
       </div>
-    </header>
+    </>
   );
 }
