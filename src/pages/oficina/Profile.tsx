@@ -3,8 +3,6 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AvatarUpload } from '@/components/AvatarUpload';
-import ShowcaseEditor from '@/components/showcase/ShowcaseEditor';
-import { isPlatformOnly, useWorkshopModules } from '@/lib/modules';
 import type { Workshop } from '@/types/database';
 
 export default function WorkshopProfile() {
@@ -17,8 +15,6 @@ export default function WorkshopProfile() {
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError]     = useState('');
   const [retrying, setRetrying]     = useState(false);
-  // Pacote "Só mecânicos": a vitrine (divulgação para clientes) não faz sentido
-  const platformOnly = useWorkshopModules(s => isPlatformOnly(s.disabled));
 
   // O loading é derivado: enquanto auth tá carregando OU enquanto não tem workshop selecionada
   const loading = authLoading;
@@ -26,6 +22,9 @@ export default function WorkshopProfile() {
   // Edita a oficina ATUAL (a selecionada no seletor)
   useEffect(() => {
     setShop(currentWorkshop ?? null);
+    // Hidrata o campo CEP visual com o valor atual (formatado)
+    const cur = currentWorkshop?.cep ?? '';
+    setCep(cur.replace(/\D/g, '').replace(/(\d{5})(\d)/, '$1-$2'));
   }, [currentWorkshop?.id]);
 
   async function retryLoad() {
@@ -39,6 +38,8 @@ export default function WorkshopProfile() {
     const digits = raw.replace(/\D/g, '');
     setCep(digits.replace(/(\d{5})(\d)/, '$1-$2'));
     setCepError('');
+    // Mantém o shop.cep sincronizado — vai pro banco no save()
+    setShop(s => s ? { ...s, cep: digits } : s);
     if (digits.length < 8) return;
 
     setCepLoading(true);
@@ -47,12 +48,12 @@ export default function WorkshopProfile() {
       const data = await res.json();
       if (data.erro) { setCepError('CEP não encontrado.'); setCepLoading(false); return; }
 
-      const address = [data.logradouro, data.bairro].filter(Boolean).join(', ');
       setShop(s => s ? {
         ...s,
-        address: address || s.address,
-        city:    data.localidade || s.city,
-        state:   (data.uf ?? '').toUpperCase() || s.state,
+        address:      data.logradouro || s.address,
+        neighborhood: data.bairro     || s.neighborhood,
+        city:         data.localidade || s.city,
+        state:        (data.uf ?? '').toUpperCase() || s.state,
       } : s);
     } catch {
       setCepError('Erro ao buscar CEP. Verifique sua conexão.');
@@ -63,7 +64,8 @@ export default function WorkshopProfile() {
   /* ── Geocodifica o endereço cadastrado (Nominatim / OpenStreetMap) ── */
   async function geocodeAddress() {
     if (!shop) return;
-    const query = [shop.address, shop.city, shop.state, 'Brasil'].filter(Boolean).join(', ');
+    const street = [shop.address, shop.number].filter(Boolean).join(', ');
+    const query  = [street, shop.neighborhood, shop.city, shop.state, 'Brasil'].filter(Boolean).join(', ');
     if (!query.trim()) { alert('Preencha o endereço antes de localizar.'); return; }
 
     setGeoLoading(true);
@@ -90,6 +92,9 @@ export default function WorkshopProfile() {
     const { error } = await supabase.from('workshops').update({
       business_name: shop.business_name,
       address:       shop.address,
+      number:        shop.number ?? null,
+      neighborhood:  shop.neighborhood ?? null,
+      cep:           shop.cep ?? null,
       city:          shop.city,
       state:         shop.state,
       description:   shop.description,
@@ -147,11 +152,9 @@ export default function WorkshopProfile() {
   return (
     <WorkshopLayout>
       <h1 className="text-3xl font-bold tracking-tight mb-2">Perfil da oficina</h1>
-      <p className="text-steel-500 text-sm mb-8">
-        {platformOnly ? 'Dados cadastrais e o endereço que os mecânicos veem.' : 'Dados cadastrais e a vitrine usada para divulgar sua oficina.'}
-      </p>
+      <p className="text-steel-500 text-sm mb-8">Gerencie as informações da sua oficina.</p>
 
-      <div className="max-w-3xl space-y-6">
+      <div className="max-w-2xl space-y-6">
 
         {/* Hero card */}
         <div className="card flex items-center gap-5">
@@ -176,12 +179,9 @@ export default function WorkshopProfile() {
           </div>
         </div>
 
-        {/* Vitrine para divulgação (tudo opcional) */}
-        {!platformOnly && <ShowcaseEditor workshopId={shop.id} userId={user!.id} />}
-
         {/* Form */}
         <form onSubmit={save} className="card space-y-5">
-          <h3 className="font-bold text-steel-800">Dados cadastrais</h3>
+          <h3 className="font-bold text-steel-800">Informações da oficina</h3>
 
           <div>
             <label className="label">Nome fantasia / Razão social</label>
@@ -217,10 +217,26 @@ export default function WorkshopProfile() {
             )}
           </div>
 
+          <div className="grid grid-cols-[1fr_120px] gap-3">
+            <div>
+              <label className="label">Rua / Avenida</label>
+              <input className="input" value={shop.address} onChange={set('address')}
+                placeholder="Ex.: Av. Paulista" />
+            </div>
+            <div>
+              <label className="label">Número *</label>
+              <input className="input" value={shop.number ?? ''} onChange={set('number')}
+                placeholder="123" />
+            </div>
+          </div>
+
           <div>
-            <label className="label">Endereço</label>
-            <input className="input" value={shop.address} onChange={set('address')}
-              placeholder="Rua, número, bairro" />
+            <label className="label">Bairro *</label>
+            <input className="input" value={shop.neighborhood ?? ''} onChange={set('neighborhood')}
+              placeholder="Ex.: Bela Vista" />
+            <p className="text-xs text-steel-500 mt-1">
+              Número e bairro são importantes pra o mapa achar sua oficina com precisão.
+            </p>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
