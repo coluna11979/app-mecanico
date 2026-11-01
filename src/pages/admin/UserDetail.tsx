@@ -27,6 +27,9 @@ export default function AdminUserDetail() {
   const [profile, setProfile]   = useState<Profile | null>(null);
   const [mechanic, setMechanic] = useState<Mechanic | null>(null);
   const [workshop, setWorkshop] = useState<Workshop | null>(null);
+  // Alguns admins/donos tem MAIS DE UMA oficina (ex.: JC Pneus + Jota Car no
+  // mesmo login). Guardamos todas e deixamos selecionar qual editar.
+  const [workshops, setWorkshops] = useState<Workshop[]>([]);
   const [messages, setMessages] = useState<ApprovalMessage[]>([]);
   const [loading, setLoading]   = useState(true);
   const [busy, setBusy]         = useState(false);
@@ -99,8 +102,16 @@ export default function AdminUserDetail() {
         admin_notes: p.admin_notes ?? '',
       }));
     } else if (p.role === 'workshop') {
-      const { data: w } = await supabase.from('workshops').select('*').eq('profile_id', id).maybeSingle();
-      setWorkshop(w as Workshop);
+      // Pega TODAS as oficinas vinculadas a esse profile (pode ter várias)
+      const { data: list } = await supabase
+        .from('workshops')
+        .select('*')
+        .eq('profile_id', id)
+        .order('created_at', { ascending: true });
+      const all = (list as Workshop[]) ?? [];
+      setWorkshops(all);
+      const w = all[0] ?? null;
+      setWorkshop(w);
       setEdit(e => ({
         ...e,
         full_name: p.full_name, phone: p.phone ?? '',
@@ -124,6 +135,24 @@ export default function AdminUserDetail() {
     setMessages((msgs as ApprovalMessage[]) ?? []);
 
     setLoading(false);
+  }
+
+  /** Troca a oficina sendo editada (quando o perfil tem múltiplas) */
+  function selectWorkshop(wid: string) {
+    const w = workshops.find(x => x.id === wid);
+    if (!w) return;
+    setWorkshop(w);
+    setEdit(e => ({
+      ...e,
+      business_name: w.business_name ?? '', cnpj: w.cnpj ?? '',
+      address: w.address ?? '',
+      number: w.number ?? '',
+      neighborhood: w.neighborhood ?? '',
+      cep: w.cep ?? '',
+      city: w.city ?? '', state: w.state ?? '',
+      description: w.description ?? '',
+      lat: w.lat ?? null, lng: w.lng ?? null,
+    }));
   }
 
   async function save() {
@@ -525,6 +554,28 @@ export default function AdminUserDetail() {
               onRevogar={revogarEmbaixador}
               onCopiar={copiarLink}
             />
+          )}
+
+          {!isMechanic && workshops.length > 1 && (
+            <div className="card space-y-2 border-2 border-brand-300 bg-brand-50">
+              <h3 className="text-sm font-bold text-steel-700 uppercase tracking-wider">
+                Este cadastro tem {workshops.length} oficinas
+              </h3>
+              <p className="text-xs text-steel-600">
+                Escolha qual oficina quer editar. As alterações só valem pra selecionada.
+              </p>
+              <select
+                className="input"
+                value={workshop?.id ?? ''}
+                onChange={e => selectWorkshop(e.target.value)}
+              >
+                {workshops.map(w => (
+                  <option key={w.id} value={w.id}>
+                    {w.business_name || '(sem nome)'} — {w.cnpj || 'sem CNPJ'}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
 
           {!isMechanic && (
