@@ -72,10 +72,24 @@ export default function WorkshopProfile() {
     const cityUf    = [shop.city, shop.state].filter(Boolean).join(', ');
     const cepMasked = digitsCep.length === 8 ? digitsCep.replace(/(\d{5})(\d{3})/, '$1-$2') : '';
 
+    // Higieniza o campo "Rua" removendo duplicatas do número/bairro que
+    // moram em cadastros antigos (ex.: "Rua X, Bairro Y 9000" com Numero=9000
+    // e Bairro=Y). Sem isso, a query vai com informacao duplicada e o
+    // Nominatim pode cair em outro ponto a KMs do real.
+    let cleanAddress = (shop.address ?? '').trim();
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (shop.neighborhood?.trim()) {
+      cleanAddress = cleanAddress.replace(new RegExp(`[,\\s]*${esc(shop.neighborhood.trim())}`, 'ig'), '');
+    }
+    if (shop.number?.trim()) {
+      cleanAddress = cleanAddress.replace(new RegExp(`[,\\s]*\\b${esc(shop.number.trim())}\\b`, 'g'), '');
+    }
+    cleanAddress = cleanAddress.replace(/,\s*,/g, ',').replace(/,\s*$/g, '').trim();
+
     // Monta tentativas em ordem de precisão. Cada "tentativa" é uma query
     // de texto livre pro Nominatim — a primeira que achar algo vence.
     const attempts: string[] = [];
-    const street = [shop.address, shop.number].filter(Boolean).join(', ');
+    const street = [cleanAddress, shop.number].filter(Boolean).join(', ');
 
     if (street && shop.neighborhood && cityUf) {
       attempts.push([street, shop.neighborhood, cityUf, 'Brasil'].join(', '));
@@ -83,9 +97,9 @@ export default function WorkshopProfile() {
     if (street && cityUf) {
       attempts.push([street, cityUf, 'Brasil'].join(', '));
     }
-    if (shop.address && cityUf) {
+    if (cleanAddress && cityUf) {
       // Sem o número, pega o meio da rua — ainda útil pro Mapbox
-      attempts.push([shop.address, cityUf, 'Brasil'].join(', '));
+      attempts.push([cleanAddress, cityUf, 'Brasil'].join(', '));
     }
     if (cepMasked && cityUf) {
       // CEP + cidade/UF — muito comum funcionar
