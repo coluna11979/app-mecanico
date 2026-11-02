@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { PERM_GROUPS, PERM_MODULE_ROUTE, PERMS, ROLES, ROLE_ORDER, type OperatorPerm, type OperatorRole, type WorkshopOperator } from '@/lib/operators';
+import { sanitizeLogin } from '@/lib/teamLogin';
 import { useModuleAllows } from '@/lib/modules';
 import type { WorkshopMechanic } from '@/types/database';
 
@@ -167,6 +168,10 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
   const [active, setActive] = useState(op?.active ?? true);
   const [pin, setPin]       = useState('');
   const [pin2, setPin2]     = useState('');
+  // Acesso equipe (login remoto pelo celular do colaborador)
+  const [loginInput, setLoginInput] = useState('');
+  const [pwd, setPwd]   = useState('');
+  const [pwd2, setPwd2] = useState('');
   const [saving, setSaving] = useState(false);
 
   const isGestor = roles.includes('gestor');
@@ -213,6 +218,18 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
         setSaving(false);
         return toast.error(error.message || 'Não foi possível salvar o PIN.');
       }
+    }
+    // Acesso equipe (login remoto) — só colaborador; cria/troca quando uma senha é informada
+    if (!row.isOwner && pwd) {
+      const loginFinal = loginInput.trim() || op?.login || '';
+      if (!loginFinal) { setSaving(false); return toast.error('Informe um login para o acesso pelo app.'); }
+      if (pwd.length < 6) { setSaving(false); return toast.error('A senha do app precisa ter ao menos 6 caracteres.'); }
+      if (pwd !== pwd2) { setSaving(false); return toast.error('As senhas do app não conferem.'); }
+      const { data: lr, error: le } = await supabase.functions.invoke('operator-set-login', {
+        body: { operator_id: res.data.id, login: loginFinal, password: pwd },
+      });
+      const lres = lr as { ok?: boolean; error?: string; login?: string } | null;
+      if (le || !lres?.ok) { setSaving(false); return toast.error(lres?.error || 'Não foi possível salvar o login do app.'); }
     }
     setSaving(false);
     toast.success('Acesso salvo');
@@ -297,6 +314,39 @@ function AccessModal({ row, workshopId, onClose, onSaved }: {
           <input className="input" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6}
             placeholder="Repita o PIN" value={pin2} onChange={e => setPin2(e.target.value.replace(/\D/g, ''))} />
         </div>
+
+        {!row.isOwner && (
+          <div className="mt-6 rounded-2xl border border-steel-200 bg-steel-50/70 p-4">
+            <div className="font-semibold text-sm">👥 Acesso pelo app (login + senha)</div>
+            <p className="text-xs text-steel-500 mt-0.5">
+              O colaborador entra do próprio celular em <strong>Acesso equipe</strong> e cai direto no painel da função dele — sem ver o painel da oficina.
+            </p>
+            {op?.login && (
+              <div className="text-[12px] text-signal-700 bg-signal-50 rounded-lg px-3 py-2 mt-3">
+                ✓ Login atual: <strong>{op.login}</strong>. Deixe a senha em branco para manter, ou preencha para trocar.
+              </div>
+            )}
+            <div className="mt-3 space-y-2">
+              <div>
+                <label className="label">Login</label>
+                <input className="input" type="text" autoCapitalize="none" autoCorrect="off"
+                  placeholder={op?.login || 'ex: rafael.jotacar'} value={loginInput}
+                  onChange={e => setLoginInput(e.target.value)} />
+                {loginInput.trim() && (
+                  <div className="text-[11px] text-steel-400 mt-1">
+                    Salvo como <strong className="text-steel-600">{sanitizeLogin(loginInput) || '—'}</strong>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input className="input" type="password" autoComplete="new-password"
+                  placeholder={op?.login ? 'Nova senha' : 'Senha'} value={pwd} onChange={e => setPwd(e.target.value)} />
+                <input className="input" type="password" autoComplete="new-password"
+                  placeholder="Repita a senha" value={pwd2} onChange={e => setPwd2(e.target.value)} />
+              </div>
+            </div>
+          </div>
+        )}
 
         {!row.isOwner && op && (
           <label className="flex items-center gap-2 mt-5 text-sm">

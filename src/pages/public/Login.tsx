@@ -242,6 +242,18 @@ export default function Login() {
             </div>
           </form>
 
+          <div className="mt-5">
+            <Link
+              to="/equipe"
+              className="flex items-center justify-center gap-2 bg-steel-900 text-white rounded-xl px-4 py-3 text-sm font-bold hover:bg-steel-800 transition"
+            >
+              👥 Acesso equipe
+            </Link>
+            <p className="text-[11px] text-steel-400 text-center mt-1.5">
+              Colaborador da oficina entra com o login que o gestor criou.
+            </p>
+          </div>
+
           <div className="mt-6 pt-6 border-t border-steel-100 space-y-2">
             <p className="text-sm text-steel-500 text-center">Ainda não tem conta?</p>
             <Link
