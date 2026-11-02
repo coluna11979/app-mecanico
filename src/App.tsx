@@ -9,6 +9,7 @@ import { isStandalone } from './lib/push';
 import LandingMecanico from './pages/public/LandingMecanico';
 import LandingOficina from './pages/public/LandingOficina';
 import Login from './pages/public/Login';
+import TeamLogin from './pages/public/TeamLogin';
 import SignupMechanic from './pages/public/SignupMechanic';
 import SignupWorkshop from './pages/public/SignupWorkshop';
 import PendingApproval from './pages/public/PendingApproval';
@@ -135,6 +136,7 @@ export default function App() {
       <Route path="/mecanico" element={<LandingMecanico />} />
       <Route path="/oficina" element={<LandingOficina />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/equipe" element={<TeamLogin />} />
       <Route path="/cadastro/mecanico" element={<SignupMechanic />} />
       <Route path="/cadastro/oficina" element={<SignupWorkshop />} />
       <Route path="/aguardando-aprovacao" element={<PendingApproval />} />
