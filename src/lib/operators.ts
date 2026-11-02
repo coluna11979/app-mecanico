@@ -15,6 +15,8 @@ export type WorkshopOperator = {
   /** Em quais funções cada permissão vale (ausente = todas) */
   perm_roles?: Partial<Record<OperatorPerm, OperatorRole[]>> | null;
   active: boolean; has_pin: boolean; created_at: string; updated_at: string;
+  /** Acesso equipe (login remoto): login do colaborador e usuário de auth ligado */
+  login?: string | null; profile_id?: string | null;
 };
 
 export const ROLES: Record<OperatorRole, {
@@ -118,7 +120,7 @@ export type OperatorSession = {
   role: OperatorRole; permissions: OperatorPerm[];
 };
 
-type DeviceState = { balcao: boolean; session: OperatorSession | null };
+type DeviceState = { balcao: boolean; session: OperatorSession | null; remote?: boolean };
 
 const key = (wid: string) => `mec-operator:${wid}`;
 
@@ -127,7 +129,7 @@ function load(wid: string): DeviceState {
     const raw = localStorage.getItem(key(wid));
     if (raw) return JSON.parse(raw) as DeviceState;
   } catch { /* localStorage indisponível */ }
-  return { balcao: false, session: null };
+  return { balcao: false, session: null, remote: false };
 }
 
 function save(wid: string, s: DeviceState) {
@@ -153,9 +155,15 @@ type Store = {
   wid: string | null;
   balcao: boolean;
   session: OperatorSession | null;
+  /** Sessão de login remoto (Acesso equipe), não do balcão por PIN. */
+  remote: boolean;
   bind: (wid: string | null) => void;
   enterBalcao: () => void;
   login: (operatorId: string, pin: string, role: OperatorRole) => Promise<string | null>;
+  /** Trava o painel na função do colaborador que entrou por login/senha (sem PIN). */
+  enterRemote: (session: OperatorSession) => void;
+  /** Sai do acesso remoto neste aparelho (remove a trava pra não prender um login futuro). */
+  clear: () => void;
   /** Encerra quem está operando; o aparelho continua no modo balcão (volta pra tela de PIN). */
   switchUser: () => Promise<void>;
   /** Desliga o modo balcão neste aparelho (só a partir de uma sessão de gestor ou ao sair da conta). */
@@ -167,27 +175,40 @@ type Store = {
 };
 
 export const useOperator = create<Store>((set, get) => ({
-  wid: null, balcao: false, session: null,
+  wid: null, balcao: false, session: null, remote: false,
 
   moveLockTo: (wid) => {
-    const s = { balcao: true, session: null };
+    const s = { balcao: true, session: null, remote: false };
     save(wid, s); set({ wid, ...s });
   },
 
   bind: (wid) => {
     if (wid === get().wid) return;
-    let s = wid ? load(wid) : { balcao: false, session: null };
+    let s = wid ? load(wid) : { balcao: false, session: null, remote: false };
     // Aparelho travado em outra loja: esta também abre na tela de PIN
-    if (wid && !s.balcao && deviceLocked()) { s = { balcao: true, session: null }; save(wid, s); }
-    set({ wid, ...s });
+    if (wid && !s.balcao && deviceLocked()) { s = { balcao: true, session: null, remote: false }; save(wid, s); }
+    set({ wid, remote: false, ...s });
   },
 
   enterBalcao: () => {
     const { wid, session } = get();
     if (!wid) return;
     if (session) supabase.rpc('operator_logout', { p_session: session.session_id }).then(() => {});
-    const s = { balcao: true, session: null };
+    const s = { balcao: true, session: null, remote: false };
     save(wid, s); set(s);
+  },
+
+  enterRemote: (session) => {
+    const { wid } = get();
+    if (!wid) return;
+    const s = { balcao: true, session, remote: true };
+    save(wid, s); set(s);
+  },
+
+  clear: () => {
+    const { wid } = get();
+    if (wid) { try { localStorage.removeItem(key(wid)); } catch { /* ignora */ } }
+    set({ balcao: false, session: null, remote: false });
   },
 
   login: async (operatorId, pin, role) => {
@@ -215,12 +236,18 @@ export const useOperator = create<Store>((set, get) => ({
       .select('roles, permissions, active, perm_roles').eq('id', session.operator_id).maybeSingle();
     if (error) return; // sem conexão: mantém como está
     const o = data as Pick<WorkshopOperator, 'roles' | 'permissions' | 'active' | 'perm_roles'> | null;
-    // Acesso desativado ou função retirada: volta para a tela de PIN
-    if (!o || !o.active || !o.roles.includes(session.role)) { await get().switchUser(); return; }
+    const remote = get().remote;
+    // Acesso desativado ou função retirada: no balcão volta pra tela de PIN;
+    // no acesso remoto encerra a conta do colaborador (não pode ficar no painel).
+    if (!o || !o.active || !o.roles.includes(session.role)) {
+      if (remote) { get().clear(); await supabase.auth.signOut({ scope: 'local' }); }
+      else { await get().switchUser(); }
+      return;
+    }
     const perms = permsForRole(o.permissions, o.perm_roles, session.role);
     const same = perms.length === session.permissions.length && perms.every(p => session.permissions.includes(p));
     if (same || get().session?.session_id !== session.session_id) return;
-    const s = { balcao: true, session: { ...session, permissions: perms } };
+    const s = { balcao: true, session: { ...session, permissions: perms }, remote };
     save(wid, s); set(s);
   },
 
@@ -228,7 +255,7 @@ export const useOperator = create<Store>((set, get) => ({
     const { wid, session } = get();
     if (!wid) return;
     if (session) await supabase.rpc('operator_logout', { p_session: session.session_id });
-    const s = { balcao: true, session: null };
+    const s = { balcao: true, session: null, remote: false };
     save(wid, s); set(s);
   },
 
@@ -236,7 +263,7 @@ export const useOperator = create<Store>((set, get) => ({
     const { wid, session } = get();
     if (!wid) return;
     if (session) await supabase.rpc('operator_logout', { p_session: session.session_id });
-    const s = { balcao: false, session: null };
+    const s = { balcao: false, session: null, remote: false };
     // Destrava o aparelho inteiro (todas as lojas)
     for (const k of storeKeys()) {
       try { localStorage.setItem(k, JSON.stringify(s)); } catch { /* ignora */ }

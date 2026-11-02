@@ -8,7 +8,7 @@ import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
-import { ROLES, sessionAllows, useOperator, type OperatorRole } from '@/lib/operators';
+import { ROLES, ROLE_ORDER, permsForRole, sessionAllows, useOperator, type OperatorRole, type OperatorPerm } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
 import { isPlatformOnly, moduleAllows, moduleEntry, useWorkshopModules } from '@/lib/modules';
 import { useInboxAlerts } from '@/hooks/useInboxAlerts';
@@ -501,6 +501,41 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   /* ── Modo balcão: quem está operando e em qual função ── */
   const op = useOperator();
   useEffect(() => { op.bind(shopId); }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Acesso equipe (login remoto): se este usuário é um operador, trava o painel
+   *    na função dele automaticamente — sem PIN, sem ver o painel do gestor. ── */
+  const [remoteChecked, setRemoteChecked] = useState(false);
+  useEffect(() => {
+    if (!shopId) return;
+    if (op.remote) { setRemoteChecked(true); return; } // reload: trava já veio do storage
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.rpc('operator_self');
+        if (cancelled) return;
+        const self = data as null | {
+          operator_id: string; workshop_id: string; name: string;
+          roles: OperatorRole[]; permissions: OperatorPerm[];
+          perm_roles: Parameters<typeof permsForRole>[1];
+        };
+        if (self && self.workshop_id === shopId) {
+          const role = ROLE_ORDER.find(r => self.roles.includes(r)) ?? self.roles[0];
+          if (role) {
+            const { data: sess } = await supabase.rpc('operator_remote_session_start', { p_role: role });
+            const r = sess as { ok: boolean; session_id?: string } | null;
+            if (!cancelled && r?.ok && r.session_id) {
+              op.enterRemote({
+                session_id: r.session_id, operator_id: self.operator_id, name: self.name,
+                role, permissions: permsForRole(self.permissions ?? [], self.perm_roles, role),
+              });
+            }
+          }
+        }
+      } catch { /* sem conexão: segue como dono/visitante normal */ }
+      if (!cancelled) setRemoteChecked(true);
+    })();
+    return () => { cancelled = true; };
+  }, [shopId, op.remote]); // eslint-disable-line react-hooks/exhaustive-deps
   const role = op.balcao ? op.session?.role ?? null : null;
   const isMechanicSession = role === 'mecanico';
   // Módulos liberados para a oficina (superadmin) valem para todos, inclusive o gestor
@@ -528,6 +563,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   }, [op.session?.session_id, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   // No modo balcão só o gestor troca de loja (e a outra loja abre travada, na tela de PIN)
   const canSwitchStore = !op.balcao || role === 'gestor';
+  // Acesso equipe (login remoto): sair encerra a conta do colaborador e volta pra tela de equipe
+  const exitRemote = async () => { op.clear(); await signOut(); nav('/equipe'); };
 
   /* Tela fora da função → volta pra tela inicial da função */
   useEffect(() => {
@@ -581,6 +618,14 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
   // Loja acabou de mudar e o modo balcão ainda não carregou a trava dela: não mostra nada
   if (shopId && op.wid !== shopId) return null;
+  // Ainda verificando se é um operador (login remoto): evita o flash do painel do gestor
+  if (shopId && !op.remote && !remoteChecked) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-steel-50">
+        <div className="h-3 w-3 rounded-full bg-brand-500 animate-pulse-soft" />
+      </div>
+    );
+  }
   if (op.balcao && !op.session) return <OperatorLock />;
 
   const bottomTabs = (platformOnly ? PLATFORM_TABS : BOTTOM_TABS[role ?? 'gestor']).map(fix).filter(t => allowed(t.to));
@@ -825,10 +870,17 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 <div className={`text-[13px] font-semibold truncate ${T.strong}`}>{op.session.name}</div>
                 <div className={`text-[11px] truncate ${T.muted}`}>{ROLES[op.session.role].label}</div>
               </div>
-              <button onClick={() => op.switchUser()} title="Trocar operador ou função"
-                className={`h-8 px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold transition ${T.tool}`}>
-                <Icon name="lock" size={14} />Trocar
-              </button>
+              {op.remote ? (
+                <button onClick={exitRemote} title="Sair do acesso equipe"
+                  className={`h-8 px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold transition ${T.tool}`}>
+                  <Icon name="logout" size={14} />Sair
+                </button>
+              ) : (
+                <button onClick={() => op.switchUser()} title="Trocar operador ou função"
+                  className={`h-8 px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold transition ${T.tool}`}>
+                  <Icon name="lock" size={14} />Trocar
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-2.5 px-1">
@@ -860,7 +912,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                   <Icon name="lock" size={14} />Modo balcão
                 </button>
               )
-            ) : rail ? <RailButton T={T} icon="lock" label="Trocar operador" onClick={() => op.switchUser()} /> : <span className="flex-1" />}
+            ) : op.remote ? <span className="flex-1" /> : rail ? <RailButton T={T} icon="lock" label="Trocar operador" onClick={() => op.switchUser()} /> : <span className="flex-1" />}
             {rail ? (
               <>
                 <RailButton T={T} icon={sideTheme === 'dark' ? 'sun' : 'moon'} label={sideTheme === 'dark' ? 'Menu claro' : 'Menu escuro'} onClick={toggleTheme} />
@@ -1014,7 +1066,10 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                   {op.balcao && op.session ? `${ROLES[op.session.role].icon} ${ROLES[op.session.role].label}` : currentWorkshop?.business_name ?? 'Oficina'}
                 </div>
               </div>
-              {op.balcao && op.session ? (
+              {op.remote ? (
+                <button onClick={() => { setOpen(false); exitRemote(); }}
+                  className="h-9 px-3 rounded-lg bg-white ring-1 ring-steel-200 text-xs font-semibold text-steel-700 active:bg-steel-100">Sair</button>
+              ) : op.balcao && op.session ? (
                 <button onClick={() => { op.switchUser(); setOpen(false); }}
                   className="h-9 px-3 rounded-lg bg-white ring-1 ring-steel-200 text-xs font-semibold text-steel-700 active:bg-steel-100">🔒 Trocar</button>
               ) : (
