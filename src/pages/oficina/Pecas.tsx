@@ -7,8 +7,8 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  PART_CATEGORIES, UNITS, fmtPct, fmtQty, loadDefaultMargin, marginOf, partCategory, priceFromMargin,
-  priceModeOf, salePriceOf, type PartCategory, type PriceMode, type WorkshopPart,
+  PART_CATEGORIES, UNITS, categoryMargin, fmtPct, fmtQty, loadMargins, marginOf, partCategory, priceFromMargin,
+  priceModeOf, salePriceOf, type Margins, type PartCategory, type PriceMode, type WorkshopPart,
 } from '@/lib/parts';
 import { fmtDate, type StockMovement, type Supplier } from '@/lib/purchasing';
 import {
@@ -35,7 +35,7 @@ export default function Pecas() {
   const [params, setParams] = useSearchParams();
 
   const [data, setData]         = useState<StockData | null>(null);
-  const [margin, setMargin]     = useState<number | null>(null);
+  const [margin, setMargin]     = useState<Margins | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [q, setQ]               = useState('');
   const [supplierF, setSupplierF] = useState('');
@@ -75,7 +75,7 @@ export default function Pecas() {
     if (!wid) return;
     const [d, m, s, v] = await Promise.all([
       loadStockData(wid),
-      loadDefaultMargin(wid),
+      loadMargins(wid),
       supabase.from('suppliers').select('*').eq('workshop_id', wid).order('name'),
       loadPartVehicles(wid),
     ]);
@@ -387,7 +387,7 @@ export default function Pecas() {
       </div>
 
       {editing && wid && margin != null && (
-        <PartForm wid={wid} part={editing === 'new' ? null : editing} defaultMargin={margin}
+        <PartForm wid={wid} part={editing === 'new' ? null : editing} margins={margin}
           vehicles={editing === 'new' ? [] : vehicles.get(editing.id) ?? []} brandOptions={brandOptions} modelOptionsFor={modelOptionsFor}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}
@@ -400,6 +400,7 @@ export default function Pecas() {
           <div onClick={e => e.stopPropagation()} className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl p-2">
             <div className="flex justify-end"><button onClick={() => setPricing(false)} className="h-8 w-8 rounded-lg grid place-items-center text-steel-500 hover:bg-steel-100">✕</button></div>
             <DefaultMargin wid={wid} value={margin} onSaved={v => setMargin(v)} />
+            <CategoryMargins wid={wid} value={margin} onSaved={v => setMargin(v)} />
           </div>
         </div>
       )}
@@ -587,7 +588,8 @@ function ActionsMenu({ items, buy, onClose }: { items: { label: string; run: () 
   );
 }
 
-function DefaultMargin({ wid, value, onSaved }: { wid: string; value: number; onSaved: (v: number) => void }) {
+function DefaultMargin({ wid, value: margins, onSaved }: { wid: string; value: Margins; onSaved: (v: Margins) => void }) {
+  const value = margins.base;
   const [str, setStr] = useState(String(value));
   const [saving, setSaving] = useState(false);
   useEffect(() => { setStr(String(value)); }, [value]);
@@ -601,7 +603,7 @@ function DefaultMargin({ wid, value, onSaved }: { wid: string; value: number; on
     setSaving(false);
     if (error) return toast.error('Não foi possível salvar a margem: ' + error.message);
     toast.success('Margem padrão salva ✓');
-    onSaved(n);
+    onSaved({ ...margins, base: n });
   }
 
   return (
@@ -609,7 +611,7 @@ function DefaultMargin({ wid, value, onSaved }: { wid: string; value: number; on
       <div>
         <div className="text-sm font-semibold">Margem padrão da oficina</div>
         <div className="text-xs text-steel-500">
-          Usada nas peças sem margem própria. Ex.: custo {fmtBRL(100)} → venda {fmtBRL(priceFromMargin(100, Number.isFinite(n) ? n : value))}.
+          Usada nas peças sem margem própria nem margem da categoria. Ex.: custo {fmtBRL(100)} → venda {fmtBRL(priceFromMargin(100, Number.isFinite(n) ? n : value))}.
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -623,6 +625,58 @@ function DefaultMargin({ wid, value, onSaved }: { wid: string; value: number; on
   );
 }
 
+/** Margem por categoria: em branco = a categoria usa a margem padrão */
+function CategoryMargins({ wid, value, onSaved }: { wid: string; value: Margins; onSaved: (v: Margins) => void }) {
+  const toStrs = (m: Margins) => Object.fromEntries(PART_CATEGORIES.map(c => [c.value, m.byCategory[c.value] != null ? String(m.byCategory[c.value]) : '']));
+  const [strs, setStrs] = useState<Record<string, string>>(() => toStrs(value));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setStrs(toStrs(value)); }, [value]);
+
+  const parsed = PART_CATEGORIES.map(c => ({ c, t: (strs[c.value] ?? '').trim(), n: parseMoney(strs[c.value] ?? '') }));
+  const invalid = parsed.filter(x => x.t && !(Number.isFinite(x.n) && x.n >= 0 && x.n <= 1000));
+  const next = Object.fromEntries(parsed.filter(x => x.t && Number.isFinite(x.n)).map(x => [x.c.value, x.n])) as Margins['byCategory'];
+  const dirty = PART_CATEGORIES.some(c => (next[c.value] ?? null) !== (value.byCategory[c.value] != null ? Number(value.byCategory[c.value]) : null));
+
+  async function save() {
+    if (invalid.length) return toast.error(`Margem inválida em ${invalid.map(x => x.c.label).join(', ')}`);
+    setSaving(true);
+    const { error } = await supabase.from('workshop_pricing').upsert({ workshop_id: wid, part_margin_percent: value.base, category_margins: next });
+    setSaving(false);
+    if (error) return toast.error('Não foi possível salvar as margens: ' + error.message);
+    toast.success('Margens por categoria salvas ✓');
+    onSaved({ ...value, byCategory: next });
+  }
+
+  return (
+    <div className="card mt-2">
+      <div className="text-sm font-semibold">Margem por categoria</div>
+      <div className="text-xs text-steel-500">
+        Vale para as peças da categoria sem margem própria. Em branco = usa a padrão ({value.base}%).
+      </div>
+      <div className="mt-3 max-h-[45vh] overflow-y-auto divide-y divide-steel-100">
+        {parsed.map(({ c, t, n }) => (
+          <div key={c.value} className="flex items-center justify-between gap-3 py-1.5">
+            <div className="text-sm">{c.icon} {c.label}</div>
+            <div className="flex items-center gap-2">
+              {t && Number.isFinite(n) && <span className="hidden sm:inline text-[11px] text-steel-500">{fmtBRL(100)} → {fmtBRL(priceFromMargin(100, n))}</span>}
+              <div className="relative w-24">
+                <input className="input !py-1.5 !pr-7 text-right text-sm" inputMode="decimal" placeholder={String(value.base)}
+                  value={strs[c.value] ?? ''} onChange={e => setStrs(s => ({ ...s, [c.value]: e.target.value }))} />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">%</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {dirty && (
+        <div className="mt-3 flex justify-end">
+          <button className="btn-primary !py-2 text-sm" onClick={save} disabled={saving}>{saving ? 'Salvando…' : 'Salvar margens'}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VehicleLine({ list, universal }: { list: PartVehicle[] | undefined; universal?: boolean }) {
   if (universal) return <div className="text-[11px] text-steel-500">🌐 Universal</div>;
   if (!list?.length) return null;
@@ -630,8 +684,8 @@ function VehicleLine({ list, universal }: { list: PartVehicle[] | undefined; uni
   return <div className="text-[11px] text-steel-500 truncate">🚗 {shown.join(', ')}{list.length > 2 ? ` +${list.length - 2}` : ''}</div>;
 }
 
-function PartForm({ wid, part, defaultMargin, vehicles, brandOptions, modelOptionsFor, onClose, onSaved }: {
-  wid: string; part: WorkshopPart | null; defaultMargin: number; vehicles: PartVehicle[];
+function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor, onClose, onSaved }: {
+  wid: string; part: WorkshopPart | null; margins: Margins; vehicles: PartVehicle[];
   brandOptions: string[]; modelOptionsFor: (brand: string) => string[]; onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName]         = useState(part?.name ?? '');
@@ -652,7 +706,7 @@ function PartForm({ wid, part, defaultMargin, vehicles, brandOptions, modelOptio
   }, [part]);
   const [cost, setCost]         = useState(part ? moneyInput(Number(part.cost)) : '');
   const [mode, setMode]         = useState<PriceMode>(part ? priceModeOf(part) : 'default');
-  const [marginStr, setMarginStr] = useState(part?.margin_percent != null ? String(part.margin_percent) : String(defaultMargin));
+  const [marginStr, setMarginStr] = useState(part?.margin_percent != null ? String(part.margin_percent) : String(categoryMargin(margins, part?.category)));
   const [fixed, setFixed]       = useState(part?.sale_price != null ? moneyInput(Number(part.sale_price)) : '');
   const [active, setActive]     = useState(part?.active ?? true);
   const [saving, setSaving]     = useState(false);
@@ -673,6 +727,9 @@ function PartForm({ wid, part, defaultMargin, vehicles, brandOptions, modelOptio
     setNModel(''); setNFrom(''); setNTo('');
   }
 
+  /** Sem margem própria: vale a margem da categoria escolhida (ou a padrão) */
+  const defaultMargin = categoryMargin(margins, category);
+  const byCat = !!category && margins.byCategory[category] != null;
   const c = Number.isFinite(parseMoney(cost)) ? parseMoney(cost) : 0;
   const m = parseMoney(marginStr);
   const f = parseMoney(fixed);
@@ -815,7 +872,7 @@ function PartForm({ wid, part, defaultMargin, vehicles, brandOptions, modelOptio
             <div>
               <label className="label">Preço de venda</label>
               <div className="grid grid-cols-3 gap-2">
-                {([['default', `Margem padrão (${defaultMargin}%)`], ['margin', 'Margem própria'], ['fixed', 'Preço fixo']] as [PriceMode, string][]).map(([k, l]) => (
+                {([['default', `Margem ${byCat ? 'da categoria' : 'padrão'} (${defaultMargin}%)`], ['margin', 'Margem própria'], ['fixed', 'Preço fixo']] as [PriceMode, string][]).map(([k, l]) => (
                   <button key={k} type="button" onClick={() => setMode(k)}
                     className={`text-xs font-semibold px-2 py-2 rounded-xl border transition ${
                       mode === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>

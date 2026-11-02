@@ -14,7 +14,7 @@ import {
 import WhatsAppButton from '@/components/inbox/WhatsAppButton';
 import { AddItem, ItemRow } from '@/components/checkup/ChecklistItem';
 import QuoteSearch, { type CatalogEntry } from '@/components/checkup/QuoteSearch';
-import { loadAllParts, loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { loadAllParts, loadMargins, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import { useCheckupAccess } from '@/lib/checkupAccess';
 import { OVERALL_META, countsOf, itemsWithoutPrice, nextPendingSystem, overallState, overallText, sendMode, systemsOf } from '@/lib/checkupStatus';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
@@ -718,12 +718,12 @@ function CompletedView({ checkup, items, workshopName, demo, onPatchItem, onSent
     (async () => {
       const [s, p, m] = await Promise.all([
         supabase.from('workshop_services').select('name, price').eq('workshop_id', checkup.workshop_id).eq('active', true).order('name'),
-        loadAllParts(checkup.workshop_id, 'name, cost, margin_percent, sale_price').then(data => ({ data })),
-        loadDefaultMargin(checkup.workshop_id),
+        loadAllParts(checkup.workshop_id, 'name, category, cost, margin_percent, sale_price').then(data => ({ data })),
+        loadMargins(checkup.workshop_id),
       ]);
       setCatalog([
         ...((s.data ?? []) as { name: string; price: number }[]).map(x => ({ kind: 'service' as const, name: x.name, price: Number(x.price) })),
-        ...((p.data ?? []) as (Pick<WorkshopPart, 'cost' | 'margin_percent' | 'sale_price'> & { name: string })[])
+        ...((p.data ?? []) as (Pick<WorkshopPart, 'category' | 'cost' | 'margin_percent' | 'sale_price'> & { name: string })[])
           .map(x => ({ kind: 'part' as const, name: x.name, price: salePriceOf(x, m) })),
       ]);
     })();

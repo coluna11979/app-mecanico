@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  DEFAULT_MARGIN, UNITS, fmtQty, loadAllParts, loadDefaultMargin, partCategory, priceModeOf, salePriceOf, type PartCategory, type WorkshopPart,
+  DEFAULT_MARGIN, UNITS, fmtQty, categoryMargin, loadAllParts, loadMargins, partCategory, priceModeOf, salePriceOf, type Margins, type PartCategory, type WorkshopPart,
 } from '@/lib/parts';
 import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
@@ -40,7 +40,7 @@ export default function CompraNova() {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [parts, setParts]         = useState<WorkshopPart[]>([]);
-  const [margin, setMargin]       = useState(DEFAULT_MARGIN);
+  const [margin, setMargin]       = useState<Margins>({ base: DEFAULT_MARGIN, byCategory: {} });
   const [supplierId, setSupplierId] = useState(params.get('fornecedor') ?? '');
   const [number, setNumber]       = useState('');
   const [date, setDate]           = useState(todayISO());
@@ -77,7 +77,7 @@ export default function CompraNova() {
       const [s, p, m] = await Promise.all([
         supabase.from('suppliers').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
         loadAllParts(wid).then(data => ({ data })),
-        loadDefaultMargin(wid),
+        loadMargins(wid),
       ]);
       setSuppliers((s.data as Supplier[]) ?? []);
       setParts((p.data as WorkshopPart[]) ?? []);
@@ -502,7 +502,7 @@ export default function CompraNova() {
                         <span className="text-brand-700">
                           ✨ <strong>Peça nova</strong> — será cadastrada
                           {guess[r.name.trim()] && <> em <strong>{partCategory(guess[r.name.trim()]).icon} {partCategory(guess[r.name.trim()]).label}</strong></>}
-                          {' '}com a margem padrão ({margin}%) → venda {fmtBRL(salePriceOf({ cost: newCost, margin_percent: null, sale_price: null }, margin))}
+                          {' '}com a margem {margin.byCategory[guess[r.name.trim()]] != null ? 'da categoria' : 'padrão'} ({categoryMargin(margin, guess[r.name.trim()])}%) → venda {fmtBRL(salePriceOf({ cost: newCost, margin_percent: null, sale_price: null, category: guess[r.name.trim()] }, margin))}
                         </span>
                       )}
                     </div>

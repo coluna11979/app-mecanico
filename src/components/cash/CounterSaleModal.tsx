@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { METHODS, RECEIVE_METHODS, brl, moneyStr, parseMoney, type PayMethod } from '@/lib/cash';
-import { fmtQty, loadAllParts, loadDefaultMargin, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { fmtQty, DEFAULT_MARGIN, loadAllParts, loadMargins, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
@@ -13,7 +13,7 @@ import SendWhatsAppModal from '@/components/os/SendWhatsAppModal';
  * (base da % do gerente), baixa o estoque e não gera comissão de mecânico.
  */
 
-type CatPart = Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>;
+type CatPart = Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>;
 type Line = { key: number; part_id: string | null; description: string; quantity: string; price: string; stock: number | null };
 type Pay = { method: PayMethod; amount: string; installments: number };
 type NewPart = { name: string; code: string; cost: string; price: string; stock: string };
@@ -36,7 +36,7 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
   const [done, setDone] = useState<Done | null>(null);
   const [sending, setSending] = useState(false);
   const [catalog, setCatalog] = useState<CatPart[] | null>(null);
-  const [margin, setMargin]   = useState(100);
+  const [margin, setMargin]   = useState<Margins>({ base: DEFAULT_MARGIN, byCategory: {} });
   const [q, setQ]             = useState('');
   const [lines, setLines]     = useState<Line[]>([]);
   const [discount, setDiscount] = useState('');
@@ -50,8 +50,8 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
   useEffect(() => {
     (async () => {
       const [c, m] = await Promise.all([
-        loadAllParts<CatPart>(wid, 'id, name, code, brand, cost, margin_percent, sale_price, stock_qty, unit'),
-        loadDefaultMargin(wid),
+        loadAllParts<CatPart>(wid, 'id, name, code, brand, category, cost, margin_percent, sale_price, stock_qty, unit'),
+        loadMargins(wid),
       ]);
       setCatalog(c);
       setMargin(m);

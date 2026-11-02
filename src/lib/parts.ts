@@ -2,7 +2,7 @@
  * Cadastro de peças — preço de venda a partir do custo.
  *
  * Margem aqui é sobre o custo (markup): custo R$ 100 com 100% → venda R$ 200.
- * Preço da peça: preço fixo, se tiver; senão custo + margem da peça; senão custo + margem padrão.
+ * Preço da peça: preço fixo, se tiver; senão custo + margem da peça; senão margem da categoria; senão margem padrão.
  */
 import { supabase } from '@/lib/supabase';
 import { fetchAll } from '@/lib/fetchAll';
@@ -55,10 +55,23 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export const priceFromMargin = (cost: number, margin: number) => round2(cost * (1 + margin / 100));
 
+/** Margens da oficina: a padrão e, por cima dela, a de cada categoria (vazio = usa a padrão) */
+export type Margins = { base: number; byCategory: Partial<Record<PartCategory, number>> };
+
+/** Margem que vale para uma peça sem margem própria */
+export function categoryMargin(m: number | Margins, category?: string | null) {
+  if (typeof m === 'number') return m;
+  const c = category ? m.byCategory[category as PartCategory] : undefined;
+  return c != null ? Number(c) : m.base;
+}
+
 /** Preço de venda da peça */
-export function salePriceOf(p: Pick<WorkshopPart, 'cost' | 'margin_percent' | 'sale_price'>, defaultMargin: number) {
+export function salePriceOf(
+  p: Pick<WorkshopPart, 'cost' | 'margin_percent' | 'sale_price'> & { category?: string | null },
+  margins: number | Margins,
+) {
   if (p.sale_price != null) return Number(p.sale_price);
-  return priceFromMargin(Number(p.cost), p.margin_percent != null ? Number(p.margin_percent) : defaultMargin);
+  return priceFromMargin(Number(p.cost), p.margin_percent != null ? Number(p.margin_percent) : categoryMargin(margins, p.category));
 }
 
 /** Margem sobre o custo (%) — null quando não há custo para comparar */
@@ -82,10 +95,13 @@ export async function loadAllParts<T = WorkshopPart>(wid: string, cols = '*', ac
   return data.sort((x, y) => String((x as { name?: string }).name ?? '').localeCompare(String((y as { name?: string }).name ?? ''), 'pt-BR'));
 }
 
-/** Margem padrão da oficina (100% se nunca foi definida) */
-export async function loadDefaultMargin(workshopId: string) {
-  const { data } = await supabase.from('workshop_pricing').select('part_margin_percent').eq('workshop_id', workshopId).maybeSingle();
-  return data ? Number((data as { part_margin_percent: number }).part_margin_percent) : DEFAULT_MARGIN;
+/** Margem padrão da oficina (100% se nunca foi definida) e as margens por categoria */
+export async function loadMargins(workshopId: string): Promise<Margins> {
+  let { data, error } = await supabase.from('workshop_pricing').select('part_margin_percent, category_margins').eq('workshop_id', workshopId).maybeSingle();
+  // Banco ainda sem a coluna (migration 0151): segue só com a margem padrão
+  if (error) ({ data } = await supabase.from('workshop_pricing').select('part_margin_percent').eq('workshop_id', workshopId).maybeSingle());
+  const row = data as { part_margin_percent: number; category_margins: Record<string, number> | null } | null;
+  return { base: row ? Number(row.part_margin_percent) : DEFAULT_MARGIN, byCategory: row?.category_margins ?? {} };
 }
 
 /** "2.000" → "2"; "1.5" → "1,5" */
@@ -103,7 +119,7 @@ export const partKey = (name: string) =>
 /**
  * Garante as peças no cadastro a partir de notas/orçamentos: o que já existe (mesmo nome) é reaproveitado;
  * o que falta entra com o preço de venda da nota e o custo pela margem da loja (100% → metade do preço).
- * A peça nova fica sem preço fixo: a venda sai do custo + margem padrão (= o preço da nota). Dá para mudar depois.
+ * A peça nova fica sem preço fixo: a venda sai do custo + margem (da categoria, se tiver; = o preço da nota). Dá para mudar depois.
  */
 export async function ensureCatalogParts(wid: string, list: { name: string; price: number }[]) {
   const out = new Map<string, { id: string; cost: number }>();
@@ -115,7 +131,7 @@ export async function ensureCatalogParts(wid: string, list: { name: string; pric
   if (!wanted.size) return { map: out, created: 0 };
   const [existing, margin] = await Promise.all([
     loadAllParts<{ id: string; name: string; cost: number }>(wid, 'id, name, cost', false),
-    loadDefaultMargin(wid),
+    loadMargins(wid),
   ]);
   for (const p of existing as { id: string; name: string; cost: number }[]) {
     const k = partKey(p.name);
@@ -124,11 +140,20 @@ export async function ensureCatalogParts(wid: string, list: { name: string; pric
   const toCreate = [...wanted.entries()].filter(([k, p]) => !out.has(k) && p.price > 0);
   if (toCreate.length) {
     const rows = toCreate.map(([, p]) => ({
-      workshop_id: wid, name: p.name, cost: round2(p.price / (1 + margin / 100)), margin_percent: null, sale_price: null,
+      workshop_id: wid, name: p.name, cost: round2(p.price / (1 + margin.base / 100)), margin_percent: null, sale_price: null,
     }));
-    const { data, error } = await supabase.from('workshop_parts').insert(rows).select('id, name, cost');
+    const { data, error } = await supabase.from('workshop_parts').insert(rows).select('id, name, cost, category');
     if (error) throw error;
-    for (const p of (data ?? []) as { id: string; name: string; cost: number }[]) out.set(partKey(p.name), { id: p.id, cost: Number(p.cost) });
+    for (const p of (data ?? []) as { id: string; name: string; cost: number; category: string | null }[]) {
+      // A categoria sai do nome, no banco: se ela tem margem própria, refaz o custo para a venda continuar = preço da nota
+      const m = categoryMargin(margin, p.category);
+      let cost = Number(p.cost);
+      if (m !== margin.base) {
+        cost = round2(wanted.get(partKey(p.name))!.price / (1 + m / 100));
+        await supabase.from('workshop_parts').update({ cost }).eq('id', p.id);
+      }
+      out.set(partKey(p.name), { id: p.id, cost });
+    }
   }
   return { map: out, created: toCreate.length };
 }
