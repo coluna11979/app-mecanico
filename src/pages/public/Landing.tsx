@@ -132,6 +132,9 @@ export default function Landing() {
                 <Link to="/login" state={{ fresh: true }} className="flex min-h-[48px] items-center justify-center text-base font-semibold text-steel-700">
                   Já tenho conta · Entrar
                 </Link>
+                <Link to="/equipe" className="flex min-h-[48px] items-center justify-center text-base font-semibold text-brand-600">
+                  👥 Acesso equipe
+                </Link>
               </div>
             </Container>
           </nav>
@@ -504,6 +507,7 @@ export default function Landing() {
               <li><a href={`mailto:${PLATFORM_CONTACT_EMAIL}`} className="hover:text-white">Contato</a></li>
               <li><a href={`mailto:${PLATFORM_CONTACT_EMAIL}?subject=Suporte`} className="hover:text-white">Suporte</a></li>
               <li><Link to="/login" state={{ fresh: true }} className="hover:text-white">Entrar</Link></li>
+              <li><Link to="/equipe" className="hover:text-white">Acesso equipe</Link></li>
             </FooterCol>
             <FooterCol title="Legal">
               <li><Link to="/termos" className="hover:text-white">Termos de uso</Link></li>
