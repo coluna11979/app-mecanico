@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
-import { DEFAULT_MARGIN, fmtPct, fmtQty, loadAllParts, loadDefaultMargin, marginOf, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { DEFAULT_MARGIN, fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
 import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
@@ -156,7 +156,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
   const [suggestions, setSugg]  = useState<Suggestion[]>([]);
-  const [margin, setMargin]     = useState(DEFAULT_MARGIN);
+  const [margin, setMargin]     = useState<Margins>({ base: DEFAULT_MARGIN, byCategory: {} });
   /** Cadastro rápido de peça: key = linha que vai receber a peça (null = cria linha nova) */
   const [quick, setQuick]       = useState<{ key: string | null; name: string; qty: number } | null>(null);
   const [team, setTeam]         = useState<TeamMember[]>([]);
@@ -252,7 +252,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     let alive = true;
     (async () => {
       const [cat, svc, hist, margin] = await Promise.all([
-        loadAllParts(workshopId, 'id, name, code, cost, margin_percent, sale_price, stock_qty, unit').then(data => ({ data })),
+        loadAllParts(workshopId, 'id, name, code, category, cost, margin_percent, sale_price, stock_qty, unit').then(data => ({ data })),
         supabase.from('workshop_services').select('name, price, category')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
@@ -260,11 +260,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           .eq('workshop_id', workshopId)
           .order('created_at', { ascending: false })
           .limit(300),
-        loadDefaultMargin(workshopId),
+        loadMargins(workshopId),
       ]);
       if (!alive) return;
       const seen = new Map<string, Suggestion>();
-      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>[]) {
+      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>[]) {
         // Mesmo nome com código diferente é outra peça (ex.: marcas diferentes)
         const k = `${p.name.trim().toLowerCase()}|${(p.code ?? '').trim()}`;
         if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit });
@@ -759,7 +759,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       )}
 
       {quick && (
-        <QuickPartModal wid={workshopId} osLabel={osLabel} initialName={quick.name} quantity={quick.qty} defaultMargin={margin}
+        <QuickPartModal wid={workshopId} osLabel={osLabel} initialName={quick.name} quantity={quick.qty} defaultMargin={margin.base}
           onClose={() => setQuick(null)}
           onSaved={res => {
             setSugg(xs => [{ description: res.name, kind: 'part', unit_price: res.price, part_id: res.part_id, cost: res.cost, stock: 0, unit: res.unit },

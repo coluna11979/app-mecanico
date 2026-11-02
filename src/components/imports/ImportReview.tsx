@@ -5,7 +5,7 @@ import { fmtBRL, fmtPhone, moneyInput, parseMoney } from '@/components/os/osHelp
 import { PLATFORM } from '@/components/cash/ResponsiblePicker';
 import { METHODS, RECEIVE_METHODS, type PayMethod } from '@/lib/cash';
 import { useOperator } from '@/lib/operators';
-import { ensureCatalogParts, loadAllParts, loadDefaultMargin, partKey, partNameForVehicle, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { ensureCatalogParts, loadAllParts, loadMargins, partKey, partNameForVehicle, salePriceOf, type WorkshopPart } from '@/lib/parts';
 import PartSearchInput, { type CatalogPart } from './PartSearchInput';
 import { COMMISSION_COLS, RULE, commissionFor, pcts, type CommissionMech } from '@/lib/commission';
 import { OsCommission, useDraftCommission, type AutoCommission } from '@/components/cash/OsCommission';
@@ -98,9 +98,9 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
   useEffect(() => {
     let alive = true;
     Promise.all([
-      loadAllParts<Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>>(
-        imp.workshop_id, 'id, name, code, brand, cost, margin_percent, sale_price, stock_qty, unit'),
-      loadDefaultMargin(imp.workshop_id),
+      loadAllParts<Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>>(
+        imp.workshop_id, 'id, name, code, brand, category, cost, margin_percent, sale_price, stock_qty, unit'),
+      loadMargins(imp.workshop_id),
     ]).then(([ps, m]) => {
       if (!alive) return;
       setCatalogParts(ps.map(p => ({ id: p.id, name: p.name, code: p.code, brand: p.brand, price: salePriceOf(p, m), cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit })));
