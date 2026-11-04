@@ -17,7 +17,7 @@ import WalletChip from '@/components/wallet/WalletChip';
 import { Icon, type IconName } from '@/components/home/ui';
 
 type ArrivalAlert = { jobId: string; title: string };
-type FinishedAlert = { jobId: string; title: string; price: number };
+type FinishedAlert = { jobId: string; title: string; price: number; completedAt: string | null };
 type EnRouteAlert = { jobId: string; title: string };
 
 interface NavItem  { to: string; icon: string; label: string }
@@ -424,9 +424,25 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           jobId: newRow.id,
           title: newRow.title,
           price: (newRow.price_per_hour ?? 0) * (newRow.max_hours ?? 1),
+          completedAt: newRow.completed_at ?? new Date().toISOString(),
         });
       })
       .subscribe();
+
+    // Serviço finalizado antes de a oficina abrir a tela: o mecânico continua esperando, o aviso volta
+    supabase.from('jobs').select('id, title, price_per_hour, max_hours, completed_at')
+      .eq('workshop_id', shopId).eq('status', 'completed').is('workshop_confirmed_at', null)
+      .order('completed_at', { ascending: false }).limit(1)
+      .then(({ data }) => {
+        const j = data?.[0];
+        if (!j || finishedRef.current.has(j.id)) return;
+        finishedRef.current.add(j.id);
+        setFinishedAlert({
+          jobId: j.id, title: j.title,
+          price: (j.price_per_hour ?? 0) * (j.max_hours ?? 1),
+          completedAt: j.completed_at,
+        });
+      });
     return () => { supabase.removeChannel(ch); };
   }, [shopId]);
 
@@ -710,28 +726,21 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             <div className="text-6xl animate-bounce">✅</div>
             <h2 className="text-2xl font-bold text-steel-900">Mecânico finalizou o serviço!</h2>
             <p className="text-steel-600">
-              Confirme para liberar o pagamento ao mecânico — ele está esperando pra ir embora.
+              Faça a vistoria do serviço e confirme para liberar o mecânico. Ele está esperando para ir embora.
             </p>
+            <WaitTimer since={finishedAlert.completedAt} />
             <div className="bg-steel-50 rounded-xl px-4 py-3 text-sm space-y-1">
               <div className="font-semibold text-steel-700 truncate">📋 {finishedAlert.title}</div>
               <div className="text-xl font-bold text-signal-600 font-display">R$ {formatBRL(finishedAlert.price)}</div>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setFinishedAlert(null)}
-                disabled={confirming}
-                className="btn-ghost flex-1 text-sm disabled:opacity-50"
-              >
-                Depois
-              </button>
-              <button
-                onClick={confirmFinished}
-                disabled={confirming}
-                className="btn-primary flex-[2] btn-lg !bg-signal-500 disabled:opacity-50"
-              >
-                {confirming ? 'Liberando…' : '✅ Confirmar e liberar'}
-              </button>
-            </div>
+            {/* Sem "depois": o mecânico só vai embora com a confirmação */}
+            <button
+              onClick={confirmFinished}
+              disabled={confirming}
+              className="btn-primary w-full btn-lg !bg-signal-500 disabled:opacity-50"
+            >
+              {confirming ? 'Liberando…' : '✅ Vistoriei, confirmar e liberar'}
+            </button>
           </div>
         </div>
       )}
@@ -1394,5 +1403,20 @@ function Chev({ className = '' }: { className?: string }) {
     <svg viewBox="0 0 24 24" className={`h-4 w-4 shrink-0 ${className}`} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M6 9l6 6 6-6" />
     </svg>
+  );
+}
+
+/** "Aguardando há 3:12" — o mesmo cronômetro que o mecânico vê enquanto espera a confirmação */
+function WaitTimer({ since }: { since: string | null }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const secs = Math.max(0, Math.floor((now - (since ? new Date(since).getTime() : now)) / 1000));
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), sec = secs % 60;
+  const label = h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+  return (
+    <div className="rounded-xl bg-pending-50 border border-pending-200 px-4 py-2.5">
+      <div className="text-xs font-semibold text-pending-700">Mecânico aguardando sua confirmação há</div>
+      <div className="font-display text-3xl font-bold tabular-nums text-pending-800">{label}</div>
+    </div>
   );
 }
