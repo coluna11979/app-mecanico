@@ -830,7 +830,7 @@ export default function WorkshopDashboard() {
         const buckets = groupActive(active);
 
         const renderCard = (j: Job) => (
-          <div key={j.id} className="rounded-xl bg-white border border-steel-200 p-4 min-w-0">
+          <div key={j.id} className={`rounded-xl bg-white border p-4 min-w-0 ${awaitingPayment(j) ? 'border-brand-500 ring-1 ring-brand-500' : 'border-steel-200'}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-steel-900 leading-snug line-clamp-2 break-words">{j.title}</div>
@@ -868,7 +868,12 @@ export default function WorkshopDashboard() {
             {/* Ações: a principal ocupa o espaço; editar só enquanto ninguém aceitou; cancelar sempre */}
             <div className="mt-3 pt-3 border-t border-steel-100 flex items-center gap-3">
               <div className="flex-1 min-w-0">
-                {j.mechanic_id && j.en_route_at ? (
+                {awaitingPayment(j) ? (
+                  <Link to={`/oficina/job/${j.id}/tracking`}
+                    className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto h-11 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">
+                    💳 Pagar agora · R$ {formatBRL(j.price, { decimals: 0 })}
+                  </Link>
+                ) : j.mechanic_id && j.en_route_at ? (
                   <Link to={`/oficina/job/${j.id}/tracking`}
                     className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto h-10 px-4 rounded-xl bg-brand-500 text-white text-sm font-bold active:scale-[0.99]">
                     <IconMap className="w-4 h-4" />Ver no mapa
@@ -1452,16 +1457,21 @@ const FORM_STEPS = [
 const initialsOf = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('');
 
 /* ── Demandas ativas: em que etapa cada uma está ── */
-type ActiveGroup = 'service' | 'enroute' | 'scheduled' | 'waiting';
+type ActiveGroup = 'payment' | 'service' | 'enroute' | 'scheduled' | 'waiting';
 
 const ACTIVE_GROUPS: { key: ActiveGroup; title: string; icon: typeof IconWrench; badge: string }[] = [
+  { key: 'payment',   title: 'Aguardando pagamento', icon: IconClock,   badge: 'bg-alert-500/15 text-alert-700'     },
   { key: 'service',   title: 'Em serviço',         icon: IconWrench,    badge: 'bg-signal-500/15 text-signal-700'   },
   { key: 'enroute',   title: 'Mecânico a caminho', icon: IconCar,       badge: 'bg-brand-500/15 text-brand-700'     },
   { key: 'scheduled', title: 'Agendados',          icon: IconCalendar,  badge: 'bg-pending-500/15 text-pending-700' },
   { key: 'waiting',   title: 'Aguardando aceite',  icon: IconMegaphone, badge: 'bg-steel-200 text-steel-700'        },
 ];
 
+/** Mecânico na oficina esperando o pagamento para começar */
+const awaitingPayment = (j: Job) => j.status === 'assigned' && !!j.arrived_at && !j.pix_paid_at;
+
 function groupOf(j: Job): ActiveGroup {
+  if (awaitingPayment(j)) return 'payment';                           // chegou e espera o pagamento
   if (j.status === 'in_progress' || j.arrived_at) return 'service';  // mecânico já está na oficina
   if (!j.mechanic_id) return 'waiting';                              // ninguém aceitou ainda
   if (j.en_route_at) return 'enroute';                               // aceitou e saiu
@@ -1470,7 +1480,7 @@ function groupOf(j: Job): ActiveGroup {
 }
 
 function groupActive(jobs: Job[]): Record<ActiveGroup, Job[]> {
-  const out: Record<ActiveGroup, Job[]> = { service: [], enroute: [], scheduled: [], waiting: [] };
+  const out: Record<ActiveGroup, Job[]> = { payment: [], service: [], enroute: [], scheduled: [], waiting: [] };
   jobs.forEach(j => out[groupOf(j)].push(j));
   // Agendados em ordem de data (o mais próximo primeiro)
   out.scheduled.sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());

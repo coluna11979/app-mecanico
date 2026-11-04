@@ -384,6 +384,20 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
         setArrivalAlert({ jobId: newRow.id, title: newRow.title });
       })
       .subscribe();
+
+    // Mecânico que já chegou antes de a oficina abrir a tela continua esperando: o aviso volta
+    // (sem som) até pagar. Não aparece na própria tela de pagamento daquela demanda.
+    supabase.from('jobs').select('id, title')
+      .eq('workshop_id', shopId).eq('status', 'assigned')
+      .not('arrived_at', 'is', null).is('pix_paid_at', null)
+      .order('arrived_at', { ascending: false }).limit(1)
+      .then(({ data }) => {
+        const j = data?.[0];
+        if (!j || arrivedRef.current.has(j.id)) return;
+        arrivedRef.current.add(j.id);
+        if (window.location.pathname === `/oficina/job/${j.id}/tracking`) return;
+        setArrivalAlert({ jobId: j.id, title: j.title });
+      });
     return () => { supabase.removeChannel(ch); };
   }, [shopId]);
 
