@@ -7,7 +7,7 @@ import { getSetting } from '@/lib/settings';
 import { useNewJobAlert } from '@/hooks/useNewJobAlert';
 import { attachAutoUnlock } from '@/lib/alertSound';
 import { distKm, formatDistance } from '@/lib/geo';
-import { mechanicNet, formatMoney } from '@/lib/payment';
+import { mechanicNet, formatMoney, hoursLabel } from '@/lib/payment';
 import { isScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint } from '@/components/ArrivalDeadline';
 import { IconMapPin } from '@/components/mecanico/icons';
@@ -179,9 +179,39 @@ export default function MechanicMapa() {
     markers.current.forEach(mk => mk.remove());
     markers.current = [];
 
+    // Agrupa jobs por localização (arredondada a ~11m de precisão).
+    // Fan-out: várias demandas da mesma oficina ficariam uma em cima da outra —
+    // distribuímos em círculo pra todas ficarem visíveis.
+    const groups = new Map<string, JobWithShop[]>();
     jobs.forEach(job => {
       const ws = job.workshop;
       if (!ws?.lat || !ws?.lng) return;
+      const key = `${ws.lat.toFixed(4)},${ws.lng.toFixed(4)}`;
+      const arr = groups.get(key) ?? [];
+      arr.push(job);
+      groups.set(key, arr);
+    });
+
+    const FAN_RADIUS = 0.00035; // ~35m
+
+    const flatJobs: Array<{ job: JobWithShop; lat: number; lng: number }> = [];
+    groups.forEach(groupJobs => {
+      const n = groupJobs.length;
+      groupJobs.forEach((job, i) => {
+        const ws = job.workshop!;
+        let lat = ws.lat!;
+        let lng = ws.lng!;
+        if (n > 1) {
+          const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+          const lngScale = 1 / Math.cos((lat * Math.PI) / 180);
+          lat += FAN_RADIUS * Math.sin(angle);
+          lng += FAN_RADIUS * Math.cos(angle) * lngScale;
+        }
+        flatJobs.push({ job, lat, lng });
+      });
+    });
+
+    flatJobs.forEach(({ job, lat, lng }) => {
       const gross = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
       const net = formatMoney(mechanicNet(gross));
 
@@ -201,11 +231,11 @@ export default function MechanicMapa() {
       });
       el.addEventListener('click', () => {
         setSelected(job);
-        m.flyTo({ center: [ws.lng!, ws.lat!], zoom: 14, duration: 600 });
+        m.flyTo({ center: [lng, lat], zoom: 15, duration: 600 });
       });
 
       const mk = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
-        .setLngLat([ws.lng, ws.lat])
+        .setLngLat([lng, lat])
         .addTo(m);
       markers.current.push(mk);
     });
@@ -237,8 +267,7 @@ export default function MechanicMapa() {
   return (
     <MechanicLayout>
       {/* The map fills remaining viewport — overflow-hidden prevents scroll from pb-24 on main */}
-      <div className="mech-keep-dark relative overflow-hidden"
-        style={{ height: 'calc(100dvh - 56px - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }}>
+      <div className="relative overflow-hidden" style={{ height: 'calc(100dvh - 56px - 64px)' }}>
 
         {/* Mapbox canvas */}
         {/* Posição inline: o mapbox-gl.css põe `position: relative` em .mapboxgl-map
@@ -247,7 +276,7 @@ export default function MechanicMapa() {
 
         {/* Top badge */}
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-          <div className="bg-steel-900/90 backdrop-blur text-white text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-steel-700/50">
+          <div className="bg-steel-950/90 backdrop-blur text-white text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-steel-700/50">
             <span className="h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
             {jobsWithLocation.length} job{jobsWithLocation.length !== 1 ? 's' : ''} no mapa
           </div>
@@ -300,7 +329,7 @@ export default function MechanicMapa() {
               <div>
                 <div className="text-[10px] text-steel-500 uppercase tracking-wider font-bold">Pacote fechado</div>
                 <div className="text-sm text-steel-300 font-semibold mt-0.5">
-                  Valor fechado
+                  {hoursLabel(selected) ?? 'Preço fechado'}
                 </div>
               </div>
               <div className="w-px h-10 bg-steel-700" />
