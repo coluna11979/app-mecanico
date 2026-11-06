@@ -62,6 +62,7 @@ export default function AdminTreinamentos() {
   const [openRec, setOpenRec] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [openWeb, setOpenWeb] = useState<string | null>(null);
+  const [pending, setPending] = useState<Record<string, number>>({});
 
   useEffect(() => { load(); }, []);
 
@@ -73,6 +74,11 @@ export default function AdminTreinamentos() {
       .limit(50);
     setSessions((data ?? []) as Session[]);
     setLoading(false);
+    // Comentários do webinar esperando aprovação, por treinamento
+    const { data: wc } = await supabase.from('webinar_comments').select('session_id').eq('status', 'pending');
+    const counts: Record<string, number> = {};
+    for (const c of wc ?? []) counts[c.session_id] = (counts[c.session_id] ?? 0) + 1;
+    setPending(counts);
   }
 
   async function create(e: React.FormEvent) {
@@ -222,6 +228,9 @@ export default function AdminTreinamentos() {
                         s.webinar_published ? 'bg-signal-500/10 text-signal-700 border border-signal-300' : 'border border-steel-300 text-steel-700'
                       }`}>
                       {s.webinar_published ? '📢 Webinar no ar' : '📢 Publicar como webinar'}
+                      {pending[s.id] > 0 && (
+                        <span className="ml-1.5 rounded-full bg-alert-600 text-white text-[11px] px-1.5 py-0.5">💬 {pending[s.id]}</span>
+                      )}
                     </button>
                   )}
                   {s.status === 'scheduled' && (
@@ -355,12 +364,90 @@ function WebinarPanel({ s, onSaved }: { s: Session; onSaved: () => void }) {
           </>
         )}
       </div>
+      {s.webinar_slug && <CommentsAdmin sessionId={s.id} onChange={onSaved} />}
       {s.webinar_published && (
         <p className="text-xs text-steel-500 break-all">
           {webinarUrl(s.webinar_slug ?? slug)}
           {leads !== null && <> · <b>{leads}</b> {leads === 1 ? 'pessoa deixou' : 'pessoas deixaram'} o WhatsApp</>}
         </p>
       )}
+    </div>
+  );
+}
+
+interface WebComment {
+  id: string; name: string; phone: string; body: string;
+  status: 'pending' | 'approved' | 'hidden'; reply: string | null; created_at: string;
+}
+
+// Moderação: comentário só aparece na página depois de aprovado; a resposta aparece embaixo dele
+function CommentsAdmin({ sessionId, onChange }: { sessionId: string; onChange: () => void }) {
+  const [list, setList] = useState<WebComment[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => { load(); }, [sessionId]);
+
+  async function load() {
+    const { data } = await supabase.from('webinar_comments')
+      .select('id, name, phone, body, status, reply, created_at')
+      .eq('session_id', sessionId).neq('status', 'hidden')
+      .order('created_at', { ascending: false });
+    setList((data ?? []) as WebComment[]);
+  }
+
+  async function update(id: string, patch: Partial<WebComment> & { replied_at?: string }) {
+    setBusy(id);
+    await supabase.from('webinar_comments').update(patch).eq('id', id);
+    setBusy(null);
+    await load();
+    onChange();
+  }
+
+  function saveReply(c: WebComment) {
+    const reply = (drafts[c.id] ?? c.reply ?? '').trim();
+    // Responder já aprova: a resposta não faz sentido escondida
+    update(c.id, { reply: reply || null, replied_at: reply ? new Date().toISOString() : undefined, status: 'approved' });
+  }
+
+  if (list.length === 0) return <p className="text-xs text-steel-500">💬 Nenhum comentário ainda.</p>;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-bold text-steel-700">💬 Comentários</p>
+      {list.map(c => (
+        <div key={c.id} className={`rounded-xl border p-3 bg-white ${c.status === 'pending' ? 'border-alert-300' : 'border-steel-200'}`}>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-bold text-steel-900">{c.name}</p>
+            <a href={`https://wa.me/55${c.phone}`} target="_blank" rel="noreferrer" className="text-xs text-brand-600 font-bold">WhatsApp</a>
+            <span className={`text-[11px] font-bold rounded-full px-2 py-0.5 ${
+              c.status === 'pending' ? 'bg-alert-50 text-alert-700' : 'bg-signal-500/10 text-signal-700'
+            }`}>
+              {c.status === 'pending' ? 'Aguardando aprovação' : 'Aparecendo na página'}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-steel-700 whitespace-pre-line">{c.body}</p>
+          <textarea
+            value={drafts[c.id] ?? c.reply ?? ''} onChange={e => setDrafts(d => ({ ...d, [c.id]: e.target.value }))}
+            rows={2} placeholder="Sua resposta (aparece embaixo do comentário)"
+            className="mt-2 w-full rounded-lg border border-steel-300 px-3 py-2 text-sm"
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            {c.status === 'pending' && (
+              <button onClick={() => update(c.id, { status: 'approved' })} disabled={busy === c.id}
+                className="rounded-lg bg-signal-600 text-white text-xs font-bold px-3 py-2 disabled:opacity-60">Aprovar</button>
+            )}
+            <button onClick={() => saveReply(c)} disabled={busy === c.id}
+              className="rounded-lg bg-brand-600 text-white text-xs font-bold px-3 py-2 disabled:opacity-60">
+              {c.reply ? 'Salvar resposta' : 'Responder e aprovar'}
+            </button>
+            <button onClick={() => update(c.id, { status: 'hidden' })} disabled={busy === c.id}
+              className="text-xs text-steel-500 hover:text-alert-600 px-2">
+              {c.status === 'pending' ? 'Recusar' : 'Esconder'}
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -141,9 +141,82 @@ export default function WebinarPage() {
                 {cta.label} →
               </Link>
             </div>
+            <Comments slug={slug} lead={lead} />
           </>
         )}
       </main>
     </div>
+  );
+}
+
+interface Comment { id: string; name: string; body: string; reply: string | null; created_at: string }
+
+// Comentários estilo YouTube: ficam salvos embaixo do vídeo; só aparecem pra todos
+// depois que o admin aprova (o próprio autor vê o dele como "aguardando").
+function Comments({ slug, lead }: { slug: string; lead: { name: string; phone: string } }) {
+  const [list, setList] = useState<Comment[]>([]);
+  const [body, setBody] = useState('');
+  const [mine, setMine] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.rpc('get_webinar_comments', { p_slug: slug }).then(({ data }) => setList((data ?? []) as Comment[]));
+  }, [slug]);
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
+    const text = body.trim();
+    if (text.length < 2) return;
+    setBusy(true); setError(null);
+    const { data, error: err } = await supabase.rpc('webinar_comment', {
+      p_slug: slug, p_name: lead.name, p_phone: lead.phone, p_body: text,
+    });
+    setBusy(false);
+    if (err || !data) return setError('Não foi possível enviar agora. Tente de novo mais tarde.');
+    setMine(m => [text, ...m]);
+    setBody('');
+  }
+
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-bold text-lg">💬 Comentários {list.length > 0 && <span className="text-white/50">({list.length})</span>}</h2>
+      <form onSubmit={send} className="space-y-2">
+        <textarea
+          value={body} onChange={e => setBody(e.target.value)} rows={3} maxLength={1000}
+          placeholder="Deixe sua dúvida ou comentário…"
+          className="w-full rounded-xl bg-white/5 border border-white/15 px-4 py-3 text-base text-white placeholder:text-white/40"
+        />
+        {error && <p className="text-sm text-red-300">{error}</p>}
+        <button type="submit" disabled={busy || body.trim().length < 2}
+          className="min-h-[44px] rounded-xl bg-white text-steel-900 font-bold px-5 disabled:opacity-50">
+          {busy ? 'Enviando…' : 'Comentar'}
+        </button>
+      </form>
+
+      {mine.map((text, i) => (
+        <div key={i} className="rounded-xl bg-white/5 border border-white/10 p-4">
+          <p className="text-sm font-bold">{lead.name} <span className="font-normal text-white/50">· aguardando aprovação</span></p>
+          <p className="mt-1 text-white/80 whitespace-pre-line">{text}</p>
+        </div>
+      ))}
+      {list.map(c => (
+        <div key={c.id} className="rounded-xl bg-white/5 border border-white/10 p-4">
+          <p className="text-sm font-bold">{c.name} <span className="font-normal text-white/50">· {fmt(c.created_at)}</span></p>
+          <p className="mt-1 text-white/80 whitespace-pre-line">{c.body}</p>
+          {c.reply && (
+            <div className="mt-3 ml-3 pl-3 border-l-2 border-brand-500">
+              <p className="text-xs font-bold text-brand-400">MecânicoApp respondeu</p>
+              <p className="mt-0.5 text-white/80 whitespace-pre-line">{c.reply}</p>
+            </div>
+          )}
+        </div>
+      ))}
+      {list.length === 0 && mine.length === 0 && (
+        <p className="text-sm text-white/50">Seja o primeiro a comentar.</p>
+      )}
+    </section>
   );
 }
