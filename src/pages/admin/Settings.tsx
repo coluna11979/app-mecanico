@@ -83,6 +83,8 @@ export default function AdminSettings() {
     getAllSettings().then(({ data }) => {
       const m: Record<string, string> = {};
       (data as AppSetting[]).forEach(s => { m[s.key] = s.value; });
+      // PIX e cartão: sem registro no banco = ligados (é como as telas de pagamento tratam)
+      for (const k of ['pay_pix_enabled', 'pay_card_enabled']) m[k] ??= 'true';
       setVals(m);
     });
   }, []);
