@@ -3,7 +3,7 @@
 // das mesmas multas, mesmo método e mesmo valor (e o PIX ainda não venceu) — evita a oficina pagar duas vezes.
 // Quem marca as multas como pagas é o nextpay-webhook.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { cardTotal, feeRef, nextpay, pixCode, type NextpayCharge } from '../_shared/nextpay.ts';
+import { cardTotal, feeRef, nextpay, pixCode, methodEnabled, METHOD_OFF_MSG, type NextpayCharge } from '../_shared/nextpay.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -25,6 +25,7 @@ Deno.serve(async (req) => {
 
     const { workshop_id, method } = await req.json().catch(() => ({}));
     if (!workshop_id || (method !== 'pix' && method !== 'card')) return json({ error: 'Informe a oficina e a forma de pagamento.' }, 400);
+    if (!(await methodEnabled(admin, method))) return json({ error: METHOD_OFF_MSG[method as 'pix' | 'card'] }, 409);
     const { data: member } = await admin.rpc('is_workshop_member', { _workshop_id: workshop_id, _user_id: user.id });
     if (!member) return json({ error: 'Só a própria oficina pode pagar a multa.' }, 403);
 

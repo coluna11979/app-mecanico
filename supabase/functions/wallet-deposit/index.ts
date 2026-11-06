@@ -2,7 +2,7 @@
 // Reaproveita o depósito anterior em aberto se for do mesmo valor e método (e o PIX ainda não venceu).
 // Quem credita o saldo é o nextpay-webhook (wallet_credit_deposit), nunca a tela da oficina.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { cardTotal, nextpay, pixCode, walletRef, type NextpayCharge } from '../_shared/nextpay.ts';
+import { cardTotal, nextpay, pixCode, walletRef, methodEnabled, METHOD_OFF_MSG, type NextpayCharge } from '../_shared/nextpay.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +24,7 @@ Deno.serve(async (req) => {
 
     const { workshop_id, amount: rawAmount, method } = await req.json().catch(() => ({}));
     if (!workshop_id || (method !== 'pix' && method !== 'card')) return json({ error: 'Informe a oficina e a forma de pagamento.' }, 400);
+    if (!(await methodEnabled(admin, method))) return json({ error: METHOD_OFF_MSG[method as 'pix' | 'card'] }, 409);
     const { data: member } = await admin.rpc('is_workshop_member', { _workshop_id: workshop_id, _user_id: user.id });
     if (!member) return json({ error: 'Só a própria oficina pode depositar.' }, 403);
 
