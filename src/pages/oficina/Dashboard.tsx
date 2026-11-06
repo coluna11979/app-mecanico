@@ -24,6 +24,7 @@ import VehiclePicker from '@/components/marketplace/VehiclePicker';
 import { useStoredOpen } from '@/hooks/useStoredOpen';
 import { splitJobVehicle } from '@/lib/jobDescription';
 import RateMechanicModal from '@/components/marketplace/RateMechanic';
+import { AcceptedMechanicRow, type AcceptedMechanic } from '@/components/marketplace/AcceptedMechanic';
 import { FavoriteMechanics, PlatformHero, StatusCounters, type HomeMechanic } from '@/components/marketplace/PlatformHome';
 import { QuickCall, SERVICE_SHORTCUTS, estimatePrice, medianRate, type ServiceShortcut } from '@/components/marketplace/QuickCall';
 import { PanelTour, tourSeen, type TourStep } from '@/components/marketplace/PanelTour';
@@ -118,6 +119,8 @@ export default function WorkshopDashboard() {
   const [pendingRate, setPendingRate] = useState<Job[]>([]);
   /* Nome de quem foi convidado (convite direto) — id do mecânico → nome */
   const [inviteNames, setInviteNames] = useState<Record<string, string>>({});
+  /** Quem aceitou cada demanda ativa: foto, nota e serviços (o card mostra para a oficina) */
+  const [acceptedBy, setAcceptedBy] = useState<Record<string, AcceptedMechanic>>({});
   const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   /** Preferidos da oficina (disponíveis ou não), para o card "Meus preferidos" */
   const [favMechanics, setFavMechanics] = useState<(HomeMechanic & { available: boolean })[]>([]);
@@ -259,13 +262,17 @@ export default function WorkshopDashboard() {
     setActive((a as Job[]) ?? []);
     setHistory((h as Job[]) ?? []);
     const invited = [...new Set([
-      ...(a ?? []).map(j => (j as Job).invited_mechanic_id),
+      ...(a ?? []).flatMap(j => [(j as Job).invited_mechanic_id, (j as Job).mechanic_id]),
       ...(h ?? []).flatMap(j => [(j as Job).invited_mechanic_id, (j as Job).mechanic_id]),
     ].filter((x): x is string => !!x))];
     if (invited.length) {
       const { data: ms } = await supabase.from('mechanics')
-        .select('id, profile:profiles(full_name)').in('id', invited);
+        .select('id, rating, total_jobs, profile:profiles(full_name, avatar_url)').in('id', invited);
       setInviteNames(Object.fromEntries((ms ?? []).map((m: any) => [m.id, m.profile?.full_name ?? 'Mecânico'])));
+      setAcceptedBy(Object.fromEntries((ms ?? []).map((m: any) => [m.id, {
+        name: m.profile?.full_name ?? 'Mecânico', avatar: m.profile?.avatar_url ?? null,
+        rating: Number(m.rating ?? 0), total_jobs: m.total_jobs ?? 0,
+      }])));
     }
     setPendingConfirm((pc as Job[]) ?? []);
     setPendingRate((pr as Job[]) ?? []);
@@ -847,6 +854,10 @@ export default function WorkshopDashboard() {
                 </div>
               </div>
             </div>
+            {j.mechanic_id && acceptedBy[j.mechanic_id] && (
+              <AcceptedMechanicRow j={j} m={acceptedBy[j.mechanic_id]}
+                onChanged={() => { if (currentWorkshop?.id) fetchJobs(currentWorkshop.id); }} />
+            )}
             <ArrivalInfo j={j} />
             {inviteWaitingTooLong(j) && (
               <div className="mt-2 text-[12px] text-pending-700 bg-pending-50 border border-pending-200 rounded-lg px-2.5 py-2 leading-snug">

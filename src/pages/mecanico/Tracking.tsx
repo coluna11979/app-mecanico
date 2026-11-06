@@ -12,6 +12,7 @@ import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { distKm, etaLabel } from '@/lib/geo';
 import { formatBRL, mechanicNet, formatMoney } from '@/lib/payment';
 import { ArrivalCountdown } from '@/components/ArrivalDeadline';
+import { SwapWindowNotice } from '@/components/mecanico/SwapWindowNotice';
 import type { Job, Workshop } from '@/types/database';
 
 export default function MechanicTracking() {
@@ -262,6 +263,20 @@ export default function MechanicTracking() {
 
   const mapZoom = km !== null && km > 5 ? 11 : km !== null && km > 2 ? 12 : 13;
 
+  // A oficina trocou de mecânico nos 5 min de tolerância: esta demanda não é mais dele
+  if (job && mechanicId && job.rejected_mechanic_ids?.includes(mechanicId) && job.mechanic_id !== mechanicId) {
+    return (
+      <div className="dark fixed inset-0 bg-steel-900 text-steel-100 grid place-items-center p-6">
+        <div className="max-w-sm w-full text-center space-y-3">
+          <div className="text-4xl" aria-hidden>🔄</div>
+          <h1 className="text-xl font-bold text-white">A oficina escolheu outro profissional</h1>
+          <p className="text-sm text-steel-300">Ela trocou dentro dos 5 minutos de tolerância. Isso não afeta a sua nota.</p>
+          <button type="button" onClick={() => nav('/mecanico/dashboard')} className="btn-primary w-full h-12">Ver outras demandas</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="dark fixed inset-0 bg-steel-900 text-steel-100 flex flex-col">
 
@@ -366,6 +381,7 @@ export default function MechanicTracking() {
         {/* Ações por estado */}
         {job?.status === 'assigned' && !arrived && (
           <div className="space-y-2">
+            <SwapWindowNotice job={job} />
             <ArrivalCountdown job={job} className="!text-sm" />
             {/* Navegação de verdade (voz, trânsito): abre o app de mapa do celular com o destino já marcado */}
             {shop && (
