@@ -25,6 +25,7 @@ const ORIGEM_LABEL: Record<LeadOrigem, string> = {
   importado_csv:   'CSV',
   link_convite:    'Link de convite',
   evento:          'Evento',
+  webinar:         'Webinar',
   outro:           'Outro',
 };
 

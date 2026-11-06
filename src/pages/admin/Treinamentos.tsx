@@ -19,6 +19,9 @@ interface Session {
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
+  webinar_slug: string | null;
+  webinar_intent: 'mechanic' | 'workshop' | null;
+  webinar_published: boolean;
   training_participants: { count: number }[];
 }
 
@@ -40,6 +43,9 @@ const REC_LABEL: Record<Session['recording_status'], string> = {
 
 const randomToken = () => crypto.randomUUID().replace(/-/g, '').slice(0, 16);
 const joinUrl = (s: Session) => `${window.location.origin}/treinamento/${s.share_token}`;
+const webinarUrl = (slug: string) => `https://www.mecanicoapp.com.br/webinar/${slug}`;
+const slugify = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 const fmtDate = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 
 export default function AdminTreinamentos() {
@@ -55,6 +61,7 @@ export default function AdminTreinamentos() {
   const [copied, setCopied] = useState<string | null>(null);
   const [openRec, setOpenRec] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [openWeb, setOpenWeb] = useState<string | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -209,6 +216,14 @@ export default function AdminTreinamentos() {
                       {openRec === s.id ? 'Fechar gravação' : '▶ Ver gravação'}
                     </button>
                   )}
+                  {s.recording_segments.length > 0 && s.status !== 'live' && (
+                    <button onClick={() => setOpenWeb(o => (o === s.id ? null : s.id))}
+                      className={`rounded-lg text-sm font-bold px-3 py-2 ${
+                        s.webinar_published ? 'bg-signal-500/10 text-signal-700 border border-signal-300' : 'border border-steel-300 text-steel-700'
+                      }`}>
+                      {s.webinar_published ? '📢 Webinar no ar' : '📢 Publicar como webinar'}
+                    </button>
+                  )}
                   {s.status === 'scheduled' && (
                     <button onClick={() => cancel(s)} className="text-sm text-steel-500 hover:text-alert-600 px-2">
                       Cancelar
@@ -221,6 +236,8 @@ export default function AdminTreinamentos() {
                     </button>
                   )}
                 </div>
+
+                {openWeb === s.id && <WebinarPanel s={s} onSaved={load} />}
 
                 {openRec === s.id && (
                   <div className="space-y-2">
@@ -250,5 +267,100 @@ export default function AdminTreinamentos() {
         </div>
       </div>
     </AdminLayout>
+  );
+}
+
+// A gravação vira página pública pro anúncio: nome + WhatsApp liberam o vídeo,
+// e o botão embaixo leva pro cadastro do público escolhido.
+function WebinarPanel({ s, onSaved }: { s: Session; onSaved: () => void }) {
+  const [intent, setIntent] = useState<'workshop' | 'mechanic'>(s.webinar_intent ?? (s.audience === 'mecanicos' ? 'mechanic' : 'workshop'));
+  const [slug, setSlug] = useState(s.webinar_slug ?? slugify(s.title));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [leads, setLeads] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!s.webinar_slug) return;
+    supabase.from('leads').select('id', { count: 'exact', head: true })
+      .contains('tags', [`webinar:${s.webinar_slug}`])
+      .then(({ count }) => setLeads(count ?? 0));
+  }, [s.webinar_slug]);
+
+  async function save(published: boolean) {
+    const clean = slugify(slug);
+    if (clean.length < 3) return setError('O endereço precisa de pelo menos 3 letras.');
+    setSaving(true); setError(null);
+    const { error: err } = await supabase.from('training_sessions')
+      .update({ webinar_slug: clean, webinar_intent: intent, webinar_published: published })
+      .eq('id', s.id);
+    setSaving(false);
+    if (err) return setError(err.code === '23505' ? 'Esse endereço já está em uso por outro webinar.' : err.message);
+    setSlug(clean);
+    onSaved();
+  }
+
+  async function copy() {
+    try { await navigator.clipboard.writeText(webinarUrl(slug)); } catch { prompt('Copie o link:', webinarUrl(slug)); }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="rounded-xl border border-steel-200 bg-steel-50 p-4 space-y-3">
+      <p className="text-sm text-steel-600">
+        Página pública pro anúncio: a pessoa deixa nome e WhatsApp, assiste à gravação e o botão embaixo leva pro cadastro.
+      </p>
+      <div>
+        <p className="text-xs font-bold text-steel-700 mb-1">Pra quem é</p>
+        <div className="grid grid-cols-2 gap-2">
+          {([['workshop', '🏪 Oficinas'], ['mechanic', '🔧 Mecânicos']] as const).map(([v, label]) => (
+            <button key={v} type="button" onClick={() => setIntent(v)}
+              className={`rounded-xl border-2 p-2 text-sm font-bold ${
+                intent === v ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-steel-200 text-steel-600 bg-white'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-steel-500 mt-1">
+          O botão leva pro cadastro de {intent === 'workshop' ? 'oficina' : 'mecânico'}.
+        </p>
+      </div>
+      <label className="block">
+        <span className="text-xs font-bold text-steel-700">Endereço da página</span>
+        <div className="mt-1 flex items-center rounded-xl border border-steel-300 bg-white overflow-hidden">
+          <span className="pl-3 text-sm text-steel-400 whitespace-nowrap">/webinar/</span>
+          <input value={slug} onChange={e => setSlug(e.target.value)} className="flex-1 min-w-0 px-1 py-2 text-sm outline-none" />
+        </div>
+      </label>
+      {error && <p className="text-sm text-alert-600">{error}</p>}
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => save(true)} disabled={saving}
+          className="rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-bold px-3 py-2">
+          {saving ? 'Salvando…' : s.webinar_published ? 'Salvar alterações' : 'Publicar'}
+        </button>
+        {s.webinar_published && (
+          <>
+            <button onClick={copy} className="rounded-lg border border-steel-300 bg-white text-steel-700 text-sm font-bold px-3 py-2">
+              {copied ? '✓ Link copiado' : 'Copiar link do anúncio'}
+            </button>
+            <a href={webinarUrl(s.webinar_slug ?? slug)} target="_blank" rel="noreferrer"
+              className="rounded-lg border border-steel-300 bg-white text-steel-700 text-sm font-bold px-3 py-2">
+              Abrir página
+            </a>
+            <button onClick={() => save(false)} disabled={saving} className="text-sm text-steel-500 hover:text-alert-600 px-2">
+              Tirar do ar
+            </button>
+          </>
+        )}
+      </div>
+      {s.webinar_published && (
+        <p className="text-xs text-steel-500 break-all">
+          {webinarUrl(s.webinar_slug ?? slug)}
+          {leads !== null && <> · <b>{leads}</b> {leads === 1 ? 'pessoa deixou' : 'pessoas deixaram'} o WhatsApp</>}
+        </p>
+      )}
+    </div>
   );
 }

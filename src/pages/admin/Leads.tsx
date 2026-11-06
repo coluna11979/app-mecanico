@@ -33,6 +33,7 @@ const ORIGEM_META: Record<LeadOrigem, string> = {
   importado_csv:   'Importado (CSV)',
   link_convite:    'Link de convite',
   evento:          'Evento',
+  webinar:         'Webinar',
   outro:           'Outro',
 };
 

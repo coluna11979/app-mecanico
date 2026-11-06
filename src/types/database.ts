@@ -22,7 +22,8 @@ export type LeadOrigem =
   | 'importado_csv'
   | 'link_convite'
   | 'evento'
-  | 'outro';
+  | 'outro'
+  | 'webinar';
 
 export type LeadIntent = 'mechanic' | 'workshop';
 

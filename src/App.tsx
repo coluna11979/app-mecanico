@@ -107,6 +107,7 @@ import AdminTreinamentos from './pages/admin/Treinamentos';
 // Salas de vídeo (LiveKit) carregam só quando abertas
 const AdminTreinamentoSala = lazy(() => import('./pages/admin/TreinamentoSala'));
 const TreinamentoEntrar = lazy(() => import('./pages/public/TreinamentoEntrar'));
+const WebinarPage = lazy(() => import('./pages/public/Webinar'));
 import ParaVoce, { ParaVoceArtigo } from './pages/shared/ParaVoce';
 import Blog, { BlogPost } from './pages/public/Blog';
 import CampaignLink from './pages/public/CampaignLink';
@@ -150,6 +151,7 @@ export default function App() {
       <Route path="/c/:slug"            element={<CampaignLink />} />
       <Route path="/descadastrar/:token" element={<Unsubscribe />} />
       <Route path="/treinamento/:token" element={<Suspense fallback={<LazyFallback />}><TreinamentoEntrar /></Suspense>} />
+      <Route path="/webinar/:slug" element={<Suspense fallback={<LazyFallback />}><WebinarPage /></Suspense>} />
       <Route path="/m/checkup/:token"   element={<MechanicCheckup />} />
       {/* Pré-visualização do check-up com dados fictícios — só em dev */}
       {import.meta.env.DEV && <Route path="/demo/checkup" element={<WorkshopCheckups />} />}
