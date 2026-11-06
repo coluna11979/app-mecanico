@@ -345,7 +345,7 @@ function WebinarPanel({ s, onSaved }: { s: Session; onSaved: () => void }) {
             <button onClick={copy} className="rounded-lg border border-steel-300 bg-white text-steel-700 text-sm font-bold px-3 py-2">
               {copied ? '✓ Link copiado' : 'Copiar link do anúncio'}
             </button>
-            <a href={webinarUrl(s.webinar_slug ?? slug)} target="_blank" rel="noreferrer"
+            <a href={`/webinar/${s.webinar_slug ?? slug}`} target="_blank" rel="noreferrer"
               className="rounded-lg border border-steel-300 bg-white text-steel-700 text-sm font-bold px-3 py-2">
               Abrir página
             </a>
