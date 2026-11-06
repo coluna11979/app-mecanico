@@ -127,7 +127,8 @@ export default function WebinarPage() {
               )}
               <video
                 key={webinar.segments[part]}
-                src={webinar.segments[part]}
+                // #t=0.1 faz o navegador mostrar o primeiro quadro em vez da tela preta
+                src={`${webinar.segments[part]}#t=0.1`}
                 controls playsInline preload="metadata" autoPlay={part > 0}
                 // Gravação longa vem em partes: emenda uma na outra
                 onEnded={() => setPart(p => Math.min(p + 1, webinar.segments.length - 1))}
