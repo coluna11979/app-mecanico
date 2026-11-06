@@ -59,13 +59,33 @@ export default function AdminApprovals() {
   async function load() {
     setLoading(true);
 
+    // Lista de profile_ids que realmente são DONOS de oficina.
+    // Funcionários cadastrados via "Acesso Equipe" (fluxo workshop_members)
+    // tambem nascem com role='workshop' mas NAO tem workshop propria — eles
+    // nao sao cadastros de oficina pro admin aprovar, entao filtra fora.
+    const { data: ownerRows } = await supabase.from('workshops').select('profile_id');
+    const workshopOwnerIds = (ownerRows ?? []).map(r => r.profile_id as string);
+    // Limite do PostgREST pra IN(): usamos o array como filtro; pra 1000+ ids
+    // teria que paginar, mas por enquanto a plataforma tem poucas oficinas.
+    const hasOwners = workshopOwnerIds.length > 0;
+
     // Carrega contagens de todos os status (respeitando filtro de role, pra os
     // badges baterem com o que o admin vê na lista)
-    const countsPromises = TABS.map(t => {
-      let q = supabase.from('profiles').select('id', { count: 'exact', head: true })
-        .eq('status', t.key).neq('role', 'admin');
-      if (roleFilter !== 'all') q = q.eq('role', roleFilter);
-      return q.then(({ count }) => [t.key, count ?? 0] as const);
+    const countsPromises = TABS.map(async (t) => {
+      let total = 0;
+
+      if (roleFilter === 'all' || roleFilter === 'mechanic') {
+        const { count } = await supabase.from('profiles').select('id', { count: 'exact', head: true })
+          .eq('status', t.key).eq('role', 'mechanic');
+        total += count ?? 0;
+      }
+      if ((roleFilter === 'all' || roleFilter === 'workshop') && hasOwners) {
+        const { count } = await supabase.from('profiles').select('id', { count: 'exact', head: true })
+          .eq('status', t.key).eq('role', 'workshop').in('id', workshopOwnerIds);
+        total += count ?? 0;
+      }
+
+      return [t.key, total] as const;
     });
     const allCounts = await Promise.all(countsPromises);
     setCounts(Object.fromEntries(allCounts) as Record<TabKey, number>);
@@ -77,11 +97,24 @@ export default function AdminApprovals() {
       .eq('status', tab)
       .neq('role', 'admin')
       .order('created_at', { ascending: false });
-    if (roleFilter !== 'all') profilesQuery = profilesQuery.eq('role', roleFilter);
+    if (roleFilter === 'mechanic') {
+      profilesQuery = profilesQuery.eq('role', 'mechanic');
+    } else if (roleFilter === 'workshop') {
+      profilesQuery = hasOwners
+        ? profilesQuery.eq('role', 'workshop').in('id', workshopOwnerIds)
+        : profilesQuery.eq('id', '00000000-0000-0000-0000-000000000000'); // nunca bate
+    }
     const { data: profiles } = await profilesQuery;
 
+    // Pra roleFilter === 'all', filtra client-side: mantem todos os mechanics
+    // e so workshops que tem oficina propria (exclui funcionarios).
+    const filteredProfiles = (profiles ?? []).filter(p =>
+      p.role === 'mechanic' ||
+      (p.role === 'workshop' && workshopOwnerIds.includes(p.id))
+    );
+
     const result: Row[] = [];
-    for (const p of (profiles ?? []) as Profile[]) {
+    for (const p of filteredProfiles as Profile[]) {
       const row: Row = { ...p };
       if (p.role === 'mechanic') {
         const { data } = await supabase.from('mechanics').select('*').eq('profile_id', p.id).maybeSingle();
