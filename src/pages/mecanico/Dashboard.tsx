@@ -14,6 +14,7 @@ import { distKm, formatDistance } from '@/lib/geo';
 import { mechanicNet, formatMoney } from '@/lib/payment';
 import { isScheduled, formatScheduled } from '@/lib/scheduling';
 import { AcceptDeadlineHint, ArrivalCountdown } from '@/components/ArrivalDeadline';
+import { SwapWindowHint, SwapWindowNotice } from '@/components/mecanico/SwapWindowNotice';
 import { PushAlertCard } from '@/components/mecanico/PushAlertCard';
 import { declineInvite, isPendingInvite } from '@/lib/jobInvite';
 import type { Job, Mechanic, Workshop } from '@/types/database';
@@ -165,7 +166,8 @@ export default function MechanicDashboard() {
     [openJobs, me],
   );
   const decoratedJobs = useMemo(() => {
-    const withDist = openJobs.filter(j => j.audience !== 'invite').map(j => {
+    // Demanda em que a oficina trocou este mecânico não volta para ele
+    const withDist = openJobs.filter(j => j.audience !== 'invite' && !(me && j.rejected_mechanic_ids?.includes(me.id))).map(j => {
       const ws = j.workshop;
       const km = (userPos && ws?.lat != null && ws?.lng != null)
         ? distKm(userPos[0], userPos[1], ws.lat, ws.lng)
@@ -182,7 +184,7 @@ export default function MechanicDashboard() {
     }
     // Valor aumentou: sobe para o topo
     return withDist.sort((a, b) => Number(raisedFrom(b.job) != null) - Number(raisedFrom(a.job) != null));
-  }, [openJobs, userPos]);
+  }, [openJobs, userPos, me]);
 
   async function declineJob(job: Job) {
     if (!confirm(`Recusar o convite "${capitalize(job.title)}"? A oficina será avisada para escolher outro mecânico.`)) return;
@@ -383,6 +385,7 @@ export default function MechanicDashboard() {
                       </div>
                     </div>
                   </div>
+                  <SwapWindowNotice job={j} onBrand className="mt-3" />
                   <ArrivalCountdown job={j} tone="onBrand" className="mt-3" />
                   <div className="mt-3 pt-3 border-t border-white/20 flex items-center justify-between text-sm font-semibold">
                     Abrir mapa e chat
@@ -505,6 +508,7 @@ export default function MechanicDashboard() {
                     </Link>
                     <div className="px-4 pb-4 space-y-2">
                       <AcceptDeadlineHint job={j} />
+                      <SwapWindowHint />
                       <button
                         onClick={() => acceptJob(j)}
                         disabled={accepting === j.id || !online}
