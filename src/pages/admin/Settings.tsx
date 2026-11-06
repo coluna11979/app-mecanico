@@ -20,6 +20,8 @@ const FIELDS: FieldDef[] = [
   { key: 'maintenance_mode',       label: 'Modo manutenção',           description: 'Bloqueia o acesso de todos os usuários.',   type: 'toggle',   section: 'Geral' },
   { key: 'platform_fee_percent',   label: 'Taxa da plataforma (%)',    description: 'Comissão cobrada do mecânico por job.',     type: 'number',   section: 'Financeiro' },
   { key: 'payment_gateway',        label: 'Quem recebe o pagamento da oficina', description: 'Stripe = cartão pela Stripe (como antes). NextPay = PIX + cartão pela NextGo. Vale na hora para os próximos pagamentos.', type: 'choice', options: [{ value: 'stripe', label: 'Stripe' }, { value: 'nextpay', label: 'NextPay' }], section: 'Pagamentos' },
+  { key: 'pay_pix_enabled',        label: 'PIX ligado',                description: 'Desligado, o PIX some das telas de pagamento da oficina (demanda, multa e depósito na carteira) e o servidor recusa. Vale na hora.', type: 'toggle', section: 'Pagamentos' },
+  { key: 'pay_card_enabled',       label: 'Cartão de crédito ligado',  description: 'Desligado, o cartão some das telas de pagamento da oficina (demanda, multa e depósito na carteira) e o servidor recusa. Vale na hora.', type: 'toggle', section: 'Pagamentos' },
   { key: 'card_fee_passthrough',   label: 'Cobrar a taxa do cartão da oficina', description: 'Desligado = "taxa do cartão por nossa conta no lançamento". Ligado = a oficina paga serviço + taxa no cartão (PIX continua sem taxa). Só vale com NextPay.', type: 'toggle', section: 'Pagamentos' },
   { key: 'card_fee_percent',       label: 'Taxa do cartão (%)',        description: 'Taxa da NextPay no cartão à vista. Usada para somar a taxa quando a cobrança está ligada.', type: 'number', section: 'Pagamentos' },
   { key: 'wallet_enabled',         label: 'Carteira da oficina ligada', description: 'Liga a Carteira no painel da oficina (depositar saldo pela NextPay e "Pagar com saldo" quando o mecânico chega). Desligada, nada muda para a oficina.', type: 'toggle', section: 'Carteira' },
@@ -81,6 +83,8 @@ export default function AdminSettings() {
     getAllSettings().then(({ data }) => {
       const m: Record<string, string> = {};
       (data as AppSetting[]).forEach(s => { m[s.key] = s.value; });
+      // PIX e cartão: sem registro no banco = ligados (é como as telas de pagamento tratam)
+      for (const k of ['pay_pix_enabled', 'pay_card_enabled']) m[k] ??= 'true';
       setVals(m);
     });
   }, []);

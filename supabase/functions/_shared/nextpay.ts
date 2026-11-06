@@ -74,6 +74,14 @@ export function parseWalletRef(ref: string | null | undefined) {
   return m ? { depositId: m[1], method: m[2] as 'pix' | 'card' } : null;
 }
 
+/** Meio de pagamento desligado em Admin → Configurações → Pagamentos (pay_pix_enabled / pay_card_enabled) */
+export async function methodEnabled(admin: SupabaseClient, method: 'pix' | 'card'): Promise<boolean> {
+  const key = method === 'pix' ? 'pay_pix_enabled' : 'pay_card_enabled';
+  const { data } = await admin.from('app_settings').select('value').eq('key', key).maybeSingle();
+  return String(data?.value ?? 'true').trim() !== 'false';
+}
+export const METHOD_OFF_MSG = { pix: 'O pagamento por PIX está desligado no momento.', card: 'O pagamento com cartão está desligado no momento.' } as const;
+
 /** Valor no cartão com a taxa repassada: total ÷ (1 − taxa), quando card_fee_passthrough está ligado */
 export async function cardTotal(admin: SupabaseClient, base: number): Promise<number> {
   const { data } = await admin.from('app_settings').select('key, value').in('key', ['card_fee_passthrough', 'card_fee_percent']);

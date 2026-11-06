@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatBRL } from '@/lib/payment';
+import { getSetting } from '@/lib/settings';
 
 type Method = 'pix' | 'card';
 type ChargeResult = {
@@ -13,6 +14,7 @@ type ChargeResult = {
  * Pagamento pela NextPay (gateway = nextpay em Configurações): serviço da demanda, multa de cancelamento
  * ou depósito na carteira.
  * PIX em primeiro ("cai na hora"); cartão abre o checkout seguro da NextPay em outra aba.
+ * Só mostra os meios ligados em Admin → Configurações → Pagamentos (pay_pix_enabled / pay_card_enabled).
  * Quem dá baixa é o webhook (jobs.pix_paid_at / cancellation_fee_paid_at) — quem usa este componente
  * fecha a tela sozinho quando o pagamento cai.
  */
@@ -26,6 +28,7 @@ export default function NextpayPayment({ request, service, feePassthrough, feePe
   feePassthrough: boolean;
   feePercent: number;
 }) {
+  const [enabled, setEnabled] = useState<Record<Method, boolean> | null>(null);
   const [method, setMethod] = useState<Method>('pix');
   const [results, setResults] = useState<Partial<Record<Method, ChargeResult>>>({});
   const [loading, setLoading] = useState<Method | null>(null);
@@ -47,8 +50,17 @@ export default function NextpayPayment({ request, service, feePassthrough, feePe
     setLoading(null);
   }
 
+  // Meios ligados no admin; começa no PIX, ou no cartão se o PIX estiver desligado
+  useEffect(() => {
+    Promise.all([getSetting('pay_pix_enabled', 'true'), getSetting('pay_card_enabled', 'true')]).then(([p, c]) => {
+      const on = { pix: p.trim() !== 'false', card: c.trim() !== 'false' };
+      setEnabled(on);
+      if (!on.pix && on.card) setMethod('card');
+    });
+  }, []);
+
   // Gera o pagamento do método escolhido (o do cartão já fica pronto para abrir com um toque)
-  useEffect(() => { load(method); }, [method]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (enabled?.[method]) load(method); }, [method, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function copy() {
     if (!current?.pix_code) return;
@@ -95,16 +107,26 @@ export default function NextpayPayment({ request, service, feePassthrough, feePe
     </div>
   );
 
+  if (!enabled) return spinner('Carregando formas de pagamento…');
+  if (!enabled.pix && !enabled.card) {
+    return (
+      <div className="bg-steel-50 rounded-2xl p-4 text-center text-sm text-steel-600">
+        Pagamento online indisponível no momento. Fale com o suporte do MecânicoApp.
+      </div>
+    );
+  }
+  const both = enabled.pix && enabled.card;
+
   return (
     <div className="space-y-3">
       <div className="space-y-2">
-        {option('pix', 'PIX', 'Cai na hora, sem taxa', 'Recomendado')}
-        {option('card', 'Cartão de crédito', feePassthrough
+        {enabled.pix && option('pix', 'PIX', 'Cai na hora, sem taxa', both ? 'Recomendado' : undefined)}
+        {enabled.card && option('card', 'Cartão de crédito', feePassthrough
           ? `À vista · taxa do cartão de ${pctLabel}% · total R$ ${formatBRL(cardTotal)}`
           : 'À vista · taxa do cartão por nossa conta no lançamento 🎉')}
       </div>
 
-      {method === 'pix' && (
+      {method === 'pix' && enabled.pix && (
         loading === 'pix' ? spinner('Gerando o PIX…')
         : current?.error ? failed('pix')
         : current?.pix_code ? (
@@ -134,7 +156,7 @@ export default function NextpayPayment({ request, service, feePassthrough, feePe
         ) : null
       )}
 
-      {method === 'card' && (
+      {method === 'card' && enabled.card && (
         loading === 'card' ? spinner('Preparando o pagamento seguro…')
         : current?.error ? failed('card')
         : current?.payment_url ? (
@@ -144,7 +166,7 @@ export default function NextpayPayment({ request, service, feePassthrough, feePe
                 <div className="flex justify-between"><span className="text-steel-600">{what}</span><span className="font-semibold">R$ {formatBRL(service)}</span></div>
                 <div className="flex justify-between"><span className="text-steel-600">Taxa do cartão ({pctLabel}%)</span><span className="font-semibold">R$ {formatBRL(current.card_fee)}</span></div>
                 <div className="flex justify-between border-t border-steel-200 pt-1 mt-1"><span className="font-bold">Total no cartão</span><span className="font-bold">R$ {formatBRL(current.total)}</span></div>
-                <p className="text-[11px] text-steel-500 pt-1">No PIX você paga só R$ {formatBRL(service)}.</p>
+                {enabled.pix && <p className="text-[11px] text-steel-500 pt-1">No PIX você paga só R$ {formatBRL(service)}.</p>}
               </div>
             ) : (
               <div className="bg-signal-500/10 rounded-2xl px-4 py-3 text-center">

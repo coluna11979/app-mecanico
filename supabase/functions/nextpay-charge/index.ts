@@ -4,7 +4,7 @@
 // Valor = valor/hora × horas; com card_fee_passthrough ligado, soma a taxa do cartão (÷ (1 − taxa)).
 // Quem marca como pago é o nextpay-webhook.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { jobRef, nextpay, pixCode, type NextpayCharge } from '../_shared/nextpay.ts';
+import { jobRef, nextpay, pixCode, methodEnabled, METHOD_OFF_MSG, type NextpayCharge } from '../_shared/nextpay.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -25,6 +25,7 @@ Deno.serve(async (req) => {
 
     const { job_id, method } = await req.json().catch(() => ({}));
     if (!job_id || (method !== 'pix' && method !== 'card')) return json({ error: 'Informe a demanda e a forma de pagamento.' }, 400);
+    if (!(await methodEnabled(admin, method))) return json({ error: METHOD_OFF_MSG[method as 'pix' | 'card'] }, 409);
 
     const { data: job } = await admin.from('jobs').select('*').eq('id', job_id).maybeSingle();
     if (!job) return json({ error: 'Demanda não encontrada.' }, 404);
