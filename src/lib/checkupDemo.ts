@@ -129,5 +129,75 @@ export function demoPanel() {
     { id: 'demo-s2', number: 131, scheduled_at: new Date(Date.now() + 3 * 3600000).toISOString(), workshop_mechanic_id: 'demo-mec-1',
       customer: { full_name: 'Beatriz Nunes' }, vehicle: { plate: 'TRE5W43', make: 'Jeep', model: 'Renegade', year: 2022 }, mechanic: { name: 'Rafael' } },
   ];
-  return { list, scheduled };
+  return { list: [...list, ...demoHistory(ck)], scheduled };
+}
+
+
+/* ─── Histórico fictício para a apresentação do funil ───────────
+   ~70 check-ups em 90 dias, todos os tipos, com conversão realista por etapa.
+   Gerador com semente fixa: a demonstração mostra sempre os mesmos números. */
+const DEMO_ITEMS: [string, string, number][] = [
+  ['pastilhas_diant', 'Pastilhas dianteiras', 320], ['oleo_nivel', 'Óleo do motor', 260], ['bateria', 'Bateria', 480],
+  ['amortecedores', 'Amortecedores', 1100], ['limpadores', 'Palhetas', 90], ['correia', 'Correia', 650],
+  ['pneu_de', 'Pneu dianteiro esquerdo', 520], ['fluido_freio', 'Fluido de freio', 140], ['discos', 'Discos de freio', 560],
+  ['ar_cond', 'Ar-condicionado', 380], ['terminais', 'Terminais e caixa', 420], ['fluido_arref', 'Fluido de arrefecimento', 120],
+];
+const DEMO_CARS: [string, string, number][] = [
+  ['Fiat', 'Argo', 2020], ['VW', 'Gol', 2016], ['Chevrolet', 'Onix', 2019], ['Hyundai', 'HB20', 2021], ['Toyota', 'Corolla', 2018],
+  ['Renault', 'Kwid', 2022], ['Honda', 'Civic', 2017], ['Jeep', 'Renegade', 2020], ['Ford', 'Ka', 2018], ['Nissan', 'Kicks', 2021],
+];
+const DEMO_NAMES = ['Ana Souza', 'Bruno Lima', 'Carla Dias', 'Diego Rocha', 'Elaine Prado', 'Fábio Nunes', 'Gisele Melo', 'Hugo Teixeira', 'Iara Campos', 'João Pires'];
+const DEMO_TYPES = ['completo', 'completo', 'revisao', 'revisao', 'troca_oleo', 'troca_oleo', 'troca_oleo', 'pre_viagem', 'freios_suspensao', 'freios_suspensao', 'usado', 'custom'];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function demoHistory(ck: (id: string, v: any, it: any[], mech: string | null) => any) {
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+  const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
+  const at = (ms: number) => new Date(ms).toISOString();
+  const out = [];
+  for (let n = 0; n < 72; n++) {
+    const created = Date.now() - (2 + rnd() * 86) * 86400000;
+    const tpl = pick(DEMO_TYPES);
+    const [make, model, year] = pick(DEMO_CARS);
+    // Etapas, com a chance de passar de uma para a outra
+    const done = rnd() < 0.94;
+    const flaggedN = done && rnd() < 0.86 ? 1 + Math.floor(rnd() * 3) : 0;
+    const sent = flaggedN > 0 && rnd() < 0.85;
+    const viewed = sent && rnd() < 0.8;
+    const responded = viewed && rnd() < 0.85;
+    const approved = responded && rnd() < 0.62;
+    const finished = approved && rnd() < 0.82;
+    const flagged = Array.from({ length: flaggedN }, (_, i) => {
+      const [key, label, base] = DEMO_ITEMS[(n * 3 + i * 5) % DEMO_ITEMS.length];
+      const price = Math.round(base * (0.8 + rnd() * 0.5));
+      const r = rnd();
+      const decision = !responded ? null : approved && (i === 0 || r < 0.55) ? 'approve' : r < 0.7 ? 'remind' : 'decline';
+      return { status: i === 0 && rnd() < 0.5 ? 'urgent' : 'warn', updated_at: null, label, item_key: key,
+        quote_labor: sent ? price : null, quote_parts: null, customer_decision: decision };
+    });
+    const okN = 8 + Math.floor(rnd() * 20);
+    const items = [
+      ...Array.from({ length: okN }, () => ({ status: done ? 'ok' : rnd() < 0.5 ? 'ok' : null, updated_at: null, quote_labor: null, quote_parts: null, customer_decision: null })),
+      ...flagged,
+    ];
+    const tCompleted = created + (1 + rnd() * 3) * 3600000;
+    const tSent = tCompleted + (0.5 + rnd() * 20) * 3600000;
+    const tViewed = tSent + (1 + rnd() * 30) * 3600000;
+    const tResp = tViewed + (2 + rnd() * 40) * 3600000;
+    out.push(ck(`h${n}`, {
+      template_key: tpl === 'completo' ? null : tpl,
+      plate: `${'ABCDEFGHJK'[n % 10]}${'KLMNPRSTUV'[(n * 7) % 10]}${'QWERTYUIOP'[(n * 3) % 10]}${n % 10}${'ABCDEFGHIJ'[(n * 9) % 10]}${(n * 13) % 100}`.slice(0, 7),
+      make, model, year, customer_name: pick(DEMO_NAMES),
+      created_at: at(created), updated_at: at(created),
+      status: done ? 'completed' : 'draft',
+      completed_at: done ? at(tCompleted) : null,
+      quote_sent_at: sent ? at(tSent) : null,
+      customer_viewed_at: viewed ? at(tViewed) : null,
+      customer_responded_at: responded ? at(tResp) : null,
+      sale_os_id: approved ? `demo-os-${n}` : null,
+      sale_os: approved ? { number: 200 + n, status: finished ? 'completed' : 'approved', workshop_mechanic_id: 'demo-mec-1', executor: 'workshop' } : null,
+    }, items, n % 3 ? 'Rafael' : 'Bruno'));
+  }
+  return out;
 }

@@ -4,7 +4,7 @@ import { fmtBRL } from '@/components/os/osHelpers';
 import LicensePlate from '@/components/os/LicensePlate';
 import type { PanelCheckup } from '@/lib/checkupPanel';
 import {
-  STAGES, byType, fmtHours, funnelOf, itemStats, leaksOf, moneyOnTable, quotedOf, speedOf, stuckList, typeOf, worstLeaks,
+  STAGES, byType, fmtHours, funnelOf, itemStats, leaksOf, moneyOnTable, quotedOf, reached, speedOf, stuckList, typeOf, worstLeaks,
   type Funnel, type StageKey,
 } from '@/lib/checkupFunnel';
 
@@ -67,46 +67,54 @@ export default function FunnelView({ list, onOpen, onWhatsapp }: {
 
   return (
     <section className="space-y-5">
-      {/* Filtros numa linha */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
-        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-          <Chip on={type === 'todos'} onClick={() => { setType('todos'); setStage(null); }}>Todos os tipos</Chip>
-          {/* Todos os tipos sempre à vista, com quantos check-ups cada um teve no período */}
-          {CHECKUP_MODELS.map(m => {
-            const n = types.find(t => t.key === m.key)?.funnel.total ?? 0;
-            return (
-              <Chip key={m.key} on={type === m.key} dim={n === 0} onClick={() => { setType(m.key); setStage(null); }}>
-                {m.icon} {m.label} <span className="opacity-60">({n})</span>
-              </Chip>
-            );
-          })}
+      {/* Central de comando: filtros, números e ritmo por semana */}
+      <div className="rounded-2xl bg-steel-900 text-white overflow-hidden shadow-lg">
+        <div className="px-5 pt-4 pb-3 flex flex-col lg:flex-row lg:items-center gap-3 justify-between border-b border-white/10">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-signal-400 opacity-60 animate-ping" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-signal-500" />
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-steel-300">Central de vendas do check-up</span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <select value={type} onChange={e => { setType(e.target.value as CheckupModelKey | 'todos'); setStage(null); }}
+              className="rounded-xl bg-white/10 border border-white/15 text-sm font-semibold text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 [&>option]:text-steel-900">
+              <option value="todos">Todos os tipos de check-up ({allPeriod.length})</option>
+              {CHECKUP_MODELS.map(m => {
+                const n = types.find(t => t.key === m.key)?.funnel.total ?? 0;
+                return <option key={m.key} value={m.key}>{m.icon} {m.label} ({n})</option>;
+              })}
+            </select>
+            <div className="inline-flex rounded-xl bg-white/10 p-1 text-xs font-semibold self-start">
+              {PERIODS.map(d => (
+                <button key={d} onClick={() => { setDays(d); setStage(null); }}
+                  className={`px-3 py-1.5 rounded-lg transition ${days === d ? 'bg-white text-steel-900' : 'text-steel-300 hover:text-white'}`}>
+                  {d === 365 ? '12 meses' : `${d} dias`}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="inline-flex rounded-xl bg-steel-100 p-1 text-xs font-semibold self-start shrink-0">
-          {PERIODS.map(d => (
-            <button key={d} onClick={() => { setDays(d); setStage(null); }}
-              className={`px-3 py-1.5 rounded-lg ${days === d ? 'bg-white text-steel-900 shadow-sm' : 'text-steel-500'}`}>
-              {d === 365 ? '12 meses' : `${d} dias`}
-            </button>
-          ))}
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-white/10 border-b border-white/10">
+          <HeroStat label="Viraram serviço" value={pct(f.conversao)} sub={`${f.counts.aprovou} de ${f.total} check-ups`}
+            delta={hasPrev && f.conversao != null && prev.conversao != null ? { v: f.conversao - prev.conversao, unit: 'pts' } : null} accent />
+          <HeroStat label="Aprovado" value={fmtBRL(f.aprovado)} sub={f.orcado ? `${pct((f.aprovado / f.orcado) * 100)} do orçado (${fmtBRL(f.orcado)})` : 'nada orçado ainda'}
+            delta={hasPrev && prev.aprovado > 0 ? { v: ((f.aprovado - prev.aprovado) / prev.aprovado) * 100, unit: '%' } : null} />
+          <HeroStat label="Ticket por aprovação" value={f.counts.aprovou ? fmtBRL(f.ticket) : '—'} sub="por check-up aprovado"
+            delta={hasPrev && prev.ticket > 0 && f.ticket > 0 ? { v: ((f.ticket - prev.ticket) / prev.ticket) * 100, unit: '%' } : null} />
+          <HeroStat label="Check-ups feitos" value={String(f.total)} sub={`${f.counts.enviados} orçamentos enviados`}
+            delta={hasPrev ? { v: ((f.total - prev.total) / prev.total) * 100, unit: '%' } : null} />
         </div>
+
+        <WeeklyBars list={shown} days={days} />
       </div>
 
       {f.total === 0 ? (
         <div className="card text-center py-10 text-sm text-steel-500">Nenhum check-up {type === 'todos' ? '' : 'desse tipo '}no período.</div>
       ) : (
         <>
-          {/* Números de cabeça, com a comparação com o período anterior */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat label="Viraram serviço" value={pct(f.conversao)} sub={`${f.counts.aprovou} de ${f.total} check-ups`}
-              delta={hasPrev && f.conversao != null && prev.conversao != null ? { v: f.conversao - prev.conversao, unit: 'pts' } : null} />
-            <Stat label="Aprovado" value={fmtBRL(f.aprovado)} sub={f.orcado ? `${pct((f.aprovado / f.orcado) * 100)} do valor orçado` : 'nada orçado ainda'}
-              delta={hasPrev && prev.aprovado > 0 ? { v: ((f.aprovado - prev.aprovado) / prev.aprovado) * 100, unit: '%' } : null} dark />
-            <Stat label="Ticket por aprovação" value={f.counts.aprovou ? fmtBRL(f.ticket) : '—'} sub="por check-up aprovado"
-              delta={hasPrev && prev.ticket > 0 && f.ticket > 0 ? { v: ((f.ticket - prev.ticket) / prev.ticket) * 100, unit: '%' } : null} />
-            <Stat label="Check-ups feitos" value={String(f.total)} sub={`${f.counts.enviados} orçamentos enviados`}
-              delta={hasPrev ? { v: ((f.total - prev.total) / prev.total) * 100, unit: '%' } : null} />
-          </div>
-
           {/* Funil + dinheiro na mesa */}
           <div className="grid lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-5 items-start">
             <div className="card space-y-2">
@@ -436,6 +444,77 @@ function ItemList({ title, rows, empty, note }: {
         </div>
       ))}
       {note && <p className="text-[11px] text-steel-400">{note}</p>}
+    </div>
+  );
+}
+
+/* ─── Número do painel escuro ─────────────────────────────────── */
+function HeroStat({ label, value, sub, delta, accent }: {
+  label: string; value: string; sub: string; accent?: boolean;
+  delta?: { v: number; unit: '%' | 'pts' } | null;
+}) {
+  const up = !!delta && delta.v > 0.5, down = !!delta && delta.v < -0.5;
+  return (
+    <div className="px-5 py-4 [&:nth-child(3)]:border-t [&:nth-child(4)]:border-t lg:[&:nth-child(3)]:border-t-0 lg:[&:nth-child(4)]:border-t-0 border-white/10">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-steel-400">{label}</span>
+        {delta && (up || down) && (
+          <span className={`text-[11px] font-bold tabular-nums ${up ? 'text-signal-400' : 'text-alert-400'}`} title="Comparado com o período anterior">
+            {up ? '▲' : '▼'} {Math.abs(Math.round(delta.v))}{delta.unit === '%' ? '%' : ' pts'}
+          </span>
+        )}
+      </div>
+      <div className={`text-2xl lg:text-3xl font-bold font-display tabular-nums mt-1.5 ${accent ? 'text-brand-400' : 'text-white'}`}>{value}</div>
+      <div className="text-[11px] text-steel-400 mt-0.5 truncate">{sub}</div>
+    </div>
+  );
+}
+
+/* ─── Ritmo por semana: check-ups feitos (barra clara) e quantos aprovaram (laranja) ── */
+function WeeklyBars({ list, days }: { list: PanelCheckup[]; days: number }) {
+  const weeks = Math.max(4, Math.ceil(days / 7));
+  const end = Date.now();
+  const start = end - weeks * 7 * DAY;
+  const buckets = Array.from({ length: weeks }, (_, i) => ({ from: start + i * 7 * DAY, feitos: 0, aprovou: 0 }));
+  for (const c of list) {
+    const t = new Date(c.created_at).getTime();
+    const i = Math.floor((t - start) / (7 * DAY));
+    if (i < 0 || i >= weeks) continue;
+    buckets[i].feitos++;
+    if (reached(c).aprovou) buckets[i].aprovou++;
+  }
+  const max = Math.max(1, ...buckets.map(b => b.feitos));
+  const [hover, setHover] = useState<number | null>(null);
+  const fmt = (ms: number) => new Date(ms).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  return (
+    <div className="px-5 pt-3 pb-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-steel-400">Ritmo por semana</span>
+        <span className="flex items-center gap-3 text-[11px] text-steel-400">
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-steel-600" />check-ups</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-brand-500" />viraram serviço</span>
+        </span>
+      </div>
+      <div className="relative h-16 flex items-end gap-[3px]">
+        {buckets.map((b, i) => (
+          <div key={i} className="flex-1 h-full flex items-end cursor-default" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+            <div className={`w-full rounded-t-[3px] bg-steel-700 relative overflow-hidden transition ${hover === i ? 'bg-steel-500' : ''}`}
+              style={{ height: `${b.feitos ? Math.max(8, (b.feitos / max) * 100) : 3}%` }}>
+              {b.aprovou > 0 && <div className="absolute bottom-0 inset-x-0 bg-brand-500" style={{ height: `${(b.aprovou / b.feitos) * 100}%` }} />}
+            </div>
+          </div>
+        ))}
+        {hover != null && (
+          <div className="absolute -top-2 -translate-y-full rounded-lg bg-white text-steel-900 text-xs px-2.5 py-1.5 shadow-lg whitespace-nowrap pointer-events-none"
+            style={{ left: `${((hover + 0.5) / weeks) * 100}%`, transform: 'translate(-50%, -100%)' }}>
+            <div className="font-semibold">Semana de {fmt(buckets[hover].from)}</div>
+            <div>{buckets[hover].feitos} check-ups · {buckets[hover].aprovou} viraram serviço</div>
+          </div>
+        )}
+      </div>
+      <div className="flex justify-between text-[10px] text-steel-500 mt-1 tabular-nums">
+        <span>{fmt(start)}</span><span>hoje</span>
+      </div>
     </div>
   );
 }
