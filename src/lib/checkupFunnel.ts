@@ -156,3 +156,62 @@ export function itemStats(list: Ck[]): ItemStat[] {
   }
   return [...map.values()].map(s => ({ ...s, taxa: (s.aprovado / s.ofertado) * 100 }));
 }
+
+/* ─── Onde cada check-up parou ─────────────────────────────────
+   Parado na etapa X = chegou em X e não chegou na seguinte. */
+export function stuckAt(c: Ck): StageKey {
+  const r = reached(c);
+  let last: StageKey = 'feitos';
+  for (const s of STAGES) if (r[s.key]) last = s.key;
+  return last;
+}
+
+/** Check-ups que pararam na etapa (e ainda dá para agir: não refeito, não respondido sem aprovar) */
+export function stuckList(list: Ck[], stage: StageKey) {
+  return list.filter(c => stuckAt(c) === stage);
+}
+
+/** Valor orçado (com preço) do check-up */
+export const quotedOf = (c: Ck) => sum(priced(c).map(itemQuote));
+
+/** Dinheiro na mesa: orçamento enviado sem resposta (não abriu / viu e não respondeu) + "me lembra depois" */
+export function moneyOnTable(list: Ck[]) {
+  let naoAbriu = 0, viuSemResposta = 0, lembrar = 0;
+  for (const c of list) {
+    const r = reached(c);
+    if (r.enviados && !c.customer_responded_at) {
+      if (r.abriu) viuSemResposta += quotedOf(c); else naoAbriu += quotedOf(c);
+    }
+    lembrar += sum(flagged(c).filter(i => i.customer_decision === 'remind').map(itemQuote));
+  }
+  return { naoAbriu: sum([naoAbriu]), viuSemResposta: sum([viuSemResposta]), lembrar: sum([lembrar]),
+    total: sum([naoAbriu, viuSemResposta, lembrar]) };
+}
+
+/* ─── Velocidade: mediana em horas entre as etapas ─────────────── */
+const hrs = (a?: string | null, b?: string | null) =>
+  a && b ? (new Date(b).getTime() - new Date(a).getTime()) / 3600000 : null;
+const median = (xs: number[]) => {
+  const v = xs.filter(x => x >= 0).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+export function speedOf(list: Ck[]) {
+  const pick = (f: (c: Ck) => number | null) => median(list.map(f).filter((x): x is number => x != null));
+  return [
+    { label: 'Inspeção', hint: 'do check-up aberto até terminado', h: pick(c => hrs(c.created_at, c.completed_at)) },
+    { label: 'Montar e enviar o orçamento', hint: 'de terminado até enviado', h: pick(c => hrs(c.completed_at, c.quote_sent_at)) },
+    { label: 'Cliente abrir', hint: 'de enviado até o cliente abrir', h: pick(c => hrs(c.quote_sent_at, c.customer_viewed_at)) },
+    { label: 'Cliente decidir', hint: 'de aberto até responder', h: pick(c => hrs(c.customer_viewed_at, c.customer_responded_at)) },
+  ];
+}
+
+/** "35 min", "5 h", "2 d" */
+export function fmtHours(h: number | null) {
+  if (h == null) return '—';
+  if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
+  if (h < 48) return `${Math.round(h)} h`;
+  return `${Math.round(h / 24)} d`;
+}

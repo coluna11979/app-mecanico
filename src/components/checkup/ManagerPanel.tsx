@@ -183,7 +183,7 @@ export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, w
             onAct={act} onSchedule={onSchedule} onNew={onNew} />
         </>
       ) : tab === 'funil' ? (
-        <FunnelView list={list ?? []} />
+        <FunnelView list={list ?? []} onOpen={c => navigate(`/oficina/checkup/${c.id}`)} onWhatsapp={c => setWa(rowOf(c))} />
       ) : tab === 'historico' ? (
         <History rows={rows} onAct={act} />
       ) : (
