@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
 
   const { data: job } = await supabase
     .from('jobs')
-    .select('id, title, status, audience, mechanic_id, invited_mechanic_id, workshop_id, price, price_per_hour, max_hours, scheduled_at, workshop:workshops(business_name, lat, lng, city)')
+    .select('id, title, status, audience, mechanic_id, invited_mechanic_id, rejected_mechanic_ids, workshop_id, price, price_per_hour, max_hours, scheduled_at, workshop:workshops(business_name, lat, lng, city)')
     .eq('id', job_id)
     .maybeSingle();
   if (!job) return Response.json({ sent: 0, reason: 'job not found' });
@@ -93,6 +93,10 @@ Deno.serve(async (req) => {
       return distanceKm(shop.lat, shop.lng, m.current_lat, m.current_lng) <= RADIUS_KM;
     });
   }
+
+  // Quem a oficina trocou nesta demanda não é avisado de novo quando ela volta a ficar aberta
+  const rejected = new Set((job.rejected_mechanic_ids ?? []) as string[]);
+  mechs = mechs.filter(m => !rejected.has(m.id));
 
   const userIds = mechs.map(m => m.profile_id);
   if (!userIds.length) return Response.json({ sent: 0, reason: 'no recipients' });
