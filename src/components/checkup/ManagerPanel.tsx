@@ -11,14 +11,15 @@ import {
 import type { Situation } from '@/lib/checkupStatus';
 import type { WorkshopMechanic } from '@/types/database';
 import { useModuleAllows } from '@/lib/modules';
+import FunnelView from '@/components/checkup/FunnelView';
 
 /* Painel do gestor: Painel · Inspeções · Histórico · Modelos.
    Um botão principal por card/linha; tudo calculado em lib/checkupPanel. */
 
-export type Tab = 'painel' | 'inspecoes' | 'historico' | 'modelos';
+export type Tab = 'painel' | 'funil' | 'inspecoes' | 'historico' | 'modelos';
 type Filter = 'todos' | 'agendados' | 'andamento' | 'aguardando' | 'finalizados' | 'aprovados';
 
-const TAB_LABEL: Record<Tab, string> = { painel: 'Painel', inspecoes: 'Inspeções', historico: 'Histórico', modelos: 'Modelos' };
+const TAB_LABEL: Record<Tab, string> = { painel: 'Painel', funil: 'Funil de vendas', inspecoes: 'Inspeções', historico: 'Histórico', modelos: 'Modelos' };
 const FILTER_LABEL: Record<Exclude<Filter, 'aprovados'>, string> = {
   todos: 'Todos', agendados: 'Agendados', andamento: 'Em andamento', aguardando: 'Aguardando cliente', finalizados: 'Finalizados',
 };
@@ -181,6 +182,8 @@ export default function ManagerPanel({ tab, onTab, list, scheduled, mechanics, w
             approvedIds={k.approvedIds} period={period} starting={starting} search={search} mechFilter={mechFilter}
             onAct={act} onSchedule={onSchedule} onNew={onNew} />
         </>
+      ) : tab === 'funil' ? (
+        <FunnelView list={list ?? []} onOpen={c => navigate(`/oficina/checkup/${c.id}`)} onWhatsapp={c => setWa(rowOf(c))} />
       ) : tab === 'historico' ? (
         <History rows={rows} onAct={act} />
       ) : (
