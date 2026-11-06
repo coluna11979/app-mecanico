@@ -3,6 +3,7 @@ import { CHECKUP_MODELS, modelOf, type CheckupModelKey } from '@/lib/checkup';
 import { fmtBRL } from '@/components/os/osHelpers';
 import LicensePlate from '@/components/os/LicensePlate';
 import type { PanelCheckup } from '@/lib/checkupPanel';
+import { demoPanel } from '@/lib/checkupDemo';
 import {
   STAGES, byType, fmtHours, funnelOf, itemStats, leaksOf, moneyOnTable, quotedOf, reached, speedOf, stuckList, typeOf, worstLeaks,
   type Funnel, type StageKey,
@@ -35,11 +36,17 @@ const STUCK: Partial<Record<StageKey, { title: string; action: 'open' | 'wa'; ct
   aprovou:      { title: 'Aprovado, serviço ainda não feito', action: 'open', cta: 'Abrir' },
 };
 
-export default function FunnelView({ list, onOpen, onWhatsapp }: {
+export default function FunnelView({ list: realList, onOpen, onWhatsapp, demo = false }: {
   list: PanelCheckup[];
   onOpen: (c: PanelCheckup) => void;
   onWhatsapp: (c: PanelCheckup) => void;
+  /** Página de demonstração: sempre com o exemplo, sem botão de voltar */
+  demo?: boolean;
 }) {
+  // Oficina ainda sem check-up: dá para ver o funil cheio de exemplo (dados fictícios, só na tela)
+  const [example, setExample] = useState(demo);
+  const exampleList = useMemo(() => demoPanel().list as unknown as PanelCheckup[], []);
+  const list = example ? exampleList : realList;
   const [days, setDays] = useState<Period>(90);
   const [type, setType] = useState<CheckupModelKey | 'todos'>('todos');
   const [stage, setStage] = useState<StageKey | null>(null);
@@ -67,6 +74,16 @@ export default function FunnelView({ list, onOpen, onWhatsapp }: {
 
   return (
     <section className="space-y-5">
+      {example && (
+        <div className="rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="text-sm text-steel-700">
+            <span className="mr-2 rounded-md bg-brand-500 px-2 py-0.5 text-[11px] font-bold text-white">EXEMPLO</span>
+            Dados fictícios de uma oficina com 3 meses de check-up. Nada aqui é real.
+          </div>
+          {!demo && <button onClick={() => { setExample(false); setStage(null); }} className="text-sm font-semibold text-brand-700 hover:underline shrink-0">Voltar aos meus dados</button>}
+        </div>
+      )}
+
       {/* Central de comando: filtros, números e ritmo por semana */}
       <div className="rounded-2xl bg-steel-900 text-white overflow-hidden shadow-lg">
         <div className="px-5 pt-4 pb-3 flex flex-col lg:flex-row lg:items-center gap-3 justify-between border-b border-white/10">
@@ -112,7 +129,12 @@ export default function FunnelView({ list, onOpen, onWhatsapp }: {
       </div>
 
       {f.total === 0 ? (
-        <div className="card text-center py-10 text-sm text-steel-500">Nenhum check-up {type === 'todos' ? '' : 'desse tipo '}no período.</div>
+        <div className="card text-center py-10 space-y-3">
+          <div className="text-sm text-steel-500">Nenhum check-up {type === 'todos' ? '' : 'desse tipo '}no período.</div>
+          {!example && realList.length < 5 && (
+            <button onClick={() => { setExample(true); setStage(null); }} className="btn-primary text-sm">👀 Ver um exemplo do funil cheio</button>
+          )}
+        </div>
       ) : (
         <>
           {/* Funil + dinheiro na mesa */}

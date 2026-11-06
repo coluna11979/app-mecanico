@@ -18,6 +18,7 @@ import Privacy from './pages/public/Privacy';
 import ForgotPassword from './pages/public/ForgotPassword';
 import ResetPassword from './pages/public/ResetPassword';
 import CheckupReport from './pages/public/CheckupReport';
+import CheckupFunnelDemo from './pages/public/CheckupFunnelDemo';
 import MechanicCheckup from './pages/public/MechanicCheckup';
 
 import MechanicDashboard from './pages/mecanico/Dashboard';
@@ -146,6 +147,8 @@ export default function App() {
       <Route path="/recuperar-senha"    element={<ForgotPassword />} />
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
       <Route path="/checkup/:token"     element={<CheckupReport />} />
+      {/* Demonstração pública do funil (dados fictícios, sem login) */}
+      <Route path="/demo/funil-checkup" element={<CheckupFunnelDemo />} />
       <Route path="/blog" element={<Blog />} />
       <Route path="/blog/:slug" element={<BlogPost />} />
       <Route path="/c/:slug"            element={<CampaignLink />} />
