@@ -71,9 +71,15 @@ export default function FunnelView({ list, onOpen, onWhatsapp }: {
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
         <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
           <Chip on={type === 'todos'} onClick={() => { setType('todos'); setStage(null); }}>Todos os tipos</Chip>
-          {CHECKUP_MODELS.filter(m => types.some(t => t.key === m.key)).map(m => (
-            <Chip key={m.key} on={type === m.key} onClick={() => { setType(m.key); setStage(null); }}>{m.icon} {m.label}</Chip>
-          ))}
+          {/* Todos os tipos sempre à vista, com quantos check-ups cada um teve no período */}
+          {CHECKUP_MODELS.map(m => {
+            const n = types.find(t => t.key === m.key)?.funnel.total ?? 0;
+            return (
+              <Chip key={m.key} on={type === m.key} dim={n === 0} onClick={() => { setType(m.key); setStage(null); }}>
+                {m.icon} {m.label} <span className="opacity-60">({n})</span>
+              </Chip>
+            );
+          })}
         </div>
         <div className="inline-flex rounded-xl bg-steel-100 p-1 text-xs font-semibold self-start shrink-0">
           {PERIODS.map(d => (
@@ -239,11 +245,11 @@ export default function FunnelView({ list, onOpen, onWhatsapp }: {
           </div>
 
           {/* Por tipo de check-up */}
-          {type === 'todos' && types.length > 1 && (
+          {type === 'todos' && (
             <div className="card !p-0 overflow-hidden">
               <div className="px-5 pt-4 pb-2">
                 <div className="font-bold text-steel-800">Qual tipo de check-up vende mais</div>
-                <p className="text-xs text-steel-500">Toque num tipo para ver o funil dele.</p>
+                <p className="text-xs text-steel-500">Toque num tipo para ver o funil dele. Tipo sem check-up no período aparece em cinza.</p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[600px]">
@@ -257,10 +263,11 @@ export default function FunnelView({ list, onOpen, onWhatsapp }: {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-steel-100">
-                    {types.map(t => {
+                    {CHECKUP_MODELS.map(m => types.find(t => t.key === m.key) ?? { key: m.key, funnel: funnelOf([]) }).map(t => {
                       const best = types.every(o => (o.funnel.conversao ?? 0) <= (t.funnel.conversao ?? 0)) && (t.funnel.conversao ?? 0) > 0;
                       return (
-                        <tr key={t.key} onClick={() => { setType(t.key); setStage(null); }} className="cursor-pointer hover:bg-brand-50">
+                        <tr key={t.key} onClick={() => { setType(t.key); setStage(null); }}
+                          className={`cursor-pointer hover:bg-brand-50 ${t.funnel.total === 0 ? 'text-steel-400' : ''}`}>
                           <td className="px-5 py-2.5 font-semibold text-steel-800">{modelOf(t.key).icon} {modelOf(t.key).label}{best && <span className="ml-1.5 text-[10px] font-bold text-signal-700">MELHOR</span>}</td>
                           <td className="px-3 py-2.5 text-right">{t.funnel.total}</td>
                           <td className="px-3 py-2.5">
@@ -378,10 +385,10 @@ function MoneyRow({ label, value, total, tone, onClick }: { label: string; value
   );
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({ on, onClick, children, dim }: { on: boolean; onClick: () => void; children: React.ReactNode; dim?: boolean }) {
   return (
     <button onClick={onClick}
-      className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${on ? 'bg-steel-900 text-white' : 'bg-white border border-steel-200 text-steel-600 hover:bg-steel-50'}`}>
+      className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${on ? 'bg-steel-900 text-white' : `bg-white border border-steel-200 hover:bg-steel-50 ${dim ? 'text-steel-400' : 'text-steel-600'}`}`}>
       {children}
     </button>
   );
