@@ -22,7 +22,7 @@ import type { WorkshopMechanic } from '@/types/database';
 
 const EMPTY = { workshop_mechanic_id: '', km: '' };
 
-const TABS: Tab[] = ['painel', 'inspecoes', 'historico', 'modelos'];
+const TABS: Tab[] = ['painel', 'funil', 'inspecoes', 'historico', 'modelos'];
 
 export default function WorkshopCheckups() {
   const { currentWorkshop } = useAuth();
@@ -72,7 +72,7 @@ export default function WorkshopCheckups() {
   async function load() {
     const [c, m, s] = await Promise.all([
       fetchAll<PanelCheckup>((a, b) => supabase.from('vehicle_checkups')
-        .select('*, mechanic:workshop_mechanics(name, phone), items:checkup_items(status, updated_at, system, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, workshop_mechanic_id, executor)')
+        .select('*, mechanic:workshop_mechanics(name, phone), items:checkup_items(status, updated_at, system, label, item_key, quote_labor, quote_parts, customer_decision), sale_os:service_orders!vehicle_checkups_sale_os_id_fkey(number, status, workshop_mechanic_id, executor)')
         .eq('workshop_id', wid!).order('created_at', { ascending: false }).order('id').range(a, b) as unknown as PromiseLike<{ data: PanelCheckup[] | null; error: unknown }>),
       supabase.from('workshop_mechanics').select('id, name').eq('workshop_id', wid!).eq('active', true).order('name'),
       supabase.from('service_orders')

@@ -204,6 +204,7 @@ export default function App() {
       {/* Telas do módulo (rotas fixas têm prioridade sobre /:id) */}
       <Route path="/oficina/checkup/inspecoes" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
       <Route path="/oficina/checkup/historico" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
+      <Route path="/oficina/checkup/funil" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
       <Route path="/oficina/checkup/modelos" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
       <Route path="/oficina/checkup/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckupRun /></ProtectedRoute>} />
       <Route path="/oficina/os/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopOsDetail /></ProtectedRoute>} />

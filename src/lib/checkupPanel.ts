@@ -10,6 +10,8 @@ import {
 
 export type PanelItem = {
   status: CheckupItemStatus | null; updated_at: string | null; system?: string;
+  /** Para o funil (itens que mais vendem) */
+  label?: string; item_key?: string;
   quote_labor: number | null; quote_parts: number | null; customer_decision: string | null;
 };
 export type PanelCheckup = VehicleCheckup & {

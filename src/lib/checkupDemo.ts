@@ -97,6 +97,8 @@ export function demoPanel() {
     ...Array.from({ length: ok }, () => ({ status: 'ok' as const, updated_at: null, quote_labor: null, quote_parts: null, customer_decision: null })),
     ...Array.from({ length: warn + urgent }, (_, i) => ({
       status: (i < urgent ? 'urgent' : 'warn') as CheckupItem['status'], updated_at: null,
+      label: ['Pastilhas dianteiras', 'Óleo do motor', 'Bateria', 'Palhetas', 'Amortecedores'][i % 5],
+      item_key: ['pastilhas_diant', 'oleo_nivel', 'bateria', 'limpadores', 'amortecedores'][i % 5],
       quote_labor: i < priced ? 150 : null, quote_parts: i < priced ? 90 : null, customer_decision: decision,
     })),
     ...Array.from({ length: pending }, () => ({ status: null, updated_at: null, quote_labor: null, quote_parts: null, customer_decision: null })),
