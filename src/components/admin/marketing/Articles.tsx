@@ -22,6 +22,13 @@ const EMPTY: Draft = {
 const BODY_HELP = 'Linha em branco separa parágrafos · ## Subtítulo · - item de lista · **negrito** · [texto do link](https://site.com)';
 
 /** Artigos escritos aqui e lidos dentro do app (Para você → Conteúdo). */
+
+/** Avisa o Bing (IndexNow) que o artigo do blog é novo ou mudou; o ChatGPT busca pelo Bing. Falha em silêncio. */
+function avisarBuscadores(slug: string) {
+  if (import.meta.env.DEV) return; // a rota /api só existe na Vercel
+  void fetch('/api/indexnow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug }) }).catch(() => {});
+}
+
 export default function Articles() {
   const [list, setList] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +49,7 @@ export default function Articles() {
     const { error } = await supabase.from('panel_articles').update({ active: !a.active }).eq('id', a.id);
     if (error) return toast.error(error.message);
     setList(l => l.map(x => (x.id === a.id ? { ...x, active: !a.active } : x)));
+    if (!a.active && a.public) avisarBuscadores(a.slug);
   }
   async function remove(a: Article) {
     if (!confirm(`Apagar o artigo "${a.title}"?`)) return;
@@ -146,6 +154,7 @@ function ArticleForm({ initial, onClose, onSaved }: { initial: Draft; onClose: (
     setSaving(false);
     if (error) return toast.error(/duplicate|unique/i.test(error.message) ? 'Já existe um artigo com esse endereço. Mude o título ou o endereço.' : error.message);
     toast.success(publish ? 'Artigo publicado ✓' : 'Rascunho salvo ✓');
+    if (publish && row.public) avisarBuscadores(slug);
     onSaved();
   }
 
