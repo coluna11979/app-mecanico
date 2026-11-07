@@ -36,6 +36,7 @@ Regras:
 - Entre 600 e 900 palavras, com 3 a 5 subtítulos.
 - Conteúdo útil e verdadeiro. Não invente números, estatísticas, leis, preços ou depoimentos. Não prometa ganhos.
 - Não cite concorrentes. Fale do MecânicoApp no máximo em um parágrafo, perto do fim, sem exagero.
+- Termine o body com a seção "## Perguntas frequentes": 3 a 4 perguntas que um dono de oficina ou mecânico digitaria no Google ou perguntaria a uma IA sobre o tema. Cada pergunta em um bloco próprio: a pergunta em negrito numa linha (**Pergunta?**) e, na linha de baixo, a resposta direta em 1 a 3 frases. Essa seção fica depois do parágrafo sobre o MecânicoApp.
 - Formato do campo body (sem HTML, sem markdown além disto): parágrafos separados por uma linha em branco; subtítulo em linha própria começando com "## "; listas com linhas começando com "- "; **negrito** com moderação. Não repita o título no body.`;
 
 Deno.serve(async (req) => {
