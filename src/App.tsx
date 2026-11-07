@@ -12,6 +12,7 @@ import Login from './pages/public/Login';
 import TeamLogin from './pages/public/TeamLogin';
 import SignupMechanic from './pages/public/SignupMechanic';
 import SignupWorkshop from './pages/public/SignupWorkshop';
+import SignupChooser from './pages/public/SignupChooser';
 import PendingApproval from './pages/public/PendingApproval';
 import Terms from './pages/public/Terms';
 import Privacy from './pages/public/Privacy';
@@ -139,6 +140,7 @@ export default function App() {
       <Route path="/oficina" element={<LandingOficina />} />
       <Route path="/login" element={<Login />} />
       <Route path="/equipe" element={<TeamLogin />} />
+      <Route path="/cadastro" element={<SignupChooser />} />
       <Route path="/cadastro/mecanico" element={<SignupMechanic />} />
       <Route path="/cadastro/oficina" element={<SignupWorkshop />} />
       <Route path="/aguardando-aprovacao" element={<PendingApproval />} />
