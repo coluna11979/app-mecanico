@@ -10,13 +10,19 @@ import {
   HeroProduct, ManagementMockup, MockCaption, NetworkMockup, PhoneFrame, PhoneOpportunity, ProfileMockup,
 } from '@/components/home/mockups';
 import { ImpactCalculator } from '@/components/home/ImpactCalculator';
-import { PLATFORM_CONTACT_EMAIL } from '@/data/legal/termsContent';
+import { PLATFORM_CNPJ, PLATFORM_CONTACT_EMAIL } from '@/data/legal/termsContent';
 import { FACTS, FAQ, METRICS, TESTIMONIALS, TESTIMONIAL_PLACEHOLDERS } from '@/components/home/content';
 
 type Intent = 'mechanic' | 'workshop';
 
 const SIGNUP_WORKSHOP = '/cadastro/oficina';
 const SIGNUP_MECHANIC = '/cadastro/mecanico';
+
+/**
+ * O domínio ainda não tem MX: o e-mail de suporte não recebe nada.
+ * Ligar só depois de configurar o recebimento (MX + SPF) na Hostinger.
+ */
+const SHOW_SUPPORT_EMAIL = false;
 
 const NAV: { label: string; href?: string; intent?: Intent }[] = [
   { label: 'Para Oficinas',  intent: 'workshop' },
@@ -496,26 +502,28 @@ export default function Landing() {
                 A ponte direta entre oficina e mecânico. Feito no Brasil, para o setor automotivo.
               </p>
             </div>
-            <FooterCol title="Produto">
+            <FooterCol title="Para você">
               <li><button type="button" onClick={() => go('workshop')} className="hover:text-white">Para Oficinas</button></li>
               <li><button type="button" onClick={() => go('mechanic')} className="hover:text-white">Para Mecânicos</button></li>
-              <li><a href="#como-funciona" className="hover:text-white">Como funciona</a></li>
-              <li><a href="#seguranca" className="hover:text-white">Segurança</a></li>
             </FooterCol>
-            <FooterCol title="Ajuda">
-              <li><a href="#faq" className="hover:text-white">Perguntas frequentes</a></li>
-              <li><a href={`mailto:${PLATFORM_CONTACT_EMAIL}`} className="hover:text-white">Contato</a></li>
-              <li><a href={`mailto:${PLATFORM_CONTACT_EMAIL}?subject=Suporte`} className="hover:text-white">Suporte</a></li>
+            <FooterCol title="Acessos">
               <li><Link to="/login" state={{ fresh: true }} className="hover:text-white">Entrar</Link></li>
               <li><Link to="/equipe" className="hover:text-white">Acesso equipe</Link></li>
             </FooterCol>
-            <FooterCol title="Legal">
-              <li><Link to="/termos" className="hover:text-white">Termos de uso</Link></li>
-              <li><Link to="/privacidade" className="hover:text-white">Privacidade</Link></li>
+            <FooterCol title="Ajuda">
+              <li><a href="#faq" className="hover:text-white">Perguntas frequentes</a></li>
+              {SHOW_SUPPORT_EMAIL && (
+                <li><a href={`mailto:${PLATFORM_CONTACT_EMAIL}`} className="break-all hover:text-white">{PLATFORM_CONTACT_EMAIL}</a></li>
+              )}
+              <li>
+                <Link to="/termos" className="hover:text-white">Termos</Link>
+                <span aria-hidden className="mx-2 text-steel-600">·</span>
+                <Link to="/privacidade" className="hover:text-white">Privacidade</Link>
+              </li>
             </FooterCol>
           </div>
           <div className="mt-10 flex flex-col gap-2 border-t border-steel-800 pt-6 text-xs text-steel-400 sm:mt-12 sm:flex-row sm:justify-between">
-            <p>© {new Date().getFullYear()} MecânicoApp. Todos os direitos reservados.</p>
+            <p>© {new Date().getFullYear()} MecânicoApp · CNPJ {PLATFORM_CNPJ}</p>
             <p>Telas do produto nesta página são ilustrativas.</p>
           </div>
         </Container>
