@@ -25,6 +25,9 @@
     { "source": "/sites/jotacar", "destination": "/sites/jotacar/index.html" },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "checkall.mecanicoapp.com.br" }], "destination": "/sites/checkall/index.html" },
     { "source": "/sites/checkall", "destination": "/sites/checkall/index.html" },
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
+    { "source": "/blog", "destination": "/api/blog-html" },
+    { "source": "/blog/:slug", "destination": "/api/blog-html?slug=:slug" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
