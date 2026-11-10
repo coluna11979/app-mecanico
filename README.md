@@ -1,10 +1,13 @@
 # MecânicoApp
 
-Marketplace B2B brasileiro que conecta oficinas a mecânicos autônomos com **escrow**, **tracking ao vivo** e **PIX em 24h**.
+Marketplace B2B brasileiro que liga oficinas que precisam de mão de obra a mecânicos da região, com rastreio ao vivo e pagamento pela plataforma.
 
-- **Oficinas** → sempre 100% gratuito
-- **Mecânicos** → pagam 15% só quando o job é concluído (recebem 85%)
-- **Admin** → painel completo com todas as configurações editáveis (zero hardcoded)
+- **Oficinas** → cadastro gratuito, sem mensalidade; pagam só a demanda contratada
+- **Plataforma** → taxa de 20% sobre cada demanda (o mecânico vê só o valor líquido, 80%)
+- **Admin** → painel com as configurações editáveis
+
+Regras de negócio atuais (demanda, pagamento, cancelamento, módulos): [`docs/regras-gerais.md`](docs/regras-gerais.md).
+Tom e palavras proibidas em comunicação: [`docs/marca/dna-marca.md`](docs/marca/dna-marca.md).
 
 ## Stack
 
@@ -37,7 +40,7 @@ Aplique a migration em `supabase/migrations/0001_initial_schema.sql` no SQL Edit
 - Enums e índices
 - **Row Level Security** ativado em todas as tabelas, com policies por papel
 - Realtime habilitado nas tabelas críticas para tracking
-- Seed inicial de `app_settings` (incluindo `platform_fee_percent = 15`)
+- Seed inicial de `app_settings` (`platform_fee_percent` hoje é 20, ajustado na migração 0106)
 
 ### Criando o primeiro admin
 

@@ -102,8 +102,8 @@ A relação entre Mecânico e Oficina é **independente, comercial e direta**, r
 
 ### 5.2. Cancelamento pelo MECÂNICO (antes de chegar)
 
-- Mecânico pode cancelar antes de chegar, sem multa, mas perde 0,5 estrela na avaliação automática.
-- Cancelamentos repetidos podem levar a banimento.
+- Mecânico pode cancelar antes de chegar, sem multa. A demanda volta a ficar disponível para outros mecânicos.
+- Cancelamentos repetidos podem levar a suspensão ou banimento.
 
 ### 5.3. Cancelamento durante o serviço (em acordo bilateral)
 
@@ -116,12 +116,12 @@ Se o serviço já está em andamento, a Oficina pode pedir o cancelamento por mo
   - **Recusar**: o caso vira uma **Disputa** (seção 6) e a equipe da Plataforma decide quanto cada parte recebe
 - O resultado da disputa é vinculante para ambas as partes
 
-### 5.4. Cancelamentos automáticos
+### 5.4. Cancelamento pela Plataforma
 
-A Plataforma pode cancelar automaticamente um job em casos de:
-- Mecânico não confirmar chegada após X horas do horário agendado
-- Pagamento não confirmado após Y horas da chegada do mecânico
-- Inatividade de qualquer parte por mais de 7 dias após contratação
+A Plataforma pode cancelar uma demanda, avisando Oficina e Mecânico, em casos de:
+- Mecânico que não chega dentro do prazo de chegada e não responde à Oficina
+- Pagamento que não é feito depois da chegada do Mecânico
+- Inatividade de qualquer parte por mais de 7 dias após a contratação
 
 ## 6. Disputas
 
