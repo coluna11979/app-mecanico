@@ -13,7 +13,6 @@ import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import NextpayPayment from '@/components/payment/NextpayPayment';
 import { arrivalDeadline, formatDeadline, freeCancelUntil, isAdvanceScheduled, isArrivalLate } from '@/lib/arrivalDeadline';
-import { PLATFORM_CONTACT_EMAIL } from '@/data/legal/termsContent';
 import WalletPayOption from '@/components/wallet/WalletPayOption';
 import { CustomerChargeCard } from '@/components/marketplace/CustomerCharge';
 
@@ -802,8 +801,8 @@ export default function WorkshopTracking() {
                 {/* Botão Cancelar Demanda */}
                 {job?.pix_paid_at && job.status === 'assigned' && (
                   <p className="text-xs text-steel-500 mt-3 leading-relaxed">
-                    Pagamento feito: o mecânico já pode iniciar. Algum problema? Fale com o suporte em{' '}
-                    <span className="font-semibold text-steel-700 break-all">{PLATFORM_CONTACT_EMAIL}</span>.
+                    {/* O e-mail de suporte ainda não recebe mensagens (domínio sem MX): não mostrar até ter caixa */}
+                    Pagamento feito: o mecânico já pode iniciar. Algum problema? Fale com a equipe MecânicoApp.
                   </p>
                 )}
                 {cancellation?.allowed && job?.status !== 'cancelled' && job?.status !== 'completed' && (
