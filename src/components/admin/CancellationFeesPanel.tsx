@@ -123,6 +123,7 @@ function WaiveModal({ row, onClose, onDone }: { row: FeeRow; onClose: () => void
           <p className="text-sm text-steel-600 mt-1">
             {row.workshop_name ?? 'A oficina'} deixa de dever essa multa e volta a poder publicar demandas.
             Uma mensagem avisando fica registrada na conversa da demanda.
+            O mecânico recebe os 80% da multa do mesmo jeito: a plataforma absorve esse valor (aba Multas, em Repasses).
           </p>
         </div>
         <label className="block">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
-import { PLATFORM_FEE, jobGross, jobHours } from '@/lib/payment';
+import { FEE_REPASSE_SINCE, PLATFORM_FEE, jobGross, jobHours, mechanicNet } from '@/lib/payment';
 
 interface RepasseRow {
   job_id: string;
@@ -25,10 +25,27 @@ interface RepasseRow {
 
 const FEE = PLATFORM_FEE;
 
+/** Multa de cancelamento: 80% vão para o mecânico; se foi perdoada, a plataforma absorve */
+interface FeeRow {
+  job_id: string;
+  job_title: string;
+  cancelled_at: string | null;
+  fee_paid_at: string | null;
+  fee_waived_at: string | null;
+  fee: number;
+  mechanic_amount: number;
+  repasse_pago_at: string | null;
+  repasse_valor: number | null;
+  mechanic_name: string;
+  mechanic_pix_key: string | null;
+  workshop_name: string;
+}
+
 export default function AdminRepasses() {
   const [rows, setRows]       = useState<RepasseRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab]         = useState<'pendente' | 'pago'>('pendente');
+  const [feeRows, setFeeRows] = useState<FeeRow[]>([]);
+  const [tab, setTab]         = useState<'pendente' | 'pago' | 'multa'>('pendente');
   const [marking, setMarking] = useState<string | null>(null);
   const [copied, setCopied]   = useState<string | null>(null);
 
@@ -36,6 +53,39 @@ export default function AdminRepasses() {
 
   async function load() {
     setLoading(true);
+    const { data: fees } = await supabase
+      .from('jobs')
+      .select(`
+        id, title, cancelled_at, cancellation_fee, cancellation_fee_paid_at, cancellation_fee_waived_at,
+        fee_repasse_pago_at, fee_repasse_valor,
+        mechanic:mechanics!jobs_mechanic_id_fkey!inner(
+          pix_key,
+          profile:profiles!inner(full_name)
+        ),
+        workshop:workshops!inner(business_name)
+      `)
+      .eq('status', 'cancelled')
+      .eq('cancelled_by', 'workshop')
+      .gt('cancellation_fee', 0)
+      .gte('cancelled_at', FEE_REPASSE_SINCE)
+      .or('cancellation_fee_paid_at.not.is.null,cancellation_fee_waived_at.not.is.null')
+      .order('cancelled_at', { ascending: false })
+      .limit(200);
+    setFeeRows((fees ?? []).map((j: any) => ({
+      job_id:           j.id,
+      job_title:        j.title,
+      cancelled_at:     j.cancelled_at,
+      fee_paid_at:      j.cancellation_fee_paid_at,
+      fee_waived_at:    j.cancellation_fee_waived_at,
+      fee:              Number(j.cancellation_fee),
+      mechanic_amount:  parseFloat(mechanicNet(Number(j.cancellation_fee)).toFixed(2)),
+      repasse_pago_at:  j.fee_repasse_pago_at,
+      repasse_valor:    j.fee_repasse_valor,
+      mechanic_name:    j.mechanic?.profile?.full_name ?? '—',
+      mechanic_pix_key: j.mechanic?.pix_key ?? null,
+      workshop_name:    j.workshop?.business_name ?? '—',
+    })));
+
     const { data } = await supabase
       .from('jobs')
       .select(`
@@ -101,6 +151,16 @@ export default function AdminRepasses() {
     setMarking(null);
   }
 
+  async function markFeeAsPaid(jobId: string, valor: number) {
+    setMarking(jobId);
+    await supabase.from('jobs').update({
+      fee_repasse_pago_at: new Date().toISOString(),
+      fee_repasse_valor: valor,
+    }).eq('id', jobId);
+    await load();
+    setMarking(null);
+  }
+
   function copyPix(key: string, jobId: string) {
     navigator.clipboard.writeText(key);
     setCopied(jobId);
@@ -118,6 +178,8 @@ export default function AdminRepasses() {
   const pendentes = rows.filter(r => !r.repasse_pago_at);
   const pagos     = rows.filter(r =>  r.repasse_pago_at);
   const shown     = tab === 'pendente' ? pendentes : pagos;
+  const feesAFazer = feeRows.filter(r => !r.repasse_pago_at);
+  const feesShown  = [...feesAFazer, ...feeRows.filter(r => r.repasse_pago_at)];
 
   const totalPendente = pendentes.reduce((s, r) => s + r.mechanic_amount, 0);
   const totalPago     = pagos.reduce((s, r) => s + (r.repasse_valor ?? r.mechanic_amount), 0);
@@ -151,7 +213,7 @@ export default function AdminRepasses() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-steel-100 rounded-2xl p-1 mb-6 w-fit">
-        {(['pendente', 'pago'] as const).map(t => (
+        {(['pendente', 'pago', 'multa'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -161,12 +223,80 @@ export default function AdminRepasses() {
           >
             {t === 'pendente'
               ? `⏳ A fazer (${pendentes.length})`
-              : `✅ Feitos (${pagos.length})`}
+              : t === 'pago'
+                ? `✅ Feitos (${pagos.length})`
+                : `⚠️ Multas (${feesAFazer.length})`}
           </button>
         ))}
       </div>
 
-      {loading ? (
+      {!loading && tab === 'multa' ? (
+        feesShown.length === 0 ? (
+          <div className="card text-center py-16 text-steel-400">Nenhuma multa para repassar</div>
+        ) : (
+          <div className="space-y-4">
+            {feesShown.map(r => (
+              <div key={r.job_id} className={`card border-l-4 ${r.repasse_pago_at ? 'border-signal-500' : 'border-alert-500'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="font-bold text-steel-900 truncate">{r.job_title}</div>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                      <div>
+                        <span className="text-steel-400">Mecânico</span>
+                        <div className="font-semibold">{r.mechanic_name}</div>
+                      </div>
+                      <div>
+                        <span className="text-steel-400">Oficina</span>
+                        <div className="font-semibold">{r.workshop_name}</div>
+                      </div>
+                      <div>
+                        <span className="text-steel-400">{r.fee_waived_at ? 'Multa perdoada em' : 'Oficina pagou a multa em'}</span>
+                        <div className="font-semibold">{fmtDate(r.fee_waived_at ?? r.fee_paid_at)}</div>
+                      </div>
+                      {r.repasse_pago_at && (
+                        <div>
+                          <span className="text-steel-400">Pago ao mecânico em</span>
+                          <div className="font-semibold">{fmtDate(r.repasse_pago_at)}</div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="bg-steel-50 rounded-xl px-3 py-2 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-steel-400 uppercase tracking-wider font-bold">Chave PIX do mecânico</div>
+                        <div className="font-mono text-sm text-steel-700 mt-0.5 break-all">
+                          {r.mechanic_pix_key ?? <span className="text-alert-500 italic">Não cadastrada</span>}
+                        </div>
+                      </div>
+                      {r.mechanic_pix_key && (
+                        <button onClick={() => copyPix(r.mechanic_pix_key!, r.job_id)}
+                          className="shrink-0 text-xs bg-steel-200 hover:bg-brand-100 text-steel-700 hover:text-brand-700 font-semibold px-3 py-1.5 rounded-lg transition">
+                          {copied === r.job_id ? '✅ Copiado' : '📋 Copiar'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-row sm:flex-col items-center sm:items-end gap-3 sm:gap-2 shrink-0">
+                    <div className="text-right space-y-1">
+                      <div className="text-xs text-steel-400">{r.fee_waived_at ? 'Multa perdoada' : 'Multa paga'} <span className="font-mono">{fmt(r.fee)}</span></div>
+                      {r.fee_waived_at
+                        ? <div className="text-xs text-alert-600">A plataforma absorve este valor</div>
+                        : <div className="text-xs text-steel-400">Plataforma ({FEE * 100}%) <span className="font-mono text-brand-600">−{fmt(r.fee - r.mechanic_amount)}</span></div>}
+                      <div className="text-xl font-bold text-steel-900">{fmt(r.repasse_valor ?? r.mechanic_amount)}</div>
+                      <div className="text-xs text-steel-500">{r.repasse_pago_at ? 'repassado' : 'a repassar'}</div>
+                    </div>
+                    {!r.repasse_pago_at && (
+                      <button onClick={() => markFeeAsPaid(r.job_id, r.mechanic_amount)} disabled={marking === r.job_id}
+                        className="btn-primary text-sm whitespace-nowrap disabled:opacity-60">
+                        {marking === r.job_id ? '…' : '✅ Marcar como pago'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : loading ? (
         <div className="flex justify-center py-16">
           <div className="h-10 w-10 rounded-full border-4 border-brand-500 border-t-transparent animate-spin" />
         </div>

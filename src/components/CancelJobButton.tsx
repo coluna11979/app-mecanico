@@ -5,7 +5,7 @@ import { formatBRL } from '@/lib/payment';
 import { toast } from '@/components/ui/Toast';
 import { splitJobVehicle } from '@/lib/jobDescription';
 import { notifyPendingFeesChanged } from '@/components/PendingFeesGate';
-import { ACCEPT_TOLERANCE_MS, acceptedAt, arrivalDeadline, formatDeadline, isArrivalLate } from '@/lib/arrivalDeadline';
+import { arrivalDeadline, formatDeadline, freeCancelUntil, isAdvanceScheduled, isArrivalLate } from '@/lib/arrivalDeadline';
 
 interface Props {
   job: Job;
@@ -20,7 +20,7 @@ interface Props {
 const FEE_PCT = 0.30;
 
 interface Cancellation {
-  scenario: 'open' | 'tolerance' | 'late_arrival' | 'after_tolerance' | 'arrived_unpaid' | 'paid' | 'blocked';
+  scenario: 'open' | 'tolerance' | 'late_arrival' | 'after_tolerance' | 'arrived_unpaid' | 'blocked';
   title: string;
   message: string;
   fee: number;
@@ -34,6 +34,9 @@ function analyseJob(job: Job): Cancellation | null {
   if (job.status === 'in_progress') {
     return null; // Em andamento → sem opção (vira disputa)
   }
+  if (job.pix_paid_at) {
+    return null; // Pagou: o mecânico inicia. Problema depois disso é com o suporte
+  }
   const cap = (job.price_per_hour ?? 0) * (job.max_hours ?? 1);
   const fee = Number((cap * FEE_PCT).toFixed(2));
 
@@ -43,10 +46,12 @@ function analyseJob(job: Job): Cancellation | null {
       fee: 0, refund: 0 };
   }
   if (job.status === 'assigned' && !job.arrived_at) {
-    const elapsed = Date.now() - acceptedAt(job);
-    if (elapsed <= ACCEPT_TOLERANCE_MS) {
-      return { scenario: 'tolerance', title: 'Cancelar dentro da tolerância',
-        message: 'Mecânico aceitou há menos de 5 minutos — cancelamento sem multa.',
+    const freeUntil = freeCancelUntil(job);
+    if (Date.now() <= freeUntil.getTime()) {
+      return { scenario: 'tolerance', title: 'Cancelar sem multa',
+        message: isAdvanceScheduled(job)
+          ? `Demanda agendada: cancelando até ${formatDeadline(freeUntil)} (2h antes do horário) não há multa.`
+          : 'Mecânico aceitou há menos de 5 minutos — cancelamento sem multa.',
         fee: 0, refund: 0 };
     }
     if (isArrivalLate(job)) {
@@ -56,7 +61,7 @@ function analyseJob(job: Job): Cancellation | null {
     }
     const deadline = arrivalDeadline(job);
     return { scenario: 'after_tolerance', title: `Cancelar com multa de R$ ${formatBRL(fee)}`,
-      message: `Mecânico aceitou há mais de 5 min. Multa de 30% (R$ ${formatBRL(fee)}) ficará registrada como pendente.`
+      message: `${isAdvanceScheduled(job) ? 'Falta menos de 2h para o horário marcado.' : 'Mecânico aceitou há mais de 5 min.'} Multa de 30% (R$ ${formatBRL(fee)}) ficará registrada como pendente.`
         + (deadline ? ` Se ele não chegar até ${formatDeadline(deadline)}, você poderá cancelar sem multa.` : ''),
       fee, refund: 0 };
   }
@@ -65,20 +70,14 @@ function analyseJob(job: Job): Cancellation | null {
       message: `Mecânico já chegou. Multa de 30% (R$ ${formatBRL(fee)}) ficará registrada como pendente.`,
       fee, refund: 0 };
   }
-  if (job.pix_paid_at && job.status === 'assigned') {
-    const refund = Number((cap - fee).toFixed(2));
-    return { scenario: 'paid', title: 'Cancelar com estorno parcial',
-      message: `Pagamento já feito. Estorno de R$ ${formatBRL(refund)} (70%) será aplicado e a plataforma retém R$ ${formatBRL(fee)} (30%).`,
-      fee, refund };
-  }
   return null;
 }
 
 /** Motivos rápidos (um toque) conforme a etapa; o campo de texto fica sempre aberto para outro motivo */
 function reasonsFor(scenario: Cancellation['scenario']): string[] {
   if (scenario === 'open') return ['Ninguém aceitou', 'Demorou demais', 'Cliente desistiu', 'Vou fazer com a equipe', 'Publiquei errado'];
-  // Mecânico já chegou (ou já foi pago): cancelar é sempre com multa
-  if (scenario === 'arrived_unpaid' || scenario === 'paid') return ['Cliente desistiu', 'Vou fazer com a equipe', 'Publiquei errado', 'Problema com o mecânico'];
+  // Mecânico já chegou: cancelar é sempre com multa
+  if (scenario === 'arrived_unpaid') return ['Cliente desistiu', 'Vou fazer com a equipe', 'Publiquei errado', 'Problema com o mecânico'];
   return ['Mecânico atrasou', 'Cliente desistiu', 'Vou fazer com a equipe', 'Publiquei errado'];
 }
 type Linked = { osNumbers: string[]; osItems: number; free: number };

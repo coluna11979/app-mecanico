@@ -14,6 +14,11 @@ import type { Job } from '@/types/database';
 export const ACCEPT_TOLERANCE_MS     = 5  * 60 * 1000; // arrependimento logo após o aceite
 export const IMMEDIATE_ARRIVAL_MS    = 45 * 60 * 1000;
 export const SCHEDULED_ARRIVAL_GRACE = 30 * 60 * 1000;
+/** Agendada = horário marcado para mais de 1h depois do aceite; nela a oficina cancela sem multa até 2h antes */
+export const SCHEDULED_MIN_LEAD_MS   = 60 * 60 * 1000;
+export const SCHEDULED_FREE_CANCEL_MS = 2 * 60 * 60 * 1000;
+/** Faltando isso para o prazo, o mecânico é lembrado de avisar a oficina se for atrasar (só aviso, não muda a regra) */
+export const ARRIVAL_WARNING_MS      = 10 * 60 * 1000;
 
 type JobTimes = Pick<Job, 'created_at' | 'scheduled_at' | 'arrived_at' | 'mechanic_id'> & {
   accepted_at?: string | null;
@@ -33,6 +38,25 @@ export function arrivalDeadline(job: JobTimes): Date | null {
     return new Date(Math.max(scheduled, immediate));
   }
   return new Date(immediate);
+}
+
+/** Demanda agendada de verdade (horário marcado mais de 1h depois do aceite)? */
+export function isAdvanceScheduled(job: JobTimes): boolean {
+  if (!job.scheduled_at) return false;
+  return new Date(job.scheduled_at).getTime() - acceptedAt(job) > SCHEDULED_MIN_LEAD_MS;
+}
+
+/**
+ * Até quando a oficina cancela SEM multa depois do aceite (mesma regra do cancel-job — mude nos dois lugares):
+ *  - imediata: 5 min após o aceite
+ *  - agendada: até 2h antes do horário marcado (e nunca menos que os 5 min do aceite)
+ */
+export function freeCancelUntil(job: JobTimes): Date {
+  const tolerance = acceptedAt(job) + ACCEPT_TOLERANCE_MS;
+  if (isAdvanceScheduled(job)) {
+    return new Date(Math.max(new Date(job.scheduled_at!).getTime() - SCHEDULED_FREE_CANCEL_MS, tolerance));
+  }
+  return new Date(tolerance);
 }
 
 /** Prazo que o mecânico terá se aceitar AGORA (mostrado antes do aceite). */
