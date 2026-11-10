@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { FEE_REPASSE_SINCE } from '@/lib/payment';
 
 export interface AdminBadges {
   aprovacoesPendentes: number;
@@ -26,7 +27,7 @@ export function useAdminBadges() {
     let interval: ReturnType<typeof setInterval> | null = null;
 
     async function load() {
-      const [a, j, r, l] = await Promise.all([
+      const [a, j, r, l, m] = await Promise.all([
         supabase.from('profiles').select('*', { count: 'exact', head: true })
           .in('status', ['pending', 'under_review']).neq('role', 'admin'),
         supabase.from('jobs').select('*', { count: 'exact', head: true })
@@ -35,12 +36,17 @@ export function useAdminBadges() {
           .eq('status', 'completed').is('repasse_pago_at', null).not('workshop_confirmed_at', 'is', null),
         supabase.from('leads').select('*', { count: 'exact', head: true })
           .not('status', 'in', '(convertido,perdido)'),
+        // Parte do mecânico na multa de cancelamento, paga pela oficina ou perdoada
+        supabase.from('jobs').select('*', { count: 'exact', head: true })
+          .eq('status', 'cancelled').eq('cancelled_by', 'workshop').gt('cancellation_fee', 0)
+          .not('mechanic_id', 'is', null).gte('cancelled_at', FEE_REPASSE_SINCE)
+          .or('cancellation_fee_paid_at.not.is.null,cancellation_fee_waived_at.not.is.null').is('fee_repasse_pago_at', null),
       ]);
       if (!alive) return;
       setBadges({
         aprovacoesPendentes: a.count ?? 0,
         jobsAtivos:          j.count ?? 0,
-        repassesPendentes:   r.count ?? 0,
+        repassesPendentes:   (r.count ?? 0) + (m.count ?? 0),
         leadsEmPipeline:     l.count ?? 0,
       });
       setLoading(false);

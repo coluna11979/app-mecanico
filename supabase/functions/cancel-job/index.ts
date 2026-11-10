@@ -27,30 +27,19 @@ function arrivalDeadlineMs(job: any): number | null {
   return immediate;
 }
 
-async function getStripeKey(supabase: any, kind: 'secret' | 'webhook' | 'publishable'): Promise<string | null> {
-  const { data } = await supabase.from('app_settings').select('key, value').like('key', 'stripe_%');
-  const map: Record<string, string> = {};
-  for (const s of data || []) map[s.key] = s.value;
-  const mode = (map.stripe_mode || 'live').trim();
-  const suffix = mode === 'test' ? '_test' : '';
-  const keyName = kind === 'secret' ? 'stripe_secret_key' + suffix
-               : kind === 'webhook' ? 'stripe_webhook_secret' + suffix
-               : 'stripe_publishable_key' + suffix;
-  return (map[keyName] || '').trim() || null;
-}
+// Cancelar sem multa — espelha freeCancelUntil em src/lib/arrivalDeadline.ts (mude nos dois lugares)
+const SCHEDULED_MIN_LEAD_MS    = 60 * 60 * 1000;      // agendada = horário marcado mais de 1h depois do aceite
+const SCHEDULED_FREE_CANCEL_MS = 2 * 60 * 60 * 1000;  // agendada: sem multa até 2h antes do horário
 
-async function refundPartial(stripeKey: string, paymentIntentId: string, amountCents: number, reason: string) {
-  const params = new URLSearchParams();
-  params.append('payment_intent', paymentIntentId);
-  params.append('amount', String(amountCents));
-  params.append('reason', 'requested_by_customer');
-  params.append('metadata[motivo]', reason);
-  const res = await fetch('https://api.stripe.com/v1/refunds', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-  return await res.json();
+function freeCancelUntilMs(job: any): number {
+  const tolerance = acceptedAtMs(job) + TOLERANCE_MS;
+  if (job.scheduled_at) {
+    const scheduled = new Date(job.scheduled_at).getTime();
+    if (scheduled - acceptedAtMs(job) > SCHEDULED_MIN_LEAD_MS) {
+      return Math.max(scheduled - SCHEDULED_FREE_CANCEL_MS, tolerance);
+    }
+  }
+  return tolerance;
 }
 
 Deno.serve(async (req) => {
@@ -154,45 +143,30 @@ Deno.serve(async (req) => {
       }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
     }
 
+    // Pagou: o mecânico inicia. Não existe cancelamento pelo app depois de pago (termos, 5.1);
+    // se der problema, a oficina fala com o suporte.
+    if (job.pix_paid_at) {
+      return new Response(JSON.stringify({
+        error: 'Pagamento já feito: esta demanda não pode ser cancelada pelo app. Fale com o suporte.',
+      }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
+
     const totalValue = Number(job.price ?? 0);
     const feeAmount = Number((totalValue * CANCELLATION_FEE_PCT).toFixed(2));
-    const refundAmount = Number((totalValue - feeAmount).toFixed(2));
 
     let scenario = 'open_unaccepted';
     let fee = 0;
-    let refund = 0;
-    let refundId: string | null = null;
 
     if (job.status === 'open' || !job.mechanic_id) {
       scenario = 'open_unaccepted';
     } else if (job.status === 'assigned' && !job.arrived_at) {
       const now = Date.now();
-      const elapsed = now - acceptedAtMs(job);
       const deadline = arrivalDeadlineMs(job);
-      if (elapsed <= TOLERANCE_MS) scenario = 'within_tolerance';
+      if (now <= freeCancelUntilMs(job)) scenario = 'within_tolerance';
       else if (deadline !== null && now > deadline) scenario = 'late_arrival'; // mecânico passou do prazo → sem multa
       else { scenario = 'after_tolerance_no_arrival'; fee = feeAmount; }
     } else if (job.arrived_at && !job.pix_paid_at) {
       scenario = 'arrived_not_paid'; fee = feeAmount;
-    } else if (job.pix_paid_at && job.status === 'assigned') {
-      scenario = 'paid_not_started';
-      fee = feeAmount;
-      refund = refundAmount;
-      if (job.payment_gateway === 'wallet') {
-        // Pago com saldo: o estorno volta para a carteira na hora (sem gateway)
-        const { error: walletErr } = await admin.rpc('wallet_refund_job', { p_job_id: job.id, p_refund: refund });
-        if (walletErr) return new Response(JSON.stringify({ error: 'wallet refund failed', details: walletErr.message }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
-      } else {
-        if (!job.stripe_payment_intent_id) {
-          return new Response(JSON.stringify({ error: 'no payment intent to refund' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
-        }
-        const stripeKey = await getStripeKey(admin, 'secret') ?? Deno.env.get('STRIPE_SECRET_KEY');
-        if (!stripeKey) return new Response(JSON.stringify({ error: 'stripe key not configured' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
-        const refundCents = Math.round(refund * 100);
-        const refundRes = await refundPartial(stripeKey, job.stripe_payment_intent_id, refundCents, reason);
-        if (refundRes.error) return new Response(JSON.stringify({ error: 'stripe refund failed', details: refundRes.error }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } });
-        refundId = refundRes.id;
-      }
     }
 
     await admin.from('jobs').update({
@@ -201,22 +175,21 @@ Deno.serve(async (req) => {
       cancelled_by,
       cancellation_reason: reason,
       cancellation_fee: fee,
-      cancellation_refund: refund,
-      stripe_refund_id: refundId,
+      cancellation_refund: 0,
+      mechanic_late_cancel: scenario === 'late_arrival',
     }).eq('id', job_id);
 
     try {
       const senderProfile = cancelled_by === 'workshop' ? 'a oficina' : 'o mecânico';
       const feeMsg = fee > 0 ? ` Multa de cancelamento: R$ ${fee.toFixed(2)}.` : '';
-      const refundMsg = refund > 0 ? ` Estorno de R$ ${refund.toFixed(2)} aplicado.` : '';
       const lateMsg = scenario === 'late_arrival' ? ' O mecânico não chegou dentro do prazo — cancelamento sem multa.' : '';
       await admin.from('messages').insert({
         job_id, sender_id: user.id,
-        content: `🚫 Demanda cancelada por ${senderProfile}.\nMotivo: ${reason}${feeMsg}${refundMsg}${lateMsg}`,
+        content: `🚫 Demanda cancelada por ${senderProfile}.\nMotivo: ${reason}${feeMsg}${lateMsg}`,
       });
     } catch {}
 
-    return new Response(JSON.stringify({ success: true, scenario, fee, refund, refund_id: refundId }), {
+    return new Response(JSON.stringify({ success: true, scenario, fee, refund: 0 }), {
       status: 200, headers: { ...CORS, 'Content-Type': 'application/json' },
     });
   } catch (e) {

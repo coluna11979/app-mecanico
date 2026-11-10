@@ -7,8 +7,8 @@
  * advogado antes de uso em produção real.
  */
 
-export const TERMS_VERSION = 'v1.2-2026-10-26';
-export const TERMS_DATE = '26 de outubro de 2026';
+export const TERMS_VERSION = 'v1.3-2026-11-06';
+export const TERMS_DATE = '6 de novembro de 2026';
 export const PLATFORM_NAME = 'MecânicoApp';
 export const PLATFORM_DOMAIN = 'mecanicoapp.com.br';
 export const PLATFORM_CNPJ = '34.819.933/0001-27';
@@ -87,12 +87,18 @@ A relação entre Mecânico e Oficina é **independente, comercial e direta**, r
 
 | Quando | Condição | Multa |
 |---|---|---|
-| Mecânico ainda não chegou — primeiros ${TOLERANCE_MINUTES} minutos | Tolerância de arrependimento | **Sem multa** |
-| Mecânico ainda não chegou — após ${TOLERANCE_MINUTES} minutos | Multa pelo deslocamento | **${CANCELLATION_FEE_PERCENT}% do valor** |
-| Mecânico chegou, ainda não pago | Multa pelo deslocamento e tempo | **${CANCELLATION_FEE_PERCENT}% do valor** (paga por PIX ou cartão) |
-| Pago, mecânico ainda não iniciou | Multa, com estorno parcial | **${CANCELLATION_FEE_PERCENT}% retido**, restante estornado |
+| Demanda imediata: mecânico ainda não chegou — primeiros ${TOLERANCE_MINUTES} minutos após o aceite | Tolerância de arrependimento | **Sem multa** |
+| Demanda agendada: até 2 horas antes do horário marcado | Mecânico ainda não saiu para o serviço; a Oficina também pode trocar de Mecânico nesse prazo | **Sem multa** |
+| Mecânico ainda não chegou — depois desses prazos | Multa pelo deslocamento | **${CANCELLATION_FEE_PERCENT}% do valor** |
+| Mecânico passou do prazo de chegada (45 minutos após o aceite; se agendada, 30 minutos após o horário marcado) | Atraso do Mecânico | **Sem multa** |
+| Mecânico chegou, ainda não pago | Multa pelo deslocamento e tempo | **${CANCELLATION_FEE_PERCENT}% do valor** (paga por PIX, cartão ou saldo depositado na carteira) |
+| Pago, mecânico ainda não iniciou | O pagamento confirma o serviço: não há cancelamento pelo app | Em caso de problema, fale com o suporte (seção 6) |
 | Mecânico já iniciou o serviço | Cancelamento bilateral, em acordo | Ver seção 5.3 |
 | Serviço concluído | Não permite cancelamento | Vira disputa (seção 6) |
+
+É **agendada** a demanda com horário marcado para mais de 1 hora depois do aceite; as demais seguem a regra da demanda imediata.
+
+**${100 - PLATFORM_FEE_PERCENT}% da multa vão para o Mecânico** pelo deslocamento e pelo tempo, via PIX, e ${PLATFORM_FEE_PERCENT}% ficam com a Plataforma. Se a Plataforma perdoar a multa da Oficina, o Mecânico recebe a parte dele do mesmo jeito.
 
 ### 5.2. Cancelamento pelo MECÂNICO (antes de chegar)
 
@@ -269,6 +275,10 @@ A Plataforma pode solicitar **documentos complementares** a qualquer momento par
 5.1. Você pode cancelar uma demanda **antes de confirmar chegada**, mas:
 - Cancelamentos contam negativamente em sua avaliação
 - Cancelamentos repetidos (acima de 20% das demandas aceitas em 30 dias) podem levar a **suspensão temporária ou banimento**
+
+5.1.1. Em demanda **agendada**, a Oficina pode cancelar sem multa até 2 horas antes do horário marcado. Se a **Oficina** cancelar com multa depois do seu aceite, você recebe **${100 - PLATFORM_FEE_PERCENT}% da multa** via PIX, pelo deslocamento e pelo tempo, depois que ela for paga ou perdoada pela Plataforma.
+
+5.1.2. Você tem até **45 minutos após o aceite** para chegar (em demanda agendada, até 30 minutos após o horário marcado). Passado o prazo, a Oficina pode cancelar sem multa, você não recebe nada e o cancelamento **fica registrado na Plataforma como atraso**.
 
 5.2. Após confirmar chegada, você não pode cancelar unilateralmente. Eventuais imprevistos devem ser comunicados à Oficina pelo chat e podem virar **Disputa** caso não haja acordo.
 

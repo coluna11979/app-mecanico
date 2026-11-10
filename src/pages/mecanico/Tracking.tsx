@@ -10,8 +10,8 @@ import { ChatBox } from '@/components/chat/ChatBox';
 import { useMessages } from '@/hooks/useMessages';
 import { attachAutoUnlock, playJobAlert } from '@/lib/alertSound';
 import { distKm, etaLabel } from '@/lib/geo';
-import { formatBRL, mechanicNet, formatMoney } from '@/lib/payment';
-import { ArrivalCountdown } from '@/components/ArrivalDeadline';
+import { FEE_REPASSE_SINCE, formatBRL, mechanicNet, formatMoney } from '@/lib/payment';
+import { ArrivalCountdown, ArrivalDelayCard } from '@/components/ArrivalDeadline';
 import { SwapWindowNotice } from '@/components/mecanico/SwapWindowNotice';
 import type { Job, Workshop } from '@/types/database';
 
@@ -246,6 +246,14 @@ export default function MechanicTracking() {
   const pixPaid = !!job?.pix_paid_at;
   const grossCap = (job?.price_per_hour ?? 0) * (job?.max_hours ?? 1);
   const netCap   = mechanicNet(grossCap);
+  const isCancelled = job?.status === 'cancelled';
+  // Oficina cancelou com multa: a parte do mecânico, só o valor líquido (regras em Repasses → Multas)
+  const cancelPay = isCancelled && job?.cancelled_by === 'workshop' && Number(job?.cancellation_fee ?? 0) > 0
+    && job?.cancelled_at && new Date(job.cancelled_at) >= new Date(FEE_REPASSE_SINCE)
+    ? Number(job?.fee_repasse_valor ?? mechanicNet(Number(job?.cancellation_fee))) : null;
+  const cancelPayStatus = job?.fee_repasse_pago_at ? 'no PIX'
+    : (job?.cancellation_fee_paid_at || job?.cancellation_fee_waived_at) ? 'aguardando o PIX'
+    : 'aguardando a oficina';
 
   const km = mechPos && shop?.lat && shop?.lng
     ? distKm(mechPos.lat, mechPos.lng, shop.lat, shop.lng)
@@ -350,7 +358,9 @@ export default function MechanicTracking() {
         {shop && (
           <div>
             <div className="text-xs text-brand-400 uppercase tracking-wider font-bold mb-1">
-              {job?.status === 'completed'
+              {isCancelled
+                ? '🚫 Cancelada pela oficina'
+                : job?.status === 'completed'
                 ? (job.workshop_confirmed_at ? '✅ Serviço concluído' : '⏳ Aguardando a oficina confirmar')
                 : job?.status === 'in_progress'
                 ? '🔧 Em serviço'
@@ -365,16 +375,18 @@ export default function MechanicTracking() {
                 <div className="font-bold text-lg leading-tight">{shop.business_name}</div>
                 <div className="text-sm text-steel-400">{shop.address}, {shop.city}</div>
               </div>
-              {eta && !arrived && km !== null && (
+              {eta && !arrived && !isCancelled && km !== null && (
                 <div className="text-right shrink-0">
                   <div className="text-2xl font-bold text-brand-400 leading-none">{eta}</div>
                   <div className="text-xs text-steel-500">{km.toFixed(1)} km</div>
                 </div>
               )}
             </div>
-            <div className="text-xs text-steel-500 mt-1">
-              Valor fechado · <span className="text-signal-400 font-bold">você recebe R$ {formatMoney(netCap)}</span>
-            </div>
+            {!isCancelled && (
+              <div className="text-xs text-steel-500 mt-1">
+                Valor fechado · <span className="text-signal-400 font-bold">você recebe R$ {formatMoney(netCap)}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -382,7 +394,11 @@ export default function MechanicTracking() {
         {job?.status === 'assigned' && !arrived && (
           <div className="space-y-2">
             <SwapWindowNotice job={job} />
-            <ArrivalCountdown job={job} className="!text-sm" />
+            <ArrivalCountdown job={job} className="!text-sm" chatHint={false} />
+            <ArrivalDelayCard job={job} senderId={user?.id} onOpenChat={() => {
+              setChatSeen(messages.length);
+              setChatOpen(true);
+            }} />
             {/* Navegação de verdade (voz, trânsito): abre o app de mapa do celular com o destino já marcado */}
             {shop && (
               <div className="grid grid-cols-2 gap-2">
@@ -420,6 +436,15 @@ export default function MechanicTracking() {
             <div className="text-alert-400 font-bold text-base">🚫 Demanda cancelada</div>
             {job.cancellation_reason && (
               <p className="text-xs text-steel-400 italic">"{job.cancellation_reason}"</p>
+            )}
+            {cancelPay !== null && (
+              <p className="text-sm text-steel-200 pt-1">
+                Pelo seu deslocamento, você recebe <span className="text-signal-400 font-bold">R$ {formatMoney(cancelPay)}</span>
+                <span className="block text-xs text-steel-500 mt-0.5">{cancelPayStatus}</span>
+              </p>
+            )}
+            {job.mechanic_late_cancel && (
+              <p className="text-xs text-steel-300 pt-1">O prazo de chegada passou e o atraso ficou registrado.</p>
             )}
           </div>
         )}

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import MechanicLayout from '@/components/layout/MechanicLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { jobGross, mechanicNet, formatMoney } from '@/lib/payment';
+import { FEE_REPASSE_SINCE, jobGross, mechanicNet, formatMoney } from '@/lib/payment';
 import type { Job } from '@/types/database';
 
 type JobWithShop = Job & { workshop?: { business_name: string } | null };
@@ -25,6 +25,8 @@ export default function MechanicGanhos() {
   const [isEmbaixador, setIsEmbaixador] = useState(false);
   const [comissaoPendente, setComissaoPendente] = useState(0);
 
+  const [cancelFees, setCancelFees] = useState<JobWithShop[]>([]);
+
   useEffect(() => { if (user) load(); }, [user]);
 
   async function load() {
@@ -33,7 +35,7 @@ export default function MechanicGanhos() {
       .from('mechanics').select('id, is_embaixador').eq('profile_id', user!.id).maybeSingle();
     if (m?.id) {
       setIsEmbaixador(!!(m as any).is_embaixador);
-      const [{ data }, { data: resumo }] = await Promise.all([
+      const [{ data }, { data: resumo }, { data: fees }] = await Promise.all([
         supabase
           .from('jobs').select('*, workshop:workshops(business_name)')
           .eq('mechanic_id', m.id)
@@ -42,8 +44,20 @@ export default function MechanicGanhos() {
         (m as any).is_embaixador
           ? supabase.rpc('embaixador_resumo')
           : Promise.resolve({ data: null }),
+        // Oficina cancelou depois do aceite e a multa foi paga ou perdoada: parte dela é do mecânico
+        supabase
+          .from('jobs').select('*, workshop:workshops(business_name)')
+          .eq('mechanic_id', m.id)
+          .eq('status', 'cancelled')
+          .eq('cancelled_by', 'workshop')
+          .gt('cancellation_fee', 0)
+          .gte('cancelled_at', FEE_REPASSE_SINCE)
+          .or('cancellation_fee_paid_at.not.is.null,cancellation_fee_waived_at.not.is.null')
+          .order('cancelled_at', { ascending: false })
+          .limit(50),
       ]);
       setJobs((data as JobWithShop[]) ?? []);
+      setCancelFees((fees as JobWithShop[]) ?? []);
       const row = Array.isArray(resumo) ? resumo[0] : resumo;
       if (row) setComissaoPendente(Number(row.comissao_pendente ?? 0));
     }
@@ -161,6 +175,29 @@ export default function MechanicGanhos() {
             </div>
           </div>
         </div>
+
+        {/* Cancelamentos pagos pela oficina: só o valor líquido, sem explicar a conta */}
+        {cancelFees.length > 0 && (
+          <div>
+            <div className="text-xs text-steel-500 uppercase tracking-widest font-semibold mb-2">Cancelados pela oficina</div>
+            <div className="space-y-2">
+              {cancelFees.map(j => (
+                <div key={j.id} className="rounded-2xl bg-steel-800 border border-steel-700 px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm truncate">{j.title}</div>
+                    <div className="text-xs text-steel-500 mt-0.5">{j.workshop?.business_name ?? 'Oficina'}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-signal-400 font-bold font-display">
+                      R$ {formatMoney(Number(j.fee_repasse_valor ?? mechanicNet(Number(j.cancellation_fee))))}
+                    </div>
+                    <div className="text-[10px] text-steel-600">{j.fee_repasse_pago_at ? 'no PIX' : 'aguardando'}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 🌟 Card de embaixador — só aparece se for embaixador */}
         {isEmbaixador && (

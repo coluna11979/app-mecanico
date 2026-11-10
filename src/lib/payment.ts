@@ -12,6 +12,8 @@
  * Mesmo valor de app_settings.platform_fee_percent (comissão do embaixador).
  */
 export const PLATFORM_FEE = 0.20;
+/** Repasse da multa de cancelamento ao mecânico (paga ou perdoada): vale para cancelamentos a partir desta data */
+export const FEE_REPASSE_SINCE = '2026-11-06T00:00:00-03:00';
 const MECHANIC_SHARE = 1 - PLATFORM_FEE;
 
 export function mechanicNet(gross: number): number {

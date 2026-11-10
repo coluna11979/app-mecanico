@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import MapView from '@/components/maps/MapView';
 import { ChatBox } from '@/components/chat/ChatBox';
 import { supabase } from '@/lib/supabase';
@@ -12,6 +12,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Job, Mechanic, Profile, Workshop } from '@/types/database';
 import { formatBRL, pricingLabel } from '@/lib/payment';
 import NextpayPayment from '@/components/payment/NextpayPayment';
+import { arrivalDeadline, formatDeadline, freeCancelUntil, isAdvanceScheduled, isArrivalLate } from '@/lib/arrivalDeadline';
+import { PLATFORM_CONTACT_EMAIL } from '@/data/legal/termsContent';
 import WalletPayOption from '@/components/wallet/WalletPayOption';
 import { CustomerChargeCard } from '@/components/marketplace/CustomerCharge';
 
@@ -315,13 +317,16 @@ export default function WorkshopTracking() {
     if (job.status === 'completed' || job.status === 'cancelled') {
       return { allowed: false, reason: 'Demanda já encerrada.' };
     }
+    if (job.pix_paid_at && job.status === 'assigned') {
+      // Pagou: o mecânico inicia. Problema depois disso é com o suporte (aviso na tela)
+      return { allowed: false, reason: 'Pagamento já feito.' };
+    }
     if (job.status === 'in_progress') {
       return {
         allowed: false,
         reason: 'Serviço em andamento. Use o cancelamento bilateral em acordo com o mecânico (em breve).',
       };
     }
-    const TOLERANCE_MS = 5 * 60 * 1000;
     const FEE_PCT = 0.30;
     const fee = Number((cap * FEE_PCT).toFixed(2));
 
@@ -332,14 +337,23 @@ export default function WorkshopTracking() {
     }
     // Mecânico aceitou, não chegou
     if (job.status === 'assigned' && !job.arrived_at) {
-      const elapsed = Date.now() - new Date(job.created_at).getTime();
-      if (elapsed <= TOLERANCE_MS) {
+      const freeUntil = freeCancelUntil(job);
+      const scheduled = isAdvanceScheduled(job);
+      if (Date.now() <= freeUntil.getTime()) {
         return { allowed: true, scenario: 'tolerance' as const, fee: 0, refund: 0,
-          title: 'Cancelar dentro da tolerância', message: 'Mecânico aceitou há menos de 5 minutos — cancelamento sem multa.' };
+          title: 'Cancelar sem multa',
+          message: scheduled
+            ? `Demanda agendada: cancelando até ${formatDeadline(freeUntil)} (2h antes do horário) não há multa.`
+            : 'Mecânico aceitou há menos de 5 minutos — cancelamento sem multa.' };
+      }
+      if (isArrivalLate(job)) {
+        return { allowed: true, scenario: 'late_arrival' as const, fee: 0, refund: 0,
+          title: 'Cancelar sem multa — mecânico atrasado',
+          message: `O mecânico não chegou até ${formatDeadline(arrivalDeadline(job)!)}, o prazo de chegada. Você pode cancelar sem multa.` };
       }
       return { allowed: true, scenario: 'after_tolerance' as const, fee, refund: 0,
         title: `Cancelar com multa de R$ ${fee.toFixed(2)}`,
-        message: `Mecânico aceitou há mais de 5 min. Multa de 30% (R$ ${fee.toFixed(2)}) ficará registrada como pendente.` };
+        message: `${scheduled ? 'Falta menos de 2h para o horário marcado.' : 'Mecânico aceitou há mais de 5 min.'} Multa de 30% (R$ ${fee.toFixed(2)}) ficará registrada como pendente.` };
     }
     // Chegou, não pago
     if (job.arrived_at && !job.pix_paid_at) {
@@ -347,17 +361,18 @@ export default function WorkshopTracking() {
         title: `Cancelar com multa de R$ ${fee.toFixed(2)}`,
         message: `Mecânico já chegou. Multa de 30% (R$ ${fee.toFixed(2)}) ficará registrada como pendente.` };
     }
-    // Pago, não iniciado
-    if (job.pix_paid_at && job.status === 'assigned') {
-      const refund = Number((cap - fee).toFixed(2));
-      return { allowed: true, scenario: 'paid' as const, fee, refund,
-        title: `Cancelar com estorno parcial`,
-        message: job.payment_gateway === 'wallet'
-          ? `Pago com saldo. R$ ${refund.toFixed(2)} (70%) voltam para sua carteira na hora e a plataforma retém R$ ${fee.toFixed(2)} (30%) de multa.`
-          : `Pagamento já feito. Você receberá estorno de R$ ${refund.toFixed(2)} (70%) e a plataforma retém R$ ${fee.toFixed(2)} (30%) de multa.` };
-    }
     return { allowed: false, reason: 'Estado inválido pra cancelamento.' };
   })();
+
+  // Veio do alerta de chegada em "Cancelar com multa": abre o cancelamento em vez de deixar só a tela de pagar
+  const routerLocation = useLocation();
+  const routerNavigate = useNavigate();
+  const wantsCancel = !!(routerLocation.state as { openCancel?: boolean } | null)?.openCancel;
+  useEffect(() => {
+    if (!wantsCancel || !cancellation) return;
+    if (cancellation.allowed) { setCancelOpen(true); setCancelReason(''); setCancelError(null); }
+    routerNavigate(routerLocation.pathname, { replace: true, state: null });
+  }, [wantsCancel, cancellation?.allowed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function cancelJob() {
     if (!job || !cancelReason.trim() || !cancellation?.allowed) return;
@@ -785,6 +800,12 @@ export default function WorkshopTracking() {
                 )}
 
                 {/* Botão Cancelar Demanda */}
+                {job?.pix_paid_at && job.status === 'assigned' && (
+                  <p className="text-xs text-steel-500 mt-3 leading-relaxed">
+                    Pagamento feito: o mecânico já pode iniciar. Algum problema? Fale com o suporte em{' '}
+                    <span className="font-semibold text-steel-700 break-all">{PLATFORM_CONTACT_EMAIL}</span>.
+                  </p>
+                )}
                 {cancellation?.allowed && job?.status !== 'cancelled' && job?.status !== 'completed' && (
                   <div className="pt-3 border-t border-steel-200">
                     <button

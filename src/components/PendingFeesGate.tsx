@@ -4,6 +4,7 @@ import { getSetting } from '@/lib/settings';
 import { getPublicStripeConfig } from '@/lib/stripeConfig';
 import { formatBRL } from '@/lib/payment';
 import NextpayPayment from '@/components/payment/NextpayPayment';
+import WalletFeeOption from '@/components/wallet/WalletFeeOption';
 
 interface PendingFees {
   total: number;
@@ -185,8 +186,12 @@ function NextpayFeeModal({ workshopId, pending, onClose, onPaid, passthrough, pe
             <p className="text-sm text-signal-600 mt-1">Agora você pode publicar novas demandas.</p>
           </div>
         ) : (
-          <NextpayPayment request={{ fn: 'nextpay-fee-charge', body: { workshop_id: workshopId } }}
-            service={pending.total} feePassthrough={passthrough} feePercent={percent} />
+          <>
+            <WalletFeeOption workshopId={workshopId} amount={pending.total}
+              onPaid={() => { setPaid(true); setTimeout(onPaid, 1500); }} />
+            <NextpayPayment request={{ fn: 'nextpay-fee-charge', body: { workshop_id: workshopId } }}
+              service={pending.total} feePassthrough={passthrough} feePercent={percent} />
+          </>
         )}
       </div>
     </div>

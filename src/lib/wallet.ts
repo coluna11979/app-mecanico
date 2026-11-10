@@ -9,7 +9,7 @@ import { getSetting } from '@/lib/settings';
 export type WalletBalance = { cash: number; credit: number; total: number };
 export type WalletEntry = {
   id: string; workshop_id: string;
-  kind: 'deposit' | 'credit' | 'job_payment' | 'refund' | 'withdrawal' | 'adjustment';
+  kind: 'deposit' | 'credit' | 'job_payment' | 'fee_payment' | 'refund' | 'withdrawal' | 'adjustment';
   bucket: 'cash' | 'credit';
   amount: number; job_id: string | null; note: string | null; created_at: string;
 };
@@ -19,6 +19,7 @@ export const KIND_LABEL: Record<WalletEntry['kind'], { label: string; icon: stri
   deposit:     { label: 'Depósito',           icon: '⬆️' },
   credit:      { label: 'Crédito liberado',   icon: '🎁' },
   job_payment: { label: 'Demanda paga',       icon: '⚡' },
+  fee_payment: { label: 'Multa paga',         icon: '⚠️' },
   refund:      { label: 'Estorno',            icon: '↩️' },
   withdrawal:  { label: 'Saque',              icon: '⬇️' },
   adjustment:  { label: 'Ajuste',             icon: '✏️' },

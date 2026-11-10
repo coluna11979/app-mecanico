@@ -772,7 +772,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
               onClick={() => {
                 const target = `/oficina/job/${arrivalAlert.jobId}/tracking`;
                 setArrivalAlert(null);
-                nav(target);
+                nav(target, { state: { openCancel: true } }); // abre direto o cancelamento, não a tela de pagar
               }}
               className="w-full min-h-[44px] text-xs font-semibold text-steel-500 underline underline-offset-2 hover:text-alert-600"
             >

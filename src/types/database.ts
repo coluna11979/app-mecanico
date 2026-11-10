@@ -183,6 +183,13 @@ export interface Job {
   cancellation_fee: number | null;
   cancellation_refund: number | null;
   stripe_refund_id: string | null;
+  /** Multa de cancelamento (0149 / 0156): quando a oficina pagou, quando foi perdoada e o repasse ao mecânico */
+  cancellation_fee_paid_at?: string | null;
+  cancellation_fee_waived_at?: string | null;
+  fee_repasse_pago_at?: string | null;
+  fee_repasse_valor?: number | null;
+  /** Oficina cancelou porque o mecânico passou do prazo de chegada (0156) */
+  mechanic_late_cancel?: boolean;
   audience: 'public' | 'favorites' | 'invite';
   /** Convite direto: mecânico convidado. Só vira mechanic_id quando ele aceita. */
   invited_mechanic_id?: string | null;

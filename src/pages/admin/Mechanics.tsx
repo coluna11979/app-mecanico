@@ -29,8 +29,18 @@ export default function AdminMechanics() {
   const [rows, setRows] = useState<Row[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [lateCancels, setLateCancels] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    // Cancelamentos por atraso (oficina cancelou porque o mecânico passou do prazo de chegada)
+    supabase.from('jobs').select('mechanic_id').eq('mechanic_late_cancel', true)
+      .then(({ data }) => {
+        const count: Record<string, number> = {};
+        (data ?? []).forEach((j: { mechanic_id: string | null }) => {
+          if (j.mechanic_id) count[j.mechanic_id] = (count[j.mechanic_id] ?? 0) + 1;
+        });
+        setLateCancels(count);
+      });
     supabase
       .from('mechanics')
       .select('*, profile:profiles!inner(*)')
@@ -95,6 +105,7 @@ export default function AdminMechanics() {
               <th className="pr-4">Skills</th>
               <th className="pr-4">R$/h</th>
               <th className="pr-4">★</th>
+              <th className="pr-4">Atrasos</th>
               <th className="pr-4">Último acesso</th>
               <th className="pr-4">Status</th>
               <th></th>
@@ -109,6 +120,7 @@ export default function AdminMechanics() {
                 <td className="pr-4 text-steel-500">{r.skills.slice(0, 3).join(', ')}</td>
                 <td className="pr-4">R$ {r.hourly_rate.toFixed(0)}</td>
                 <td className="pr-4">{r.rating.toFixed(1)}</td>
+                <td className={`pr-4 ${lateCancels[r.id] ? 'font-bold text-alert-600' : 'text-steel-400'}`}>{lateCancels[r.id] ?? 0}</td>
                 <td className="pr-4"><LastSeen iso={r.profile.last_seen_at} /></td>
                 <td className="pr-4"><StatusBadge s={r.profile.status} /></td>
                 <td className="pr-2">
@@ -150,6 +162,7 @@ export default function AdminMechanics() {
               <div className="text-sm">
                 <span className="font-semibold">R$ {r.hourly_rate.toFixed(0)}/h</span>
                 <span className="text-steel-400 ml-2">★ {r.rating.toFixed(1)}</span>
+                {!!lateCancels[r.id] && <span className="text-alert-600 font-semibold ml-2">⏰ {lateCancels[r.id]} atraso{lateCancels[r.id] > 1 ? 's' : ''}</span>}
               </div>
               <LastSeen iso={r.profile.last_seen_at} />
             </div>

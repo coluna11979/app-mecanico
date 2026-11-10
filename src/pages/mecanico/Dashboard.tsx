@@ -508,7 +508,7 @@ export default function MechanicDashboard() {
                     </Link>
                     <div className="px-4 pb-4 space-y-2">
                       <AcceptDeadlineHint job={j} />
-                      <SwapWindowHint />
+                      <SwapWindowHint job={j} />
                       <button
                         onClick={() => acceptJob(j)}
                         disabled={accepting === j.id || !online}

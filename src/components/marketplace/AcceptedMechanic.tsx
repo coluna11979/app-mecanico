@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { MechanicReviews } from '@/components/MechanicReviews';
-import { ACCEPT_TOLERANCE_MS, acceptedAt } from '@/lib/arrivalDeadline';
+import { formatDeadline, freeCancelUntil, isAdvanceScheduled } from '@/lib/arrivalDeadline';
 import { IconStar } from '@/components/mecanico/icons';
 import type { Job } from '@/types/database';
 
@@ -10,14 +10,14 @@ import type { Job } from '@/types/database';
 export type AcceptedMechanic = { name: string; avatar: string | null; rating: number; total_jobs: number };
 
 /**
- * Janela de troca: nos 5 min após o aceite a oficina pode trocar o mecânico (a demanda volta a
- * ficar aberta) ou confirmar antes. Convite direto não entra: a oficina já escolheu esse mecânico.
- * O servidor (workshop_swap_mechanic) confere a mesma regra.
+ * Janela de troca: a oficina pode trocar o mecânico (a demanda volta a ficar aberta) ou confirmar antes.
+ * Imediata: 5 min após o aceite. Agendada: até 2h antes do horário (mesmo prazo de cancelar sem multa).
+ * Convite direto não entra: a oficina já escolheu esse mecânico. O servidor (workshop_swap_mechanic, 0158) confere a mesma regra.
  */
 export function swapWindowEndsAt(j: Job): number | null {
   if (j.status !== 'assigned' || !j.mechanic_id || j.arrived_at || j.pix_paid_at) return null;
   if (j.audience === 'invite' || j.workshop_approved_at) return null;
-  const end = acceptedAt(j) + ACCEPT_TOLERANCE_MS;
+  const end = freeCancelUntil(j).getTime();
   return end > Date.now() ? end : null;
 }
 
@@ -29,15 +29,20 @@ export function useCountdown(end: number | null) {
     return () => clearInterval(t);
   }, [end]);
   const left = end ? Math.max(0, Math.ceil((end - now) / 1000)) : 0;
-  return { left, label: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` };
+  // Prazo longo (agendada): mostra o horário; na última hora, contagem
+  const label = end && left > 3600
+    ? `até ${formatDeadline(new Date(end))}`
+    : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  return { left, label, long: !!end && left > 3600 };
 }
 
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('');
 
 export function AcceptedMechanicRow({ j, m, onChanged }: { j: Job; m: AcceptedMechanic; onChanged: () => void }) {
   const end = swapWindowEndsAt(j);
-  const { left, label } = useCountdown(end);
+  const { left, label, long } = useCountdown(end);
   const canSwap = !!end && left > 0;
+  const scheduled = isAdvanceScheduled(j);
   const [reviews, setReviews] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -87,7 +92,9 @@ export function AcceptedMechanicRow({ j, m, onChanged }: { j: Job; m: AcceptedMe
       {canSwap && (
         <div className="mt-2.5 pt-2.5 border-t border-steel-200">
           <div className="text-xs text-steel-600">
-            Você pode trocar sem custo por <strong className="tabular-nums text-steel-900">{label}</strong>
+            {scheduled ? 'Você pode trocar ou cancelar sem custo' : 'Você pode trocar sem custo'}
+            {long ? ' ' : ' por '}<strong className="tabular-nums text-steel-900">{label}</strong>
+            {scheduled && <span className="text-steel-500"> (2h antes do horário)</span>}
           </div>
           <div className="mt-2 flex gap-2">
             <button type="button" onClick={approve} disabled={busy}

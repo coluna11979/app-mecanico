@@ -495,6 +495,7 @@ export default function AdminUserDetail() {
               )}
               <div className="text-xs text-steel-500 pt-2 border-t border-steel-100">
                 ★ {mechanic?.rating.toFixed(1) ?? '—'} · {mechanic?.total_jobs ?? 0} jobs concluídos
+                {mechanic?.id && <LateCancelCount mechanicId={mechanic.id} />}
               </div>
             </div>
           )}
@@ -799,6 +800,17 @@ export default function AdminUserDetail() {
       )}
     </AdminLayout>
   );
+}
+
+/** Cancelamentos por atraso do mecânico (passou do prazo de chegada) */
+function LateCancelCount({ mechanicId }: { mechanicId: string }) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    supabase.from('jobs').select('id', { count: 'exact', head: true })
+      .eq('mechanic_id', mechanicId).eq('mechanic_late_cancel', true)
+      .then(({ count: c }) => setCount(c ?? 0));
+  }, [mechanicId]);
+  return <> · <span className={count > 0 ? 'font-bold text-alert-600' : ''}>{count} cancelamento{count === 1 ? '' : 's'} por atraso</span></>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
