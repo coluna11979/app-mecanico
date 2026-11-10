@@ -12,12 +12,14 @@ import Login from './pages/public/Login';
 import TeamLogin from './pages/public/TeamLogin';
 import SignupMechanic from './pages/public/SignupMechanic';
 import SignupWorkshop from './pages/public/SignupWorkshop';
+import SignupChooser from './pages/public/SignupChooser';
 import PendingApproval from './pages/public/PendingApproval';
 import Terms from './pages/public/Terms';
 import Privacy from './pages/public/Privacy';
 import ForgotPassword from './pages/public/ForgotPassword';
 import ResetPassword from './pages/public/ResetPassword';
 import CheckupReport from './pages/public/CheckupReport';
+import CheckupFunnelDemo from './pages/public/CheckupFunnelDemo';
 import MechanicCheckup from './pages/public/MechanicCheckup';
 
 import MechanicDashboard from './pages/mecanico/Dashboard';
@@ -138,6 +140,7 @@ export default function App() {
       <Route path="/oficina" element={<LandingOficina />} />
       <Route path="/login" element={<Login />} />
       <Route path="/equipe" element={<TeamLogin />} />
+      <Route path="/cadastro" element={<SignupChooser />} />
       <Route path="/cadastro/mecanico" element={<SignupMechanic />} />
       <Route path="/cadastro/oficina" element={<SignupWorkshop />} />
       <Route path="/aguardando-aprovacao" element={<PendingApproval />} />
@@ -146,6 +149,8 @@ export default function App() {
       <Route path="/recuperar-senha"    element={<ForgotPassword />} />
       <Route path="/redefinir-senha"    element={<ResetPassword />} />
       <Route path="/checkup/:token"     element={<CheckupReport />} />
+      {/* Demonstração pública do funil (dados fictícios, sem login) */}
+      <Route path="/demo/funil-checkup" element={<CheckupFunnelDemo />} />
       <Route path="/blog" element={<Blog />} />
       <Route path="/blog/:slug" element={<BlogPost />} />
       <Route path="/c/:slug"            element={<CampaignLink />} />
@@ -204,6 +209,7 @@ export default function App() {
       {/* Telas do módulo (rotas fixas têm prioridade sobre /:id) */}
       <Route path="/oficina/checkup/inspecoes" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
       <Route path="/oficina/checkup/historico" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
+      <Route path="/oficina/checkup/funil" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
       <Route path="/oficina/checkup/modelos" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckups /></ProtectedRoute>} />
       <Route path="/oficina/checkup/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopCheckupRun /></ProtectedRoute>} />
       <Route path="/oficina/os/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopOsDetail /></ProtectedRoute>} />

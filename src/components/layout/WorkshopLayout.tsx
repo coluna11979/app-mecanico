@@ -46,6 +46,7 @@ const SECTIONS: NavGroup[] = [
     // Check-up é um dos diferenciais: fica junto do atendimento, com as telas dele num submenu
     { icon: '🩺', label: 'Check-up', children: [
       { to: '/oficina/checkup',            icon: '🩺', label: 'Painel do check-up' },
+      { to: '/oficina/checkup/funil',      icon: '📈', label: 'Funil de vendas'    },
       { to: '/oficina/checkup/inspecoes',  icon: '🔍', label: 'Inspeções'          },
       { to: '/oficina/checkup/historico',  icon: '🗂️', label: 'Histórico'          },
       { to: '/oficina/checkup/modelos',    icon: '🧩', label: 'Modelos'            },
@@ -123,7 +124,7 @@ function groupOf(path: string, sections = SECTIONS): string | null {
 }
 
 /** Telas do Check-up que são do gestor (o mecânico vê só a fila dele em /oficina/checkup) */
-const CHECKUP_MANAGER_ONLY = ['/oficina/checkup/inspecoes', '/oficina/checkup/historico', '/oficina/checkup/modelos'];
+const CHECKUP_MANAGER_ONLY = ['/oficina/checkup/funil', '/oficina/checkup/inspecoes', '/oficina/checkup/historico', '/oficina/checkup/modelos'];
 
 /* ── Tema do menu (claro/escuro) e menu recolhido: preferências deste aparelho ── */
 type SideTheme = 'dark' | 'light';

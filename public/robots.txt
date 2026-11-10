@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /equipe
+Disallow: /mecanico/
+Disallow: /oficina/
+Disallow: /checkup/
+Disallow: /m/
+Disallow: /treinamento/
+Disallow: /login
+Disallow: /recuperar-senha
+Disallow: /redefinir-senha
+Disallow: /aguardando-aprovacao
+Disallow: /descadastrar
+
+Sitemap: https://www.mecanicoapp.com.br/sitemap.xml

@@ -164,7 +164,11 @@ export default function Blog() {
 
 export function BlogPost() {
   const { slug = '' } = useParams();
-  const [a, setA] = useState<Article | null | undefined>(undefined);
+  // A Vercel já manda o artigo junto com o HTML (api/blog-html.js): usa direto, sem "Carregando…"
+  const [a, setA] = useState<Article | null | undefined>(() => {
+    const boot = (window as unknown as { __BLOG__?: { slug: string; article: Article } }).__BLOG__;
+    return boot?.slug === slug ? boot.article : undefined;
+  });
   const [related, setRelated] = useState<Article[]>([]);
   useSeo(a ? `${a.title} | Blog MecânicoApp` : 'Blog MecânicoApp', a?.summary);
 
