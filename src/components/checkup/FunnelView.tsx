@@ -47,17 +47,24 @@ export default function FunnelView({ list: realList, onOpen, onWhatsapp, demo = 
   const [example, setExample] = useState(demo);
   const exampleList = useMemo(() => demoPanel().list as unknown as PanelCheckup[], []);
   const list = example ? exampleList : realList;
-  const [days, setDays] = useState<Period>(90);
+  const [days, setDays] = useState<Period | 'custom'>(90);
+  // Período personalizado (datas do aparelho, AAAA-MM-DD)
+  const [cFrom, setCFrom] = useState(() => new Date(Date.now() - 30 * DAY).toLocaleDateString('en-CA'));
+  const [cTo, setCTo] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const custom = days === 'custom';
+  const fromMs = custom ? new Date(`${cFrom}T00:00:00`).getTime() : Date.now() - (days as number) * DAY;
+  const toMs = custom ? new Date(`${cTo}T00:00:00`).getTime() + DAY : Date.now() + DAY;
+  const spanMs = Math.max(DAY, toMs - fromMs);
   const [type, setType] = useState<CheckupModelKey | 'todos'>('todos');
   const [stage, setStage] = useState<StageKey | null>(null);
 
   const ofType = (cs: PanelCheckup[]) => type === 'todos' ? cs : cs.filter(c => typeOf(c) === type);
   const inRange = (from: number, to: number) =>
     list.filter(c => !c.replaced_by && new Date(c.created_at).getTime() >= from && new Date(c.created_at).getTime() < to);
-  const now = Date.now();
-  const allPeriod = useMemo(() => inRange(now - days * DAY, now + DAY), [list, days]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allPeriod = useMemo(() => inRange(fromMs, toMs), [list, fromMs, toMs]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = useMemo(() => ofType(allPeriod), [allPeriod, type]); // eslint-disable-line react-hooks/exhaustive-deps
-  const prev = useMemo(() => funnelOf(ofType(inRange(now - 2 * days * DAY, now - days * DAY))), [list, days, type]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Período anterior do mesmo tamanho, para as setas ▲▼
+  const prev = useMemo(() => funnelOf(ofType(inRange(fromMs - spanMs, fromMs))), [list, fromMs, spanMs, type]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const f = useMemo(() => funnelOf(shown), [shown]);
   const leaks = useMemo(() => worstLeaks(f), [f]);
@@ -86,7 +93,7 @@ export default function FunnelView({ list: realList, onOpen, onWhatsapp, demo = 
 
       {/* Central de comando: filtros, números e ritmo por semana */}
       <div className="rounded-2xl bg-steel-900 text-white overflow-hidden shadow-lg">
-        <div className="px-5 pt-4 pb-3 flex flex-col lg:flex-row lg:items-center gap-3 justify-between border-b border-white/10">
+        <div className="px-5 pt-4 pb-3 flex flex-col xl:flex-row xl:items-center gap-3 justify-between border-b border-white/10">
           <div className="flex items-center gap-2.5">
             <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full rounded-full bg-signal-400 opacity-60 animate-ping" />
@@ -94,7 +101,7 @@ export default function FunnelView({ list: realList, onOpen, onWhatsapp, demo = 
             </span>
             <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-steel-300">Central de vendas do check-up</span>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex flex-col md:flex-row md:items-center gap-2">
             <select value={type} onChange={e => { setType(e.target.value as CheckupModelKey | 'todos'); setStage(null); }}
               className="rounded-xl bg-white/10 border border-white/15 text-sm font-semibold text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 [&>option]:text-steel-900">
               <option value="todos">Todos os tipos de check-up ({allPeriod.length})</option>
@@ -103,16 +110,31 @@ export default function FunnelView({ list: realList, onOpen, onWhatsapp, demo = 
                 return <option key={m.key} value={m.key}>{m.icon} {m.label} ({n})</option>;
               })}
             </select>
-            <div className="inline-flex rounded-xl bg-white/10 p-1 text-xs font-semibold self-start">
+            <div className="inline-flex flex-wrap rounded-xl bg-white/10 p-1 text-xs font-semibold self-start">
               {PERIODS.map(d => (
                 <button key={d} onClick={() => { setDays(d); setStage(null); }}
-                  className={`px-3 py-1.5 rounded-lg transition ${days === d ? 'bg-white text-steel-900' : 'text-steel-300 hover:text-white'}`}>
+                  className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap ${days === d ? 'bg-white text-steel-900' : 'text-steel-300 hover:text-white'}`}>
                   {d === 365 ? '12 meses' : `${d} dias`}
                 </button>
               ))}
+              <button onClick={() => { setDays('custom'); setStage(null); }}
+                className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap ${custom ? 'bg-white text-steel-900' : 'text-steel-300 hover:text-white'}`}>
+                📅 Personalizado
+              </button>
             </div>
           </div>
         </div>
+        {custom && (
+          <div className="px-5 py-3 flex flex-wrap items-center gap-2 border-b border-white/10 bg-white/5 text-sm">
+            <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-steel-400 mr-1">Período</span>
+            <input type="date" value={cFrom} max={cTo} onChange={e => { if (e.target.value) { setCFrom(e.target.value); setStage(null); } }}
+              className="rounded-lg bg-white/10 border border-white/15 text-white px-2.5 py-1.5 [color-scheme:dark]" />
+            <span className="text-steel-400">até</span>
+            <input type="date" value={cTo} min={cFrom} onChange={e => { if (e.target.value) { setCTo(e.target.value); setStage(null); } }}
+              className="rounded-lg bg-white/10 border border-white/15 text-white px-2.5 py-1.5 [color-scheme:dark]" />
+            <span className="text-xs text-steel-400">{Math.round(spanMs / DAY)} dias · comparado com os {Math.round(spanMs / DAY)} dias antes</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-white/10 border-b border-white/10">
           <HeroStat label="Viraram serviço" value={pct(f.conversao)} sub={`${f.counts.aprovou} de ${f.total} check-ups`}
@@ -125,7 +147,7 @@ export default function FunnelView({ list: realList, onOpen, onWhatsapp, demo = 
             delta={hasPrev ? { v: ((f.total - prev.total) / prev.total) * 100, unit: '%' } : null} />
         </div>
 
-        <WeeklyBars list={shown} days={days} />
+        <WeeklyBars list={shown} from={fromMs} to={Math.min(toMs, Date.now())} />
       </div>
 
       {f.total === 0 ? (
@@ -346,7 +368,7 @@ const SHADES = ['fill-brand-100', 'fill-brand-200', 'fill-brand-200', 'fill-bran
 
 function FunnelSvg({ f, selected, onSelect }: { f: Funnel; selected: StageKey | null; onSelect: (k: StageKey) => void }) {
   // L = espaço à esquerda para o nome das etapas estreitas
-  const W = 360, H = 46, GAP = 6, MAXW = 340, MINW = 40, R = 58, L = 70;
+  const W = 360, H = 46, GAP = 6, MAXW = 340, MINW = 40, R = 58, L = 130;
   const max = Math.max(1, f.total);
   const width = (n: number) => Math.max(MINW, (n / max) * MAXW);
   const [hover, setHover] = useState<StageKey | null>(null);
@@ -365,7 +387,10 @@ function FunnelSvg({ f, selected, onSelect }: { f: Funnel; selected: StageKey | 
         const low = rate != null && meta != null && rate < meta;
         const on = selected === s.key || hover === s.key;
         const dark = i >= 5;
-        const narrow = Math.min(top, bot) < 130;
+        // Largura da forma na altura do nome (perto da base) vs. tamanho do texto
+        const widthAtLabel = top + (bot - top) * (36 / H);
+        const narrow = widthAtLabel < s.label.length * 6.2 + 16;
+        const widthAtMiddle = (top + bot) / 2;
         return (
           <g key={s.key} className="cursor-pointer" onClick={() => onSelect(s.key)}
             onMouseEnter={() => setHover(s.key)} onMouseLeave={() => setHover(null)}>
@@ -379,7 +404,7 @@ function FunnelSvg({ f, selected, onSelect }: { f: Funnel; selected: StageKey | 
                 {/* Etapa estreita: número dentro, nome ao lado (fora da forma) */}
                 <text x={cx} y={y + 29} textAnchor="middle" fontSize="17" fontWeight={800}
                   className={dark ? 'fill-white' : 'fill-steel-900'}>{n}</text>
-                <text x={cx - Math.max(top, bot) / 2 - 8} y={y + 28} textAnchor="end" fontSize="11" fontWeight={600}
+                <text x={cx - widthAtMiddle / 2 - 10} y={y + 28} textAnchor="end" fontSize="11" fontWeight={600}
                   className="fill-steel-700">{s.label}</text>
               </>
             ) : (
@@ -479,23 +504,24 @@ function HeroStat({ label, value, sub, delta, accent }: {
   return (
     <div className="px-5 py-4 [&:nth-child(3)]:border-t [&:nth-child(4)]:border-t lg:[&:nth-child(3)]:border-t-0 lg:[&:nth-child(4)]:border-t-0 border-white/10">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-steel-400">{label}</span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-steel-400 leading-tight">{label}</span>
         {delta && (up || down) && (
           <span className={`text-[11px] font-bold tabular-nums ${up ? 'text-signal-400' : 'text-alert-400'}`} title="Comparado com o período anterior">
             {up ? '▲' : '▼'} {Math.abs(Math.round(delta.v))}{delta.unit === '%' ? '%' : ' pts'}
           </span>
         )}
       </div>
-      <div className={`text-2xl lg:text-3xl font-bold font-display tabular-nums mt-1.5 ${accent ? 'text-brand-400' : 'text-white'}`}>{value}</div>
+      <div className={`text-xl sm:text-2xl xl:text-3xl font-bold font-display tabular-nums whitespace-nowrap mt-1.5 ${accent ? 'text-brand-400' : 'text-white'}`}>{value}</div>
       <div className="text-[11px] text-steel-400 mt-0.5 truncate">{sub}</div>
     </div>
   );
 }
 
 /* ─── Ritmo por semana: check-ups feitos (barra clara) e quantos aprovaram (laranja) ── */
-function WeeklyBars({ list, days }: { list: PanelCheckup[]; days: number }) {
-  const weeks = Math.max(4, Math.ceil(days / 7));
-  const end = Date.now();
+function WeeklyBars({ list, from, to }: { list: PanelCheckup[]; from: number; to: number }) {
+  // Semanas contadas de trás para frente a partir do fim do período (mínimo 4 barras)
+  const weeks = Math.max(4, Math.ceil((to - from) / (7 * DAY)));
+  const end = to;
   const start = end - weeks * 7 * DAY;
   const buckets = Array.from({ length: weeks }, (_, i) => ({ from: start + i * 7 * DAY, feitos: 0, aprovou: 0 }));
   for (const c of list) {
@@ -535,7 +561,7 @@ function WeeklyBars({ list, days }: { list: PanelCheckup[]; days: number }) {
         )}
       </div>
       <div className="flex justify-between text-[10px] text-steel-500 mt-1 tabular-nums">
-        <span>{fmt(start)}</span><span>hoje</span>
+        <span>{fmt(start)}</span><span>{new Date(end).toDateString() === new Date().toDateString() ? 'hoje' : fmt(end)}</span>
       </div>
     </div>
   );
