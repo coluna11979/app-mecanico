@@ -148,6 +148,7 @@ export const FEATURES: Partial<Record<ModuleKey, Feature[]>> = {
   ],
   checkup: [
     { key: 'checkup.painel',    label: 'Painel',    routes: ['/oficina/checkup$'] },
+    { key: 'checkup.funil',     label: 'Funil de vendas', routes: ['/oficina/checkup/funil'] },
     { key: 'checkup.inspecoes', label: 'Inspeções', routes: ['/oficina/checkup/inspecoes'] },
     { key: 'checkup.historico', label: 'Histórico', routes: ['/oficina/checkup/historico'] },
     { key: 'checkup.modelos',   label: 'Modelos',   routes: ['/oficina/checkup/modelos'] },
