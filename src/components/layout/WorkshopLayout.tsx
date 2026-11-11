@@ -43,16 +43,16 @@ const SECTIONS: NavGroup[] = [
   { key: 'atendimento', title: 'Atendimento', items: [
     { to: '/oficina/os',         icon: '📋', label: 'Ordens de serviço'    },
     { to: '/oficina/agenda',     icon: '📅', label: 'Agenda'               },
-    // Check-up é um dos diferenciais: fica junto do atendimento, com as telas dele num submenu
-    { icon: '🩺', label: 'Check-up', children: [
-      { to: '/oficina/checkup',            icon: '🩺', label: 'Painel do check-up' },
-      { to: '/oficina/checkup/funil',      icon: '📈', label: 'Funil de vendas'    },
-      { to: '/oficina/checkup/inspecoes',  icon: '🔍', label: 'Inspeções'          },
-      { to: '/oficina/checkup/historico',  icon: '🗂️', label: 'Histórico'          },
-      { to: '/oficina/checkup/modelos',    icon: '🧩', label: 'Modelos'            },
-    ] },
     { to: '/oficina/clientes',   icon: '👥', label: 'Clientes'             },
     { to: '/oficina/comercial',  icon: '🤝', label: 'Comercial'            },
+  ] },
+  // Check-up é módulo próprio: é o que mais gera serviço para a oficina
+  { key: 'checkup', title: 'Check-up', items: [
+    { to: '/oficina/checkup',           icon: '🩺', label: 'Painel'          },
+    { to: '/oficina/checkup/funil',     icon: '📈', label: 'Funil de vendas' },
+    { to: '/oficina/checkup/inspecoes', icon: '🔍', label: 'Inspeções'       },
+    { to: '/oficina/checkup/historico', icon: '🗂️', label: 'Histórico'       },
+    { to: '/oficina/checkup/modelos',   icon: '🧩', label: 'Modelos'         },
   ] },
   { key: 'comunicacao', title: 'Comunicação', items: [
     { to: '/oficina/inbox',      icon: '💬', label: 'WhatsApp dos clientes' },
@@ -107,13 +107,13 @@ const PLATFORM_SECTIONS: NavGroup[] = SECTIONS.filter(sec => sec.key !== 'config
 
 /** Ícone de cada bloco na gaveta "Mais" (celular) */
 const SECTION_ICON: Record<string, string> = {
-  top: '📊', atendimento: '📋', comunicacao: '💬', financeiro: '💵', estoque: '📦',
+  top: '📊', atendimento: '📋', checkup: '🩺', comunicacao: '💬', financeiro: '💵', estoque: '📦',
   equipe: '👷', relatorios: '📈', plataforma: '⚡', config: '⚙️',
 };
 
 /** Ícone de traço de cada grupo (menu do computador e busca rápida) */
 const GROUP_ICON: Record<string, IconName> = {
-  top: 'home', atendimento: 'clipboard', comunicacao: 'chat', financeiro: 'wallet', estoque: 'box',
+  top: 'home', atendimento: 'clipboard', checkup: 'stethoscope', comunicacao: 'chat', financeiro: 'wallet', estoque: 'box',
   equipe: 'users', relatorios: 'bars', plataforma: 'zap', config: 'gear',
 };
 
