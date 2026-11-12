@@ -8,6 +8,7 @@ import { attributeSignup } from '@/lib/marketingAttribution';
 import { convertLeadToProfile, fetchLeadForInvite, markLeadSignupStarted } from '@/lib/leadInvite';
 import { lookupCep } from '@/lib/cep';
 import { maskCep, onlyDigits } from '@/lib/customers';
+import { pixelCompleteRegistration } from '@/lib/metaPixel';
 
 function consumeLeadPrefill(): { name?: string; email?: string; phone?: string } {
   try {
@@ -128,6 +129,14 @@ export default function SignupWorkshop() {
 
     // Registra aceite (não bloqueia signup se falhar)
     if (data.user) {
+      // Meta Pixel — pré-cadastro da oficina confirmado pelo backend.
+      // Fica aqui dentro do `if (data.user)` de propósito: clicar em enviar,
+      // falhar na validação ou receber erro do servidor NAO entra neste ramo.
+      pixelCompleteRegistration({
+        content_name: 'workshop',
+        content_category: 'signup',
+      });
+
       try { await recordConsent(data.user.id, 'workshop'); } catch { /* ignora */ }
       if (leadId) await convertLeadToProfile(leadId);
       await attributeSignup(data.user.id, coupon);
