@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useEffect, useRef } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { Toaster } from './components/ui/Toast';
+import { pixelPageView } from './lib/metaPixel';
 
 import Landing from './pages/public/Landing';
 import { isStandalone } from './lib/push';
@@ -126,7 +127,23 @@ function LazyFallback() {
   );
 }
 
+/**
+ * Meta Pixel — dispara PageView em cada navegação de rota (SPA).
+ * O PageView da PRIMEIRA carga já foi disparado pelo snippet no index.html,
+ * então pulamos o primeiro mount pra não duplicar. Sem isso, entrar direto
+ * em /cadastro contaria 2 PageViews, o que estraga a métrica.
+ */
+function useRoutePageView() {
+  const location = useLocation();
+  const skipFirst = useRef(true);
+  useEffect(() => {
+    if (skipFirst.current) { skipFirst.current = false; return; }
+    pixelPageView();
+  }, [location.pathname]);
+}
+
 export default function App() {
+  useRoutePageView();
   return (
     <>
     <UpdatePrompt />
