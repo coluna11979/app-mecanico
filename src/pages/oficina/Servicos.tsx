@@ -7,7 +7,8 @@ import { canDo, useOperator } from '@/lib/operators';
 import { OS_CATEGORIES, fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/services';
 import { fmtDate } from '@/lib/purchasing';
-import { loadAllParts } from '@/lib/parts';
+import { DEFAULT_MARGIN, loadAllParts, loadMargins } from '@/lib/parts';
+import QuickPartModal from '@/components/parts/QuickPartModal';
 import {
   commonName, groupBy, loadServiceCharges, loadWorkshopModels, norm, vehicleLabel, type ServiceCharge,
 } from '@/lib/servicePrices';
@@ -660,7 +661,7 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
 
 
 type KitRow = { id: string; part_id: string | null; description: string; quantity: number; vehicle_model: string | null };
-type CatPart = { id: string; name: string; unit: string | null; stock_qty: number };
+type CatPart = { id: string; name: string; code: string | null; brand: string | null; cost: number; unit: string | null; stock_qty: number };
 type HistPart = { name: string; part_id: string | null; uses_all: number; uses_model: number; qty: number; unit_price: number };
 
 /** Na ficha do serviço: as peças que entram junto (ex.: Troca de óleo → óleo, filtro de óleo, junta do bujão) */
@@ -669,6 +670,8 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
   /** Modelo cujo kit está aberto ('' = kit geral, vale para todos os carros) */
   const [model, setModel] = useState('');
   const [newModel, setNewModel] = useState<string | null>(null);
+  const [quick, setQuick] = useState<string | null>(null);
+  const [baseMargin, setBaseMargin] = useState(DEFAULT_MARGIN);
   const [knownModels, setKnownModels] = useState<string[]>([]);
   const [parts, setParts] = useState<CatPart[]>([]);
   const [q, setQ] = useState('');
@@ -682,6 +685,7 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
     setAll(((data ?? []) as KitRow[]).map(r => ({ ...r, quantity: Number(r.quantity) })));
   }, [service.id]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadMargins(wid).then(m => setBaseMargin(m.base)).catch(() => { /* usa o padrão */ }); }, [wid]);
   useEffect(() => {
     loadWorkshopModels(wid).then(ms => {
       const catalog = Object.values(VEHICLE_CATALOG).flat();
@@ -693,8 +697,8 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
   /** Modelos que já têm kit próprio, sem repetir */
   const modelsWithKit = [...new Map((all ?? []).filter(r => r.vehicle_model).map(r => [norm(r.vehicle_model!), r.vehicle_model!])).values()];
   useEffect(() => {
-    loadAllParts<CatPart>(wid, 'id, name, unit, stock_qty')
-      .then(data => setParts(((data ?? []) as CatPart[]).map(p => ({ ...p, stock_qty: Number(p.stock_qty) }))));
+    loadAllParts<CatPart>(wid, 'id, name, code, brand, cost, unit, stock_qty')
+      .then(data => setParts(((data ?? []) as CatPart[]).map(p => ({ ...p, stock_qty: Number(p.stock_qty), cost: Number(p.cost) || 0 }))));
   }, [wid]);
 
   async function add(rows: { description: string; part_id: string | null; quantity: number }[]) {
@@ -743,7 +747,7 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
 
   const inKit = new Set((items ?? []).map(i => i.part_id).filter(Boolean));
   const words = norm(q).split(' ').filter(Boolean);
-  const matches = words.length ? parts.filter(p => !inKit.has(p.id) && words.every(w => norm(p.name).includes(w))).slice(0, 6) : [];
+  const matches = words.length ? parts.filter(p => !inKit.has(p.id) && words.every(w => norm(`${p.name} ${p.code ?? ''} ${p.brand ?? ''}`).includes(w))).slice(0, 8) : [];
 
   return (
     <div className="rounded-xl border border-steel-200">
@@ -787,7 +791,10 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
         <ul className="divide-y divide-steel-100">
           {items.map(i => (
             <li key={i.id} className="px-3 py-2 flex items-center gap-2">
-              <span className="flex-1 min-w-0 truncate text-sm">{i.description}{!i.part_id && <span className="ml-1.5 text-[10px] text-steel-400">avulsa</span>}</span>
+              <span className="flex-1 min-w-0 text-sm">
+                <span className="block truncate">{i.description}{!i.part_id && <span className="ml-1.5 text-[10px] text-steel-400">avulsa</span>}</span>
+                {i.part_id && (() => { const cp = parts.find(x => x.id === i.part_id); return cp ? <span className="block text-[11px] text-steel-500">{cp.cost > 0 ? `custo ${fmtBRL(cp.cost)}` : 'sem custo'} · {cp.stock_qty} em estoque</span> : null; })()}
+              </span>
               <input className="input !py-1 !px-2 w-16 text-right text-sm" inputMode="decimal" defaultValue={String(i.quantity).replace('.', ',')}
                 onBlur={e => setQty(i, e.target.value)} aria-label={`Quantidade de ${i.description}`} />
               <button type="button" onClick={() => remove(i.id)} className="h-7 w-7 rounded-lg grid place-items-center text-steel-400 hover:bg-alert-50 hover:text-alert-600" aria-label="Remover">✕</button>
@@ -805,13 +812,24 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
               {matches.map(p => (
                 <button key={p.id} type="button" disabled={busy} onClick={() => add([{ description: p.name, part_id: p.id, quantity: 1 }])}
                   className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-brand-50">
-                  <span className="truncate">{p.name}</span>
-                  <span className={`shrink-0 text-[11px] ${p.stock_qty <= 0 ? 'text-alert-600 font-semibold' : 'text-steel-500'}`}>{p.stock_qty} {p.unit ?? ''} em estoque</span>
+                  <span className="min-w-0">
+                    <span className="block truncate">{p.name}</span>
+                    <span className="block text-[11px] text-steel-500 truncate">{[p.code, p.brand].filter(Boolean).join(' · ') || 'já cadastrada'}</span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block text-xs font-bold text-steel-800">{p.cost > 0 ? `custo ${fmtBRL(p.cost)}` : 'sem custo'}</span>
+                    <span className={`block text-[11px] ${p.stock_qty <= 0 ? 'text-alert-600 font-semibold' : 'text-steel-500'}`}>{p.stock_qty} {p.unit ?? ''} em estoque</span>
+                  </span>
                 </button>
               ))}
-              <button type="button" disabled={busy} onClick={() => add([{ description: q, part_id: null, quantity: 1 }])}
+              <button type="button" disabled={busy} onClick={() => setQuick(q.trim())}
                 className="w-full px-3 py-2 text-left text-sm text-brand-700 font-semibold hover:bg-brand-50 border-t border-steel-100">
-                ➕ Adicionar “{q.trim()}” como peça avulsa
+                ✚ Cadastrar “{q.trim()}” agora (com custo e preço)
+              </button>
+              <button type="button" disabled={busy} onClick={() => add([{ description: q, part_id: null, quantity: 1 }])}
+                className="w-full px-3 py-2 text-left text-sm text-steel-600 hover:bg-brand-50 border-t border-steel-100">
+                {matches.length === 0 && <span className="block text-[11px] font-normal text-steel-500">Nenhuma peça cadastrada com esse nome.</span>}
+              ➕ Adicionar “{q.trim()}” como peça avulsa (sem cadastro)
               </button>
             </div>
           )}
@@ -847,6 +865,15 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
           )
         )}
       </div>
+      {quick !== null && (
+        <QuickPartModal wid={wid} osLabel="" registerOnly initialName={quick} quantity={1} defaultMargin={baseMargin}
+          onClose={() => setQuick(null)}
+          onSaved={res => {
+            setParts(ps => [...ps, { id: res.part_id, name: res.name, code: null, brand: null, cost: res.cost, unit: res.unit, stock_qty: 0 }]);
+            setQuick(null);
+            add([{ description: res.name, part_id: res.part_id, quantity: 1 }]);
+          }} />
+      )}
     </div>
   );
 }

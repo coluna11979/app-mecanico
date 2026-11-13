@@ -14,8 +14,10 @@ export type QuickPartResult = { part_id: string; name: string; cost: number; pri
  * autopeças de pronta entrega): lança a compra — a peça entra no estoque (e sai
  * quando a OS for concluída) — e a conta: paga na hora ou para pagar depois.
  */
-export default function QuickPartModal({ wid, osLabel, initialName, quantity, defaultMargin, onClose, onSaved }: {
+export default function QuickPartModal({ wid, osLabel, initialName, quantity, defaultMargin, registerOnly, onClose, onSaved }: {
   wid: string; osLabel: string; initialName: string; quantity: number; defaultMargin: number;
+  /** Só cadastra a peça (sem lançar compra): usado fora da OS, como no kit do serviço */
+  registerOnly?: boolean;
   onClose: () => void; onSaved: (r: QuickPartResult) => void;
 }) {
   const { balcao, session } = useOperator();
@@ -30,7 +32,7 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const [salePrice, setSalePrice] = useState('');
   const [marginStr, setMarginStr] = useState(String(defaultMargin));
   const [supplier, setSupplier] = useState<Supplier | null>(null);
-  const [bought, setBought]     = useState(true);
+  const [bought, setBought]     = useState(!registerOnly);
   const [qty, setQty]           = useState(String(quantity || 1).replace('.', ','));
   const [payNow, setPayNow]     = useState(true);
   const [from, setFrom]         = useState<'banco' | 'caixa'>('banco');
@@ -193,13 +195,13 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             </div>
           </div>}
 
-          <label className="flex items-start gap-2 rounded-xl border border-steel-200 p-3 cursor-pointer">
+          {!registerOnly && <label className="flex items-start gap-2 rounded-xl border border-steel-200 p-3 cursor-pointer">
             <input type="checkbox" className="mt-1" checked={bought} onChange={e => setBought(e.target.checked)} />
             <span>
               <span className="text-sm font-semibold">Comprei agora para esta OS</span>
               <span className="block text-xs text-steel-500">Lança a compra: entra no estoque, sai quando a OS for concluída, e a conta vai para o financeiro.</span>
             </span>
-          </label>
+          </label>}
 
           {bought && (
             <div className="rounded-2xl border border-steel-200 p-4 space-y-3">
