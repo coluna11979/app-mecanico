@@ -28,7 +28,8 @@ const supCodeKey = (supplierId: string, code: string) => `${supplierId}|${code.t
 const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 /** "ÓLEO 10W30 24X1" = caixa com 24: sugere lançar por unidade */
 const boxSizeOf = (name: string) => {
-  const m = name.match(/(?:^|[^\d.,])(\d{1,3})\s*X\s*1(?![\d.,])/i);
+  // "24X1", "24x1L", "24/1" (24 frascos de 1 litro por caixa)
+  const m = name.match(/(?:^|[^\d.,/])(\d{1,3})\s*(?:X|\/)\s*1(?![\d.,/])/i);
   const n = m ? Number(m[1]) : 0;
   if (n >= 2 && n <= 200) return n;
   // "CX C/12", "CAIXA COM 24", "CX 12"
