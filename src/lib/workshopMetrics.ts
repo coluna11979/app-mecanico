@@ -52,7 +52,7 @@ export function previousRange(r: Range): Range {
   return { from: new Date(r.from.getTime() - len), to: new Date(r.from.getTime()) };
 }
 
-const isSale = (o: PanelOs) => o.status === 'completed' && !o.quote_status;
+export const isSale = (o: PanelOs) => o.status === 'completed' && !o.quote_status;
 const parts = (o: PanelOs) => Number(o.parts_cost ?? 0);
 const labor = (o: PanelOs) => Number(o.labor_cost ?? 0);
 

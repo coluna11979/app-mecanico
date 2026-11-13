@@ -1,4 +1,4 @@
-import { salesOf, type PanelItem, type PanelOs, type Range } from '@/lib/workshopMetrics';
+import { isSale, salesOf, type PanelItem, type PanelOs, type Range } from '@/lib/workshopMetrics';
 
 /**
  * Oficina de serviços: o que sai nas OS como "peça" (par de disco c/ pastilha, bandejas, kit de embreagem…)
@@ -9,7 +9,8 @@ import { salesOf, type PanelItem, type PanelOs, type Range } from '@/lib/worksho
 const RULES: { name: string; re: RegExp }[] = [
   // Casos específicos primeiro (vencem as regras gerais)
   // "Jogo centralizador" sai junto com alinhamento/balanceamento: é o centralizador da roda, não o da embreagem
-  { name: 'Pneus, alinhamento e balanceamento', re: /bicos? de rodas?|contrapeso|^montage(m|ns)$|montage(m|ns) (de |do |dos )?pneus?|cambage(m|ns)|centralizador(?!.*embreagem)/ },
+  { name: 'Pneus e rodas', re: /bicos? de rodas?|^montage(m|ns)$|montage(m|ns) (de |do |dos )?pneus?|valvulas? de pneus?/ },
+  { name: 'Alinhamento e balanceamento', re: /contrapeso|cambage(m|ns)|centralizador(?!.*embreagem)/ },
   { name: 'Revisão e diagnóstico', re: /passagem (do |de |da )?(aparelho|computador|scanner)|diagnostico|scanner|inspecao|check-?up/ },
   { name: 'Correia dentada / distribuição', re: /correia dentada|distribuicao|kit (da )?correia|tensor (da )?correia dentada/ },
   { name: 'Embreagem', re: /embreagem|(?:^|[^a-z])plato|atuador do pedal/ },
@@ -25,7 +26,9 @@ const RULES: { name: string; re: RegExp }[] = [
   { name: 'Escapamento', re: /escapamento|silencioso|catalisador|abafador|ponteira|flexivel|intermediario|cano do motor/ },
   { name: 'Ignição, injeção e combustível', re: /(?:^|[^a-z])vela|bobina|(?:^|[^a-z])bico|injet|sonda|lambda|borboleta|sensor|(?:^|[^a-z])tbi|descarboniz|injecao|programacao do modulo|bomba de combustivel|jogo de cabos?/ },
   { name: 'Elétrica e bateria', re: /bateria|alternador|motor de partida|arranque|lampada|farol|lanterna|fusivel|(?:^|[^a-z])rele(?:$|[^a-z])|chicote|eletric/ },
-  { name: 'Pneus, alinhamento e balanceamento', re: /pneu|alinhamento|balanceamento|calibragem|(?:^|[^a-z])roda|camara/ },
+  // Alinhamento/balanceamento antes de pneu: "montagem e balanceamento" e "balanceamento 4 rodas" são balanceamento
+  { name: 'Alinhamento e balanceamento', re: /alinhamento|balanceamento/ },
+  { name: 'Pneus e rodas', re: /pneu|calibragem|(?:^|[^a-z])roda|camara/ },
   { name: 'Troca de óleo, filtros e revisão', re: /bujao/ },
   { name: 'Motor (juntas, retentores, cabeçote)', re: /junta|retentor|cabecote|tampa de valvula|pistao|biela|(?:^|[^a-z])(?:anel|aneis)(?:$|[^a-z])|retifica|valvula|motor completo|vedacao|bronzina|virabrequim|volante do motor|carter|bomba de oleo/ },
   { name: 'Carroceria e acessórios', re: /palheta|limpador|parabrisa|retrovisor|para-?choque|vidro|macaneta|buzina/ },
@@ -61,34 +64,65 @@ export const UNKNOWN_SERVICE = 'Serviço não identificado';
  * Ex.: "Par de disco c/ pastilha" + "Mão de obra" na mesma OS = 1 serviço de freios.
  */
 export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, limit = 8) {
-  const sales = new Map(salesOf(list, r).sales.map(o => [o.id, o]));
-  const byOs = new Map<string, PanelItem[]>();
-  for (const i of items) {
-    if (!sales.has(i.service_order_id)) continue;
-    const arr = byOs.get(i.service_order_id) ?? [];
-    arr.push(i); byOs.set(i.service_order_id, arr);
-  }
+  const { byOs, unmatchedItems } = attributeItems(salesOf(list, r).sales, items);
   const map = new Map<string, ServiceExecuted & { ids: Set<string> }>();
-  let unmatchedItems = 0;
   for (const [osId, its] of byOs) {
-    const tagged = its.map(i => ({ i, cat: serviceOf(i.description), value: Number(i.quantity) * Number(i.unit_price) }));
-    const totals = new Map<string, number>();
-    for (const t of tagged) if (t.cat) totals.set(t.cat, (totals.get(t.cat) ?? 0) + t.value);
-    const main = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? serviceOf(sales.get(osId)!.title ?? '');
-    for (const t of tagged) {
-      const name = t.cat ?? main ?? UNKNOWN_SERVICE;
-      if (!t.cat && !main) unmatchedItems += 1;
-      const cur = map.get(name) ?? { name, orders: 0, revenue: 0, parts: 0, labor: 0, identified: name !== UNKNOWN_SERVICE, ids: new Set<string>() };
+    for (const t of its) {
+      const cur = map.get(t.name) ?? { name: t.name, orders: 0, revenue: 0, parts: 0, labor: 0, identified: t.name !== UNKNOWN_SERVICE, ids: new Set<string>() };
       cur.revenue += t.value;
-      if (t.i.kind === 'part') cur.parts += t.value; else cur.labor += t.value;
+      if (t.kind === 'part') cur.parts += t.value; else cur.labor += t.value;
       cur.ids.add(osId);
-      map.set(name, cur);
+      map.set(t.name, cur);
     }
   }
   const rows = [...map.values()].map(({ ids, ...x }) => ({ ...x, orders: ids.size }))
     // Pelo volume (quantas vezes o serviço foi feito); valor só desempata. "Não identificado" sempre por último.
     .sort((a, b) => Number(a.name === UNKNOWN_SERVICE) - Number(b.name === UNKNOWN_SERVICE) || b.orders - a.orders || b.revenue - a.revenue);
   return { rows: rows.slice(0, limit), total: rows.reduce((t, x) => t + x.revenue, 0), unmatchedItems };
+}
+
+type Attributed = { name: string; value: number; kind: PanelItem['kind'] };
+
+/** Cada item das OS ligado ao serviço que ele representa (a regra está no comentário de servicesExecuted) */
+function attributeItems(sales: PanelOs[], items: PanelItem[]) {
+  const byId = new Map(sales.map(o => [o.id, o]));
+  const grouped = new Map<string, PanelItem[]>();
+  for (const i of items) {
+    if (!byId.has(i.service_order_id)) continue;
+    const arr = grouped.get(i.service_order_id) ?? [];
+    arr.push(i); grouped.set(i.service_order_id, arr);
+  }
+  const byOs = new Map<string, Attributed[]>();
+  let unmatchedItems = 0;
+  for (const [osId, its] of grouped) {
+    const tagged = its.map(i => ({ i, cat: serviceOf(i.description), value: Number(i.quantity) * Number(i.unit_price) }));
+    const totals = new Map<string, number>();
+    for (const t of tagged) if (t.cat) totals.set(t.cat, (totals.get(t.cat) ?? 0) + t.value);
+    const main = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? serviceOf(byId.get(osId)!.title ?? '');
+    byOs.set(osId, tagged.map(t => {
+      if (!t.cat && !main) unmatchedItems += 1;
+      return { name: t.cat ?? main ?? UNKNOWN_SERVICE, value: t.value, kind: t.i.kind };
+    }));
+  }
+  return { byOs, unmatchedItems };
+}
+
+/**
+ * Vendas de um serviço só: cada OS que teve aquele serviço, com o valor (e peças/mão de obra) só dele.
+ * Devolve no formato de OS para reaproveitar salesOf/revenueSeries do painel.
+ */
+export function salesOfService(list: PanelOs[], items: PanelItem[], service: string): PanelOs[] {
+  const sales = list.filter(isSale);
+  const { byOs } = attributeItems(sales, items);
+  const out: PanelOs[] = [];
+  for (const o of sales) {
+    const mine = (byOs.get(o.id) ?? []).filter(t => t.name === service);
+    if (!mine.length) continue;
+    const parts = mine.filter(t => t.kind === 'part').reduce((a, t) => a + t.value, 0);
+    const labor = mine.filter(t => t.kind !== 'part').reduce((a, t) => a + t.value, 0);
+    out.push({ ...o, price: parts + labor, parts_cost: parts, labor_cost: labor });
+  }
+  return out;
 }
 
 /** Faturamento por tipo de serviço: os 6 maiores e o resto junto; "Serviço não identificado" sempre separado, no fim */
@@ -100,6 +134,32 @@ export function revenueByService(rows: ServiceExecuted[], top = 6) {
   const out = known.slice(0, top);
   if (rest.length) out.push({ name: `Outros serviços (${rest.length})`, orders: 0, revenue: rest.reduce((t, x) => t + x.revenue, 0), parts: 0, labor: 0, identified: true });
   return [...out, ...unknown];
+}
+
+/** Curva ABC: A = serviços que somam até 80% do faturamento, B = até 95%, C = o resto */
+export type AbcClass = 'A' | 'B' | 'C';
+export type AbcRow = ServiceExecuted & { share: number; cumulative: number; cls: AbcClass };
+
+export function abcCurve(rows: ServiceExecuted[]) {
+  // "Não identificado" não é um serviço que dá para trabalhar: fica fora da curva
+  const known = rows.filter(r => r.identified && r.revenue > 0).sort((a, b) => b.revenue - a.revenue);
+  const total = known.reduce((t, r) => t + r.revenue, 0);
+  let acc = 0;
+  const out: AbcRow[] = known.map(r => {
+    const before = total ? (acc / total) * 100 : 0;  // classe pelo acumulado ANTES do serviço entrar
+    acc += r.revenue;
+    const cls: AbcClass = before < 80 ? 'A' : before < 95 ? 'B' : 'C';
+    return { ...r, share: total ? (r.revenue / total) * 100 : 0, cumulative: total ? (acc / total) * 100 : 0, cls };
+  });
+  const sum = (c: AbcClass) => out.filter(r => r.cls === c);
+  return {
+    rows: out, total,
+    groups: (['A', 'B', 'C'] as AbcClass[]).map(c => ({
+      cls: c, count: sum(c).length,
+      revenue: sum(c).reduce((t, r) => t + r.revenue, 0),
+      share: total ? (sum(c).reduce((t, r) => t + r.revenue, 0) / total) * 100 : 0,
+    })),
+  };
 }
 
 /** % de peças dentro dos serviços (o resto é mão de obra); fecha sempre em 100% */
@@ -116,7 +176,8 @@ export function partsSharePct(rows: ServiceExecuted[]) {
  */
 const REFERENCE: [string, number][] = [
   ['Troca de óleo', 30],
-  ['Pneus, alinhamento', 45],
+  ['Alinhamento e balanceamento', 45],
+  ['Pneus e rodas', 30],
   ['Freios', 90],
   ['Suspensão', 90],
   ['Coxins', 90],

@@ -8,7 +8,7 @@ import {
   approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf,
   type PanelItem, type PanelOs,
 } from '@/lib/workshopMetrics';
-import { partsSharePct, refMinutesOf, revenueByService, servicesExecuted } from '@/lib/serviceCatalog';
+import { abcCurve, partsSharePct, refMinutesOf, revenueByService, salesOfService, servicesExecuted, type AbcClass, type AbcRow } from '@/lib/serviceCatalog';
 import { fmtHours } from '@/lib/teamCost';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
@@ -27,6 +27,17 @@ export default function Painel() {
   const [os, setOs]         = useState<PanelOs[]>([]);
   const [items, setItems]   = useState<PanelItem[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Serviço escolhido no filtro ('' = todos): faturamento, OS, ticket, gráfico e vendas só dele */
+  const svcKey = wid ? `painel-servico:${wid}` : null;
+  const [service, setServiceState] = useState('');
+  useEffect(() => {
+    if (!svcKey) return;
+    try { setServiceState(localStorage.getItem(svcKey) ?? ''); } catch { setServiceState(''); }
+  }, [svcKey]);
+  const setService = (v: string) => {
+    setServiceState(v);
+    if (svcKey) { try { if (v) localStorage.setItem(svcKey, v); else localStorage.removeItem(svcKey); } catch { /* ignore */ } }
+  };
 
   const prev = useMemo(() => previousRange(range), [range]);
   /** Primeira compra de cada cliente (só 2 campos do histórico todo) — para "novos × voltaram" */
@@ -48,11 +59,11 @@ export default function Painel() {
           .eq('workshop_id', wid)
           .or(`status.in.(open,awaiting_approval,approved,in_progress),${inWin('created_at')},${inWin('completed_at')},${inWin('approval_requested_at')},completed_at.gte.${today}`)
           .order('created_at', { ascending: false }).order('id').range(a, b)),
-        // Itens só das OS concluídas no período exibido (mais vendidos)
+        // Itens das OS concluídas no período exibido e no anterior (mais vendidos e comparação do filtro por serviço)
         fetchAll((a, b) => supabase.from('service_order_items')
           .select('service_order_id, kind, description, quantity, unit_price, so:service_orders!inner(completed_at)')
           .eq('workshop_id', wid)
-          .gte('so.completed_at', range.from.toISOString()).lt('so.completed_at', toIso)
+          .gte('so.completed_at', fromIso).lt('so.completed_at', toIso)
           .order('id').range(a, b)),
         fetchAll((a, b) => supabase.from('service_orders').select('id, status, quote_status, customer_id, completed_at')
           .eq('workshop_id', wid).eq('status', 'completed').is('quote_status', null).not('customer_id', 'is', null)
@@ -70,26 +81,37 @@ export default function Painel() {
   }, [wid, fromIso, toIso]);
 
   const m = useMemo(() => {
-    const cur = salesOf(os, range);
-    const before = salesOf(os, prev);
+    // Com um serviço escolhido, as vendas passam a ser só o valor daquele serviço em cada OS
+    const sold = service ? salesOfService(os, items, service) : os;
+    const cur = salesOf(sold, range);
+    const before = salesOf(sold, prev);
     const today = startOfDay(new Date());
     return {
       cur, before,
       revChange: change(cur.revenue, before.revenue),
       countChange: change(cur.count, before.count),
       ticketChange: change(cur.ticket, before.ticket),
-      series: revenueSeries(os, range),
-      todaySales: salesOf(os, { from: today, to: addDays(today, 1) }),
+      series: revenueSeries(sold, range),
+      todaySales: salesOf(sold, { from: today, to: addDays(today, 1) }),
       funnel: funnel(os),
       approval: approvalRate(os, range),
       services: servicesExecuted(os, items, range, 100),
       customers: customerMix([...firstBuys, ...os], range),
     };
-  }, [os, items, firstBuys, range, prev]);
+  }, [os, items, firstBuys, range, prev, service]);
+
+  /** Serviços com venda no período (opções do filtro), do maior faturamento para o menor */
+  const serviceOptions = useMemo(
+    () => [...m.services.rows].sort((a, b) => b.revenue - a.revenue).map(r => r.name),
+    [m.services],
+  );
+  const selected = service ? m.services.rows.find(r => r.name === service) : undefined;
+  const sharePct = service && m.services.total ? (m.cur.revenue / m.services.total) * 100 : null;
 
   const maxBar = Math.max(1, ...m.series.map(s => s.value));
   const revenueRows = useMemo(() => revenueByService(m.services.rows), [m.services]);
   const partsShare = partsSharePct(m.services.rows);
+  const abc = useMemo(() => abcCurve(m.services.rows), [m.services]);
 
   return (
     <WorkshopLayout>
@@ -101,8 +123,33 @@ export default function Painel() {
             <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">{currentWorkshop?.business_name ?? '…'}</h1>
             <div className="text-xs text-steel-400 mt-0.5">{period.label}</div>
           </div>
-          <PeriodPicker period={period} />
+          <div className="flex flex-wrap items-center gap-2">
+            {(serviceOptions.length > 0 || service) && (
+              <label className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-steel-500">Serviço</span>
+                <select value={service} onChange={e => setService(e.target.value)}
+                  className={`h-10 max-w-[240px] rounded-xl border px-3 text-sm font-semibold bg-white ${service ? 'border-brand-500 text-brand-700' : 'border-steel-200 text-steel-700'}`}>
+                  <option value="">Todos os serviços</option>
+                  {serviceOptions.map(n => <option key={n} value={n}>{n}</option>)}
+                  {/* Escolhido antes, mas sem venda neste período: continua na lista */}
+                  {service && !serviceOptions.includes(service) && <option value={service}>{service}</option>}
+                </select>
+              </label>
+            )}
+            <PeriodPicker period={period} />
+          </div>
         </div>
+
+        {service && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-sm">
+            <span className="text-brand-800">
+              Mostrando só <strong>{service}</strong>: o valor desse serviço em cada OS (peças + mão de obra dele).
+            </span>
+            <button type="button" onClick={() => setService('')} className="min-h-[36px] text-xs font-bold text-brand-700 underline">
+              Ver todos os serviços
+            </button>
+          </div>
+        )}
 
         {wid && <ShowcaseReminder workshopId={wid} />}
 
@@ -126,24 +173,45 @@ export default function Painel() {
           <>
             {/* KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Kpi label="Faturamento" value={fmtBRL(m.cur.revenue)} delta={m.revChange} note={PREV_LABEL[preset]} highlight />
-              <Kpi label="OS concluídas" value={String(m.cur.count)} delta={m.countChange} note={PREV_LABEL[preset]} />
-              <Kpi label="Ticket médio" value={fmtBRL(m.cur.ticket)} delta={m.ticketChange} note={PREV_LABEL[preset]} />
-              <Kpi label="Orçamentos aprovados" value={m.approval.rate == null ? '—' : `${Math.round(m.approval.rate)}%`}
-                note={`${m.approval.approved} de ${m.approval.approved + m.approval.declined} decididos no período`} />
+              <Kpi label={service ? 'Faturamento do serviço' : 'Faturamento'} value={fmtBRL(m.cur.revenue)} delta={m.revChange} note={PREV_LABEL[preset]} highlight />
+              <Kpi label={service ? 'OS com o serviço' : 'OS concluídas'} value={String(m.cur.count)} delta={m.countChange} note={PREV_LABEL[preset]} />
+              <Kpi label={service ? 'Ticket do serviço' : 'Ticket médio'} value={fmtBRL(m.cur.ticket)} delta={m.ticketChange} note={PREV_LABEL[preset]} />
+              {service ? (
+                <Kpi label="Parte do faturamento" value={sharePct == null ? '—' : `${Math.round(sharePct)}%`}
+                  note="do total dos serviços no período" />
+              ) : (
+                <Kpi label="Orçamentos aprovados" value={m.approval.rate == null ? '—' : `${Math.round(m.approval.rate)}%`}
+                  note={`${m.approval.approved} de ${m.approval.approved + m.approval.declined} decididos no período`} />
+              )}
             </div>
 
             {/* Peças × mão de obra + gráfico */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="card">
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">De onde veio o faturamento</div>
-                <p className="text-[11px] text-steel-400 mb-3">Por tipo de serviço executado (peças + mão de obra de cada serviço)</p>
+                <p className="text-[11px] text-steel-400 mb-3">Por tipo de serviço executado (peças + mão de obra de cada serviço). Clique num serviço para ver só ele.</p>
                 {revenueRows.length === 0 ? (
                   <p className="text-sm text-steel-400">Sem serviços no período.</p>
-                ) : revenueRows.map(r => (
-                  <Split key={r.name} label={r.name} value={r.revenue} total={m.services.total} color={r.identified ? 'bg-brand-500' : 'bg-steel-300'} />
-                ))}
-                {m.services.total > 0 && (
+                ) : revenueRows.map(r => {
+                  // "Outros serviços (n)" junta vários: não dá para filtrar por ele
+                  const pickable = m.services.rows.some(x => x.name === r.name);
+                  const on = service === r.name;
+                  const row = <Split label={r.name} value={r.revenue} total={m.services.total}
+                    color={on ? 'bg-brand-600' : r.identified ? 'bg-brand-500' : 'bg-steel-300'} />;
+                  return pickable ? (
+                    <button key={r.name} type="button" onClick={() => setService(on ? '' : r.name)} aria-pressed={on}
+                      className={`block w-full text-left rounded-lg -mx-2 px-2 pt-1.5 pb-0.5 mb-1 transition ${on ? 'bg-brand-50 ring-1 ring-brand-300' : 'hover:bg-steel-50'}`}>
+                      {row}
+                    </button>
+                  ) : <div key={r.name}>{row}</div>;
+                })}
+                {selected && selected.parts + selected.labor > 0 && (
+                  <div className="mt-4 pt-3 border-t border-steel-100">
+                    <div className="text-xs font-semibold text-steel-700 mb-1">Dentro de {selected.name}</div>
+                    <PartsLaborBar partsPct={Math.round((selected.parts / (selected.parts + selected.labor)) * 100)} />
+                  </div>
+                )}
+                {!service && m.services.total > 0 && (
                   <>
                     <PartsLaborBar partsPct={partsShare} />
                     <p className="text-[11px] text-steel-400 mt-3">Soma dos itens lançados nas OS; pode diferir do faturamento por descontos ou OS sem itens.</p>
@@ -177,7 +245,7 @@ export default function Painel() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="card">
                 <div className="flex items-center justify-between mb-3">
-                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">💰 Vendas de hoje</div>
+                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">💰 Vendas de hoje{service ? ` · ${service}` : ''}</div>
                   <div className="text-sm font-bold">{fmtBRL(m.todaySales.revenue)}</div>
                 </div>
                 {m.todaySales.count === 0 ? (
@@ -244,6 +312,11 @@ export default function Painel() {
                 </div>
               </div>
             </div>
+
+            {/* Curva ABC: quais serviços sustentam o faturamento */}
+            {abc.rows.length > 0 && (
+              <AbcCard abc={abc} selected={service} onPick={n => setService(service === n ? '' : n)} />
+            )}
 
             {/* Onde foram parar as outras seções */}
             <p className="text-[11px] text-steel-400">
@@ -334,6 +407,85 @@ function ServiceRanking({ rows }: { rows: { name: string; orders: number; revenu
           ))}
         </ol>
       )}
+    </div>
+  );
+}
+
+const ABC_STYLE: Record<AbcClass, { badge: string; bar: string; title: string; hint: string }> = {
+  A: { badge: 'bg-brand-500 text-white',  bar: 'bg-brand-500', title: 'Classe A', hint: 'até 80% do faturamento: o que sustenta a oficina' },
+  B: { badge: 'bg-pending-500 text-white', bar: 'bg-pending-500', title: 'Classe B', hint: 'de 80% a 95%: importantes, dá para crescer' },
+  C: { badge: 'bg-steel-400 text-white',  bar: 'bg-steel-300', title: 'Classe C', hint: 'os últimos 5%: pouco peso no faturamento' },
+};
+
+function AbcCard({ abc, selected, onPick }: {
+  abc: ReturnType<typeof abcCurve>; selected: string; onPick: (name: string) => void;
+}) {
+  return (
+    <div className="card">
+      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">Curva ABC dos serviços</div>
+      <p className="text-[11px] text-steel-400 mb-4">
+        Serviços do maior para o menor faturamento no período. Clique num serviço para ver só ele no painel.
+      </p>
+
+      {/* Resumo por classe */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+        {abc.groups.map(g => (
+          <div key={g.cls} className="rounded-xl bg-steel-50 border border-steel-200 px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className={`h-6 w-6 rounded-md grid place-items-center text-xs font-bold ${ABC_STYLE[g.cls].badge}`}>{g.cls}</span>
+              <span className="text-sm font-bold text-steel-900">{g.count} {g.count === 1 ? 'serviço' : 'serviços'}</span>
+              <span className="ml-auto text-sm font-bold tabular-nums">{Math.round(g.share)}%</span>
+            </div>
+            <div className="text-xs text-steel-500 mt-1 leading-snug">{fmtBRL(g.revenue)} · {ABC_STYLE[g.cls].hint}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Lista */}
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-sm min-w-[560px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-steel-500 text-left">
+              <th className="font-bold py-2 px-1 w-8">#</th>
+              <th className="font-bold py-2 px-1">Serviço</th>
+              <th className="font-bold py-2 px-1 text-right">Qtd.</th>
+              <th className="font-bold py-2 px-1 text-right">Faturamento</th>
+              <th className="font-bold py-2 px-1 text-right">%</th>
+              <th className="font-bold py-2 px-1 w-[22%]">Acumulado</th>
+              <th className="font-bold py-2 px-1 text-center">Classe</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-steel-100">
+            {abc.rows.map((r: AbcRow, i) => {
+              const on = selected === r.name;
+              return (
+                <tr key={r.name} onClick={() => onPick(r.name)} aria-selected={on}
+                  className={`cursor-pointer transition ${on ? 'bg-brand-50' : 'hover:bg-steel-50'}`}>
+                  <td className="py-2.5 px-1 text-steel-400 tabular-nums">{i + 1}</td>
+                  <td className="py-2.5 px-1 font-semibold text-steel-800">{r.name}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums text-steel-600">{r.orders}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums font-bold">{fmtBRL(r.revenue)}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums text-steel-600">{r.share.toFixed(1).replace('.', ',')}%</td>
+                  <td className="py-2.5 px-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 flex-1 rounded-full bg-steel-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${ABC_STYLE[r.cls].bar}`} style={{ width: `${r.cumulative}%` }} />
+                      </div>
+                      <span className="text-xs tabular-nums text-steel-500 w-10 text-right">{Math.round(r.cumulative)}%</span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-1 text-center">
+                    <span className={`inline-grid place-items-center h-6 w-6 rounded-md text-xs font-bold ${ABC_STYLE[r.cls].badge}`}>{r.cls}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-steel-400 mt-3">
+        Faturamento = peças + mão de obra de cada serviço. "Serviço não identificado" fica fora da curva.
+      </p>
     </div>
   );
 }
