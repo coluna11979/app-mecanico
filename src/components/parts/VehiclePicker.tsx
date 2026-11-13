@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VEHICLE_CATALOG, vehicleYears } from '@/lib/vehicleCatalog';
-import { fmtYears, norm, type VehicleDraft } from '@/lib/partVehicles';
+import { ANY_MODEL, fmtYears, isAnyModel, norm, type VehicleDraft } from '@/lib/partVehicles';
 
 const same = (a: VehicleDraft, b: VehicleDraft) =>
   norm(a.brand) === norm(b.brand) && norm(a.model) === norm(b.model) && a.year_from === b.year_from && a.year_to === b.year_to;
@@ -19,6 +19,8 @@ export default function VehiclePicker({ list, onChange, extraBrands, extraModels
   const [open, setOpen] = useState(false);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  /** Cadastro só pela marca: serve em todos os modelos dela */
+  const [byBrand, setByBrand] = useState(false);
   const [manual, setManual] = useState(false);
   const [mBrand, setMBrand] = useState('');
   const [mModel, setMModel] = useState('');
@@ -50,13 +52,16 @@ export default function VehiclePicker({ list, onChange, extraBrands, extraModels
   const yTo = /^\d{4}$/.test(to) ? Number(to) : null;
   const yearsBad = yFrom != null && yTo != null && yTo < yFrom;
 
+  const brands = useMemo(() => [...new Set(all.map(v => v.brand))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [all]);
+
   const hits = useMemo(() => {
     const words = norm(q).split(/\s+/).filter(Boolean);
+    if (byBrand) return brands.filter(b => !words.length || words.every(w => norm(b).includes(w))).map(b => ({ brand: b, model: ANY_MODEL, text: '' })).slice(0, 12);
     if (!words.length) return [];
     return all.filter(v => words.every(w => v.text.includes(w)))
       .sort((a, b) => Number(norm(b.model).startsWith(words[0])) - Number(norm(a.model).startsWith(words[0])) || a.model.localeCompare(b.model, 'pt-BR'))
       .slice(0, 10);
-  }, [all, q]);
+  }, [all, brands, q, byBrand]);
 
   const draft = (brand: string, model: string): VehicleDraft => ({ brand, model, year_from: yFrom, year_to: yTo });
   const has = (brand: string, model: string) => list.some(x => same(x, draft(brand, model)));
@@ -78,7 +83,7 @@ export default function VehiclePicker({ list, onChange, extraBrands, extraModels
         <ul className="flex flex-wrap gap-2">
           {list.map((v, i) => (
             <li key={i} className="flex items-center gap-1 text-xs bg-steel-100 rounded-full pl-3 pr-1 py-1">
-              <span><strong className="font-semibold">{v.brand} {v.model}</strong> <span className="text-steel-500">· {fmtYears(v)}</span></span>
+              <span><strong className="font-semibold">{isAnyModel(v.model) ? `${v.brand} · todos os modelos` : `${v.brand} ${v.model}`}</strong> <span className="text-steel-500">· {fmtYears(v)}</span></span>
               <button type="button" aria-label={`Remover ${v.brand} ${v.model}`} onClick={() => onChange(list.filter((_, j) => j !== i))}
                 className="h-6 w-6 rounded-full grid place-items-center text-steel-500 hover:bg-steel-200">✕</button>
             </li>
@@ -88,10 +93,17 @@ export default function VehiclePicker({ list, onChange, extraBrands, extraModels
         <p className="text-xs text-steel-400">Nenhum carro ainda. Busque abaixo e clique nos que usam esta peça.</p>
       )}
 
+      <div className="flex gap-2">
+        {([[false, 'Por modelo'], [true, 'Só pela marca']] as const).map(([k, l]) => (
+          <button key={l} type="button" onClick={() => { setByBrand(k); setQ(''); }}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${byBrand === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>{l}</button>
+        ))}
+      </div>
+
       <div ref={box} className="relative">
-        <input className="input !py-2.5 text-sm" placeholder="🔍 Buscar carro: corolla, gol, hb20, toyota…"
+        <input className="input !py-2.5 text-sm" placeholder={byBrand ? '🔍 Buscar marca: toyota, fiat, honda…' : '🔍 Buscar carro: corolla, gol, hb20, toyota…'}
           value={q} onFocus={() => setOpen(true)} onChange={e => { setQ(e.target.value); setOpen(true); }} />
-        {open && q.trim() && (
+        {open && (byBrand || q.trim()) && (
           <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-steel-200 bg-white shadow-lg max-h-64 overflow-y-auto py-1">
             {hits.map(v => {
               const on = has(v.brand, v.model);
@@ -99,7 +111,9 @@ export default function VehiclePicker({ list, onChange, extraBrands, extraModels
                 <button key={`${v.brand}|${v.model}`} type="button" onClick={() => toggle(v.brand, v.model)}
                   className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-steel-50">
                   <span className={`h-5 w-5 rounded-md border grid place-items-center text-[11px] shrink-0 ${on ? 'bg-signal-600 border-signal-600 text-white' : 'border-steel-300 text-transparent'}`}>✓</span>
-                  <span className="text-sm text-steel-800"><strong className="font-semibold">{v.model}</strong> <span className="text-steel-500">{v.brand}</span></span>
+                  <span className="text-sm text-steel-800">{byBrand
+                    ? <><strong className="font-semibold">{v.brand}</strong> <span className="text-steel-500">todos os modelos</span></>
+                    : <><strong className="font-semibold">{v.model}</strong> <span className="text-steel-500">{v.brand}</span></>}</span>
                 </button>
               );
             })}

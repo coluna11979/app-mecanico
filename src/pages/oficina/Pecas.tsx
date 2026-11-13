@@ -16,7 +16,7 @@ import {
   type Situation, type StockData,
 } from '@/lib/stock';
 import VehiclePicker from '@/components/parts/VehiclePicker';
-import { addVehicleToParts, fitsVehicle, fmtVehicle, fmtYears, loadPartVehicles, markPartsUniversal, norm, partLabel, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
+import { addVehicleToParts, fitsVehicle, fmtVehicle, fmtYears, isAnyModel, loadPartVehicles, markPartsUniversal, norm, partLabel, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
 import SupplierPicker from '@/components/parts/SupplierPicker';
 import StockTabs, { useStockAccess } from '@/components/stock/StockTabs';
 import { StockHistoryModal, StockMoveModal, type MoveMode } from '@/components/stock/StockModals';
@@ -116,7 +116,7 @@ export default function Pecas() {
   const modelOptionsFor = (brand: string) => {
     const m = new Map<string, string>();
     for (const l of vehicles.values()) for (const v of l)
-      if ((!brand.trim() || norm(v.brand) === norm(brand)) && !m.has(norm(v.model))) m.set(norm(v.model), v.model);
+      if ((!brand.trim() || norm(v.brand) === norm(brand)) && !isAnyModel(v.model) && !m.has(norm(v.model))) m.set(norm(v.model), v.model);
     return [...m.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   };
 
@@ -681,7 +681,7 @@ function CategoryMargins({ wid, value, onSaved }: { wid: string; value: Margins;
 function VehicleLine({ list, universal }: { list: PartVehicle[] | undefined; universal?: boolean }) {
   if (universal) return <div className="text-[11px] text-steel-500">🌐 Universal</div>;
   if (!list?.length) return null;
-  const shown = list.slice(0, 2).map(v => `${v.brand} ${v.model}${v.year_from != null || v.year_to != null ? ` ${fmtYears(v)}` : ''}`);
+  const shown = list.slice(0, 2).map(v => `${v.brand} ${isAnyModel(v.model) ? "(todos)" : v.model}${v.year_from != null || v.year_to != null ? ` ${fmtYears(v)}` : ''}`);
   return <div className="text-[11px] text-steel-500 truncate">🚗 {shown.join(', ')}{list.length > 2 ? ` +${list.length - 2}` : ''}</div>;
 }
 

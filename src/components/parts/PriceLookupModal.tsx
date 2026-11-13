@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fmtBRL } from '@/components/os/osHelpers';
 import { fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, partCategory, salePriceOf, type WorkshopPart } from '@/lib/parts';
-import { fmtYears, loadPartVehicles, norm, type PartVehicle } from '@/lib/partVehicles';
+import { fmtYears, isAnyModel, loadPartVehicles, norm, type PartVehicle } from '@/lib/partVehicles';
 
 type Part = Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>;
 type Hit =
@@ -38,7 +38,7 @@ export default function PriceLookupModal({ wid, showCost, onClose }: { wid: stri
         supabase.from('workshop_services').select('id, name, price, category').eq('workshop_id', wid).eq('active', true).order('name'),
       ]);
       if (!alive) return;
-      const veh = (id: string) => (vehicles.get(id) ?? []).map(v => `${v.brand} ${v.model} ${fmtYears(v)}`);
+      const veh = (id: string) => (vehicles.get(id) ?? []).map(v => `${v.brand}${isAnyModel(v.model) ? '' : ' ' + v.model} ${fmtYears(v)}`);
       setHits([
         ...parts.map(p => {
           const cars = veh(p.id);
