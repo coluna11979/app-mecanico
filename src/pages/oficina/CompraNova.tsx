@@ -16,7 +16,8 @@ import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '
 import { BUCKET, mergePages, type PurchaseImport } from '@/lib/purchaseImports';
 
 /** code: código do produto do fornecedor (vem da nota; vai para a peça) */
-type Row = { key: string; part_id: string | null; code: string; name: string; unit: string; quantity: string; unit_cost: string };
+/** split = unidades por caixa quando a linha foi dividida sozinha na leitura da nota (dá para desfazer) */
+type Row = { key: string; part_id: string | null; code: string; name: string; unit: string; quantity: string; unit_cost: string; split?: number };
 type Inst = { due_date: string; amount: string };
 
 let seq = 0;
@@ -29,7 +30,11 @@ const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigi
 const boxSizeOf = (name: string) => {
   const m = name.match(/(?:^|[^\d.,])(\d{1,3})\s*X\s*1(?![\d.,])/i);
   const n = m ? Number(m[1]) : 0;
-  return n >= 2 && n <= 200 ? n : null;
+  if (n >= 2 && n <= 200) return n;
+  // "CX C/12", "CAIXA COM 24", "CX 12"
+  const c = name.match(/(?:CX|CAIXA)\.?\s*(?:C\/|COM\s+|DE\s+)?(\d{1,3})/i);
+  const k = c ? Number(c[1]) : 0;
+  return k >= 2 && k <= 200 ? k : null;
 };
 const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
 /** "10190 SILENCIOSO INT." com código 10190 → "SILENCIOSO INT." (a leitura às vezes repete o código no nome) */
@@ -219,9 +224,14 @@ export default function CompraNova() {
     setRows(d.items.length ? d.items.map(it => {
       const viaSup = sup && it.code ? byId.get(supCodes.get(supCodeKey(sup.id, it.code)) ?? '') : undefined;
       const p = viaSup || (it.code && byCode.get(it.code.trim().toLowerCase())) || byName.get(stripCode(it.name, it.code).toLowerCase()) || byName.get(it.name.toLowerCase());
+      // Item em caixa ("24X1", "CX C/12"…): já entra por unidade — quantidade × caixa, custo ÷ caixa. O total não muda.
+      const box = it.unitCost > 0 && it.qty > 0 ? boxSizeOf(it.name) : null;
       return {
-        key: `r${++seq}`, part_id: p?.id ?? null, code: it.code || p?.code || '', name: p ? p.name : stripCode(it.name, it.code), unit: p ? p.unit : it.unit,
-        quantity: String(it.qty).replace('.', ','), unit_cost: costInput(it.unitCost),
+        key: `r${++seq}`, part_id: p?.id ?? null, code: it.code || p?.code || '', name: p ? p.name : stripCode(it.name, it.code),
+        unit: box ? 'un' : p ? p.unit : it.unit,
+        quantity: String(box ? it.qty * box : it.qty).replace('.', ','),
+        unit_cost: costInput(box ? Math.round(it.unitCost / box * 10000) / 10000 : it.unitCost),
+        ...(box ? { split: box } : {}),
       };
     }) : [newRow()]);
     setFreight(d.freight ? moneyInput(d.freight) : '');
@@ -535,11 +545,15 @@ export default function CompraNova() {
                     <button type="button" onClick={() => setRows(rs => rs.length > 1 ? rs.filter(x => x.key !== r.key) : [newRow()])}
                       className="h-8 w-8 rounded-lg grid place-items-center text-xs bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600" title="Remover">✕</button>
                   </div>
-                  <BoxSplit row={r} onSplit={(n) => update(r.key, {
-                    quantity: fmtQty(num(r.quantity) * n),
-                    unit_cost: costInput(Math.round(num(r.unit_cost) / n * 10000) / 10000),
-                    ...(r.part_id ? {} : { unit: 'un' }),
-                  })} />
+                  <BoxSplit row={r} onSplit={(n) => update(r.key, n < 0
+                    // desfazer a divisão automática
+                    ? { quantity: fmtQty(num(r.quantity) / -n), unit_cost: costInput(Math.round(num(r.unit_cost) * -n * 10000) / 10000), split: undefined }
+                    : {
+                      quantity: fmtQty(num(r.quantity) * n),
+                      unit_cost: costInput(Math.round(num(r.unit_cost) / n * 10000) / 10000),
+                      ...(r.part_id ? {} : { unit: 'un' }),
+                      split: n,
+                    })} />
                   {r.name.trim() && (
                     <div className="col-span-12 text-xs -mt-1">
                       {part ? (
@@ -710,6 +724,14 @@ function BoxSplit({ row, onSplit }: { row: Row; onSplit: (n: number) => void }) 
   const qty = num(row.quantity);
   const cost = num(row.unit_cost);
   if (!row.name.trim() || !(cost > 0) || !(qty > 0)) return null;
+  if (row.split) {
+    return (
+      <div className="col-span-12 -mt-1 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-signal-700">📦 Caixa com {row.split}: dividida em unidades sozinha.</span>
+        <button type="button" onClick={() => onSplit(-row.split!)} className="text-steel-500 hover:underline">desfazer</button>
+      </div>
+    );
+  }
   const n = open ? Math.round(num(str)) : detected ?? 0;
   const ok = n >= 2 && n <= 1000;
   const preview = ok ? `${fmtQty(qty * n)} un × ${fmtBRL(cost / n)}` : '';
