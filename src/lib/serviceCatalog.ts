@@ -1,4 +1,4 @@
-import { salesOf, type PanelItem, type PanelOs, type Range } from '@/lib/workshopMetrics';
+import { isSale, salesOf, type PanelItem, type PanelOs, type Range } from '@/lib/workshopMetrics';
 
 /**
  * Oficina de serviços: o que sai nas OS como "peça" (par de disco c/ pastilha, bandejas, kit de embreagem…)
@@ -61,34 +61,65 @@ export const UNKNOWN_SERVICE = 'Serviço não identificado';
  * Ex.: "Par de disco c/ pastilha" + "Mão de obra" na mesma OS = 1 serviço de freios.
  */
 export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, limit = 8) {
-  const sales = new Map(salesOf(list, r).sales.map(o => [o.id, o]));
-  const byOs = new Map<string, PanelItem[]>();
-  for (const i of items) {
-    if (!sales.has(i.service_order_id)) continue;
-    const arr = byOs.get(i.service_order_id) ?? [];
-    arr.push(i); byOs.set(i.service_order_id, arr);
-  }
+  const { byOs, unmatchedItems } = attributeItems(salesOf(list, r).sales, items);
   const map = new Map<string, ServiceExecuted & { ids: Set<string> }>();
-  let unmatchedItems = 0;
   for (const [osId, its] of byOs) {
-    const tagged = its.map(i => ({ i, cat: serviceOf(i.description), value: Number(i.quantity) * Number(i.unit_price) }));
-    const totals = new Map<string, number>();
-    for (const t of tagged) if (t.cat) totals.set(t.cat, (totals.get(t.cat) ?? 0) + t.value);
-    const main = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? serviceOf(sales.get(osId)!.title ?? '');
-    for (const t of tagged) {
-      const name = t.cat ?? main ?? UNKNOWN_SERVICE;
-      if (!t.cat && !main) unmatchedItems += 1;
-      const cur = map.get(name) ?? { name, orders: 0, revenue: 0, parts: 0, labor: 0, identified: name !== UNKNOWN_SERVICE, ids: new Set<string>() };
+    for (const t of its) {
+      const cur = map.get(t.name) ?? { name: t.name, orders: 0, revenue: 0, parts: 0, labor: 0, identified: t.name !== UNKNOWN_SERVICE, ids: new Set<string>() };
       cur.revenue += t.value;
-      if (t.i.kind === 'part') cur.parts += t.value; else cur.labor += t.value;
+      if (t.kind === 'part') cur.parts += t.value; else cur.labor += t.value;
       cur.ids.add(osId);
-      map.set(name, cur);
+      map.set(t.name, cur);
     }
   }
   const rows = [...map.values()].map(({ ids, ...x }) => ({ ...x, orders: ids.size }))
     // Pelo volume (quantas vezes o serviço foi feito); valor só desempata. "Não identificado" sempre por último.
     .sort((a, b) => Number(a.name === UNKNOWN_SERVICE) - Number(b.name === UNKNOWN_SERVICE) || b.orders - a.orders || b.revenue - a.revenue);
   return { rows: rows.slice(0, limit), total: rows.reduce((t, x) => t + x.revenue, 0), unmatchedItems };
+}
+
+type Attributed = { name: string; value: number; kind: PanelItem['kind'] };
+
+/** Cada item das OS ligado ao serviço que ele representa (a regra está no comentário de servicesExecuted) */
+function attributeItems(sales: PanelOs[], items: PanelItem[]) {
+  const byId = new Map(sales.map(o => [o.id, o]));
+  const grouped = new Map<string, PanelItem[]>();
+  for (const i of items) {
+    if (!byId.has(i.service_order_id)) continue;
+    const arr = grouped.get(i.service_order_id) ?? [];
+    arr.push(i); grouped.set(i.service_order_id, arr);
+  }
+  const byOs = new Map<string, Attributed[]>();
+  let unmatchedItems = 0;
+  for (const [osId, its] of grouped) {
+    const tagged = its.map(i => ({ i, cat: serviceOf(i.description), value: Number(i.quantity) * Number(i.unit_price) }));
+    const totals = new Map<string, number>();
+    for (const t of tagged) if (t.cat) totals.set(t.cat, (totals.get(t.cat) ?? 0) + t.value);
+    const main = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? serviceOf(byId.get(osId)!.title ?? '');
+    byOs.set(osId, tagged.map(t => {
+      if (!t.cat && !main) unmatchedItems += 1;
+      return { name: t.cat ?? main ?? UNKNOWN_SERVICE, value: t.value, kind: t.i.kind };
+    }));
+  }
+  return { byOs, unmatchedItems };
+}
+
+/**
+ * Vendas de um serviço só: cada OS que teve aquele serviço, com o valor (e peças/mão de obra) só dele.
+ * Devolve no formato de OS para reaproveitar salesOf/revenueSeries do painel.
+ */
+export function salesOfService(list: PanelOs[], items: PanelItem[], service: string): PanelOs[] {
+  const sales = list.filter(isSale);
+  const { byOs } = attributeItems(sales, items);
+  const out: PanelOs[] = [];
+  for (const o of sales) {
+    const mine = (byOs.get(o.id) ?? []).filter(t => t.name === service);
+    if (!mine.length) continue;
+    const parts = mine.filter(t => t.kind === 'part').reduce((a, t) => a + t.value, 0);
+    const labor = mine.filter(t => t.kind !== 'part').reduce((a, t) => a + t.value, 0);
+    out.push({ ...o, price: parts + labor, parts_cost: parts, labor_cost: labor });
+  }
+  return out;
 }
 
 /** Faturamento por tipo de serviço: os 6 maiores e o resto junto; "Serviço não identificado" sempre separado, no fim */
