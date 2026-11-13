@@ -9,8 +9,9 @@ import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/service
 import { fmtDate } from '@/lib/purchasing';
 import { loadAllParts } from '@/lib/parts';
 import {
-  commonName, groupBy, loadServiceCharges, norm, vehicleLabel, type ServiceCharge,
+  commonName, groupBy, loadServiceCharges, loadWorkshopModels, norm, vehicleLabel, type ServiceCharge,
 } from '@/lib/servicePrices';
+import { VEHICLE_CATALOG } from '@/lib/vehicleCatalog';
 
 /** Serviço já lançado em OS mas que ainda não está na tabela */
 type FromHistory = { name: string; price: number; uses: number };
@@ -658,13 +659,17 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
 }
 
 
-type KitRow = { id: string; part_id: string | null; description: string; quantity: number };
+type KitRow = { id: string; part_id: string | null; description: string; quantity: number; vehicle_model: string | null };
 type CatPart = { id: string; name: string; unit: string | null; stock_qty: number };
 type HistPart = { name: string; part_id: string | null; uses_all: number; uses_model: number; qty: number; unit_price: number };
 
 /** Na ficha do serviço: as peças que entram junto (ex.: Troca de óleo → óleo, filtro de óleo, junta do bujão) */
 function ServiceKit({ wid, service }: { wid: string; service: WorkshopService }) {
-  const [items, setItems] = useState<KitRow[] | null>(null);
+  const [all, setAll] = useState<KitRow[] | null>(null);
+  /** Modelo cujo kit está aberto ('' = kit geral, vale para todos os carros) */
+  const [model, setModel] = useState('');
+  const [newModel, setNewModel] = useState<string | null>(null);
+  const [knownModels, setKnownModels] = useState<string[]>([]);
   const [parts, setParts] = useState<CatPart[]>([]);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -673,10 +678,20 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('workshop_service_parts')
-      .select('id, part_id, description, quantity').eq('service_id', service.id).order('position').order('created_at');
-    setItems(((data ?? []) as KitRow[]).map(r => ({ ...r, quantity: Number(r.quantity) })));
+      .select('id, part_id, description, quantity, vehicle_model').eq('service_id', service.id).order('position').order('created_at');
+    setAll(((data ?? []) as KitRow[]).map(r => ({ ...r, quantity: Number(r.quantity) })));
   }, [service.id]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    loadWorkshopModels(wid).then(ms => {
+      const catalog = Object.values(VEHICLE_CATALOG).flat();
+      setKnownModels([...new Set([...ms.map(m => m.label), ...catalog])]);
+    }).catch(() => { /* a lista é só ajuda; dá para digitar */ });
+  }, [wid]);
+  const sameModel = (a: string | null, b: string) => norm(a ?? '') === norm(b);
+  const items = all === null ? null : all.filter(r => (model ? sameModel(r.vehicle_model, model) : !r.vehicle_model));
+  /** Modelos que já têm kit próprio, sem repetir */
+  const modelsWithKit = [...new Map((all ?? []).filter(r => r.vehicle_model).map(r => [norm(r.vehicle_model!), r.vehicle_model!])).values()];
   useEffect(() => {
     loadAllParts<CatPart>(wid, 'id, name, unit, stock_qty')
       .then(data => setParts(((data ?? []) as CatPart[]).map(p => ({ ...p, stock_qty: Number(p.stock_qty) }))));
@@ -688,6 +703,7 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
     const start = items?.length ?? 0;
     const { error } = await supabase.from('workshop_service_parts').insert(rows.map((r, i) => ({
       workshop_id: wid, service_id: service.id, part_id: r.part_id, description: r.description.trim(), quantity: r.quantity, position: start + i,
+      vehicle_model: model || null,
     })));
     setBusy(false);
     if (error) return toast.error('Não foi possível adicionar: ' + error.message);
@@ -697,21 +713,32 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
   async function remove(id: string) {
     const { error } = await supabase.from('workshop_service_parts').delete().eq('id', id);
     if (error) return toast.error('Não foi possível remover: ' + error.message);
-    setItems(xs => (xs ?? []).filter(x => x.id !== id));
+    setAll(xs => (xs ?? []).filter(x => x.id !== id));
   }
   async function setQty(row: KitRow, v: string) {
     const n = parseMoney(v);
     if (!Number.isFinite(n) || n <= 0 || n === row.quantity) return load();
     const { error } = await supabase.from('workshop_service_parts').update({ quantity: n }).eq('id', row.id);
     if (error) return toast.error('Não foi possível salvar a quantidade: ' + error.message);
-    setItems(xs => (xs ?? []).map(x => x.id === row.id ? { ...x, quantity: n } : x));
+    setAll(xs => (xs ?? []).map(x => x.id === row.id ? { ...x, quantity: n } : x));
   }
   async function loadHistory() {
-    const { data, error } = await supabase.rpc('service_part_suggestions', { p_workshop: wid, p_service: service.name, p_model: null });
+    const { data, error } = await supabase.rpc('service_part_suggestions', { p_workshop: wid, p_service: service.name, p_model: model || null });
     if (error) return toast.error('Não foi possível buscar o histórico: ' + error.message);
     const have = new Set((items ?? []).map(i => norm(i.description)));
     setHist(((data ?? []) as HistPart[]).filter(h => !have.has(norm(h.name))));
     setPicked(new Set());
+  }
+
+  async function copyFromGeneral() {
+    const base = (all ?? []).filter(r => !r.vehicle_model);
+    await add(base.map(r => ({ description: r.description, part_id: r.part_id, quantity: r.quantity })));
+  }
+  function startModel() {
+    const m = (newModel ?? '').trim();
+    if (!m) return;
+    const known = knownModels.find(k => norm(k) === norm(m));
+    setModel(known ?? m); setNewModel(null); setHist(null);
   }
 
   const inKit = new Set((items ?? []).map(i => i.part_id).filter(Boolean));
@@ -722,13 +749,40 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
     <div className="rounded-xl border border-steel-200">
       <div className="px-3 py-2 border-b border-steel-100">
         <div className="text-xs font-bold text-steel-600">🧰 Peças deste serviço</div>
-        <div className="text-[11px] text-steel-400">Na OS, ao escolher este serviço no catálogo, essas peças são oferecidas para entrar junto.</div>
+        <div className="text-[11px] text-steel-400">Na OS, ao escolher este serviço no catálogo, essas peças são oferecidas para entrar junto. Se o carro tiver kit próprio, ele vale no lugar do geral.</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {[{ v: '', label: 'Todos os carros' }, ...modelsWithKit.map(m => ({ v: m, label: m }))].map(o => (
+            <button key={o.v || '_all'} type="button" onClick={() => { setModel(o.v); setHist(null); setNewModel(null); }}
+              className={`min-h-[36px] px-3 rounded-lg text-xs font-semibold border ${norm(model) === norm(o.v) ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-steel-200 text-steel-600 hover:bg-steel-50'}`}>
+              {o.label}
+            </button>
+          ))}
+          {model && !modelsWithKit.some(m => norm(m) === norm(model)) && (
+            <span className="min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-brand-600 bg-brand-600 text-white inline-flex items-center">{model}</span>
+          )}
+          <button type="button" onClick={() => setNewModel(newModel === null ? '' : null)}
+            className="min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-dashed border-steel-300 text-brand-700 hover:bg-brand-50">➕ Outro carro</button>
+        </div>
+        {newModel !== null && (
+          <div className="mt-2 flex gap-2">
+            <input className="input !py-2 text-sm flex-1" list={`kit-models-${service.id}`} autoFocus placeholder="Modelo: Onix, Hilux, HB20…" value={newModel}
+              onChange={e => setNewModel(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); startModel(); } }} />
+            <datalist id={`kit-models-${service.id}`}>{knownModels.slice(0, 300).map(m => <option key={m} value={m} />)}</datalist>
+            <button type="button" onClick={startModel} disabled={!newModel.trim()} className="btn-primary !py-2 text-sm disabled:opacity-40">Abrir kit</button>
+          </div>
+        )}
+        {model && <div className="mt-2 text-[11px] text-steel-500">Peças que entram quando o carro da OS for <strong>{model}</strong>.</div>}
       </div>
 
       {items === null ? (
         <p className="px-3 py-3 text-xs text-steel-400">Carregando…</p>
       ) : items.length === 0 ? (
-        <p className="px-3 py-3 text-xs text-steel-400">Nenhuma peça no kit ainda.</p>
+        <div className="px-3 py-3 text-xs text-steel-400 space-y-1.5">
+          <p>{model ? `Nenhuma peça no kit do ${model} ainda. Enquanto estiver vazio, a OS usa o kit geral.` : 'Nenhuma peça no kit ainda.'}</p>
+          {model && (all ?? []).some(r => !r.vehicle_model) && (
+            <button type="button" disabled={busy} onClick={copyFromGeneral} className="font-semibold text-brand-700 hover:underline">Copiar do kit geral</button>
+          )}
+        </div>
       ) : (
         <ul className="divide-y divide-steel-100">
           {items.map(i => (

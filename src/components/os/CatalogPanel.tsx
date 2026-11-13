@@ -21,7 +21,7 @@ function rankHits(hits: Suggestion[], words: string[]) {
 type Tab = 'servico' | 'peca';
 
 /** Serviço que acabou de entrar na OS: aqui escolhe/descreve as peças dele (opcional) */
-type Step = { key: string; name: string; kit: Suggestion[] };
+type Step = { key: string; name: string; kit: Suggestion[]; kitModel: string | null };
 
 /**
  * 🧭 Escolher serviço e peças — painel lateral (desktop) / gaveta (celular) para montar a OS clicando.
@@ -42,7 +42,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   /** targetKey = serviço que recebe a peça ('' = peça avulsa/sem destino) */
   onPick: (s: Suggestion, targetKey: string) => string | void;
   /** Peças do kit do serviço (cadastradas na Tabela de serviços); vazio = sem kit */
-  kitFor?: (s: Suggestion) => Promise<Suggestion[]>;
+  kitFor?: (s: Suggestion) => Promise<{ items: Suggestion[]; model: string | null }>;
   /** Modelo do veículo usado para sugerir preço ('' = nenhum) */
   vehicleModel: string;
   /** A OS já tem veículo cadastrado (então não dá para trocar aqui) */
@@ -119,9 +119,9 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
     flash(s.description);
     if (isLabor(s) && key) {
       // Depois do serviço vem o passo das peças (opcional)
-      setStep({ key, name: s.description, kit: [] });
+      setStep({ key, name: s.description, kit: [], kitModel: null });
       setAdded([]); setPq(''); setFree({ name: '', qty: '1' });
-      if (kitFor) kitFor(s).then(kit => setStep(st => (st && st.key === key ? { ...st, kit } : st))).catch(() => { /* sem kit */ });
+      if (kitFor) kitFor(s).then(k => setStep(st => (st && st.key === key ? { ...st, kit: k.items, kitModel: k.model } : st))).catch(() => { /* sem kit */ });
     }
   }
 
@@ -232,7 +232,7 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
 
             {step.kit.length > 0 && (
               <div>
-                <div className="px-4 pt-3 text-[11px] font-bold uppercase tracking-wider text-steel-500">Kit do serviço</div>
+                <div className="px-4 pt-3 text-[11px] font-bold uppercase tracking-wider text-steel-500">{step.kitModel ? `Kit para ${step.kitModel}` : 'Kit do serviço'}</div>
                 <ul className="divide-y divide-steel-100">
                   {step.kit.map(p => {
                     const done = added.includes(p.description);

@@ -146,3 +146,17 @@ export function commonName(cs: ServiceCharge[], pick: (c: ServiceCharge) => stri
 
 export const vehicleLabel = (c: Pick<ServiceCharge, 'make' | 'model' | 'year'>) =>
   [c.make, c.model].filter(Boolean).join(' ') + (c.year ? ` ${c.year}` : '');
+
+/** Modelos de veículo já atendidos pela oficina, do mais frequente ao menos (para escolher um modelo) */
+export async function loadWorkshopModels(workshopId: string): Promise<{ label: string; n: number }[]> {
+  const { data } = await supabase.from('vehicles').select('model').eq('workshop_id', workshopId).not('model', 'is', null).limit(5000);
+  const m = new Map<string, { names: Map<string, number>; n: number }>();
+  for (const v of (data ?? []) as { model: string }[]) {
+    const label = v.model.trim(), k = norm(label);
+    if (!k) continue;
+    const e = m.get(k) ?? { names: new Map(), n: 0 };
+    e.n++; e.names.set(label, (e.names.get(label) ?? 0) + 1);
+    m.set(k, e);
+  }
+  return [...m.values()].map(e => ({ label: [...e.names.entries()].sort((a, b) => b[1] - a[1])[0][0], n: e.n })).sort((a, b) => b.n - a.n);
+}
