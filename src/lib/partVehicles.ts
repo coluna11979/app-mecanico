@@ -12,6 +12,10 @@ export type PartVehicle = {
 
 export type VehicleDraft = Pick<PartVehicle, 'brand' | 'model' | 'year_from' | 'year_to'>;
 
+/** Modelo "coringa": a peça serve em qualquer modelo da marca (cadastro só por marca) */
+export const ANY_MODEL = 'Todos os modelos';
+export const isAnyModel = (m: string) => m === ANY_MODEL;
+
 export const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 
 export function fmtYears(v: Pick<PartVehicle, 'year_from' | 'year_to'>) {
@@ -21,7 +25,7 @@ export function fmtYears(v: Pick<PartVehicle, 'year_from' | 'year_to'>) {
   return v.year_from != null ? `${v.year_from}+` : `até ${v.year_to}`;
 }
 
-export const fmtVehicle = (v: VehicleDraft) => `${v.brand} ${v.model} · ${fmtYears(v)}`;
+export const fmtVehicle = (v: VehicleDraft) => `${v.brand} ${isAnyModel(v.model) ? '(todos os modelos)' : v.model} · ${fmtYears(v)}`;
 
 export async function loadPartVehicles(wid: string): Promise<Map<string, PartVehicle[]>> {
   const r = await fetchAll<PartVehicle>((a, b) =>
@@ -35,7 +39,7 @@ export async function loadPartVehicles(wid: string): Promise<Map<string, PartVeh
 export function fitsVehicle(list: PartVehicle[] | undefined, brand: string, model: string, year: number | null) {
   const b = norm(brand), md = norm(model);
   return !!list?.some(v =>
-    (!b || norm(v.brand) === b) && (!md || norm(v.model).includes(md)) &&
+    (!b || norm(v.brand) === b) && (!md || isAnyModel(v.model) || norm(v.model).includes(md)) &&
     (year == null || ((v.year_from == null || v.year_from <= year) && (v.year_to == null || v.year_to >= year))));
 }
 
