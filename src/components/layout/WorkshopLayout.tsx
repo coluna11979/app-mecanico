@@ -8,7 +8,8 @@ import { useUnreadNotifications } from '@/hooks/useUnreadNotifications';
 import { toast } from '@/components/ui/Toast';
 import type { Job, Workshop } from '@/types/database';
 import { formatBRL } from '@/lib/payment';
-import { ROLES, ROLE_ORDER, permsForRole, sessionAllows, useOperator, type OperatorRole, type OperatorPerm } from '@/lib/operators';
+import PriceLookupModal from '@/components/parts/PriceLookupModal';
+import { ROLES, ROLE_ORDER, canDo, permsForRole, sessionAllows, useOperator, type OperatorRole, type OperatorPerm } from '@/lib/operators';
 import OperatorLock from '@/components/operator/OperatorLock';
 import { isPlatformOnly, moduleAllows, moduleEntry, useWorkshopModules } from '@/lib/modules';
 import { useInboxAlerts } from '@/hooks/useInboxAlerts';
@@ -253,9 +254,12 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   }, [flyout]);
   // Busca rápida: Ctrl+K / ⌘K em qualquer tela
   const [palette, setPalette] = useState(false);
+  /** Consultar preço (Ctrl+J): peça ou serviço, sem sair da tela */
+  const [priceLookup, setPriceLookup] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => !p); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') { e.preventDefault(); setPriceLookup(p => !p); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -822,6 +826,18 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
               </>
             )}
           </button>
+          {shopId && (
+            <button onClick={() => setPriceLookup(true)} title="Consultar preço (Ctrl+J)"
+              className={`w-full flex items-center rounded-lg transition ${T.tool} ${rail ? 'h-10 justify-center' : 'h-9 gap-2.5 px-3'}`}>
+              <Icon name="percent" size={16} />
+              {!rail && (
+                <>
+                  <span className="flex-1 text-left text-[13px]">Consultar preço</span>
+                  <kbd className={`font-mono text-[10px] leading-none rounded px-1.5 py-1 ${T.kbd}`}>{isMac ? '⌘J' : 'Ctrl J'}</kbd>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Navegação */}
@@ -978,6 +994,10 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           </div>
         );
       })()}
+
+      {priceLookup && shopId && (
+        <PriceLookupModal wid={shopId} showCost={canDo(op.session, op.balcao, 'pecas_estoque')} onClose={() => setPriceLookup(false)} />
+      )}
 
       {/* Busca rápida (Ctrl+K / ⌘K): vai direto para qualquer tela liberada */}
       {palette && (
