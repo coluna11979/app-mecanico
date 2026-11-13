@@ -8,7 +8,7 @@ import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
 import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
-import { groupBy, loadServiceCharges, norm, type PriceSummary } from '@/lib/servicePrices';
+import { groupBy, loadServiceCharges, loadWorkshopModels, norm, type PriceSummary } from '@/lib/servicePrices';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -337,29 +337,27 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     });
   }
   /** Modelos de veículo já atendidos pela oficina (para escolher um quando a OS abriu sem veículo) */
-  async function loadModels() {
-    const { data } = await supabase.from('vehicles').select('model').eq('workshop_id', workshopId).not('model', 'is', null).limit(5000);
-    const m = new Map<string, { names: Map<string, number>; n: number }>();
-    for (const v of (data ?? []) as { model: string }[]) {
-      const label = v.model.trim(), k = norm(label);
-      if (!k) continue;
-      const e = m.get(k) ?? { names: new Map(), n: 0 };
-      e.n++; e.names.set(label, (e.names.get(label) ?? 0) + 1);
-      m.set(k, e);
-    }
-    return [...m.values()].map(e => ({ label: [...e.names.entries()].sort((a, b) => b[1] - a[1])[0][0], n: e.n })).sort((a, b) => b.n - a.n);
-  }
-  /** Peças do kit do serviço escolhido no catálogo (cadastradas na Tabela de serviços) */
-  async function kitFor(s: Suggestion): Promise<Suggestion[]> {
-    if (!s.fromTable) return [];
+  const loadModels = () => loadWorkshopModels(workshopId);
+  /**
+   * Peças do kit do serviço escolhido no catálogo (cadastradas na Tabela de serviços).
+   * Se existe kit para o modelo do carro da OS, ele vale no lugar do kit geral.
+   */
+  async function kitFor(s: Suggestion): Promise<{ items: Suggestion[]; model: string | null }> {
+    if (!s.fromTable) return { items: [], model: null };
     const esc = s.description.trim().replace(/[%_\\]/g, m => '\\' + m);
     const { data } = await supabase.from('workshop_service_parts')
-      .select('description, quantity, part_id, position, workshop_services!inner(name)')
+      .select('description, quantity, part_id, position, vehicle_model, workshop_services!inner(name)')
       .eq('workshop_id', workshopId).ilike('workshop_services.name', esc).order('position');
-    return ((data ?? []) as unknown as { description: string; quantity: number; part_id: string | null }[]).map(k => {
+    type KitDb = { description: string; quantity: number; part_id: string | null; vehicle_model: string | null };
+    const rows = (data ?? []) as unknown as KitDb[];
+    const mk = norm(vehModel);
+    const forModel = mk ? rows.filter(r => r.vehicle_model && norm(r.vehicle_model) === mk) : [];
+    const chosen = forModel.length ? forModel : rows.filter(r => !r.vehicle_model);
+    const items = chosen.map(k => {
       const cat = k.part_id ? suggestions.find(x => x.part_id === k.part_id) : undefined;
       return cat ? { ...cat, qty: Number(k.quantity) } : { description: k.description, kind: 'part' as const, unit_price: 0, qty: Number(k.quantity) };
     });
+    return { items, model: forModel.length ? forModel[0].vehicle_model : null };
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
