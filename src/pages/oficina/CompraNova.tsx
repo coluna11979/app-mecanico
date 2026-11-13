@@ -23,6 +23,12 @@ const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, code: '', name: ''
 const num = (s: string) => { const n = parseMoney(s); return Number.isFinite(n) ? n : 0; };
 /** Custo unitário com até 4 casas (nota de autopeças costuma ter centavos quebrados) */
 const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+/** "ÓLEO 10W30 24X1" = caixa com 24: sugere lançar por unidade */
+const boxSizeOf = (name: string) => {
+  const m = name.match(/(?:^|[^\d.,])(\d{1,3})\s*X\s*1(?![\d.,])/i);
+  const n = m ? Number(m[1]) : 0;
+  return n >= 2 && n <= 200 ? n : null;
+};
 const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
 /** "10190 SILENCIOSO INT." com código 10190 → "SILENCIOSO INT." (a leitura às vezes repete o código no nome) */
 const stripCode = (name: string, code: string | null) => {
@@ -487,6 +493,11 @@ export default function CompraNova() {
                     <button type="button" onClick={() => setRows(rs => rs.length > 1 ? rs.filter(x => x.key !== r.key) : [newRow()])}
                       className="h-8 w-8 rounded-lg grid place-items-center text-xs bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600" title="Remover">✕</button>
                   </div>
+                  <BoxSplit row={r} onSplit={(n) => update(r.key, {
+                    quantity: fmtQty(num(r.quantity) * n),
+                    unit_cost: costInput(Math.round(num(r.unit_cost) / n * 10000) / 10000),
+                    ...(r.part_id ? {} : { unit: 'un' }),
+                  })} />
                   {r.name.trim() && (
                     <div className="col-span-12 text-xs -mt-1">
                       {part ? (
@@ -639,6 +650,50 @@ function ImportSummary({ d, itemsTotal, freight, discount, agreement = 0 }: { d:
       {d.uncertain.length > 0 && (
         <div className="text-xs text-pending-800">A IA ficou em dúvida em: {d.uncertain.join(', ')}.</div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Item comprado em caixa (ex.: óleo 24X1 a R$ 900,00): divide em unidades —
+ * 1 cx × R$ 900,00 vira 24 un × R$ 37,50 (o total da nota não muda; estoque e custo ficam por unidade).
+ */
+function BoxSplit({ row, onSplit }: { row: Row; onSplit: (n: number) => void }) {
+  const detected = boxSizeOf(row.name);
+  const [open, setOpen] = useState(false);
+  const [str, setStr] = useState('');
+  const qty = num(row.quantity);
+  const cost = num(row.unit_cost);
+  if (!row.name.trim() || !(cost > 0) || !(qty > 0)) return null;
+  const n = open ? Math.round(num(str)) : detected ?? 0;
+  const ok = n >= 2 && n <= 1000;
+  const preview = ok ? `${fmtQty(qty * n)} un × ${fmtBRL(cost / n)}` : '';
+
+  if (!open && detected) {
+    return (
+      <div className="col-span-12 -mt-1 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-amber-700">📦 Parece caixa com {detected}.</span>
+        <button type="button" onClick={() => onSplit(detected)}
+          className="font-semibold text-brand-700 hover:underline">Lançar como {preview}</button>
+        <button type="button" onClick={() => { setStr(String(detected)); setOpen(true); }} className="text-steel-500 hover:underline">outra quantidade</button>
+      </div>
+    );
+  }
+  if (!open) {
+    return (
+      <div className="col-span-12 -mt-1 text-xs">
+        <button type="button" onClick={() => setOpen(true)} className="text-steel-500 hover:text-brand-700 hover:underline">📦 Veio em caixa? Dividir em unidades</button>
+      </div>
+    );
+  }
+  return (
+    <div className="col-span-12 -mt-1 flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-steel-600">📦 Unidades por caixa:</span>
+      <input autoFocus className="input !py-1 !px-2 text-xs text-right !w-16" inputMode="numeric" value={str} onChange={e => setStr(e.target.value)} />
+      {ok && <span className="text-steel-500">→ {preview}</span>}
+      <button type="button" disabled={!ok} onClick={() => { onSplit(n); setOpen(false); }}
+        className="btn-primary !py-1 !px-3 text-xs disabled:opacity-40">Dividir</button>
+      <button type="button" onClick={() => setOpen(false)} className="text-steel-500 hover:underline">cancelar</button>
     </div>
   );
 }
