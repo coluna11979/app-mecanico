@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fmtBRL } from '@/components/os/osHelpers';
 import { fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, partCategory, salePriceOf, type WorkshopPart } from '@/lib/parts';
+import { fetchAll } from '@/lib/fetchAll';
+import { fmtDate } from '@/lib/purchasing';
 import { fmtYears, isAnyModel, loadPartVehicles, norm, type PartVehicle } from '@/lib/partVehicles';
 
 type Part = Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>;
 type Hit =
-  | { kind: 'part'; id: string; name: string; sub: string; price: number; cost: number; stock: number; unit: string; text: string; inStock: boolean }
+  | { kind: 'part'; id: string; name: string; sub: string; price: number; cost: number; stock: number; unit: string; text: string; inStock: boolean; lastBuy: string | null }
   | { kind: 'service'; id: string; name: string; sub: string; price: number; text: string };
 
 const MAX = 40;
@@ -31,12 +33,24 @@ export default function PriceLookupModal({ wid, showCost, onClose }: { wid: stri
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [parts, margins, vehicles, svc] = await Promise.all([
+      const [parts, margins, vehicles, svc, buys] = await Promise.all([
         loadAllParts<Part>(wid, 'id, name, code, brand, category, cost, margin_percent, sale_price, stock_qty, unit'),
         loadMargins(wid),
         loadPartVehicles(wid).catch(() => new Map<string, PartVehicle[]>()),
         supabase.from('workshop_services').select('id, name, price, category').eq('workshop_id', wid).eq('active', true).order('name'),
+        // Última compra de cada peça: data da nota mais recente (só para quem vê custo)
+        showCost
+          ? fetchAll<{ part_id: string; purchase_invoices: { issue_date: string; status: string } | null }>((a, b) =>
+              supabase.from('purchase_items').select('part_id, purchase_invoices!inner(issue_date, status)').eq('workshop_id', wid)
+                .eq('purchase_invoices.status', 'posted').order('id').range(a, b) as unknown as PromiseLike<{ data: { part_id: string; purchase_invoices: { issue_date: string; status: string } | null }[] | null; error: unknown }>)
+              .then(r => r.data).catch(() => [])
+          : Promise.resolve([]),
       ]);
+      const lastBuy = new Map<string, string>();
+      for (const b of buys) {
+        const d = b.purchase_invoices?.issue_date;
+        if (d && (!lastBuy.get(b.part_id) || d > lastBuy.get(b.part_id)!)) lastBuy.set(b.part_id, d);
+      }
       if (!alive) return;
       const veh = (id: string) => (vehicles.get(id) ?? []).map(v => `${v.brand}${isAnyModel(v.model) ? '' : ' ' + v.model} ${fmtYears(v)}`);
       setHits([
@@ -44,7 +58,7 @@ export default function PriceLookupModal({ wid, showCost, onClose }: { wid: stri
           const cars = veh(p.id);
           return {
             kind: 'part' as const, id: p.id, name: p.name, price: salePriceOf(p, margins), cost: Number(p.cost),
-            stock: Number(p.stock_qty), unit: p.unit, inStock: Number(p.stock_qty) > 0,
+            stock: Number(p.stock_qty), unit: p.unit, inStock: Number(p.stock_qty) > 0, lastBuy: lastBuy.get(p.id) ?? null,
             sub: [p.code && `cód. ${p.code}`, p.brand, `${partCategory(p.category).icon} ${partCategory(p.category).label}`, cars.slice(0, 2).join(', ') + (cars.length > 2 ? ` +${cars.length - 2}` : '')].filter(Boolean).join(' · '),
             text: norm(`${p.name} ${p.code ?? ''} ${p.brand ?? ''} ${cars.join(' ')}`),
           };
@@ -56,7 +70,7 @@ export default function PriceLookupModal({ wid, showCost, onClose }: { wid: stri
       ]);
     })();
     return () => { alive = false; };
-  }, [wid]);
+  }, [wid, showCost]);
 
   const list = useMemo(() => {
     if (!hits) return [];
@@ -105,6 +119,7 @@ export default function PriceLookupModal({ wid, showCost, onClose }: { wid: stri
                         <span className={h.inStock ? 'text-signal-700 font-semibold' : 'text-alert-600 font-semibold'}>
                           {h.inStock ? `estoque ${fmtQty(h.stock)} ${h.unit}` : 'sem estoque'}
                         </span>
+                        {' · '}{h.lastBuy ? <>última compra <strong className="text-steel-700">{fmtDate(h.lastBuy)}</strong></> : 'nunca comprada'}
                       </div>
                     )}
                     {h.kind === 'part' && !showCost && !h.inStock && <div className="text-[11px] text-alert-600 font-semibold mt-0.5">sem estoque</div>}
