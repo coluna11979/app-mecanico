@@ -15,6 +15,7 @@ import {
   SITUATIONS, ago, costToConfirm, isBelowMin, isNegative, isZeroBought, loadStockData, matchSituation, osShortage,
   type Situation, type StockData,
 } from '@/lib/stock';
+import VehiclePicker from '@/components/parts/VehiclePicker';
 import { addVehicleToParts, fitsVehicle, fmtVehicle, fmtYears, loadPartVehicles, markPartsUniversal, norm, partLabel, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
 import SupplierPicker from '@/components/parts/SupplierPicker';
 import StockTabs, { useStockAccess } from '@/components/stock/StockTabs';
@@ -712,20 +713,6 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
   const [saving, setSaving]     = useState(false);
   const [universal, setUniversal] = useState(part?.universal ?? false);
   const [vList, setVList]       = useState<VehicleDraft[]>(vehicles.map(v => ({ brand: v.brand, model: v.model, year_from: v.year_from, year_to: v.year_to })));
-  const [nBrand, setNBrand]     = useState('');
-  const [nModel, setNModel]     = useState('');
-  const [nFrom, setNFrom]       = useState('');
-  const [nTo, setNTo]           = useState('');
-
-  const yearOrNull = (t: string) => (/^\d{4}$/.test(t.trim()) ? Number(t.trim()) : null);
-  function addVehicle() {
-    if (!nBrand.trim() || !nModel.trim()) return toast.error('Informe a marca e o modelo');
-    const from = yearOrNull(nFrom); const to = yearOrNull(nTo);
-    if ((nFrom.trim() && from == null) || (nTo.trim() && to == null)) return toast.error('Ano com 4 dígitos (ex.: 2012)');
-    if (from != null && to != null && to < from) return toast.error('O ano final é menor que o inicial');
-    setVList(l => [...l, { brand: nBrand.trim(), model: nModel.trim(), year_from: from, year_to: to }]);
-    setNModel(''); setNFrom(''); setNTo('');
-  }
 
   /** Sem margem própria: vale a margem da categoria escolhida (ou a padrão) */
   const defaultMargin = categoryMargin(margins, category);
@@ -775,10 +762,7 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
       });
       if (e2) { setSaving(false); return toast.error('Peça salva, mas o estoque não foi ajustado: ' + e2.message); }
     }
-    // Veículo digitado e não adicionado: entra junto, para não perder o que a pessoa escreveu
-    const pending: VehicleDraft[] = nBrand.trim() && nModel.trim()
-      ? [{ brand: nBrand.trim(), model: nModel.trim(), year_from: yearOrNull(nFrom), year_to: yearOrNull(nTo) }] : [];
-    const ev = await savePartVehicles(wid, (data as { id: string }).id, [...vList, ...pending]);
+    const ev = await savePartVehicles(wid, (data as { id: string }).id, vList);
     if (ev) { setSaving(false); return toast.error('Peça salva, mas os veículos não: ' + ev.message); }
     setSaving(false);
     toast.success(part ? 'Peça atualizada ✓' : 'Peça cadastrada ✓');
@@ -830,32 +814,13 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
           <div className="rounded-2xl border border-steel-200 p-4 space-y-3">
             <div>
               <label className="label">🚗 Serve em (veículos)</label>
-              <p className="text-[11px] text-steel-400">Marca e modelo. O ano é opcional: em branco = serve em qualquer ano.</p>
+              <p className="text-[11px] text-steel-400">Escolha os carros que usam esta peça. O ano é opcional: em branco = qualquer ano.</p>
             </div>
             <label className="flex items-center gap-2 text-sm text-steel-700">
               <input type="checkbox" checked={universal} onChange={e => setUniversal(e.target.checked)} />
               Universal (serve em qualquer veículo: óleo, pneu, abraçadeira…)
             </label>
-            {vList.length > 0 && (
-              <ul className="flex flex-wrap gap-2">
-                {vList.map((v, i) => (
-                  <li key={i} className="flex items-center gap-1 text-xs bg-steel-100 rounded-full pl-3 pr-1 py-1">
-                    {fmtVehicle(v)}
-                    <button type="button" aria-label="Remover" onClick={() => setVList(l => l.filter((_, j) => j !== i))}
-                      className="h-5 w-5 rounded-full grid place-items-center text-steel-500 hover:bg-steel-200">✕</button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_72px_72px_auto] gap-2 items-center">
-              <input className="input !py-2 text-sm" placeholder="Marca" list="pf-brands" value={nBrand} onChange={e => setNBrand(e.target.value)} />
-              <input className="input !py-2 text-sm" placeholder="Modelo" list="pf-models" value={nModel} onChange={e => setNModel(e.target.value)} />
-              <input className="input !py-2 text-sm" placeholder="De" inputMode="numeric" maxLength={4} value={nFrom} onChange={e => setNFrom(e.target.value.replace(/\D/g, ''))} />
-              <input className="input !py-2 text-sm" placeholder="Até" inputMode="numeric" maxLength={4} value={nTo} onChange={e => setNTo(e.target.value.replace(/\D/g, ''))} />
-              <button type="button" onClick={addVehicle} className="btn-ghost border border-steel-200 text-sm !py-2 col-span-2 sm:col-span-1">＋ Adicionar</button>
-              <datalist id="pf-brands">{brandOptions.map(b => <option key={b} value={b} />)}</datalist>
-              <datalist id="pf-models">{modelOptionsFor(nBrand).map(m => <option key={m} value={m} />)}</datalist>
-            </div>
+            <VehiclePicker list={vList} onChange={setVList} extraBrands={brandOptions} extraModels={modelOptionsFor} />
           </div>
 
           <div className="rounded-2xl border border-steel-200 p-4 space-y-3">
