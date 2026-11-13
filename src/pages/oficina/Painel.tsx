@@ -8,7 +8,7 @@ import {
   approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf,
   type PanelItem, type PanelOs,
 } from '@/lib/workshopMetrics';
-import { partsSharePct, refMinutesOf, revenueByService, salesOfService, servicesExecuted } from '@/lib/serviceCatalog';
+import { abcCurve, partsSharePct, refMinutesOf, revenueByService, salesOfService, servicesExecuted, type AbcClass, type AbcRow } from '@/lib/serviceCatalog';
 import { fmtHours } from '@/lib/teamCost';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
@@ -111,6 +111,7 @@ export default function Painel() {
   const maxBar = Math.max(1, ...m.series.map(s => s.value));
   const revenueRows = useMemo(() => revenueByService(m.services.rows), [m.services]);
   const partsShare = partsSharePct(m.services.rows);
+  const abc = useMemo(() => abcCurve(m.services.rows), [m.services]);
 
   return (
     <WorkshopLayout>
@@ -312,6 +313,11 @@ export default function Painel() {
               </div>
             </div>
 
+            {/* Curva ABC: quais serviços sustentam o faturamento */}
+            {abc.rows.length > 0 && (
+              <AbcCard abc={abc} selected={service} onPick={n => setService(service === n ? '' : n)} />
+            )}
+
             {/* Onde foram parar as outras seções */}
             <p className="text-[11px] text-steel-400">
               Desempenho e comissões da equipe estão em <Link to="/oficina/desempenho" className="text-brand-600 hover:underline">Equipe → Desempenho</Link> e <Link to="/oficina/comissoes" className="text-brand-600 hover:underline">Comissões</Link>.
@@ -401,6 +407,85 @@ function ServiceRanking({ rows }: { rows: { name: string; orders: number; revenu
           ))}
         </ol>
       )}
+    </div>
+  );
+}
+
+const ABC_STYLE: Record<AbcClass, { badge: string; bar: string; title: string; hint: string }> = {
+  A: { badge: 'bg-brand-500 text-white',  bar: 'bg-brand-500', title: 'Classe A', hint: 'até 80% do faturamento: o que sustenta a oficina' },
+  B: { badge: 'bg-pending-500 text-white', bar: 'bg-pending-500', title: 'Classe B', hint: 'de 80% a 95%: importantes, dá para crescer' },
+  C: { badge: 'bg-steel-400 text-white',  bar: 'bg-steel-300', title: 'Classe C', hint: 'os últimos 5%: pouco peso no faturamento' },
+};
+
+function AbcCard({ abc, selected, onPick }: {
+  abc: ReturnType<typeof abcCurve>; selected: string; onPick: (name: string) => void;
+}) {
+  return (
+    <div className="card">
+      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-1">Curva ABC dos serviços</div>
+      <p className="text-[11px] text-steel-400 mb-4">
+        Serviços do maior para o menor faturamento no período. Clique num serviço para ver só ele no painel.
+      </p>
+
+      {/* Resumo por classe */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+        {abc.groups.map(g => (
+          <div key={g.cls} className="rounded-xl bg-steel-50 border border-steel-200 px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className={`h-6 w-6 rounded-md grid place-items-center text-xs font-bold ${ABC_STYLE[g.cls].badge}`}>{g.cls}</span>
+              <span className="text-sm font-bold text-steel-900">{g.count} {g.count === 1 ? 'serviço' : 'serviços'}</span>
+              <span className="ml-auto text-sm font-bold tabular-nums">{Math.round(g.share)}%</span>
+            </div>
+            <div className="text-xs text-steel-500 mt-1 leading-snug">{fmtBRL(g.revenue)} · {ABC_STYLE[g.cls].hint}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Lista */}
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-sm min-w-[560px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-steel-500 text-left">
+              <th className="font-bold py-2 px-1 w-8">#</th>
+              <th className="font-bold py-2 px-1">Serviço</th>
+              <th className="font-bold py-2 px-1 text-right">Qtd.</th>
+              <th className="font-bold py-2 px-1 text-right">Faturamento</th>
+              <th className="font-bold py-2 px-1 text-right">%</th>
+              <th className="font-bold py-2 px-1 w-[22%]">Acumulado</th>
+              <th className="font-bold py-2 px-1 text-center">Classe</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-steel-100">
+            {abc.rows.map((r: AbcRow, i) => {
+              const on = selected === r.name;
+              return (
+                <tr key={r.name} onClick={() => onPick(r.name)} aria-selected={on}
+                  className={`cursor-pointer transition ${on ? 'bg-brand-50' : 'hover:bg-steel-50'}`}>
+                  <td className="py-2.5 px-1 text-steel-400 tabular-nums">{i + 1}</td>
+                  <td className="py-2.5 px-1 font-semibold text-steel-800">{r.name}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums text-steel-600">{r.orders}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums font-bold">{fmtBRL(r.revenue)}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums text-steel-600">{r.share.toFixed(1).replace('.', ',')}%</td>
+                  <td className="py-2.5 px-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 flex-1 rounded-full bg-steel-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${ABC_STYLE[r.cls].bar}`} style={{ width: `${r.cumulative}%` }} />
+                      </div>
+                      <span className="text-xs tabular-nums text-steel-500 w-10 text-right">{Math.round(r.cumulative)}%</span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-1 text-center">
+                    <span className={`inline-grid place-items-center h-6 w-6 rounded-md text-xs font-bold ${ABC_STYLE[r.cls].badge}`}>{r.cls}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-steel-400 mt-3">
+        Faturamento = peças + mão de obra de cada serviço. "Serviço não identificado" fica fora da curva.
+      </p>
     </div>
   );
 }
