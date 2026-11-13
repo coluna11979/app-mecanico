@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
+import { fetchAll } from '@/lib/fetchAll';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
@@ -22,6 +23,7 @@ let seq = 0;
 const newRow = (): Row => ({ key: `r${++seq}`, part_id: null, code: '', name: '', unit: 'un', quantity: '1', unit_cost: '' });
 const num = (s: string) => { const n = parseMoney(s); return Number.isFinite(n) ? n : 0; };
 /** Custo unitário com até 4 casas (nota de autopeças costuma ter centavos quebrados) */
+const supCodeKey = (supplierId: string, code: string) => `${supplierId}|${code.trim().toLowerCase()}`;
 const costInput = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 /** "ÓLEO 10W30 24X1" = caixa com 24: sugere lançar por unidade */
 const boxSizeOf = (name: string) => {
@@ -46,6 +48,8 @@ export default function CompraNova() {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [parts, setParts]         = useState<WorkshopPart[]>([]);
+  /** fornecedor|código → peça: a nota seguinte reconhece pelo código, mesmo com a descrição mudada no cadastro */
+  const [supCodes, setSupCodes]   = useState<Map<string, string>>(new Map());
   const [margin, setMargin]       = useState<Margins>({ base: DEFAULT_MARGIN, byCategory: {} });
   const [supplierId, setSupplierId] = useState(params.get('fornecedor') ?? '');
   const [number, setNumber]       = useState('');
@@ -80,11 +84,16 @@ export default function CompraNova() {
   useEffect(() => {
     if (!wid || !allowed) return;
     (async () => {
-      const [s, p, m] = await Promise.all([
+      const [s, p, m, sc] = await Promise.all([
         supabase.from('suppliers').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
         loadAllParts(wid).then(data => ({ data })),
         loadMargins(wid),
+        // sem a tabela (migration 0160) volta erro → segue sem
+        fetchAll<{ supplier_id: string; code: string; part_id: string }>((a, b) =>
+          supabase.from('part_supplier_codes').select('supplier_id, code, part_id').eq('workshop_id', wid).range(a, b) as unknown as PromiseLike<{ data: { supplier_id: string; code: string; part_id: string }[] | null; error: unknown }>)
+          .catch(() => ({ data: [] })),
       ]);
+      setSupCodes(new Map(sc.data.map(x => [supCodeKey(x.supplier_id, x.code), x.part_id])));
       setSuppliers((s.data as Supplier[]) ?? []);
       setParts((p.data as WorkshopPart[]) ?? []);
       setMargin(m);
@@ -205,9 +214,11 @@ export default function CompraNova() {
     if (d.number) setNumber(d.number);
     if (d.date) setDate(d.date);
     // Peças: pelo código do fornecedor; senão pelo nome; senão peça nova
+    // (1º o código deste fornecedor, gravado nas notas anteriores; depois o código no cadastro)
     const byCode = new Map(parts.filter(p => p.code).map(p => [p.code!.trim().toLowerCase(), p]));
     setRows(d.items.length ? d.items.map(it => {
-      const p = (it.code && byCode.get(it.code.trim().toLowerCase())) || byName.get(stripCode(it.name, it.code).toLowerCase()) || byName.get(it.name.toLowerCase());
+      const viaSup = sup && it.code ? byId.get(supCodes.get(supCodeKey(sup.id, it.code)) ?? '') : undefined;
+      const p = viaSup || (it.code && byCode.get(it.code.trim().toLowerCase())) || byName.get(stripCode(it.name, it.code).toLowerCase()) || byName.get(it.name.toLowerCase());
       return {
         key: `r${++seq}`, part_id: p?.id ?? null, code: it.code || p?.code || '', name: p ? p.name : stripCode(it.name, it.code), unit: p ? p.unit : it.unit,
         quantity: String(it.qty).replace('.', ','), unit_cost: costInput(it.unitCost),
@@ -271,7 +282,19 @@ export default function CompraNova() {
   }
 
   /** Depois de lançar: marca a nota da fila e volta para a próxima; sem fila, abre a nota lançada */
+  /** Guarda código do fornecedor → peça de cada item da nota (a próxima nota reconhece pelo código) */
+  async function saveSupplierCodes(invoiceId: string) {
+    const coded = rows.filter(r => r.code.trim() && r.name.trim());
+    if (!supplierId || !coded.length) return;
+    const { data: its } = await supabase.from('purchase_items').select('description, part_id').eq('invoice_id', invoiceId);
+    const byDesc = new Map(((its ?? []) as { description: string; part_id: string }[]).map(i => [i.description.trim().toLowerCase(), i.part_id]));
+    const rowsUp = coded.map(r => ({ workshop_id: wid, supplier_id: supplierId, code: r.code.trim(), part_id: r.part_id || byDesc.get(r.name.trim().toLowerCase()) }))
+      .filter(r => r.part_id);
+    if (rowsUp.length) await supabase.from('part_supplier_codes').upsert(rowsUp, { onConflict: 'supplier_id,code' });
+  }
+
   async function finishQueued(invoiceId: string) {
+    await saveSupplierCodes(invoiceId);
     if (queued) {
       await supabase.from('purchase_imports')
         .update({ status: 'confirmed', invoice_id: invoiceId, confirmed_at: new Date().toISOString() }).in('id', queued.map(q => q.imp.id));
@@ -347,15 +370,34 @@ export default function CompraNova() {
         const { error: e2 } = await supabase.rpc('stock_adjust', { p_part: partId, p_counted: Math.max(0, counted), p_note: `Nota ${number.trim() || 's/ nº'}: só cadastro e financeiro` });
         if (e2) failed++;
       }
+      const paidOld = await payOverdue(data as string);
       setSaving(false);
+      if (paidOld) toast.success(`${paidOld} parcela(s) já vencida(s) lançada(s) como paga(s)`);
       if (failed) toast.error(`Nota lançada, mas ${failed} peça(s) ficaram somadas no estoque. Ajuste em Peças.`);
       else toast.success('Nota lançada ✓ Peças cadastradas e contas a pagar criadas (estoque não mexido)');
       await finishQueued(data as string);
       return;
     }
+    const paidOld = await payOverdue(data as string);
     setSaving(false);
     toast.success('Nota lançada ✓ Estoque e contas a pagar atualizados');
+    if (paidOld) toast.success(`${paidOld} parcela(s) já vencida(s) lançada(s) como paga(s)`);
     await finishQueued(data as string);
+  }
+
+  /**
+   * Nota antiga: parcela com vencimento antes de hoje já foi paga — entra como paga (pelo banco, na data do vencimento,
+   * sem mexer no caixa). Só as que ainda vão vencer ficam em aberto.
+   */
+  async function payOverdue(invoiceId: string) {
+    const { data: ps } = await supabase.from('payables').select('id, due_date')
+      .eq('invoice_id', invoiceId).is('paid_at', null).is('cancelled_at', null).lt('due_date', todayISO());
+    let n = 0;
+    for (const p of (ps ?? []) as { id: string; due_date: string }[]) {
+      const { error } = await supabase.rpc('payable_pay', { p_payable: p.id, p_from: 'banco', p_paid_at: p.due_date, p_session: null });
+      if (!error) n++;
+    }
+    return n;
   }
 
   if (!allowed) return <Restricted />;
@@ -572,6 +614,9 @@ export default function CompraNova() {
                       onChange={e => setInsts(xs => xs.map((x, j) => j === idx ? { ...x, amount: e.target.value } : x))} />
                   </div>
                   <span className="text-xs text-steel-400">{fmtDate(i.due_date)}</span>
+                  {i.due_date < todayISO()
+                    ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-signal-50 text-signal-700">já venceu · entra como paga</span>
+                    : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">fica em aberto</span>}
                 </div>
               ))}
               {!instOk && <p className="text-xs text-alert-600">As parcelas somam {fmtBRL(instTotal)} e a nota dá {fmtBRL(total)}.</p>}
