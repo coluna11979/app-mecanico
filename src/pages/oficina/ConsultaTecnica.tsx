@@ -55,9 +55,10 @@ export default function ConsultaTecnica() {
     if (rows.length === 1) open(rows[0], m, yr);
   }
 
-  async function runPlate(e: FormEvent) {
-    e.preventDefault();
-    const p = plateNorm(plate);
+  /** `raw`: placa vinda da Busca rápida (o estado `plate` ainda não foi atualizado) */
+  async function runPlate(e?: FormEvent, raw?: string) {
+    e?.preventDefault();
+    const p = plateNorm(raw ?? plate);
     if (!wid) return;
     if (!PLATE_RE.test(p)) { setPlateInfo({ msg: 'Placa inválida. Confira as 7 letras e números (ex.: ABC1D23).' }); return; }
     setPlateBusy(true);
@@ -112,6 +113,22 @@ export default function ConsultaTecnica() {
     next.delete('ficha');
     setParams(next);
   }
+
+  // Veio da Busca rápida (?busca=texto): placa busca pela placa; o resto é modelo (e ano, se vier no fim)
+  useEffect(() => {
+    const text = params.get('busca')?.trim();
+    if (!text || !wid) return;
+    const next = new URLSearchParams(params);
+    next.delete('busca');
+    setParams(next, { replace: true });
+    const asPlate = plateNorm(text);
+    if (PLATE_RE.test(asPlate)) { setPlate(asPlate); runPlate(undefined, asPlate); return; }
+    const m = text.match(/^(.*?)\s+((?:19|20)\d{2})$/);
+    const mdl = m ? m[1] : text, yr = m ? m[2] : '';
+    setModel(mdl); setYear(yr);
+    run(mdl, yr);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.get('busca'), wid]);
 
   // Veio de um carro do cliente (?carro=id): já sabe modelo e ano; se a versão foi escolhida antes, abre a ficha
   useEffect(() => {

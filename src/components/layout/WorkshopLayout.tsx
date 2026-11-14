@@ -257,10 +257,12 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   const [palette, setPalette] = useState(false);
   /** Consultar preço (Ctrl+J): peça ou serviço, sem sair da tela */
   const [priceLookup, setPriceLookup] = useState(false);
+  /** Texto digitado na Busca rápida que segue para o Consultar preço */
+  const [priceQuery, setPriceQuery] = useState('');
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => !p); }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') { e.preventDefault(); setPriceLookup(p => !p); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') { e.preventDefault(); setPriceQuery(''); setPriceLookup(p => !p); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -847,28 +849,17 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           {!rail && wallet.balance && allowed('/oficina/carteira') && (
             <WalletChip total={wallet.balance.total} light={sideTheme === 'light'} />
           )}
-          <button onClick={() => setPalette(true)} title="Buscar tela (Ctrl+K)"
+          {/* Busca rápida: telas, preço e óleo/filtros num campo só (Ctrl+K) */}
+          <button onClick={() => setPalette(true)} title="Busca rápida: telas, preço e óleo (Ctrl+K)"
             className={`w-full flex items-center rounded-lg transition ${T.tool} ${rail ? 'h-10 justify-center' : 'h-9 gap-2.5 px-3'}`}>
             <Icon name="search" size={16} />
             {!rail && (
               <>
-                <span className="flex-1 text-left text-[13px]">Buscar tela…</span>
+                <span className="flex-1 text-left text-[13px]">Busca rápida…</span>
                 <kbd className={`font-mono text-[10px] leading-none rounded px-1.5 py-1 ${T.kbd}`}>{isMac ? '⌘K' : 'Ctrl K'}</kbd>
               </>
             )}
           </button>
-          {shopId && (
-            <button onClick={() => setPriceLookup(true)} title="Consultar preço (Ctrl+J)"
-              className={`w-full flex items-center rounded-lg transition ${T.tool} ${rail ? 'h-10 justify-center' : 'h-9 gap-2.5 px-3'}`}>
-              <Icon name="percent" size={16} />
-              {!rail && (
-                <>
-                  <span className="flex-1 text-left text-[13px]">Consultar preço</span>
-                  <kbd className={`font-mono text-[10px] leading-none rounded px-1.5 py-1 ${T.kbd}`}>{isMac ? '⌘J' : 'Ctrl J'}</kbd>
-                </>
-              )}
-            </button>
-          )}
         </div>
 
         {/* Navegação */}
@@ -1027,12 +1018,26 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       })()}
 
       {priceLookup && shopId && (
-        <PriceLookupModal wid={shopId} showCost={canDo(op.session, op.balcao, 'pecas_estoque')} onClose={() => setPriceLookup(false)} />
+        <PriceLookupModal wid={shopId} initialQuery={priceQuery} showCost={canDo(op.session, op.balcao, 'pecas_estoque')} onClose={() => setPriceLookup(false)} />
       )}
 
       {/* Busca rápida (Ctrl+K / ⌘K): vai direto para qualquer tela liberada */}
       {palette && (
         <CommandPalette onClose={() => setPalette(false)} onGo={to => { setPalette(false); nav(to); }}
+          actions={[
+            ...(shopId ? [{
+              key: 'preco', icon: 'percent' as IconName, kbd: isMac ? '⌘J' : 'Ctrl J',
+              label: (q: string) => q ? `Consultar preço de “${q}”` : 'Consultar preço',
+              hint: 'Peça ou serviço, sem sair da tela',
+              run: (q: string) => { setPalette(false); setPriceQuery(q); setPriceLookup(true); },
+            }] : []),
+            ...(allowed('/oficina/consulta') ? [{
+              key: 'oleo', icon: 'car' as IconName,
+              label: (q: string) => q ? `Consultar óleo e filtros de “${q}”` : 'Consulta de óleo e filtros',
+              hint: 'Pelo modelo do carro ou pela placa',
+              run: (q: string) => { setPalette(false); nav(q ? `/oficina/consulta?busca=${encodeURIComponent(q)}` : '/oficina/consulta'); },
+            }] : []),
+          ]}
           items={[
             ...TOP_ITEMS.map(fix).filter(i => allowed(i.to)).map(i => ({ to: i.to, label: i.label, group: '', icon: 'home' as IconName })),
             ...navSections.flatMap(s => leaves(s.entries).map(i => ({ to: i.to, label: i.label, group: s.title, icon: GROUP_ICON[s.key] ?? 'clipboard' }))),
@@ -1392,54 +1397,85 @@ type PaletteItem = { to: string; label: string; group: string; icon: IconName };
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 /** Busca rápida: digite parte do nome da tela; ↑ ↓ para escolher, Enter para abrir */
-function CommandPalette({ items, onGo, onClose }: { items: PaletteItem[]; onGo: (to: string) => void; onClose: () => void }) {
+type PaletteAction = {
+  key: string; icon: IconName; hint: string; kbd?: string;
+  /** Rótulo com o texto digitado (ex.: Consultar preço de "pastilha") */
+  label: (q: string) => string;
+  run: (q: string) => void;
+};
+
+/** Busca rápida: as consultas (preço, óleo e filtros) no topo, já com o texto digitado; depois as telas */
+function CommandPalette({ items, actions, onGo, onClose }: {
+  items: PaletteItem[]; actions: PaletteAction[]; onGo: (to: string) => void; onClose: () => void;
+}) {
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
-  const list = useMemo(() => {
+  const screens = useMemo(() => {
     const n = norm(q.trim());
     if (!n) return items;
     return items
       .filter(i => norm(`${i.label} ${i.group}`).includes(n))
       .sort((a, b) => Number(!norm(a.label).startsWith(n)) - Number(!norm(b.label).startsWith(n)));
   }, [q, items]);
+  const text = q.trim();
+  const total = actions.length + screens.length;
   useEffect(() => { setIdx(0); }, [q]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-idx="${idx}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [idx]);
 
+  function pick(n: number) {
+    if (n < actions.length) actions[n].run(text);
+    else if (screens[n - actions.length]) onGo(screens[n - actions.length].to);
+  }
+
   function onKey(e: React.KeyboardEvent) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => Math.min(i + 1, list.length - 1)); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => Math.min(i + 1, total - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (list[idx]) onGo(list[idx].to); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(idx); }
     else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
   }
 
+  const row = (n: number, icon: IconName, label: string, right: ReactNode, sub?: string) => (
+    <button key={n} data-idx={n} onMouseEnter={() => setIdx(n)} onClick={() => pick(n)}
+      className={`w-full flex items-center gap-3 px-3 mx-0 min-h-[44px] py-1.5 text-left transition ${n === idx ? 'bg-steel-50' : ''}`}>
+      <span className={`ml-1 h-7 w-7 rounded-md grid place-items-center shrink-0 ${n === idx ? 'bg-brand-50 text-brand-600' : 'bg-steel-100 text-steel-500'}`}>
+        <Icon name={icon} size={15} />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block truncate text-sm font-medium text-steel-900">{label}</span>
+        {sub && <span className="block truncate text-xs text-steel-500">{sub}</span>}
+      </span>
+      {right}
+      <span className={`font-mono text-[11px] w-4 text-steel-400 shrink-0 ${n === idx ? '' : 'invisible'}`}>↵</span>
+    </button>
+  );
+
   return (
-    <div className="fixed inset-0 z-[90] px-4" role="dialog" aria-modal="true" aria-label="Buscar tela">
+    <div className="fixed inset-0 z-[90] px-4" role="dialog" aria-modal="true" aria-label="Busca rápida">
       <div className="absolute inset-0 bg-steel-900/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
       <div className="relative mx-auto mt-[12vh] max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-steel-200 overflow-hidden animate-fade-in">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-steel-100">
           <Icon name="search" size={18} className="text-steel-400 shrink-0" />
           <input autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
-            placeholder="Para onde você quer ir?"
+            placeholder="Tela, peça, serviço, carro ou placa…"
             className="flex-1 min-w-0 bg-transparent text-[15px] text-steel-900 placeholder:text-steel-400 outline-none" />
           <kbd className="font-mono text-[10px] text-steel-500 bg-steel-100 ring-1 ring-steel-200 rounded px-1.5 py-1">Esc</kbd>
         </div>
-        <div ref={listRef} className="max-h-[50vh] overflow-y-auto py-1.5">
-          {list.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-steel-500">Nenhuma tela com “{q}”.</div>
-          ) : list.map((i, n) => (
-            <button key={i.to} data-idx={n} onMouseEnter={() => setIdx(n)} onClick={() => onGo(i.to)}
-              className={`w-full flex items-center gap-3 px-3 mx-0 h-11 text-left transition ${n === idx ? 'bg-steel-50' : ''}`}>
-              <span className={`ml-1 h-7 w-7 rounded-md grid place-items-center shrink-0 ${n === idx ? 'bg-brand-50 text-brand-600' : 'bg-steel-100 text-steel-500'}`}>
-                <Icon name={i.icon} size={15} />
-              </span>
-              <span className="flex-1 min-w-0 truncate text-sm font-medium text-steel-900">{i.label}</span>
-              {i.group && <span className="text-xs text-steel-400 shrink-0">{i.group}</span>}
-              <span className={`font-mono text-[11px] w-4 text-steel-400 shrink-0 ${n === idx ? '' : 'invisible'}`}>↵</span>
-            </button>
-          ))}
+        <div ref={listRef} className="max-h-[55vh] overflow-y-auto py-1.5">
+          {actions.length > 0 && (
+            <>
+              <div className="px-4 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-steel-400">Consultar</div>
+              {actions.map((a, n) => row(n, a.icon, a.label(text),
+                a.kbd ? <kbd className="font-mono text-[10px] text-steel-400 shrink-0">{a.kbd}</kbd> : null, a.hint))}
+            </>
+          )}
+          <div className="px-4 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-steel-400">Telas</div>
+          {screens.length === 0 ? (
+            <div className="px-4 py-4 text-sm text-steel-500">Nenhuma tela com “{text}”.</div>
+          ) : screens.map((i, k) => row(actions.length + k, i.icon, i.label,
+            i.group ? <span className="text-xs text-steel-400 shrink-0">{i.group}</span> : null))}
         </div>
         <div className="flex items-center gap-4 px-4 h-9 border-t border-steel-100 bg-steel-50/70 font-mono text-[10.5px] text-steel-400">
           <span>↑ ↓ navegar</span><span>↵ abrir</span><span>esc fechar</span>

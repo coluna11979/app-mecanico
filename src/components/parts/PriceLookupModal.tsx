@@ -17,8 +17,12 @@ const MAX = 40;
  * Consulta rápida de preço (balcão / telefone): peça ou serviço por nome, código, marca ou carro.
  * Mostra o preço de venda; custo, margem e estoque só para quem pode ver peças e estoque.
  */
-export default function PriceLookupModal({ wid, showCost, onClose }: { wid: string; showCost: boolean; onClose: () => void }) {
-  const [q, setQ] = useState('');
+export default function PriceLookupModal({ wid, showCost, onClose, initialQuery = '' }: {
+  wid: string; showCost: boolean; onClose: () => void;
+  /** Texto já digitado na Busca rápida */
+  initialQuery?: string;
+}) {
+  const [q, setQ] = useState(initialQuery);
   const [tab, setTab] = useState<'tudo' | 'pecas' | 'servicos'>('tudo');
   const [hits, setHits] = useState<Hit[] | null>(null);
   const input = useRef<HTMLInputElement>(null);
