@@ -10,9 +10,9 @@ import { fmtDate } from '@/lib/purchasing';
 import { DEFAULT_MARGIN, loadAllParts, loadMargins } from '@/lib/parts';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import {
-  commonName, groupBy, loadServiceCharges, loadWorkshopModels, norm, vehicleLabel, type ServiceCharge,
+  commonName, groupBy, loadServiceCharges, norm, vehicleLabel, type ServiceCharge,
 } from '@/lib/servicePrices';
-import { VEHICLE_CATALOG } from '@/lib/vehicleCatalog';
+import { filterLabel, fmtLiters, fmtYearRange, loadSheet, partsForFilter, partsForFluid, searchTechVehicles, vehicleDetail, type TechVehicle } from '@/lib/techCatalog';
 
 /** Serviço já lançado em OS mas que ainda não está na tabela */
 type FromHistory = { name: string; price: number; uses: number };
@@ -660,46 +660,75 @@ function ByVehicle({ charges }: { charges: ServiceCharge[] | null }) {
 }
 
 
-type KitRow = { id: string; part_id: string | null; description: string; quantity: number; vehicle_model: string | null };
+type KitRow = {
+  id: string; part_id: string | null; description: string; quantity: number; vehicle_model: string | null;
+  tech_vehicle_id: string | null; vehicle_make: string | null; vehicle_engine: string | null; year_from: number | null; year_to: number | null;
+};
 type CatPart = { id: string; name: string; code: string | null; brand: string | null; cost: number; unit: string | null; stock_qty: number };
 type HistPart = { name: string; part_id: string | null; uses_all: number; uses_model: number; qty: number; unit_price: number };
+/** Linha sugerida pelo catálogo técnico (óleo do motor e filtros do carro) — a oficina confere e ajusta */
+type TechSug = { key: string; description: string; part_id: string | null; quantity: number; hint: string; checked: boolean };
+/** Carro de um kit: ficha do catálogo técnico (marca, modelo, motor, anos) ou só o nome do modelo (kits antigos) */
+type KitCar = { key: string; model: string; techId: string | null; make: string | null; engine: string | null; from: number | null; to: number | null };
+
+const kitKey = (r: Pick<KitRow, 'tech_vehicle_id' | 'vehicle_model'>) => r.tech_vehicle_id ?? `m:${norm(r.vehicle_model ?? '')}`;
+const carOfRow = (r: KitRow): KitCar => ({ key: kitKey(r), model: r.vehicle_model ?? '', techId: r.tech_vehicle_id, make: r.vehicle_make, engine: r.vehicle_engine, from: r.year_from, to: r.year_to });
+const carOfTech = (v: TechVehicle): KitCar => ({ key: v.id, model: v.model, techId: v.id, make: v.make, engine: v.engine ?? v.version, from: v.year_from, to: v.year_to });
+const carLabel = (c: KitCar) => [c.make, c.model, c.engine, fmtYearRange({ year_from: c.from, year_to: c.to })].filter(Boolean).join(' · ');
+
+/** Busca no catálogo técnico por marca, modelo e ano ("fiesta 2010", "vw gol") */
+async function searchCatalogCars(text: string): Promise<TechVehicle[]> {
+  const yr = text.match(/\b(19|20)\d{2}\b/)?.[0];
+  const words = text.replace(/\b(19|20)\d{2}\b/, ' ').split(/\s+/).map(w => w.replace(/[%_,()*\\]/g, '')).filter(w => w.length >= 2);
+  if (!words.length) return [];
+  let qy = supabase.from('tech_vehicles').select('*');
+  for (const w of words) qy = qy.or(`model.ilike.%${w}%,make.ilike.%${w}%`);
+  const { data } = await qy.order('make').order('model').order('year_from').limit(80);
+  const y = yr ? Number(yr) : null;
+  return ((data ?? []) as TechVehicle[]).filter(v => y == null || ((v.year_from == null || v.year_from <= y) && (v.year_to == null || v.year_to >= y)));
+}
 
 /** Na ficha do serviço: as peças que entram junto (ex.: Troca de óleo → óleo, filtro de óleo, junta do bujão) */
 function ServiceKit({ wid, service }: { wid: string; service: WorkshopService }) {
   const [all, setAll] = useState<KitRow[] | null>(null);
-  /** Modelo cujo kit está aberto ('' = kit geral, vale para todos os carros) */
-  const [model, setModel] = useState('');
-  const [newModel, setNewModel] = useState<string | null>(null);
+  /** Carro cujo kit está aberto (null = kit geral, vale para todos os carros) */
+  const [car, setCar] = useState<KitCar | null>(null);
+  const model = car?.model ?? '';
+  const [pick, setPick] = useState<{ text: string; results: TechVehicle[] | null } | null>(null);
   const [quick, setQuick] = useState<string | null>(null);
   const [baseMargin, setBaseMargin] = useState(DEFAULT_MARGIN);
-  const [knownModels, setKnownModels] = useState<string[]>([]);
   const [parts, setParts] = useState<CatPart[]>([]);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [hist, setHist] = useState<HistPart[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [techCars, setTechCars] = useState<TechVehicle[] | null>(null);
+  const [tech, setTech] = useState<{ car: TechVehicle; rows: TechSug[]; unverified: boolean } | null>(null);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('workshop_service_parts')
-      .select('id, part_id, description, quantity, vehicle_model').eq('service_id', service.id).order('position').order('created_at');
+      .select('id, part_id, description, quantity, vehicle_model, tech_vehicle_id, vehicle_make, vehicle_engine, year_from, year_to')
+      .eq('service_id', service.id).order('position').order('created_at');
     setAll(((data ?? []) as KitRow[]).map(r => ({ ...r, quantity: Number(r.quantity) })));
   }, [service.id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadMargins(wid).then(m => setBaseMargin(m.base)).catch(() => { /* usa o padrão */ }); }, [wid]);
-  useEffect(() => {
-    loadWorkshopModels(wid).then(ms => {
-      const catalog = Object.values(VEHICLE_CATALOG).flat();
-      setKnownModels([...new Set([...ms.map(m => m.label), ...catalog])]);
-    }).catch(() => { /* a lista é só ajuda; dá para digitar */ });
-  }, [wid]);
-  const sameModel = (a: string | null, b: string) => norm(a ?? '') === norm(b);
-  const items = all === null ? null : all.filter(r => (model ? sameModel(r.vehicle_model, model) : !r.vehicle_model));
-  /** Modelos que já têm kit próprio, sem repetir */
-  const modelsWithKit = [...new Map((all ?? []).filter(r => r.vehicle_model).map(r => [norm(r.vehicle_model!), r.vehicle_model!])).values()];
+  const items = all === null ? null : all.filter(r => (car ? kitKey(r) === car.key : !r.vehicle_model));
+  /** Carros que já têm kit próprio, sem repetir */
+  const carsWithKit = [...new Map((all ?? []).filter(r => r.vehicle_model).map(r => [kitKey(r), carOfRow(r)])).values()];
   useEffect(() => {
     loadAllParts<CatPart>(wid, 'id, name, code, brand, cost, unit, stock_qty')
       .then(data => setParts(((data ?? []) as CatPart[]).map(p => ({ ...p, stock_qty: Number(p.stock_qty), cost: Number(p.cost) || 0 }))));
   }, [wid]);
+  // Busca no catálogo enquanto digita
+  useEffect(() => {
+    if (!pick) return;
+    const text = pick.text.trim();
+    if (text.length < 2) return;
+    let live = true;
+    const t = setTimeout(() => { searchCatalogCars(text).then(r => { if (live) setPick(p => p && p.text.trim() === text ? { ...p, results: r } : p); }); }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [pick?.text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function add(rows: { description: string; part_id: string | null; quantity: number }[]) {
     if (!rows.length) return;
@@ -707,7 +736,8 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
     const start = items?.length ?? 0;
     const { error } = await supabase.from('workshop_service_parts').insert(rows.map((r, i) => ({
       workshop_id: wid, service_id: service.id, part_id: r.part_id, description: r.description.trim(), quantity: r.quantity, position: start + i,
-      vehicle_model: model || null,
+      vehicle_model: car?.model || null, tech_vehicle_id: car?.techId ?? null, vehicle_make: car?.make ?? null, vehicle_engine: car?.engine ?? null,
+      year_from: car?.from ?? null, year_to: car?.to ?? null,
     })));
     setBusy(false);
     if (error) return toast.error('Não foi possível adicionar: ' + error.message);
@@ -734,15 +764,68 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
     setPicked(new Set());
   }
 
+  /** Sugerir pelo catálogo: se o kit já é de uma ficha, usa ela; se é só o nome do modelo, a oficina escolhe a versão */
+  async function loadTechCars() {
+    if (!car) return toast.error('Escolha o carro primeiro (➕ Outro carro). O catálogo técnico é por carro.');
+    if (car.techId) return pickTechCar(car.techId, car.key);
+    setBusy(true);
+    const cars = await searchTechVehicles(model, null);
+    setBusy(false);
+    if (cars.length === 0) return toast.error(`O catálogo técnico ainda não tem ficha do ${model}.`);
+    setTechCars(cars); setTech(null);
+    if (cars.length === 1) pickTechCar(cars[0].id, car.key);
+  }
+  /** Monta a sugestão da ficha: óleo do motor e filtros, casando com o estoque quando dá */
+  async function pickTechCar(techId: string, kitK: string) {
+    setBusy(true);
+    const sheet = await loadSheet(techId);
+    setBusy(false);
+    if (!sheet.vehicle) return toast.error('Ficha não encontrada no catálogo técnico.');
+    const mine = (all ?? []).filter(r => kitKey(r) === kitK);
+    const have = new Set(mine.map(i => norm(i.description)));
+    const haveParts = new Set(mine.map(i => i.part_id).filter(Boolean));
+    const rows: TechSug[] = [];
+    const push = (r: TechSug) => { if (!have.has(norm(r.description)) && !(r.part_id && haveParts.has(r.part_id))) rows.push(r); };
+
+    const oil = sheet.fluids.find(f => f.system === 'motor');
+    if (oil?.viscosity) {
+      const cands = partsForFluid(parts, oil).sort((a, b) => Number(b.stock_qty > 0) - Number(a.stock_qty > 0) || a.cost - b.cost);
+      // A ficha traz a capacidade quebrada (4,5 L); óleo se vende e se separa em litro fechado, então o kit leva 5
+      const need = Number(oil.capacity_liters) || 1;
+      const liters = Math.ceil(need - 1e-9);
+      const spec = [oil.viscosity, oil.spec].filter(Boolean).join(' · ');
+      const qtyHint = need === liters ? fmtLiters(liters) : `ficha ${fmtLiters(need)} → kit ${fmtLiters(liters)}`;
+      if (cands[0]) {
+        const p = cands[0];
+        push({ key: 'oleo', description: p.name, part_id: p.id, quantity: liters, checked: true,
+          hint: `${spec} · ${qtyHint}${cands.length > 1 ? ` · mais ${cands.length - 1} opção(ões) no estoque` : ''}` });
+      } else {
+        push({ key: 'oleo', description: `Óleo do motor ${oil.viscosity}`, part_id: null, quantity: liters, checked: true,
+          hint: `${spec} · ${qtyHint} · sem óleo ${oil.viscosity} no estoque, entra como avulsa` });
+      }
+    }
+    const filterRow = (kind: 'oleo' | 'ar' | 'combustivel' | 'cabine', checked: boolean) => {
+      const f = sheet.filters.find(x => x.kind === kind);
+      if (!f) return;
+      const hit = partsForFilter(parts, f)[0];
+      push({ key: `f-${kind}`, description: hit ? hit.name : `${filterLabel(kind)} ${f.brand} ${f.code}`, part_id: hit?.id ?? null, quantity: 1, checked,
+        hint: hit ? `${f.brand} ${f.code} · no estoque` : `${f.brand} ${f.code} · não cadastrada, entra como avulsa` });
+    };
+    filterRow('oleo', true); filterRow('ar', false); filterRow('combustivel', false); filterRow('cabine', false);
+
+    if (rows.length === 0) toast.error('O catálogo técnico não trouxe nada novo para esse carro.');
+    const unverified = [...sheet.fluids, ...sheet.filters].some(x => x.status !== 'verificado');
+    setTechCars(null); setTech({ car: sheet.vehicle, rows, unverified });
+  }
+
   async function copyFromGeneral() {
     const base = (all ?? []).filter(r => !r.vehicle_model);
     await add(base.map(r => ({ description: r.description, part_id: r.part_id, quantity: r.quantity })));
   }
-  function startModel() {
-    const m = (newModel ?? '').trim();
-    if (!m) return;
-    const known = knownModels.find(k => norm(k) === norm(m));
-    setModel(known ?? m); setNewModel(null); setHist(null);
+  /** Abre o kit de um carro; se for ficha do catálogo e o kit estiver vazio, já mostra a sugestão de óleo e filtros */
+  function openCar(c: KitCar) {
+    setCar(c); setHist(null); setPick(null); setTech(null); setTechCars(null);
+    if (c.techId && !(all ?? []).some(r => kitKey(r) === c.key)) pickTechCar(c.techId, c.key);
   }
 
   const inKit = new Set((items ?? []).map(i => i.part_id).filter(Boolean));
@@ -755,35 +838,50 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
         <div className="text-xs font-bold text-steel-600">🧰 Peças deste serviço</div>
         <div className="text-[11px] text-steel-400">Na OS, ao escolher este serviço no catálogo, essas peças são oferecidas para entrar junto. Se o carro tiver kit próprio, ele vale no lugar do geral.</div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {[{ v: '', label: 'Todos os carros' }, ...modelsWithKit.map(m => ({ v: m, label: m }))].map(o => (
-            <button key={o.v || '_all'} type="button" onClick={() => { setModel(o.v); setHist(null); setNewModel(null); }}
-              className={`min-h-[36px] px-3 rounded-lg text-xs font-semibold border ${norm(model) === norm(o.v) ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-steel-200 text-steel-600 hover:bg-steel-50'}`}>
+          {[{ c: null as KitCar | null, label: 'Todos os carros' }, ...carsWithKit.map(c => ({ c: c as KitCar | null, label: carLabel(c) }))].map(o => (
+            <button key={o.c?.key ?? '_all'} type="button" onClick={() => { setCar(o.c); setHist(null); setPick(null); setTech(null); setTechCars(null); }}
+              className={`min-h-[36px] px-3 rounded-lg text-xs font-semibold border ${(car?.key ?? '') === (o.c?.key ?? '') ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-steel-200 text-steel-600 hover:bg-steel-50'}`}>
               {o.label}
             </button>
           ))}
-          {model && !modelsWithKit.some(m => norm(m) === norm(model)) && (
-            <span className="min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-brand-600 bg-brand-600 text-white inline-flex items-center">{model}</span>
+          {car && !carsWithKit.some(c => c.key === car.key) && (
+            <span className="min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-brand-600 bg-brand-600 text-white inline-flex items-center">{carLabel(car)}</span>
           )}
-          <button type="button" onClick={() => setNewModel(newModel === null ? '' : null)}
+          <button type="button" onClick={() => setPick(pick ? null : { text: '', results: null })}
             className="min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-dashed border-steel-300 text-brand-700 hover:bg-brand-50">➕ Outro carro</button>
         </div>
-        {newModel !== null && (
-          <div className="mt-2 flex gap-2">
-            <input className="input !py-2 text-sm flex-1" list={`kit-models-${service.id}`} autoFocus placeholder="Modelo: Onix, Hilux, HB20…" value={newModel}
-              onChange={e => setNewModel(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); startModel(); } }} />
-            <datalist id={`kit-models-${service.id}`}>{knownModels.slice(0, 300).map(m => <option key={m} value={m} />)}</datalist>
-            <button type="button" onClick={startModel} disabled={!newModel.trim()} className="btn-primary !py-2 text-sm disabled:opacity-40">Abrir kit</button>
+        {pick && (
+          <div className="mt-2 space-y-1.5">
+            <input className="input !py-2 text-sm w-full" autoFocus placeholder="Marca, modelo e ano: Fiesta 2010, VW Gol, Onix 2016…" value={pick.text}
+              onChange={e => setPick({ text: e.target.value, results: null })} />
+            {pick.results && pick.results.length > 0 && (
+              <ul className="max-h-64 overflow-y-auto rounded-lg border border-steel-200 divide-y divide-steel-100 bg-white">
+                {pick.results.map(v => (
+                  <li key={v.id}>
+                    <button type="button" onClick={() => openCar(carOfTech(v))} className="w-full text-left px-3 py-2 hover:bg-brand-50">
+                      <span className="block text-sm font-semibold text-steel-800">{v.make} {v.model}</span>
+                      <span className="block text-[11px] text-steel-500">{vehicleDetail(v) || 'sem detalhes'}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {pick.results && pick.results.length === 0 && <p className="text-[11px] text-steel-500">Nenhum carro do catálogo técnico com esse nome.</p>}
+            {pick.text.trim().length >= 2 && (
+              <button type="button" onClick={() => { const t = pick.text.trim(); openCar({ key: `m:${norm(t)}`, model: t, techId: null, make: null, engine: null, from: null, to: null }); }}
+                className="text-xs font-semibold text-brand-700 hover:underline">Não está no catálogo? Usar só “{pick.text.trim()}” como modelo</button>
+            )}
           </div>
         )}
-        {model && <div className="mt-2 text-[11px] text-steel-500">Peças que entram quando o carro da OS for <strong>{model}</strong>.</div>}
+        {car && <div className="mt-2 text-[11px] text-steel-500">Peças que entram quando o carro da OS for <strong>{carLabel(car)}</strong>.</div>}
       </div>
 
       {items === null ? (
         <p className="px-3 py-3 text-xs text-steel-400">Carregando…</p>
       ) : items.length === 0 ? (
         <div className="px-3 py-3 text-xs text-steel-400 space-y-1.5">
-          <p>{model ? `Nenhuma peça no kit do ${model} ainda. Enquanto estiver vazio, a OS usa o kit geral.` : 'Nenhuma peça no kit ainda.'}</p>
-          {model && (all ?? []).some(r => !r.vehicle_model) && (
+          <p>{car ? `Nenhuma peça no kit do ${model} ainda. Enquanto estiver vazio, a OS usa o kit geral.` : 'Nenhuma peça no kit ainda.'}</p>
+          {car && (all ?? []).some(r => !r.vehicle_model) && (
             <button type="button" disabled={busy} onClick={copyFromGeneral} className="font-semibold text-brand-700 hover:underline">Copiar do kit geral</button>
           )}
         </div>
@@ -834,6 +932,43 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
             </div>
           )}
         </div>
+
+        {/\b(oleo|filtro|revisao)/.test(norm(service.name)) && (
+          techCars ? (
+            <div className="rounded-lg bg-steel-50 p-2 space-y-1.5">
+              <p className="text-[11px] text-steel-500">Qual versão do <strong>{model}</strong>?</p>
+              <ul className="space-y-1">
+                {techCars.slice(0, 12).map(c => (
+                  <li key={c.id}><button type="button" disabled={busy} onClick={() => pickTechCar(c.id, car?.key ?? '')} className="w-full text-left text-sm px-2 py-1.5 rounded-lg bg-white border border-steel-200 hover:bg-brand-50">{vehicleDetail(c) || c.model}</button></li>
+                ))}
+              </ul>
+              <button type="button" className="text-xs text-steel-500" onClick={() => setTechCars(null)}>Fechar</button>
+            </div>
+          ) : tech ? (
+            <div className="rounded-lg bg-steel-50 p-2 space-y-1.5">
+              <p className="text-[11px] text-steel-500">Do catálogo técnico: <strong>{tech.car.make} {tech.car.model}</strong> {vehicleDetail(tech.car)}. É sugestão — marque o que vale e ajuste a quantidade depois.{tech.unverified && <span className="block mt-0.5 font-semibold text-amber-700">Ficha ainda não verificada: confira óleo, litros e filtro antes de usar.</span>}</p>
+              <ul className="space-y-1">
+                {tech.rows.map(r => (
+                  <li key={r.key}>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input type="checkbox" className="mt-1" checked={r.checked} onChange={e => setTech(t => t && ({ ...t, rows: t.rows.map(x => x.key === r.key ? { ...x, checked: e.target.checked } : x) }))} />
+                      <span className="flex-1 min-w-0"><span className="block truncate">{r.description}</span><span className="block text-[11px] text-steel-500">{r.hint}</span></span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-3 pt-1">
+                <button type="button" disabled={busy || !tech.rows.some(r => r.checked)} className="text-xs font-semibold text-brand-700 disabled:opacity-40"
+                  onClick={async () => { await add(tech.rows.filter(r => r.checked)); setTech(null); }}>
+                  Adicionar ao kit do {model}
+                </button>
+                <button type="button" className="text-xs text-steel-500" onClick={() => setTech(null)}>Fechar</button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" disabled={busy} onClick={loadTechCars} className="block text-xs font-semibold text-brand-700 hover:underline">🔧 Sugerir pelo catálogo técnico (óleo e filtros do carro)</button>
+          )
+        )}
 
         {norm(service.name).length >= 4 && (
           hist === null ? (

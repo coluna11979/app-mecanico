@@ -9,7 +9,7 @@ import { vehicleYears } from '@/lib/vehicleCatalog';
 import { DEFAULT_MARGIN, fmtQty, loadAllParts, loadMargins, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import {
-  filterLabel, fmtInterval, fmtLiters, loadSheet, logLookup, lookupPlate, matchTechVehicles, partsForFilter, partsForFluid,
+  filterLabel, fmtInterval, fmtLiters, loadSheet, loadTechMakes, logLookup, lookupPlate, matchTechVehicles, partsForFilter, partsForFluid,
   plateCarName, searchTechVehicles, systemLabel, vehicleDetail, vehicleName, FILTER_KINDS, PLATE_RE,
   type FilterRef, type FluidSpec, type TechVehicle,
 } from '@/lib/techCatalog';
@@ -29,6 +29,9 @@ export default function ConsultaTecnica() {
   const sheetId = params.get('ficha');
 
   const [model, setModel] = useState('');
+  const [make, setMake] = useState('');
+  const [makes, setMakes] = useState<string[]>([]);
+  useEffect(() => { loadTechMakes().then(setMakes); }, []);
   const [year, setYear] = useState('');
   const [results, setResults] = useState<TechVehicle[] | null>(null);
   const [searched, setSearched] = useState('');
@@ -43,15 +46,15 @@ export default function ConsultaTecnica() {
   const hints = showHints ? searchModels(model) : [];
 
   async function run(m: string, y: string) {
-    if (!wid || !m.trim()) return;
+    if (!wid || (!m.trim() && !make)) return;
     setSearching(true);
     setShowHints(false);
     const yr = y ? Number(y) : null;
-    const rows = await searchTechVehicles(m, yr);
+    const rows = await searchTechVehicles(m, yr, make || null);
     setResults(rows);
-    setSearched(m.trim());
+    setSearched([make, m.trim()].filter(Boolean).join(' '));
     setSearching(false);
-    if (rows.length === 0) logLookup(wid, m, yr, null);
+    if (rows.length === 0) logLookup(wid, [make, m].filter(Boolean).join(' '), yr, null);
     if (rows.length === 1) open(rows[0], m, yr);
   }
 
@@ -176,7 +179,14 @@ export default function ConsultaTecnica() {
 
             <form onSubmit={submit} className="card space-y-3">
               <div className="text-sm font-semibold text-steel-600">Ou busque pelo modelo</div>
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr_9rem] gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-[10rem_1fr_9rem] gap-3">
+                <div>
+                  <label className="label" htmlFor="ct-make">Marca</label>
+                  <select id="ct-make" className="input" value={make} onChange={e => { setMake(e.target.value); setResults(null); }}>
+                    <option value="">Todas as marcas</option>
+                    {makes.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
                 <div className="relative">
                   <label className="label" htmlFor="ct-model">Modelo do carro</label>
                   <input id="ct-model" className="input" autoComplete="off" placeholder="Ex.: Onix, Gol, HB20"
@@ -198,8 +208,8 @@ export default function ConsultaTecnica() {
                   </select>
                 </div>
               </div>
-              <button className="btn-ghost border border-steel-200 w-full sm:w-auto min-h-[44px]" disabled={searching || !model.trim()}>
-                {searching ? 'Buscando…' : 'Buscar pelo modelo'}
+              <button className="btn-ghost border border-steel-200 w-full sm:w-auto min-h-[44px]" disabled={searching || (!model.trim() && !make)}>
+                {searching ? 'Buscando…' : make && !model.trim() ? `Ver modelos ${make}` : 'Buscar pelo modelo'}
               </button>
             </form>
 
@@ -234,7 +244,16 @@ export default function ConsultaTecnica() {
   );
 }
 
-type TabKey = 'motor' | 'cambio' | 'filtros' | 'outros';
+type FilterTab = 'f_oleo' | 'f_ar' | 'f_cabine' | 'f_combustivel';
+type TabKey = 'motor' | 'cambio' | FilterTab | 'outros';
+/** Ordem das abas de filtro e o tipo que cada uma mostra */
+const FILTER_TABS: { key: FilterTab; kind: FilterRef['kind']; label: string }[] = [
+  { key: 'f_oleo',        kind: 'oleo',        label: 'Filtro óleo' },
+  { key: 'f_ar',          kind: 'ar',          label: 'Filtro de ar' },
+  { key: 'f_cabine',      kind: 'cabine',      label: 'Filtro cabine' },
+  { key: 'f_combustivel', kind: 'combustivel', label: 'Filtro combustível' },
+];
+const TAB_ORDER: TabKey[] = ['motor', 'cambio', 'f_oleo', 'f_ar', 'f_cabine', 'f_combustivel', 'outros'];
 
 function Sheet({ wid, vehicleId, onBack }: { wid: string; vehicleId: string; onBack: () => void }) {
   const [vehicle, setVehicle] = useState<TechVehicle | null>(null);
@@ -245,6 +264,7 @@ function Sheet({ wid, vehicleId, onBack }: { wid: string; vehicleId: string; onB
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>('motor');
   const [quick, setQuick] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
 
   const reloadParts = () => loadAllParts<StockPart>(wid, PART_COLS).then(setParts);
 
@@ -254,15 +274,28 @@ function Sheet({ wid, vehicleId, onBack }: { wid: string; vehicleId: string; onB
     Promise.all([loadSheet(vehicleId), loadAllParts<StockPart>(wid, PART_COLS), loadMargins(wid)]).then(([s, p, m]) => {
       if (!alive) return;
       setVehicle(s.vehicle); setFluids(s.fluids); setFilters(s.filters); setParts(p); setMargins(m);
-      const has = (k: TabKey) =>
-        k === 'filtros' ? s.filters.length > 0
-          : k === 'outros' ? s.fluids.some(f => f.system !== 'motor' && f.system !== 'cambio')
-            : s.fluids.some(f => f.system === k);
-      setTab((['motor', 'cambio', 'filtros', 'outros'] as TabKey[]).find(has) ?? 'motor');
+      const has = (k: TabKey) => {
+        const ft = FILTER_TABS.find(t => t.key === k);
+        if (ft) return s.filters.some(f => f.kind === ft.kind);
+        return k === 'outros' ? s.fluids.some(f => f.system !== 'motor' && f.system !== 'cambio')
+          : s.fluids.some(f => f.system === k);
+      };
+      setTab(TAB_ORDER.find(has) ?? 'motor');
       setLoading(false);
     });
     return () => { alive = false; };
   }, [vehicleId, wid]);
+
+  const draftCount = [...fluids, ...filters].filter(x => x.status !== 'verificado').length;
+  async function approve() {
+    setApproving(true);
+    const { error } = await supabase.rpc('tech_verify_vehicle', { p_workshop: wid, p_vehicle: vehicleId });
+    setApproving(false);
+    if (error) { toast.error('Não foi possível aprovar: ' + error.message); return; }
+    setFluids(xs => xs.map(x => ({ ...x, status: 'verificado' })));
+    setFilters(xs => xs.map(x => ({ ...x, status: 'verificado' })));
+    toast.success('Ficha aprovada. Obrigado por conferir!');
+  }
 
   if (loading) return <div className="card h-40 animate-pulse" />;
   if (!vehicle) {
@@ -275,16 +308,14 @@ function Sheet({ wid, vehicleId, onBack }: { wid: string; vehicleId: string; onB
   }
 
   const motor = fluids.find(f => f.system === 'motor');
-  const byTab: Record<TabKey, FluidSpec[]> = {
-    motor: fluids.filter(f => f.system === 'motor'),
-    cambio: fluids.filter(f => f.system === 'cambio'),
-    filtros: [],
-    outros: fluids.filter(f => f.system !== 'motor' && f.system !== 'cambio'),
-  };
+  const fluidTab = (k: 'motor' | 'cambio' | 'outros') =>
+    fluids.filter(f => k === 'outros' ? f.system !== 'motor' && f.system !== 'cambio' : f.system === k);
   const tabs = ([
-    ['motor', 'Motor', byTab.motor.length], ['cambio', 'Câmbio', byTab.cambio.length],
-    ['filtros', 'Filtros', filters.length], ['outros', 'Outros fluidos', byTab.outros.length],
+    ['motor', 'Óleo do motor', fluidTab('motor').length], ['cambio', 'Câmbio', fluidTab('cambio').length],
+    ...FILTER_TABS.map(t => [t.key, t.label, filters.filter(f => f.kind === t.kind).length] as [TabKey, string, number]),
+    ['outros', 'Outros fluidos', fluidTab('outros').length],
   ] as [TabKey, string, number][]).filter(t => t[2] > 0);
+  const filterTab = FILTER_TABS.find(t => t.key === tab) ?? null;
 
   return (
     <div className="space-y-4">
@@ -301,22 +332,28 @@ function Sheet({ wid, vehicleId, onBack }: { wid: string; vehicleId: string; onB
         )}
         {vehicle.notes && <p className="text-sm text-steel-600 mt-2">{vehicle.notes}</p>}
         <p className="text-xs text-steel-500 mt-3">Confira sempre o manual do proprietário: a recomendação da montadora vem primeiro.</p>
+        {draftCount > 0 ? (
+          <div className="mt-3 rounded-xl bg-pending-50 border border-pending-200 px-3 py-2 space-y-2">
+            <p className="text-sm text-pending-700"><strong>Ficha em rascunho</strong> ({draftCount} {draftCount === 1 ? 'linha' : 'linhas'} ainda sem conferência). Confira óleo, litros e filtros com o manual do carro e aprove.</p>
+            <button onClick={approve} disabled={approving} className="btn-primary text-sm min-h-[44px] !bg-signal-600">{approving ? 'Aprovando…' : 'Conferi, aprovar ficha'}</button>
+          </div>
+        ) : (fluids.length + filters.length) > 0 && <p className="mt-3 text-xs font-semibold text-signal-700">✓ Ficha verificada</p>}
       </div>
 
       {tabs.length === 0 ? (
         <div className="card text-sm text-steel-500">Esta ficha ainda está sendo conferida.</div>
       ) : (
         <>
-          <div className="flex gap-1 bg-steel-100 rounded-xl p-1 overflow-x-auto">
+          <div role="tablist" className="flex gap-5 border-b border-steel-200 overflow-x-auto">
             {tabs.map(([k, l]) => (
-              <button key={k} onClick={() => setTab(k)}
-                className={`text-sm font-semibold px-3.5 min-h-[44px] rounded-lg whitespace-nowrap transition ${tab === k ? 'bg-white shadow-sm text-steel-900' : 'text-steel-500'}`}>
+              <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+                className={`text-sm font-bold uppercase tracking-wide whitespace-nowrap min-h-[44px] border-b-2 -mb-px transition ${tab === k ? 'border-brand-500 text-brand-600' : 'border-transparent text-steel-700 hover:text-steel-900'}`}>
                 {l}
               </button>
             ))}
           </div>
 
-          {tab !== 'filtros' && byTab[tab].map(s => (
+          {!filterTab && fluidTab(tab === 'cambio' || tab === 'outros' ? tab : 'motor').map(s => (
             <div key={s.id} className="card space-y-3">
               <div>
                 <div className="text-xs font-bold uppercase tracking-widest text-steel-500">{systemLabel(s.system)}</div>
@@ -333,8 +370,9 @@ function Sheet({ wid, vehicleId, onBack }: { wid: string; vehicleId: string; onB
             </div>
           ))}
 
-          {tab === 'filtros' && FILTER_KINDS.filter(k => filters.some(f => f.kind === k.value)).map(k => {
-            const rows = filters.filter(f => f.kind === k.value);
+          {filterTab && [filterTab].map(ft => {
+            const k = { value: ft.kind };
+            const rows = filters.filter(f => f.kind === ft.kind);
             const matches = [...new Map(rows.flatMap(f => partsForFilter(parts, f)).map(p => [p.id, p])).values()];
             return (
               <div key={k.value} className="card space-y-3">

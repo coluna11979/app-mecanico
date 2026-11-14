@@ -147,7 +147,7 @@ interface Props {
   /** Avisa a página quando há itens digitados ainda não salvos (o quadro de comissões só enxerga os salvos) */
   onDirtyChange?: (dirty: boolean) => void;
   /** Veículo da OS: o serviço sugere o preço já cobrado nesse modelo */
-  vehicle?: { make?: string | null; model?: string | null } | null;
+  vehicle?: { make?: string | null; model?: string | null; year?: number | null; tech_vehicle_id?: string | null } | null;
   onSaved: () => void;
 }
 
@@ -346,12 +346,27 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     if (!s.fromTable) return { items: [], model: null };
     const esc = s.description.trim().replace(/[%_\\]/g, m => '\\' + m);
     const { data } = await supabase.from('workshop_service_parts')
-      .select('description, quantity, part_id, position, vehicle_model, workshop_services!inner(name)')
+      .select('description, quantity, part_id, position, vehicle_model, tech_vehicle_id, year_from, year_to, workshop_services!inner(name)')
       .eq('workshop_id', workshopId).ilike('workshop_services.name', esc).order('position');
-    type KitDb = { description: string; quantity: number; part_id: string | null; vehicle_model: string | null };
+    type KitDb = { description: string; quantity: number; part_id: string | null; vehicle_model: string | null; tech_vehicle_id: string | null; year_from: number | null; year_to: number | null };
     const rows = (data ?? []) as unknown as KitDb[];
     const mk = norm(vehModel);
-    const forModel = mk ? rows.filter(r => r.vehicle_model && norm(r.vehicle_model) === mk) : [];
+    // Kit do carro: 1) a ficha do catálogo técnico do veículo; 2) o modelo, na faixa de anos do carro
+    // (kit sem faixa vale para qualquer ano); 3) sem nada disso, o kit geral
+    let forModel: KitDb[] = [];
+    const techId = vehicle?.tech_vehicle_id ?? null;
+    if (techId) forModel = rows.filter(r => r.tech_vehicle_id === techId);
+    if (!forModel.length && mk) {
+      const groups = new Map<string, KitDb[]>();
+      for (const r of rows.filter(r => r.vehicle_model && norm(r.vehicle_model) === mk)) {
+        const k = r.tech_vehicle_id ?? 'm';
+        groups.set(k, [...(groups.get(k) ?? []), r]);
+      }
+      const yr = vehicle?.year ?? null;
+      const fits = (g: KitDb[]) => yr == null || ((g[0].year_from == null || g[0].year_from <= yr) && (g[0].year_to == null || g[0].year_to >= yr));
+      const cands = [...groups.values()];
+      forModel = cands.find(g => fits(g) && (g[0].year_from != null || g[0].year_to != null)) ?? cands.find(g => fits(g) && g[0].year_from == null && g[0].year_to == null) ?? [];
+    }
     const chosen = forModel.length ? forModel : rows.filter(r => !r.vehicle_model);
     const items = chosen.map(k => {
       const cat = k.part_id ? suggestions.find(x => x.part_id === k.part_id) : undefined;

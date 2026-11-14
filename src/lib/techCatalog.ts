@@ -72,14 +72,23 @@ const yearFits = (v: TechVehicle, year: number | null) =>
   year == null || ((v.year_from == null || v.year_from <= year) && (v.year_to == null || v.year_to >= year));
 
 /** Fichas cujo modelo bate com o texto (e com o ano, se informado) */
-export async function searchTechVehicles(model: string, year: number | null): Promise<TechVehicle[]> {
+export async function searchTechVehicles(model: string, year: number | null, make: string | null = null): Promise<TechVehicle[]> {
   const q = model.trim().replace(/[%_,()]/g, ' ');
-  if (!q) return [];
-  const { data } = await supabase.from('tech_vehicles').select('*').ilike('model', `%${q}%`).order('model').order('year_from').limit(60);
+  if (!q && !make) return [];
+  let qy = supabase.from('tech_vehicles').select('*');
+  if (make) qy = qy.eq('make', make);
+  if (q) qy = qy.ilike('model', `%${q}%`);
+  const { data } = await qy.order('make').order('model').order('year_from').limit(make && !q ? 300 : 60);
   const rows = (data as TechVehicle[] | null) ?? [];
   // Nome exato primeiro: "Onix" antes de "Onix Plus"
-  const exact = rows.filter(v => token(v.model) === token(q));
+  const exact = q ? rows.filter(v => token(v.model) === token(q)) : [];
   return (exact.length ? exact : rows).filter(v => yearFits(v, year));
+}
+
+/** Marcas que têm ficha no catálogo, em ordem alfabética */
+export async function loadTechMakes(): Promise<string[]> {
+  const { data } = await supabase.from('tech_vehicles').select('make').limit(5000);
+  return [...new Set(((data as { make: string }[] | null) ?? []).map(r => r.make).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
 /* ── Placa → carro ─────────────────────────────────────────────────────────── */
@@ -142,7 +151,7 @@ export function logLookup(workshopId: string, query: string, year: number | null
   supabase.from('tech_lookup_log').insert({ workshop_id: workshopId, query: q, year, vehicle_id: vehicleId }).then(() => { /* só registro */ });
 }
 
-type StockPart = Pick<WorkshopPart, 'id' | 'name' | 'code' | 'brand' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'category' | 'unit'>;
+type StockPart = Pick<WorkshopPart, 'id' | 'name' | 'code'>;
 
 /** Peças do estoque que servem como este fluido: o nome traz a viscosidade ("5W30", "5W-30") */
 export function partsForFluid<T extends StockPart>(parts: T[], s: Pick<FluidSpec, 'viscosity'>): T[] {
