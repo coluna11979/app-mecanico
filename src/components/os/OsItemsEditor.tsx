@@ -321,6 +321,15 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     const vp = sg.kind === 'labor' ? vehPrices.get(norm(sg.description)) : undefined;
     const price = vp ? moneyInput(vp.last) : sg.unit_price > 0 ? moneyInput(sg.unit_price) : '';
     if (sg.kind === 'labor') {
+      // Serviço que já entrou na abertura da OS (chip "Troca de óleo", sem valor ainda): o catálogo completa esse item
+      // em vez de criar outro, e as peças do kit entram nele
+      const nd = norm(sg.description);
+      const reuse = rows.find(r => r.kind === 'labor' && !r.standalone && !r.part_id && !(parseMoney(r.unit_price) > 0) && r.description.trim()
+        && (norm(r.description) === nd || nd.startsWith(norm(r.description) + ' ')));
+      if (reuse) {
+        setRows(rs => rs.map(r => r.key === reuse.key ? { ...r, description: sg.description, unit_price: r.unit_price || price } : r));
+        return reuse.key;
+      }
       const key = newKey();
       setRows(rs => [...rs, { key, kind: 'labor', description: sg.description, quantity: '1', unit_price: price, unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
       return key;
