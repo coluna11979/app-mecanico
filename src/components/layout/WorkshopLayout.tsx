@@ -1404,37 +1404,48 @@ type PaletteAction = {
   run: (q: string) => void;
 };
 
-/** Busca rápida: as consultas (preço, óleo e filtros) no topo, já com o texto digitado; depois as telas */
+/**
+ * Busca rápida: abre só com as três opções (Buscar tela, Consultar preço, Consulta de óleo e filtros).
+ * A lista de telas aparece só depois de escolher "Buscar tela"; o texto digitado segue junto.
+ */
 function CommandPalette({ items, actions, onGo, onClose }: {
   items: PaletteItem[]; actions: PaletteAction[]; onGo: (to: string) => void; onClose: () => void;
 }) {
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
+  const [mode, setMode] = useState<'menu' | 'telas'>('menu');
+  const input = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const text = q.trim();
   const screens = useMemo(() => {
-    const n = norm(q.trim());
+    const n = norm(text);
     if (!n) return items;
     return items
       .filter(i => norm(`${i.label} ${i.group}`).includes(n))
       .sort((a, b) => Number(!norm(a.label).startsWith(n)) - Number(!norm(b.label).startsWith(n)));
-  }, [q, items]);
-  const text = q.trim();
-  const total = actions.length + screens.length;
-  useEffect(() => { setIdx(0); }, [q]);
+  }, [text, items]);
+  const menu: PaletteAction[] = [
+    { key: 'telas', icon: 'grid', kbd: undefined, hint: 'Ir para qualquer tela do sistema',
+      label: t => t ? `Buscar tela “${t}”` : 'Buscar tela', run: () => { setMode('telas'); setIdx(0); input.current?.focus(); } },
+    ...actions,
+  ];
+  const total = mode === 'menu' ? menu.length : screens.length;
+  useEffect(() => { setIdx(0); }, [q, mode]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-idx="${idx}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [idx]);
 
   function pick(n: number) {
-    if (n < actions.length) actions[n].run(text);
-    else if (screens[n - actions.length]) onGo(screens[n - actions.length].to);
+    if (mode === 'menu') menu[n]?.run(text);
+    else if (screens[n]) onGo(screens[n].to);
   }
 
   function onKey(e: React.KeyboardEvent) {
     if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => Math.min(i + 1, total - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
     else if (e.key === 'Enter') { e.preventDefault(); pick(idx); }
-    else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+    else if (e.key === 'Escape') { e.preventDefault(); if (mode === 'telas') setMode('menu'); else onClose(); }
+    else if (e.key === 'Backspace' && !q && mode === 'telas') { e.preventDefault(); setMode('menu'); }
   }
 
   const row = (n: number, icon: IconName, label: string, right: ReactNode, sub?: string) => (
@@ -1457,28 +1468,28 @@ function CommandPalette({ items, actions, onGo, onClose }: {
       <div className="absolute inset-0 bg-steel-900/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
       <div className="relative mx-auto mt-[12vh] max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-steel-200 overflow-hidden animate-fade-in">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-steel-100">
-          <Icon name="search" size={18} className="text-steel-400 shrink-0" />
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
-            placeholder="Tela, peça, serviço, carro ou placa…"
+          {mode === 'telas' ? (
+            <button type="button" onClick={() => { setMode('menu'); input.current?.focus(); }} aria-label="Voltar às opções"
+              className="h-8 w-8 -ml-1 rounded-md grid place-items-center text-steel-500 hover:bg-steel-100 shrink-0">
+              <Chev className="rotate-90" />
+            </button>
+          ) : <Icon name="search" size={18} className="text-steel-400 shrink-0" />}
+          <input ref={input} autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
+            placeholder={mode === 'telas' ? 'Qual tela?' : 'Peça, serviço, carro, placa ou tela…'}
             className="flex-1 min-w-0 bg-transparent text-[15px] text-steel-900 placeholder:text-steel-400 outline-none" />
           <kbd className="font-mono text-[10px] text-steel-500 bg-steel-100 ring-1 ring-steel-200 rounded px-1.5 py-1">Esc</kbd>
         </div>
         <div ref={listRef} className="max-h-[55vh] overflow-y-auto py-1.5">
-          {actions.length > 0 && (
-            <>
-              <div className="px-4 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-steel-400">Consultar</div>
-              {actions.map((a, n) => row(n, a.icon, a.label(text),
-                a.kbd ? <kbd className="font-mono text-[10px] text-steel-400 shrink-0">{a.kbd}</kbd> : null, a.hint))}
-            </>
-          )}
-          <div className="px-4 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-steel-400">Telas</div>
-          {screens.length === 0 ? (
-            <div className="px-4 py-4 text-sm text-steel-500">Nenhuma tela com “{text}”.</div>
-          ) : screens.map((i, k) => row(actions.length + k, i.icon, i.label,
-            i.group ? <span className="text-xs text-steel-400 shrink-0">{i.group}</span> : null))}
+          {mode === 'menu'
+            ? menu.map((a, n) => row(n, a.icon, a.label(text),
+                a.kbd ? <kbd className="font-mono text-[10px] text-steel-400 shrink-0">{a.kbd}</kbd> : null, a.hint))
+            : screens.length === 0
+              ? <div className="px-4 py-6 text-center text-sm text-steel-500">Nenhuma tela com “{text}”.</div>
+              : screens.map((i, n) => row(n, i.icon, i.label,
+                  i.group ? <span className="text-xs text-steel-400 shrink-0">{i.group}</span> : null))}
         </div>
         <div className="flex items-center gap-4 px-4 h-9 border-t border-steel-100 bg-steel-50/70 font-mono text-[10.5px] text-steel-400">
-          <span>↑ ↓ navegar</span><span>↵ abrir</span><span>esc fechar</span>
+          <span>↑ ↓ navegar</span><span>↵ abrir</span><span>{mode === 'telas' ? 'esc voltar' : 'esc fechar'}</span>
         </div>
       </div>
     </div>
