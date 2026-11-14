@@ -69,6 +69,7 @@ const SECTIONS: NavGroup[] = [
   { key: 'estoque', title: 'Estoque e compras', items: [
     { to: '/oficina/pecas/painel', icon: '📦', label: 'Painel do estoque' },
     { to: '/oficina/pecas',      icon: '🔩', label: 'Peças'                },
+    { to: '/oficina/consulta',   icon: '🛢️', label: 'Consulta de óleo e filtros' },
     { to: '/oficina/compras',    icon: '🧾', label: 'Compras'              },
     { to: '/oficina/fornecedores', icon: '🚚', label: 'Fornecedores'       },
   ] },
@@ -553,6 +554,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           roles: OperatorRole[]; permissions: OperatorPerm[];
           perm_roles: Parameters<typeof permsForRole>[1];
         };
+        let entered = false;
         if (self && self.workshop_id === shopId) {
           const role = ROLE_ORDER.find(r => self.roles.includes(r)) ?? self.roles[0];
           if (role) {
@@ -563,7 +565,19 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 session_id: r.session_id, operator_id: self.operator_id, name: self.name,
                 role, permissions: permsForRole(self.permissions ?? [], self.perm_roles, role),
               });
+              entered = true;
             }
+          }
+        }
+        // Falha fechada: quem NÃO é dono da oficina e não entrou como operador (acesso desativado,
+        // sem função, erro ao abrir a sessão) nunca pode cair no painel do gestor.
+        if (!entered && !cancelled && user) {
+          const { data: mem } = await supabase.from('workshop_members')
+            .select('role').eq('workshop_id', shopId).eq('profile_id', user.id).maybeSingle();
+          if (mem && mem.role !== 'owner') {
+            toast.error('Seu acesso à equipe está desativado ou sem função. Fale com o gestor.');
+            op.clear(); await signOut(); nav('/equipe', { replace: true });
+            return;
           }
         }
       } catch { /* sem conexão: segue como dono/visitante normal */ }
