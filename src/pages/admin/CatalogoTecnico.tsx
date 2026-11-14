@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { VEHICLE_MAKES } from '@/lib/vehicleCatalog';
 import {
-  FILTER_KINDS, SYSTEMS, token, vehicleDetail, vehicleName,
+  filterLabel, SYSTEMS, token, vehicleDetail, vehicleName,
   type FilterRef, type FluidSpec, type TechStatus, type TechVehicle,
 } from '@/lib/techCatalog';
 
@@ -40,7 +40,8 @@ export default function AdminCatalogoTecnico() {
   /** Texto pesquisável de cada ficha: viscosidade e códigos de filtro (a busca acha por "WO340" ou "5W30") */
   const [blobs, setBlobs] = useState<Record<string, string>>({});
   const [hasOil, setHasOil] = useState<Set<string>>(new Set());
-  const [fMake, setFMake] = useState('');
+  /** '_none' = nenhuma marca escolhida: a lista fica escondida até buscar ou filtrar; '' = todas as marcas */
+  const [fMake, setFMake] = useState('_none');
   const [fModel, setFModel] = useState('');
   const [fStatus, setFStatus] = useState('');
   const [fFuel, setFFuel] = useState('');
@@ -82,17 +83,18 @@ export default function AdminCatalogoTecnico() {
   useEffect(() => { load(); }, []);
 
   const makes = useMemo(() => [...new Set(vehicles.map(v => v.make))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [vehicles]);
-  const models = useMemo(() => [...new Set(vehicles.filter(v => !fMake || v.make === fMake).map(v => v.model))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [vehicles, fMake]);
+  const models = useMemo(() => [...new Set(vehicles.filter(v => !fMake || fMake === '_none' || v.make === fMake).map(v => v.model))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [vehicles, fMake]);
   const fuels = useMemo(() => [...new Set(vehicles.map(v => v.fuel).filter((x): x is string => !!x))].sort(), [vehicles]);
-  const filtersOn = !!(q || fMake || fModel || fStatus || fFuel || fYear);
-  const clearFilters = () => { setQ(''); setFMake(''); setFModel(''); setFStatus(''); setFFuel(''); setFYear(''); };
+  const filtersOn = !!(q || fMake !== '_none' || fModel || fStatus || fFuel || fYear);
+  const showList = filtersOn;
+  const clearFilters = () => { setQ(''); setFMake('_none'); setFModel(''); setFStatus(''); setFFuel(''); setFYear(''); };
 
   const shown = useMemo(() => {
     const t = token(q);
     const y = fYear.trim() ? Number(fYear) : null;
     return vehicles.filter(v => {
       const c = counts[v.id] ?? { ok: 0, draft: 0 };
-      if (fMake && v.make !== fMake) return false;
+      if (fMake && fMake !== '_none' && v.make !== fMake) return false;
       if (fModel && v.model !== fModel) return false;
       if (fFuel && (fFuel === '_none' ? v.fuel : v.fuel !== fFuel)) return false;
       if (y != null && !((v.year_from == null || v.year_from <= y) && (v.year_to == null || v.year_to >= y))) return false;
@@ -171,7 +173,7 @@ export default function AdminCatalogoTecnico() {
                 <input className="input" placeholder="Buscar por marca, modelo, motor, viscosidade (5W30) ou código de filtro (WO340)…" value={q} onChange={e => setQ(e.target.value)} />
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                   <select className="input !py-1.5 text-sm" value={fMake} onChange={e => { setFMake(e.target.value); setFModel(''); }} aria-label="Marca">
-                    <option value="">Todas as marcas</option>{makes.map(m => <option key={m} value={m}>{m}</option>)}
+                    <option value="_none">Nenhum</option><option value="">Todas as marcas</option>{makes.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <select className="input !py-1.5 text-sm" value={fModel} onChange={e => setFModel(e.target.value)} aria-label="Modelo">
                     <option value="">Todos os modelos</option>{models.map(m => <option key={m} value={m}>{m}</option>)}
@@ -190,10 +192,11 @@ export default function AdminCatalogoTecnico() {
                   <input className="input !py-1.5 text-sm" inputMode="numeric" placeholder="Ano do carro" value={fYear} onChange={e => setFYear(e.target.value.replace(/\D/g, '').slice(0, 4))} aria-label="Ano" />
                 </div>
                 <div className="flex items-center justify-between text-xs text-steel-500">
-                  <span>{shown.length} de {vehicles.length} fichas</span>
+                  <span>{showList ? `${shown.length} de ${vehicles.length} fichas` : `${vehicles.length} fichas no catálogo`}</span>
                   {filtersOn && <button onClick={clearFilters} className="font-semibold text-brand-600 hover:underline">Limpar filtros</button>}
                 </div>
-                <div className="card !p-0 overflow-x-auto">
+                {!showList && <div className="card text-sm text-steel-500">Busque por um carro, código ou viscosidade, ou escolha uma marca (ou "Todas as marcas") para ver as fichas.</div>}
+                <div className={`card !p-0 overflow-x-auto ${showList ? '' : 'hidden'}`}>
                   <table className="w-full text-sm">
                     <thead className="bg-steel-50 border-b border-steel-100 text-[10px] uppercase tracking-wider text-steel-500">
                       <tr><th className="text-left px-4 py-2">Carro</th><th className="text-left px-4 py-2">Versão</th><th className="text-left px-4 py-2">Situação</th><th /></tr>
@@ -313,6 +316,20 @@ function Editor({ draft, onClose, onSaved, onDeleted, onChanged }: {
   const [fluids, setFluids] = useState<FluidSpec[]>([]);
   const [filters, setFilters] = useState<FilterRef[]>([]);
   const id = draft.id;
+  const [tab, setTab] = useState('motor');
+  const tabs: EditorTab[] = [
+    { key: 'motor', label: 'Óleo do motor', table: 'tech_fluid_specs', rows: fluids.filter(r => r.system === 'motor'),
+      fixed: { system: 'motor' }, fields: fluidFields(null), blank: { ...BLANK_FLUID, system: 'motor' } },
+    { key: 'cambio', label: 'Câmbio', table: 'tech_fluid_specs', rows: fluids.filter(r => r.system === 'cambio'),
+      fixed: { system: 'cambio' }, fields: fluidFields(null), blank: { ...BLANK_FLUID, system: 'cambio' } },
+    ...FILTER_ORDER.map(kind => ({
+      key: kind, label: filterLabel(kind), table: 'tech_filter_refs' as const, rows: filters.filter(r => r.kind === kind),
+      fixed: { kind }, fields: FILTER_FIELDS, blank: { ...BLANK_FILTER, kind },
+    })),
+    { key: 'outros', label: 'Outros fluidos', table: 'tech_fluid_specs', rows: fluids.filter(r => r.system !== 'motor' && r.system !== 'cambio'),
+      fixed: {}, fields: fluidFields(SYSTEMS.filter(s => s.value !== 'motor' && s.value !== 'cambio')), blank: { ...BLANK_FLUID, system: 'diferencial' } },
+  ];
+  const cur = tabs.find(t => t.key === tab) ?? tabs[0];
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
 
   async function loadLines() {
@@ -382,27 +399,15 @@ function Editor({ draft, onClose, onSaved, onDeleted, onChanged }: {
 
       {id ? (
         <>
-          <Lines title="Fluidos" table="tech_fluid_specs" vehicleId={id} rows={fluids} onChanged={changed}
-            blank={{ system: 'motor', viscosity: '', spec: '', capacity_liters: '', interval_km: '', interval_months: '', notes: '', source_url: '' }}
-            fields={[
-              { key: 'system', label: 'Sistema', options: SYSTEMS },
-              { key: 'viscosity', label: 'Viscosidade', placeholder: '5W30' },
-              { key: 'spec', label: 'Norma', placeholder: 'API SL / Dexos 1' },
-              { key: 'capacity_liters', label: 'Litros', numeric: true, placeholder: '4,5' },
-              { key: 'interval_km', label: 'Troca (km)', numeric: true, placeholder: '10000' },
-              { key: 'interval_months', label: 'Troca (meses)', numeric: true, placeholder: '12' },
-              { key: 'notes', label: 'Observação', wide: true },
-              { key: 'source_url', label: 'Fonte (link do manual)', wide: true, placeholder: 'https://…' },
-            ]} />
-          <Lines title="Filtros" table="tech_filter_refs" vehicleId={id} rows={filters} onChanged={changed}
-            blank={{ kind: 'oleo', brand: '', code: '', notes: '', source_url: '' }}
-            fields={[
-              { key: 'kind', label: 'Tipo', options: FILTER_KINDS },
-              { key: 'brand', label: 'Marca', placeholder: 'Tecfil', required: true },
-              { key: 'code', label: 'Código', placeholder: 'PSL 55', required: true },
-              { key: 'notes', label: 'Observação', wide: true },
-              { key: 'source_url', label: 'Fonte (catálogo do fabricante)', wide: true, placeholder: 'https://…' },
-            ]} />
+          <div role="tablist" className="flex gap-5 border-b border-steel-200 overflow-x-auto">
+            {tabs.map(t => (
+              <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
+                className={`text-xs font-bold uppercase tracking-wide whitespace-nowrap py-2 border-b-2 -mb-px transition ${tab === t.key ? 'border-brand-500 text-brand-600' : 'border-transparent text-steel-700 hover:text-steel-900'}`}>
+                {t.label} <span className="font-normal text-steel-400">({t.rows.length})</span>
+              </button>
+            ))}
+          </div>
+          <Lines key={cur.key} table={cur.table} vehicleId={id} rows={cur.rows} fields={cur.fields} blank={cur.blank} fixed={cur.fixed} onChanged={changed} />
         </>
       ) : (
         <p className="text-sm text-steel-500">Crie a ficha para lançar os fluidos e os filtros.</p>
@@ -411,50 +416,62 @@ function Editor({ draft, onClose, onSaved, onDeleted, onChanged }: {
   );
 }
 
+/** Aba do cadastro: cada uma lança só o seu tipo (o tipo fica fixo e não aparece no formulário) */
+type EditorTab = {
+  key: string; label: string; table: 'tech_fluid_specs' | 'tech_filter_refs'; rows: (FluidSpec | FilterRef)[];
+  fixed: Record<string, string>; fields: Field[]; blank: Record<string, string>;
+};
+const FILTER_ORDER = ['oleo', 'ar', 'cabine', 'combustivel'] as const;
+const BLANK_FLUID = { system: 'motor', viscosity: '', spec: '', capacity_liters: '', interval_km: '', interval_months: '', notes: '', source_url: '' };
+const BLANK_FILTER = { kind: 'oleo', brand: '', code: '', notes: '', source_url: '' };
+const fluidFields = (systemOptions: readonly { value: string; label: string }[] | null): Field[] => [
+  ...(systemOptions ? [{ key: 'system', label: 'Sistema', options: systemOptions }] : []),
+  { key: 'viscosity', label: 'Viscosidade', placeholder: '5W30' },
+  { key: 'spec', label: 'Norma', placeholder: 'API SL / Dexos 1' },
+  { key: 'capacity_liters', label: 'Litros', numeric: true, placeholder: '4,5' },
+  { key: 'interval_km', label: 'Troca (km)', numeric: true, placeholder: '10000' },
+  { key: 'interval_months', label: 'Troca (meses)', numeric: true, placeholder: '12' },
+  { key: 'notes', label: 'Observação', wide: true },
+  { key: 'source_url', label: 'Fonte (link do manual)', wide: true, placeholder: 'https://…' },
+];
+const FILTER_FIELDS: Field[] = [
+  { key: 'brand', label: 'Marca', placeholder: 'Tecfil', required: true },
+  { key: 'code', label: 'Código', placeholder: 'PSL 55', required: true },
+  { key: 'notes', label: 'Observação', wide: true },
+  { key: 'source_url', label: 'Fonte (catálogo do fabricante)', wide: true, placeholder: 'https://…' },
+];
+
 type Field = {
   key: string; label: string; placeholder?: string; numeric?: boolean; wide?: boolean; required?: boolean;
   options?: readonly { value: string; label: string }[];
 };
 type LineRow = { id: string; status: TechStatus } & Record<string, unknown>;
 
-function Lines({ title, table, vehicleId, rows, fields, blank, onChanged }: {
-  title: string; table: 'tech_fluid_specs' | 'tech_filter_refs'; vehicleId: string;
-  rows: (FluidSpec | FilterRef)[]; fields: Field[]; blank: Record<string, string>; onChanged: () => void;
+function Lines({ table, vehicleId, rows, fields, blank, fixed, onChanged }: {
+  table: 'tech_fluid_specs' | 'tech_filter_refs'; vehicleId: string;
+  rows: (FluidSpec | FilterRef)[]; fields: Field[]; blank: Record<string, string>; fixed: Record<string, string>; onChanged: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold">{title}</h3>
+      <div className="flex justify-end">
         <button onClick={() => setAdding(true)} className="text-sm font-semibold text-brand-600 hover:underline">+ Adicionar</button>
       </div>
-      {rows.length === 0 && !adding && <p className="text-sm text-steel-500">Nada lançado.</p>}
-      {/* Agrupado pelo tipo (Filtro de óleo, Filtro de ar…), para ver de relance o que é cada código */}
-      {(() => {
-        const typeField = fields[0];
-        const groups = (typeField.options ?? []).map(o => ({
-          label: o.label, rows: rows.filter(r => (r as unknown as Record<string, unknown>)[typeField.key] === o.value),
-        })).filter(g => g.rows.length > 0);
-        return groups.map(g => (
-          <div key={g.label} className="space-y-2">
-            <div className="text-xs font-bold uppercase tracking-widest text-steel-500 pt-1">{g.label} ({g.rows.length})</div>
-            {g.rows.map(r => (
-              <Line key={r.id} table={table} vehicleId={vehicleId} row={r as unknown as LineRow} fields={fields} blank={blank} onChanged={onChanged} />
-            ))}
-          </div>
-        ));
-      })()}
+      {rows.length === 0 && !adding && <p className="text-sm text-steel-500">Nada lançado nesta aba.</p>}
+      {rows.map(r => (
+        <Line key={r.id} table={table} vehicleId={vehicleId} row={r as unknown as LineRow} fields={fields} blank={blank} fixed={fixed} onChanged={onChanged} />
+      ))}
       {adding && (
-        <Line table={table} vehicleId={vehicleId} row={null} fields={fields} blank={blank}
+        <Line table={table} vehicleId={vehicleId} row={null} fields={fields} blank={blank} fixed={fixed}
           onChanged={() => { setAdding(false); onChanged(); }} onCancel={() => setAdding(false)} />
       )}
     </div>
   );
 }
 
-function Line({ table, vehicleId, row, fields, blank, onChanged, onCancel }: {
+function Line({ table, vehicleId, row, fields, blank, fixed, onChanged, onCancel }: {
   table: 'tech_fluid_specs' | 'tech_filter_refs'; vehicleId: string; row: LineRow | null;
-  fields: Field[]; blank: Record<string, string>; onChanged: () => void; onCancel?: () => void;
+  fields: Field[]; blank: Record<string, string>; fixed: Record<string, string>; onChanged: () => void; onCancel?: () => void;
 }) {
   const { user } = useAuth();
   const initial = useMemo(() => Object.fromEntries(Object.keys(blank).map(k => {
@@ -477,7 +494,7 @@ function Line({ table, vehicleId, row, fields, blank, onChanged, onCancel }: {
     // Mexeu no conteúdo de uma linha aprovada → volta para rascunho até conferir de novo
     const res = row
       ? await supabase.from(table).update({ ...payload(), status: 'rascunho', verified_by: null, verified_at: null }).eq('id', row.id)
-      : await supabase.from(table).insert({ ...payload(), vehicle_id: vehicleId });
+      : await supabase.from(table).insert({ ...payload(), ...fixed, vehicle_id: vehicleId });
     setBusy(false);
     if (res.error) { toast.error('Não foi possível salvar: ' + res.error.message); return; }
     onChanged();
@@ -520,7 +537,7 @@ function Line({ table, vehicleId, row, fields, blank, onChanged, onCancel }: {
           </div>
         ))}
       </div>
-      {row && f[fields[0].key] !== initial[fields[0].key] && (
+      {row && fields[0].options && f[fields[0].key] !== initial[fields[0].key] && (
         <p className="text-xs text-pending-700 bg-pending-100/60 rounded-lg px-2.5 py-1.5">
           Você mudou o tipo, mas o código e a observação não mudam sozinhos. Confira se o código é mesmo desse tipo antes de salvar.
         </p>
