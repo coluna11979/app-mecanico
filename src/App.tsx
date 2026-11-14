@@ -53,6 +53,8 @@ import WorkshopAcessos from './pages/oficina/Acessos';
 import WorkshopCaixa from './pages/oficina/Caixa';
 import WorkshopFinanceiro from './pages/oficina/Financeiro';
 import WorkshopPecas from './pages/oficina/Pecas';
+import WorkshopConsultaTecnica from './pages/oficina/ConsultaTecnica';
+import AdminCatalogoTecnico from './pages/admin/CatalogoTecnico';
 import WorkshopEstoquePainel from './pages/oficina/EstoquePainel';
 import WorkshopEstoqueContagem from './pages/oficina/EstoqueContagem';
 import WorkshopServicos from './pages/oficina/Servicos';
@@ -185,6 +187,7 @@ export default function App() {
       <Route path="/oficina/pecas" element={<ProtectedRoute allow={['workshop']}><WorkshopPecas /></ProtectedRoute>} />
       <Route path="/oficina/pecas/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopEstoquePainel /></ProtectedRoute>} />
       <Route path="/oficina/pecas/contagem" element={<ProtectedRoute allow={['workshop']}><WorkshopEstoqueContagem /></ProtectedRoute>} />
+      <Route path="/oficina/consulta" element={<ProtectedRoute allow={['workshop']}><WorkshopConsultaTecnica /></ProtectedRoute>} />
       <Route path="/oficina/servicos" element={<ProtectedRoute allow={['workshop']}><WorkshopServicos /></ProtectedRoute>} />
       <Route path="/oficina/agenda" element={<ProtectedRoute allow={['workshop']}><WorkshopAgenda /></ProtectedRoute>} />
       <Route path="/oficina/comercial" element={<ProtectedRoute allow={['workshop']}><WorkshopComercial /></ProtectedRoute>} />
@@ -237,6 +240,7 @@ export default function App() {
       <Route path="/admin/mecanicos" element={<ProtectedRoute allow={['admin']}><AdminMechanics /></ProtectedRoute>} />
       <Route path="/admin/oficinas" element={<ProtectedRoute allow={['admin']}><AdminWorkshops /></ProtectedRoute>} />
       <Route path="/admin/modulos" element={<ProtectedRoute allow={['admin']}><AdminModulos /></ProtectedRoute>} />
+      <Route path="/admin/catalogo-tecnico" element={<ProtectedRoute allow={['admin']}><AdminCatalogoTecnico /></ProtectedRoute>} />
       <Route path="/admin/agentes" element={<ProtectedRoute allow={['admin']}><AdminAgentes /></ProtectedRoute>} />
       <Route path="/admin/marketing" element={<ProtectedRoute allow={['admin']}><AdminMarketing /></ProtectedRoute>} />
       <Route path="/admin/kit-marca" element={<ProtectedRoute allow={['admin']}><AdminKitMarca /></ProtectedRoute>} />

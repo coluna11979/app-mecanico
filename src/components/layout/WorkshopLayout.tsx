@@ -68,6 +68,7 @@ const SECTIONS: NavGroup[] = [
   { key: 'estoque', title: 'Estoque e compras', items: [
     { to: '/oficina/pecas/painel', icon: '📦', label: 'Painel do estoque' },
     { to: '/oficina/pecas',      icon: '🔩', label: 'Peças'                },
+    { to: '/oficina/consulta',   icon: '🛢️', label: 'Consulta de óleo e filtros' },
     { to: '/oficina/compras',    icon: '🧾', label: 'Compras'              },
     { to: '/oficina/fornecedores', icon: '🚚', label: 'Fornecedores'       },
   ] },
