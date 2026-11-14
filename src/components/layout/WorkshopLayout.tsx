@@ -585,6 +585,21 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
     })();
     return () => { cancelled = true; };
   }, [shopId, op.remote]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Conta de colaborador (criada pelo Acesso equipe) que ficou sem oficina — acesso removido ou
+  // desativado pelo gestor: não existe painel para ela. Sai e volta para a tela de equipe.
+  const isTeamAccount = !!user?.user_metadata?.is_team_operator;
+  useEffect(() => {
+    if (!user || !isTeamAccount || shopId || workshops.length > 0) return;
+    let cancelled = false;
+    // As oficinas carregam um instante depois do perfil: confirma no banco antes de tirar a pessoa
+    const t = setTimeout(async () => {
+      const { data, error } = await supabase.from('workshop_members').select('workshop_id').eq('profile_id', user.id).limit(1);
+      if (cancelled || error || (data?.length ?? 0) > 0) return;
+      toast.error('Seu acesso à equipe foi desativado. Fale com o gestor.');
+      op.clear(); signOut().finally(() => nav('/equipe', { replace: true }));
+    }, 1500);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [user?.id, isTeamAccount, shopId, workshops.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const role = op.balcao ? op.session?.role ?? null : null;
   const isMechanicSession = role === 'mecanico';
   // Módulos liberados para a oficina (superadmin) valem para todos, inclusive o gestor
@@ -667,6 +682,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
 
   // Loja acabou de mudar e o modo balcão ainda não carregou a trava dela: não mostra nada
   if (shopId && op.wid !== shopId) return null;
+  // Colaborador sem oficina: nunca desenha o menu do gestor (a saída acontece no efeito acima)
+  if (isTeamAccount && !shopId) return null;
   // Ainda verificando se é um operador (login remoto): evita o flash do painel do gestor
   if (shopId && !op.remote && !remoteChecked) {
     return (
