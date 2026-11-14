@@ -92,6 +92,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   const [mechId, setMechId]     = useState(preset?.mechanicId ?? '');
   const [platform, setPlatform] = useState(false); // mecânico de fora, chamado pela plataforma
   const [km, setKm]             = useState('');
+  /** Média de km que o carro roda por mês (vai para o cadastro do carro; avisa da próxima troca) */
+  const [monthlyKm, setMonthlyKm] = useState('');
   const [schedule, setSchedule] = useState(!!preset?.schedule);
   const [when, setWhen]         = useState(preset?.when ?? '');
   const [saving, setSaving]     = useState(false);
@@ -194,7 +196,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
 
   // Ao escolher o carro: recomendações pendentes e último KM
   useEffect(() => {
-    if (!picked) { setRecs([]); setLastKm(null); return; }
+    if (!picked) { setRecs([]); setLastKm(null); setMonthlyKm(''); return; }
+    setMonthlyKm(picked.vehicle?.monthly_km ? String(picked.vehicle.monthly_km) : '');
     supabase.from('service_recommendations').select('*')
       .eq('customer_id', picked.customer.id).eq('status', 'pending').order('recommended_at', { ascending: false })
       .then(({ data }) => setRecs((data as ServiceRecommendation[]) ?? []));
@@ -293,6 +296,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
       }
 
       // Veículo
+      const monthlyKmNum = monthlyKm ? Math.min(20000, parseInt(digits(monthlyKm), 10) || 0) || null : null;
       let vehicleId = newCar ? null : picked?.vehicle?.id ?? null;
       if (newCar && (car.plate.trim() || car.make.trim())) {
         const { data, error } = await supabase.from('vehicles').insert({
@@ -301,9 +305,15 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
           make: car.make.trim() || 'Não informado',
           model: car.model.trim() || 'Não informado',
           year: car.year ? parseInt(car.year, 10) || null : null,
+          ...(monthlyKmNum ? { monthly_km: monthlyKmNum } : {}),
         }).select('id').single();
         if (error) throw error;
         vehicleId = data.id;
+      }
+
+      // Carro já cadastrado: guarda a média de km/mês (não trava a OS se não salvar)
+      if (vehicleId && !newCar && monthlyKmNum && monthlyKmNum !== picked?.vehicle?.monthly_km) {
+        await supabase.from('vehicles').update({ monthly_km: monthlyKmNum }).eq('id', vehicleId);
       }
 
       // OS
@@ -464,6 +474,24 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
                 )}
               </div>
             )}
+            {/* KM do carro: hoje e quanto roda por mês (a média avisa da próxima troca) */}
+            {(picked || newCar) && (
+              <div className="mt-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="label">KM hoje</label>
+                    <input className="input" inputMode="numeric" value={km} onChange={e => setKm(e.target.value)}
+                      placeholder={lastKm != null && !newCar ? `último: ${lastKm.toLocaleString('pt-BR')}` : 'Ex.: 85000'} />
+                  </div>
+                  <div>
+                    <label className="label">Média de km por mês</label>
+                    <input className="input" inputMode="numeric" value={monthlyKm} onChange={e => setMonthlyKm(digits(e.target.value).slice(0, 5))}
+                      placeholder="Ex.: 1000" />
+                  </div>
+                </div>
+                <p className="mt-1.5 text-[11px] text-steel-500">Com a média, o sistema avisa quando o carro estiver perto da próxima troca de óleo.</p>
+              </div>
+            )}
           </section>
 
           {/* ── 2. Serviços ── */}
@@ -590,12 +618,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
 
           {/* ── 4. KM e quando ── */}
           <section className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">KM hoje</label>
-              <input className="input" inputMode="numeric" value={km} onChange={e => setKm(e.target.value)}
-                placeholder={lastKm != null ? `último: ${lastKm.toLocaleString('pt-BR')}` : 'Ex.: 85000'} />
-            </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="label">Quando</label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setSchedule(false)}

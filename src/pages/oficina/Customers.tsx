@@ -12,7 +12,7 @@ import NewOsModal, { type NewOsPreset } from '@/components/os/NewOsModal';
 import { Icon } from '@/components/home/ui';
 import { onlyDigits, plateNorm, timeAgo } from '@/lib/customers';
 import {
-  SEGMENTS, baseInsights, callReason, reasonLabel, serviceDueDays, serviceDueSoon, staleQuote,
+  SEGMENTS, baseInsights, callReason, reasonLabel, serviceDueDays, serviceDueSoon, staleQuote, vehicleUsage,
   type CallReason, type CustomerInsight, type InsOs, type InsRec,
 } from '@/lib/customerInsights';
 import { PRESETS, rangeOf, type Preset } from '@/components/PeriodPicker';
@@ -23,7 +23,7 @@ type Base = {
   id: string; full_name: string; phone: string | null; cpf: string | null; created_at: string;
   contact_opt_out: boolean | null; last_contacted_at: string | null;
 };
-type Veh = { id: string; customer_id: string; plate: string; make: string | null; model: string | null };
+type Veh = { id: string; customer_id: string; plate: string; make: string | null; model: string | null; monthly_km?: number | null };
 type Sale = { d: string; price: number };
 type Row = Base & {
   plates: string[]; car: string | null; vehicleId: string | null; lastService: string | null;
@@ -74,6 +74,12 @@ const CONTACT_PAUSE_DAYS = 30;
 const hasPhone = (p: string | null) => onlyDigits(p).length >= 10;
 const contactedRecently = (iso: string | null, now = Date.now()) => !!iso && now - new Date(iso).getTime() < CONTACT_PAUSE_DAYS * DAY;
 
+/** Dias até a próxima troca: usa o km/mês de cada carro (histórico ou o informado na OS); sem isso, só o prazo */
+function nextServiceDays(i: Parameters<typeof serviceDueDays>[0], os: InsOs[], cars: Veh[], now: number): number | null {
+  const byKm = cars.map(c => vehicleUsage(os, c.id, now, c.monthly_km).nextOilDays).filter((d): d is number => d != null);
+  return byKm.length ? Math.min(...byKm) : serviceDueDays(i, now);
+}
+
 export default function Customers() {
   const { currentWorkshop } = useAuth();
   const shop = currentWorkshop;
@@ -107,9 +113,9 @@ export default function Customers() {
         fetchAll<Base>((a, b) => supabase.from('customers')
           .select('id, full_name, phone, cpf, created_at, contact_opt_out, last_contacted_at').eq('workshop_id', shop.id).order('id').range(a, b)),
         fetchAll<Veh>((a, b) => supabase.from('vehicles')
-          .select('id, customer_id, plate, make, model').eq('workshop_id', shop.id).order('id').range(a, b)),
+          .select('id, customer_id, plate, make, model, monthly_km').eq('workshop_id', shop.id).order('id').range(a, b)),
         fetchAll<InsOs>((a, b) => supabase.from('service_orders')
-          .select('id, customer_id, vehicle_id, category, status, quote_status, price, created_at, completed_at, rework_of_id, approval_requested_at, title')
+          .select('id, customer_id, vehicle_id, category, status, quote_status, price, created_at, completed_at, rework_of_id, approval_requested_at, title, km_reading')
           .eq('workshop_id', shop.id).order('id').range(a, b)),
         fetchAll<InsRec>((a, b) => supabase.from('service_recommendations')
           .select('id, customer_id, vehicle_id, description, recommended_at').eq('workshop_id', shop.id).eq('status', 'pending').order('id').range(a, b)),
@@ -138,7 +144,8 @@ export default function Customers() {
           lastService: lastSale?.title ?? null, ins: i, sales,
           reason: callReason(i, list, now),
           quoteStale: !!staleQuote(list, now),
-          serviceSoon: serviceDueSoon(serviceDueDays(i, now)),
+          // Próxima troca: a mais próxima entre os carros do cliente (pelo km/mês, cai no prazo de 6 meses sem dados)
+          serviceSoon: serviceDueSoon(nextServiceDays(i, list, vehBy.get(x.id) ?? [], now)),
         };
       }));
       setLoading(false);

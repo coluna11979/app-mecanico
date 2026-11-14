@@ -307,7 +307,7 @@ export default function ClienteFicha() {
                 <div className="space-y-3">
                   {vehicles.map(v => {
                     const count = os.filter(o => o.vehicle_id === v.id).length;
-                    const u = vehicleUsage(os, v.id);
+                    const u = vehicleUsage(os, v.id, Date.now(), v.monthly_km);
                     const age = v.year ? new Date().getFullYear() - v.year : null;
                     return (
                       <div key={v.id} className="rounded-xl border border-steel-100 p-3">

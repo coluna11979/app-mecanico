@@ -272,6 +272,8 @@ export interface Customer {
 }
 
 export interface Vehicle {
+  /** Média de km rodados por mês, informada pelo cliente (opcional) */
+  monthly_km?: number | null;
   id: string;
   customer_id: string;
   workshop_id: string;

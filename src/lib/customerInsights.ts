@@ -193,8 +193,10 @@ export function habits(os: InsOs[]) {
   };
 }
 
-/** Km por mês, km estimado hoje e próxima troca de óleo de um carro */
-export function vehicleUsage(os: InsOs[], vehicleId: string, now = Date.now()) {
+/** Km por mês, km estimado hoje e próxima troca de óleo de um carro.
+ *  `informedKmPerMonth` = a média que o cliente contou na abertura da OS: só vale quando o histórico
+ *  ainda não dá para calcular (menos de 2 leituras de km, ou com menos de 1 mês entre elas). */
+export function vehicleUsage(os: InsOs[], vehicleId: string, now = Date.now(), informedKmPerMonth?: number | null) {
   const withKm = os.filter(o => o.vehicle_id === vehicleId && o.km_reading != null && o.km_reading > 0)
     .sort((a, b) => when(a).localeCompare(when(b)));
   const last = withKm[withKm.length - 1];
@@ -205,6 +207,8 @@ export function vehicleUsage(os: InsOs[], vehicleId: string, now = Date.now()) {
     const dkm = Number(last.km_reading) - Number(first.km_reading);
     if (months >= 1 && dkm > 0) kmPerMonth = Math.round(dkm / months);
   }
+  const informed = informedKmPerMonth && informedKmPerMonth > 0 ? Math.round(informedKmPerMonth) : null;
+  if (!kmPerMonth && informed) kmPerMonth = informed;
   const lastKm = last ? Number(last.km_reading) : null;
   const estKm = lastKm != null && kmPerMonth ? Math.round(lastKm + kmPerMonth * ((now - new Date(when(last)).getTime()) / (30 * DAY))) : lastKm;
 
