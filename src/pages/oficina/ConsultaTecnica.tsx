@@ -9,7 +9,7 @@ import { vehicleYears } from '@/lib/vehicleCatalog';
 import { DEFAULT_MARGIN, fmtQty, loadAllParts, loadMargins, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import {
-  filterLabel, fmtInterval, fmtLiters, loadSheet, logLookup, lookupPlate, matchTechVehicles, partsForFilter, partsForFluid,
+  filterLabel, fmtInterval, fmtLiters, loadSheet, loadTechMakes, logLookup, lookupPlate, matchTechVehicles, partsForFilter, partsForFluid,
   plateCarName, searchTechVehicles, systemLabel, vehicleDetail, vehicleName, FILTER_KINDS, PLATE_RE,
   type FilterRef, type FluidSpec, type TechVehicle,
 } from '@/lib/techCatalog';
@@ -29,6 +29,9 @@ export default function ConsultaTecnica() {
   const sheetId = params.get('ficha');
 
   const [model, setModel] = useState('');
+  const [make, setMake] = useState('');
+  const [makes, setMakes] = useState<string[]>([]);
+  useEffect(() => { loadTechMakes().then(setMakes); }, []);
   const [year, setYear] = useState('');
   const [results, setResults] = useState<TechVehicle[] | null>(null);
   const [searched, setSearched] = useState('');
@@ -43,15 +46,15 @@ export default function ConsultaTecnica() {
   const hints = showHints ? searchModels(model) : [];
 
   async function run(m: string, y: string) {
-    if (!wid || !m.trim()) return;
+    if (!wid || (!m.trim() && !make)) return;
     setSearching(true);
     setShowHints(false);
     const yr = y ? Number(y) : null;
-    const rows = await searchTechVehicles(m, yr);
+    const rows = await searchTechVehicles(m, yr, make || null);
     setResults(rows);
-    setSearched(m.trim());
+    setSearched([make, m.trim()].filter(Boolean).join(' '));
     setSearching(false);
-    if (rows.length === 0) logLookup(wid, m, yr, null);
+    if (rows.length === 0) logLookup(wid, [make, m].filter(Boolean).join(' '), yr, null);
     if (rows.length === 1) open(rows[0], m, yr);
   }
 
@@ -193,7 +196,14 @@ export default function ConsultaTecnica() {
 
             <form onSubmit={submit} className="card space-y-3">
               <div className="text-sm font-semibold text-steel-600">Ou busque pelo modelo</div>
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr_9rem] gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-[10rem_1fr_9rem] gap-3">
+                <div>
+                  <label className="label" htmlFor="ct-make">Marca</label>
+                  <select id="ct-make" className="input" value={make} onChange={e => { setMake(e.target.value); setResults(null); }}>
+                    <option value="">Todas as marcas</option>
+                    {makes.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
                 <div className="relative">
                   <label className="label" htmlFor="ct-model">Modelo do carro</label>
                   <input id="ct-model" className="input" autoComplete="off" placeholder="Ex.: Onix, Gol, HB20"
@@ -215,8 +225,8 @@ export default function ConsultaTecnica() {
                   </select>
                 </div>
               </div>
-              <button className="btn-ghost border border-steel-200 w-full sm:w-auto min-h-[44px]" disabled={searching || !model.trim()}>
-                {searching ? 'Buscando…' : 'Buscar pelo modelo'}
+              <button className="btn-ghost border border-steel-200 w-full sm:w-auto min-h-[44px]" disabled={searching || (!model.trim() && !make)}>
+                {searching ? 'Buscando…' : make && !model.trim() ? `Ver modelos ${make}` : 'Buscar pelo modelo'}
               </button>
             </form>
 
