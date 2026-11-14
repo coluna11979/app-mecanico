@@ -52,7 +52,8 @@ const FIELDS: FieldDef[] = [
   { key: 'uazapi_url',             label: 'Endereço do servidor',      description: 'URL da sua conta UAZAPI (ex.: https://suaconta.uazapi.com). Usada pelo módulo Inbox do WhatsApp das oficinas.', section: 'WhatsApp (UAZAPI)' },
   { key: 'uazapi_admin_token',     label: 'Admin token',               description: 'Cria uma instância por oficina quando ela conecta o número pelo QR code.', type: 'password', section: 'WhatsApp (UAZAPI)' },
   { key: 'infosimples_token',      label: 'Token da API',              description: 'Consulta CPF na Receita, antecedentes na PF e mandados no CNJ ao analisar cadastro de mecânico. Crie em api.infosimples.com → Administração → Tokens (deixe um limite de gasto mensal baixo).', type: 'password', section: 'Verificação de cadastro (Infosimples)' },
-  { key: 'google_places_api_key',  label: 'API Key do Google Places',  description: 'Usada na busca ativa de oficinas (admin → Importar do Google). Restrinja a key por domínio no GCP.', type: 'password', section: 'Captação (Google Places)' },
+  { key: 'plate_api_token',        label: 'Chave da API de placas',    description: 'Identifica o carro pela placa na Consulta técnica (óleo e filtros). Serviço: Simples API (simplesapi.com.br), cobrado por consulta do saldo pré-pago. Placa de cliente já cadastrado e placa já consultada não gastam saldo. Vazio = a oficina busca só pelo modelo.', type: 'password', section: 'Consulta técnica (placas)' },
+  { key: 'google_places_api_key', label: 'API Key do Google Places',  description: 'Usada na busca ativa de oficinas (admin → Importar do Google). Restrinja a key por domínio no GCP.', type: 'password', section: 'Captação (Google Places)' },
 ];
 
 type Section = { label: string; icon: string; color: string; bg: string };
@@ -65,6 +66,7 @@ const SECTIONS: Record<string, Section> = {
   'Email (Resend)':       { label: 'Email (Resend)',       icon: '📧',  color: 'text-pending-700', bg: 'bg-pending-500/10' },
   'Inteligência Artificial': { label: 'Inteligência Artificial', icon: '🤖', color: 'text-brand-700', bg: 'bg-brand-50' },
   'WhatsApp (UAZAPI)':    { label: 'WhatsApp (UAZAPI)',    icon: '💬',  color: 'text-signal-700', bg: 'bg-signal-50'  },
+  'Consulta técnica (placas)': { label: 'Consulta técnica (placas)', icon: '🛢️', color: 'text-steel-600', bg: 'bg-steel-100' },
   'Verificação de cadastro (Infosimples)': { label: 'Verificação de cadastro (Infosimples)', icon: '🛡️', color: 'text-steel-600', bg: 'bg-steel-100' },
   'Captação (Google Places)': { label: 'Captação (Google Places)', icon: '🎯', color: 'text-brand-700', bg: 'bg-brand-50' },
   NextPay:                { label: 'NextPay',              icon: '🟠',  color: 'text-brand-700',  bg: 'bg-brand-50'   },

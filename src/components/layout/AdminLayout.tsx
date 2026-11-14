@@ -49,6 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
   { label: 'Sistema', items: [
     { to: '/admin/agentes',       label: 'Agentes',       icon: IconSpark },
     { to: '/admin/modulos',       label: 'Módulos',       icon: IconGrid },
+    { to: '/admin/catalogo-tecnico', label: 'Catálogo técnico', icon: IconWrench },
     { to: '/admin/avisos',        label: 'Avisos',        icon: IconMegaphone },
     { to: '/admin/embaixadores',  label: 'Embaixadores',  icon: IconUsers },
     { to: '/admin/treinamentos',  label: 'Treinamentos',  icon: IconVideo },

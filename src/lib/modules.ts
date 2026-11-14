@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 export type ModuleKey =
   | 'painel' | 'os' | 'agenda' | 'checkup' | 'clientes' | 'comercial' | 'inbox' | 'avaliacoes' | 'agentes' | 'site'
   | 'caixa' | 'financeiro' | 'contas_pagar'
-  | 'pecas' | 'compras'
+  | 'pecas' | 'compras' | 'consulta'
   | 'equipe' | 'fechamentos'
   | 'plataforma'
   | 'servicos' | 'acessos' | 'importar' | 'vip';
@@ -31,6 +31,7 @@ export const MODULES: Record<ModuleKey, {
   contas_pagar: { label: 'Contas a pagar',     icon: '📤', desc: 'Lançar e dar baixa em contas',                  routes: ['/oficina/contas-a-pagar'] },
   pecas:        { label: 'Peças e estoque',    icon: '🔩', desc: 'Catálogo, estoque e custo das peças',           routes: ['/oficina/pecas'] },
   compras:      { label: 'Compras e fornecedores', icon: '🧾', desc: 'Notas de compra e fornecedores',            routes: ['/oficina/compras', '/oficina/fornecedores'] },
+  consulta:     { label: 'Consulta técnica',   icon: '🛢️', desc: 'Qual óleo, quanto e quais filtros cada carro usa, já cruzando com o estoque', routes: ['/oficina/consulta'] },
   equipe:       { label: 'Equipe e desempenho', icon: '👷', desc: 'Colaboradores, desempenho e comissões',        routes: ['/oficina/equipe', '/oficina/desempenho'] },
   fechamentos:  { label: 'Fechamentos',        icon: '🧮', desc: 'Fechar comissões e folha',                      routes: ['/oficina/comissoes', '/oficina/folha'] },
   plataforma:   { label: 'Plataforma (mecânicos)', icon: '⚡', desc: 'Demandas, painel, buscar mecânicos, mensagens, rastreio', routes: ['/oficina/dashboard', '/oficina/plataforma', '/oficina/buscar', '/oficina/mensagens', '/oficina/job', '/oficina/carteira'] },
@@ -45,7 +46,7 @@ export const MODULE_GROUPS: { label: string; keys: ModuleKey[] }[] = [
   { label: 'Atendimento',       keys: ['painel', 'os', 'agenda', 'clientes', 'comercial', 'inbox', 'avaliacoes', 'agentes', 'site'] },
   { label: 'Check-up',          keys: ['checkup'] },
   { label: 'Financeiro',        keys: ['caixa', 'financeiro', 'contas_pagar'] },
-  { label: 'Estoque e compras', keys: ['pecas', 'compras'] },
+  { label: 'Estoque e compras', keys: ['pecas', 'compras', 'consulta'] },
   { label: 'Equipe',            keys: ['equipe', 'fechamentos', 'acessos'] },
   { label: 'Plataforma',        keys: ['plataforma'] },
   { label: 'Configurações',     keys: ['servicos', 'importar', 'vip'] },
@@ -55,7 +56,7 @@ export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
 
 /** Módulos opcionais: nascem desligados e o superadmin liga só para as oficinas escolhidas
  *  (ficam em workshop_modules.enabled_modules; o resto continua "ligado até desligar"). */
-export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox', 'avaliacoes', 'agentes', 'site', 'vip'];
+export const OPT_IN_MODULES: readonly ModuleKey[] = ['inbox', 'avaliacoes', 'agentes', 'site', 'vip', 'consulta'];
 export const isOptIn = (k: string) => (OPT_IN_MODULES as readonly string[]).includes(k);
 
 
@@ -82,6 +83,7 @@ export const DEPENDS_ON: Partial<Record<ModuleKey, ModuleKey[]>> = {
   painel:      ['caixa'],
   pecas:       ['os'],
   compras:     ['pecas'],
+  consulta:    ['pecas'],
   importar:    ['pecas', 'compras'],
   equipe:      ['os'],
   fechamentos: ['equipe', 'os'],
