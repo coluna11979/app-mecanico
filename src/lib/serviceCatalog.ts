@@ -13,7 +13,7 @@ const RULES: { name: string; re: RegExp }[] = [
   // "Alinhamento do mancal" é serviço de motor (retífica), não alinhamento de roda
   { name: 'Motor (juntas, retentores, cabeçote)', re: /mancal|mancais/ },
   // Alinhamento e balanceamento em categorias separadas: o gestor acompanha a soma de cada um
-  { name: 'Alinhamento', re: /cambage(m|ns)/ },
+  { name: 'Cambagem', re: /cambage(m|ns)/ },
   { name: 'Balanceamento', re: /contrapeso|centralizador(?!.*embreagem)/ },
   { name: 'Revisão e diagnóstico', re: /passagem (do |de |da )?(aparelho|computador|scanner)|diagnostico|scanner|inspecao|check-?up/ },
   { name: 'Correia dentada / distribuição', re: /correia dentada|distribuicao|kit (da )?correia|tensor (da )?correia dentada/ },
@@ -87,7 +87,7 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
 }
 
 /** Serviços que contam só os próprios itens (não herdam "mão de obra", bicos, porcas… da OS) */
-const EXACT_ONLY = new Set(['Alinhamento', 'Balanceamento']);
+const EXACT_ONLY = new Set(['Alinhamento', 'Cambagem', 'Balanceamento']);
 
 type Attributed = { name: string; value: number; kind: PanelItem['kind'] };
 
@@ -191,6 +191,7 @@ export function partsSharePct(rows: ServiceExecuted[]) {
 const REFERENCE: [string, number][] = [
   ['Troca de óleo', 30],
   ['Alinhamento', 30],
+  ['Cambagem', 15],
   ['Balanceamento', 20],
   ['Pneus e rodas', 30],
   ['Freios', 90],
