@@ -8,7 +8,7 @@ import {
   approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf,
   type PanelItem, type PanelOs,
 } from '@/lib/workshopMetrics';
-import { abcCurve, partsSharePct, refMinutesOf, revenueByService, salesOfService, servicesExecuted, type AbcClass, type AbcRow } from '@/lib/serviceCatalog';
+import { abcCurve, partsSharePct, refMinutesOf, revenueByService, salesOfService, servicesExecuted, type AbcClass, type AbcRow, type ServiceSale } from '@/lib/serviceCatalog';
 import { fmtHours } from '@/lib/teamCost';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
@@ -97,6 +97,10 @@ export default function Painel() {
       approval: approvalRate(os, range),
       services: servicesExecuted(os, items, range, 100),
       customers: customerMix([...firstBuys, ...os], range),
+      // Vendas do serviço escolhido no período (o valor é só o do serviço; os_price é o total da OS)
+      serviceSales: service
+        ? (salesOf(sold, range).sales as ServiceSale[]).sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''))
+        : [],
     };
   }, [os, items, firstBuys, range, prev, service]);
 
@@ -184,6 +188,9 @@ export default function Painel() {
                   note={`${m.approval.approved} de ${m.approval.approved + m.approval.declined} decididos no período`} />
               )}
             </div>
+
+            {/* Vendas da categoria escolhida: cada OS com o valor só desse serviço */}
+            {service && <ServiceSalesCard service={service} sales={m.serviceSales} />}
 
             {/* Peças × mão de obra + gráfico */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -486,6 +493,86 @@ function AbcCard({ abc, selected, onPick }: {
       <p className="text-[11px] text-steel-400 mt-3">
         Faturamento = peças + mão de obra de cada serviço. "Serviço não identificado" fica fora da curva.
       </p>
+    </div>
+  );
+}
+
+/** Vendas de uma categoria: OS a OS, o valor que foi só desse serviço (e o total da OS ao lado) */
+function ServiceSalesCard({ service, sales }: { service: string; sales: ServiceSale[] }) {
+  const [q, setQ] = useState('');
+  const [shown, setShown] = useState(20);
+  const n = q.trim().toLowerCase();
+  const list = n
+    ? sales.filter(o => [osNumber(o), o.title, o.customer?.full_name, o.vehicle?.plate, o.vehicle?.model]
+        .filter(Boolean).join(' ').toLowerCase().includes(n))
+    : sales;
+  const total = list.reduce((t, o) => t + Number(o.price), 0);
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
+        <div>
+          <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Vendas de {service}</div>
+          <p className="text-[11px] text-steel-400 mt-0.5">
+            Valor só dos itens de {service.toLowerCase()} em cada OS. Ao lado, o total da OS.
+          </p>
+        </div>
+        <input value={q} onChange={e => { setQ(e.target.value); setShown(20); }}
+          placeholder="Buscar cliente, placa ou nº da OS"
+          className="input !h-10 !py-2 !text-sm max-w-[260px]" />
+      </div>
+      {list.length === 0 ? (
+        <p className="text-sm text-steel-400 py-4 text-center">{n ? 'Nenhuma venda com essa busca.' : 'Nenhuma venda desse serviço no período.'}</p>
+      ) : (
+        <>
+          <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-steel-500 text-left">
+                  <th className="font-bold py-2 px-1">Data</th>
+                  <th className="font-bold py-2 px-1">OS</th>
+                  <th className="font-bold py-2 px-1">Cliente · carro</th>
+                  <th className="font-bold py-2 px-1 text-right">{service}</th>
+                  <th className="font-bold py-2 px-1 text-right">Total da OS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-steel-100">
+                {list.slice(0, shown).map(o => (
+                  <tr key={o.id} className="hover:bg-steel-50">
+                    <td className="py-2.5 px-1 text-steel-600 tabular-nums whitespace-nowrap">
+                      {o.completed_at ? new Date(o.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}
+                    </td>
+                    <td className="py-2.5 px-1">
+                      <Link to={`/oficina/os/${o.id}`} className="font-semibold text-brand-600 hover:underline whitespace-nowrap">{osNumber(o)}</Link>
+                    </td>
+                    <td className="py-2.5 px-1 text-steel-700 min-w-0">
+                      <span className="block truncate max-w-[260px]">
+                        {o.customer?.full_name ?? 'Sem cliente'}{o.vehicle ? ` · ${o.vehicle.model ?? ''}${o.vehicle.plate ? ` ${o.vehicle.plate}` : ''}` : ''}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-1 text-right font-bold tabular-nums">{fmtBRL(o.price)}</td>
+                    <td className="py-2.5 px-1 text-right text-steel-500 tabular-nums">{fmtBRL(o.os_price)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-steel-200">
+                  <td colSpan={3} className="py-2.5 px-1 text-xs font-semibold text-steel-600">
+                    {list.length} {list.length === 1 ? 'venda' : 'vendas'}{n ? ' na busca' : ' no período'}
+                  </td>
+                  <td className="py-2.5 px-1 text-right font-bold tabular-nums">{fmtBRL(total)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {list.length > shown && (
+            <button type="button" onClick={() => setShown(v => v + 20)}
+              className="w-full mt-2 pt-3 border-t border-steel-100 min-h-[40px] text-sm font-semibold text-brand-600">
+              Mostrar mais ({list.length - shown} restantes)
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

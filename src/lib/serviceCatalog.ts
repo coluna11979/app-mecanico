@@ -10,12 +10,16 @@ const RULES: { name: string; re: RegExp }[] = [
   // Casos específicos primeiro (vencem as regras gerais)
   // "Jogo centralizador" sai junto com alinhamento/balanceamento: é o centralizador da roda, não o da embreagem
   { name: 'Pneus e rodas', re: /bicos? de rodas?|^montage(m|ns)$|montage(m|ns) (de |do |dos )?pneus?|valvulas? de pneus?/ },
-  { name: 'Alinhamento e balanceamento', re: /contrapeso|cambage(m|ns)|centralizador(?!.*embreagem)/ },
+  // "Alinhamento do mancal" é serviço de motor (retífica), não alinhamento de roda
+  { name: 'Motor (juntas, retentores, cabeçote)', re: /mancal|mancais/ },
+  // Alinhamento e balanceamento em categorias separadas: o gestor acompanha a soma de cada um
+  { name: 'Alinhamento', re: /cambage(m|ns)/ },
+  { name: 'Balanceamento', re: /contrapeso|centralizador(?!.*embreagem)/ },
   { name: 'Revisão e diagnóstico', re: /passagem (do |de |da )?(aparelho|computador|scanner)|diagnostico|scanner|inspecao|check-?up/ },
   { name: 'Correia dentada / distribuição', re: /correia dentada|distribuicao|kit (da )?correia|tensor (da )?correia dentada/ },
   { name: 'Embreagem', re: /embreagem|(?:^|[^a-z])plato|atuador do pedal/ },
   { name: 'Freios (discos, pastilhas, lonas)', re: /pastilha|disco|(?:^|[^a-z])lona|tambor|sapata|pinca|freio|cilindros? de rodas?|cilindro mestre|(?:^|[^a-z])servo|sangria/ },
-  { name: 'Suspensão (amortecedores, bandejas, buchas)', re: /coxim (do |da |de )?(amortecedor|suspensao)|amortecedor|(?:^|[^a-z])mola|bandeja|pivo|bucha|estabilizadora|bieleta|batente|suspensao|rolamentos? (de |da )?roda|rolamentos? (traseiro|dianteiro)|(?:^|[^a-z])cubo|bolachao|kit (de )?coxim/ },
+  { name: 'Suspensão (amortecedores, bandejas, buchas)', re: /coxim (do |da |de )?(amortecedor|suspensao)|amortecedor|(?:^|[^a-z])mola|bandeja|pivo|bucha|estabilizadora|bieleta|batente|suspensao|rolamentos? (de |da )?roda|rolamentos? (traseiro|dianteiro)|(?:^|[^a-z])cubo|bolachao|kit (de )?coxim|braco (oscilante|(de |da )?susp)/ },
   { name: 'Correias do motor (acessórios)', re: /coxins? (do )?tensor/ },
   { name: 'Coxins do motor e do câmbio', re: /coxim/ },
   { name: 'Transmissão e semieixos', re: /homocinetica|semi ?eixo|cardan|cambio|caixa de marcha|diferencial|trizeta|tulipa|transmissao|(?:^|[^a-z])atf(?:$|[^a-z])|trambulador|tranquilador/ },
@@ -26,8 +30,9 @@ const RULES: { name: string; re: RegExp }[] = [
   { name: 'Escapamento', re: /escapamento|silencioso|catalisador|abafador|ponteira|flexivel|intermediario|cano do motor/ },
   { name: 'Ignição, injeção e combustível', re: /(?:^|[^a-z])vela|bobina|(?:^|[^a-z])bico|injet|sonda|lambda|borboleta|sensor|(?:^|[^a-z])tbi|descarboniz|injecao|programacao do modulo|bomba de combustivel|jogo de cabos?/ },
   { name: 'Elétrica e bateria', re: /bateria|alternador|motor de partida|arranque|lampada|farol|lanterna|fusivel|(?:^|[^a-z])rele(?:$|[^a-z])|chicote|eletric/ },
-  // Alinhamento/balanceamento antes de pneu: "montagem e balanceamento" e "balanceamento 4 rodas" são balanceamento
-  { name: 'Alinhamento e balanceamento', re: /alinhamento|balanceamento/ },
+  // Antes de pneu: "montagem e balanceamento" e "balanceamento 4 rodas" são balanceamento
+  { name: 'Alinhamento', re: /alinhamento/ },
+  { name: 'Balanceamento', re: /balanceamento/ },
   { name: 'Pneus e rodas', re: /pneu|calibragem|(?:^|[^a-z])roda|camara/ },
   { name: 'Troca de óleo, filtros e revisão', re: /bujao/ },
   { name: 'Motor (juntas, retentores, cabeçote)', re: /junta|retentor|cabecote|tampa de valvula|pistao|biela|(?:^|[^a-z])(?:anel|aneis)(?:$|[^a-z])|retifica|valvula|motor completo|vedacao|bronzina|virabrequim|volante do motor|carter|bomba de oleo/ },
@@ -81,6 +86,9 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
   return { rows: rows.slice(0, limit), total: rows.reduce((t, x) => t + x.revenue, 0), unmatchedItems };
 }
 
+/** Serviços que contam só os próprios itens (não herdam "mão de obra", bicos, porcas… da OS) */
+const EXACT_ONLY = new Set(['Alinhamento', 'Balanceamento']);
+
 type Attributed = { name: string; value: number; kind: PanelItem['kind'] };
 
 /** Cada item das OS ligado ao serviço que ele representa (a regra está no comentário de servicesExecuted) */
@@ -98,7 +106,11 @@ function attributeItems(sales: PanelOs[], items: PanelItem[]) {
     const tagged = its.map(i => ({ i, cat: serviceOf(i.description), value: Number(i.quantity) * Number(i.unit_price) }));
     const totals = new Map<string, number>();
     for (const t of tagged) if (t.cat) totals.set(t.cat, (totals.get(t.cat) ?? 0) + t.value);
-    const main = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? serviceOf(byId.get(osId)!.title ?? '');
+    // Serviço principal (recebe os itens genéricos, como "mão de obra"). Alinhamento e balanceamento
+    // nunca recebem: valem só o que foi lançado como eles
+    const fromTitle = serviceOf(byId.get(osId)!.title ?? '');
+    const main = [...totals.entries()].filter(([k]) => !EXACT_ONLY.has(k)).sort((a, b) => b[1] - a[1])[0]?.[0]
+      ?? (fromTitle && !EXACT_ONLY.has(fromTitle) ? fromTitle : null);
     byOs.set(osId, tagged.map(t => {
       if (!t.cat && !main) unmatchedItems += 1;
       return { name: t.cat ?? main ?? UNKNOWN_SERVICE, value: t.value, kind: t.i.kind };
@@ -111,16 +123,18 @@ function attributeItems(sales: PanelOs[], items: PanelItem[]) {
  * Vendas de um serviço só: cada OS que teve aquele serviço, com o valor (e peças/mão de obra) só dele.
  * Devolve no formato de OS para reaproveitar salesOf/revenueSeries do painel.
  */
-export function salesOfService(list: PanelOs[], items: PanelItem[], service: string): PanelOs[] {
+export type ServiceSale = PanelOs & { os_price: number };
+
+export function salesOfService(list: PanelOs[], items: PanelItem[], service: string): ServiceSale[] {
   const sales = list.filter(isSale);
   const { byOs } = attributeItems(sales, items);
-  const out: PanelOs[] = [];
+  const out: ServiceSale[] = [];
   for (const o of sales) {
     const mine = (byOs.get(o.id) ?? []).filter(t => t.name === service);
     if (!mine.length) continue;
     const parts = mine.filter(t => t.kind === 'part').reduce((a, t) => a + t.value, 0);
     const labor = mine.filter(t => t.kind !== 'part').reduce((a, t) => a + t.value, 0);
-    out.push({ ...o, price: parts + labor, parts_cost: parts, labor_cost: labor });
+    out.push({ ...o, price: parts + labor, parts_cost: parts, labor_cost: labor, os_price: Number(o.price) });
   }
   return out;
 }
@@ -176,7 +190,8 @@ export function partsSharePct(rows: ServiceExecuted[]) {
  */
 const REFERENCE: [string, number][] = [
   ['Troca de óleo', 30],
-  ['Alinhamento e balanceamento', 45],
+  ['Alinhamento', 30],
+  ['Balanceamento', 20],
   ['Pneus e rodas', 30],
   ['Freios', 90],
   ['Suspensão', 90],
