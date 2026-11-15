@@ -32,6 +32,19 @@ Pra darmos continuidade ao seu cadastro, por favor envie as fotos de:
 
 — Equipe Mecânico App`;
 
+/** Texto padrão da solicitação de docs para OFICINAS — o admin pode editar antes de enviar. */
+const REQUEST_DOCS_TEMPLATE_WORKSHOP = `Olá! 👋
+
+Pra darmos continuidade ao cadastro da sua oficina, por favor envie as fotos dos documentos abaixo:
+
+✅ CNH ou RG do responsável (frente e verso, qualquer um dos dois serve)
+✅ Cartão CNPJ da oficina
+✅ Comprovante de endereço atual (conta de luz, água ou internet dos últimos 90 dias)
+
+É só anexar os arquivos aqui mesmo nesta tela. Assim que recebermos, voltamos a te avisar por aqui.
+
+— Equipe Mecânico App`;
+
 /** Texto padrão de recusa por região — o admin pode editar antes de enviar. */
 const REGION_REJECTION_TEMPLATE = `Olá!
 
@@ -606,7 +619,7 @@ function ApprovalDrawer({
               🔍 Em análise
             </button>
             <button
-              onClick={() => { setReqText(REQUEST_DOCS_TEMPLATE); setReqOpen(true); }}
+              onClick={() => { setReqText(row.role === 'workshop' ? REQUEST_DOCS_TEMPLATE_WORKSHOP : REQUEST_DOCS_TEMPLATE); setReqOpen(true); }}
               disabled={busy !== null}
               className="btn-ghost text-sm py-2.5 border border-steel-300 disabled:opacity-50"
             >
