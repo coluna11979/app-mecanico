@@ -10,6 +10,8 @@ const RULES: { name: string; re: RegExp }[] = [
   // Casos específicos primeiro (vencem as regras gerais)
   // "Jogo centralizador" sai junto com alinhamento/balanceamento: é o centralizador da roda, não o da embreagem
   { name: 'Pneus e rodas', re: /bicos? de rodas?|^montage(m|ns)$|montage(m|ns) (de |do |dos )?pneus?|valvulas? de pneus?/ },
+  // "Alinhamento do mancal" é serviço de motor (retífica), não alinhamento de roda
+  { name: 'Motor (juntas, retentores, cabeçote)', re: /mancal|mancais/ },
   // Alinhamento e balanceamento em categorias separadas: o gestor acompanha a soma de cada um
   { name: 'Alinhamento', re: /cambage(m|ns)/ },
   { name: 'Balanceamento', re: /contrapeso|centralizador(?!.*embreagem)/ },
@@ -17,7 +19,7 @@ const RULES: { name: string; re: RegExp }[] = [
   { name: 'Correia dentada / distribuição', re: /correia dentada|distribuicao|kit (da )?correia|tensor (da )?correia dentada/ },
   { name: 'Embreagem', re: /embreagem|(?:^|[^a-z])plato|atuador do pedal/ },
   { name: 'Freios (discos, pastilhas, lonas)', re: /pastilha|disco|(?:^|[^a-z])lona|tambor|sapata|pinca|freio|cilindros? de rodas?|cilindro mestre|(?:^|[^a-z])servo|sangria/ },
-  { name: 'Suspensão (amortecedores, bandejas, buchas)', re: /coxim (do |da |de )?(amortecedor|suspensao)|amortecedor|(?:^|[^a-z])mola|bandeja|pivo|bucha|estabilizadora|bieleta|batente|suspensao|rolamentos? (de |da )?roda|rolamentos? (traseiro|dianteiro)|(?:^|[^a-z])cubo|bolachao|kit (de )?coxim/ },
+  { name: 'Suspensão (amortecedores, bandejas, buchas)', re: /coxim (do |da |de )?(amortecedor|suspensao)|amortecedor|(?:^|[^a-z])mola|bandeja|pivo|bucha|estabilizadora|bieleta|batente|suspensao|rolamentos? (de |da )?roda|rolamentos? (traseiro|dianteiro)|(?:^|[^a-z])cubo|bolachao|kit (de )?coxim|braco (oscilante|(de |da )?susp)/ },
   { name: 'Correias do motor (acessórios)', re: /coxins? (do )?tensor/ },
   { name: 'Coxins do motor e do câmbio', re: /coxim/ },
   { name: 'Transmissão e semieixos', re: /homocinetica|semi ?eixo|cardan|cambio|caixa de marcha|diferencial|trizeta|tulipa|transmissao|(?:^|[^a-z])atf(?:$|[^a-z])|trambulador|tranquilador/ },
