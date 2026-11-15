@@ -84,6 +84,9 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
   return { rows: rows.slice(0, limit), total: rows.reduce((t, x) => t + x.revenue, 0), unmatchedItems };
 }
 
+/** Serviços que contam só os próprios itens (não herdam "mão de obra", bicos, porcas… da OS) */
+const EXACT_ONLY = new Set(['Alinhamento', 'Balanceamento']);
+
 type Attributed = { name: string; value: number; kind: PanelItem['kind'] };
 
 /** Cada item das OS ligado ao serviço que ele representa (a regra está no comentário de servicesExecuted) */
@@ -101,7 +104,11 @@ function attributeItems(sales: PanelOs[], items: PanelItem[]) {
     const tagged = its.map(i => ({ i, cat: serviceOf(i.description), value: Number(i.quantity) * Number(i.unit_price) }));
     const totals = new Map<string, number>();
     for (const t of tagged) if (t.cat) totals.set(t.cat, (totals.get(t.cat) ?? 0) + t.value);
-    const main = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? serviceOf(byId.get(osId)!.title ?? '');
+    // Serviço principal (recebe os itens genéricos, como "mão de obra"). Alinhamento e balanceamento
+    // nunca recebem: valem só o que foi lançado como eles
+    const fromTitle = serviceOf(byId.get(osId)!.title ?? '');
+    const main = [...totals.entries()].filter(([k]) => !EXACT_ONLY.has(k)).sort((a, b) => b[1] - a[1])[0]?.[0]
+      ?? (fromTitle && !EXACT_ONLY.has(fromTitle) ? fromTitle : null);
     byOs.set(osId, tagged.map(t => {
       if (!t.cat && !main) unmatchedItems += 1;
       return { name: t.cat ?? main ?? UNKNOWN_SERVICE, value: t.value, kind: t.i.kind };
@@ -114,16 +121,18 @@ function attributeItems(sales: PanelOs[], items: PanelItem[]) {
  * Vendas de um serviço só: cada OS que teve aquele serviço, com o valor (e peças/mão de obra) só dele.
  * Devolve no formato de OS para reaproveitar salesOf/revenueSeries do painel.
  */
-export function salesOfService(list: PanelOs[], items: PanelItem[], service: string): PanelOs[] {
+export type ServiceSale = PanelOs & { os_price: number };
+
+export function salesOfService(list: PanelOs[], items: PanelItem[], service: string): ServiceSale[] {
   const sales = list.filter(isSale);
   const { byOs } = attributeItems(sales, items);
-  const out: PanelOs[] = [];
+  const out: ServiceSale[] = [];
   for (const o of sales) {
     const mine = (byOs.get(o.id) ?? []).filter(t => t.name === service);
     if (!mine.length) continue;
     const parts = mine.filter(t => t.kind === 'part').reduce((a, t) => a + t.value, 0);
     const labor = mine.filter(t => t.kind !== 'part').reduce((a, t) => a + t.value, 0);
-    out.push({ ...o, price: parts + labor, parts_cost: parts, labor_cost: labor });
+    out.push({ ...o, price: parts + labor, parts_cost: parts, labor_cost: labor, os_price: Number(o.price) });
   }
   return out;
 }
