@@ -10,7 +10,9 @@ const RULES: { name: string; re: RegExp }[] = [
   // Casos específicos primeiro (vencem as regras gerais)
   // "Jogo centralizador" sai junto com alinhamento/balanceamento: é o centralizador da roda, não o da embreagem
   { name: 'Pneus e rodas', re: /bicos? de rodas?|^montage(m|ns)$|montage(m|ns) (de |do |dos )?pneus?|valvulas? de pneus?/ },
-  { name: 'Alinhamento e balanceamento', re: /contrapeso|cambage(m|ns)|centralizador(?!.*embreagem)/ },
+  // Alinhamento e balanceamento em categorias separadas: o gestor acompanha a soma de cada um
+  { name: 'Alinhamento', re: /cambage(m|ns)/ },
+  { name: 'Balanceamento', re: /contrapeso|centralizador(?!.*embreagem)/ },
   { name: 'Revisão e diagnóstico', re: /passagem (do |de |da )?(aparelho|computador|scanner)|diagnostico|scanner|inspecao|check-?up/ },
   { name: 'Correia dentada / distribuição', re: /correia dentada|distribuicao|kit (da )?correia|tensor (da )?correia dentada/ },
   { name: 'Embreagem', re: /embreagem|(?:^|[^a-z])plato|atuador do pedal/ },
@@ -26,8 +28,9 @@ const RULES: { name: string; re: RegExp }[] = [
   { name: 'Escapamento', re: /escapamento|silencioso|catalisador|abafador|ponteira|flexivel|intermediario|cano do motor/ },
   { name: 'Ignição, injeção e combustível', re: /(?:^|[^a-z])vela|bobina|(?:^|[^a-z])bico|injet|sonda|lambda|borboleta|sensor|(?:^|[^a-z])tbi|descarboniz|injecao|programacao do modulo|bomba de combustivel|jogo de cabos?/ },
   { name: 'Elétrica e bateria', re: /bateria|alternador|motor de partida|arranque|lampada|farol|lanterna|fusivel|(?:^|[^a-z])rele(?:$|[^a-z])|chicote|eletric/ },
-  // Alinhamento/balanceamento antes de pneu: "montagem e balanceamento" e "balanceamento 4 rodas" são balanceamento
-  { name: 'Alinhamento e balanceamento', re: /alinhamento|balanceamento/ },
+  // Antes de pneu: "montagem e balanceamento" e "balanceamento 4 rodas" são balanceamento
+  { name: 'Alinhamento', re: /alinhamento/ },
+  { name: 'Balanceamento', re: /balanceamento/ },
   { name: 'Pneus e rodas', re: /pneu|calibragem|(?:^|[^a-z])roda|camara/ },
   { name: 'Troca de óleo, filtros e revisão', re: /bujao/ },
   { name: 'Motor (juntas, retentores, cabeçote)', re: /junta|retentor|cabecote|tampa de valvula|pistao|biela|(?:^|[^a-z])(?:anel|aneis)(?:$|[^a-z])|retifica|valvula|motor completo|vedacao|bronzina|virabrequim|volante do motor|carter|bomba de oleo/ },
@@ -176,7 +179,8 @@ export function partsSharePct(rows: ServiceExecuted[]) {
  */
 const REFERENCE: [string, number][] = [
   ['Troca de óleo', 30],
-  ['Alinhamento e balanceamento', 45],
+  ['Alinhamento', 30],
+  ['Balanceamento', 20],
   ['Pneus e rodas', 30],
   ['Freios', 90],
   ['Suspensão', 90],
