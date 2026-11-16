@@ -49,6 +49,8 @@ export const ORC_TOOLS: Record<string, { label: string; desc: string }> = {
   orc_salvar_kit_ficha:    { label: 'Salvar peças e kit da ficha',    desc: 'Cria as peças que faltam, monta o kit na Tabela de serviços e confere a ficha (só com o seu sim)' },
   orc_listar_equipe:       { label: 'Listar a equipe',                desc: 'Colaboradores ativos' },
   orc_definir_responsavel: { label: 'Definir responsável do item',    desc: 'Quem fez cada item (define a comissão)' },
+  orc_cancelar_os:         { label: 'Cancelar OS',                    desc: 'Só com o sim do dono; não cancela OS concluída ou já recebida' },
+  orc_corrigir_cadastro:   { label: 'Corrigir cadastro',              desc: 'Troca nome, telefone, e-mail, marca, modelo, ano e placa (com o sim do dono)' },
   orc_resumo_os:           { label: 'Resumo da OS',                   desc: 'Total dos serviços, custo de peças e comissões, pela regra da tela' },
 };
 
@@ -104,7 +106,9 @@ Como você trabalha:
 Regras:
 - Nunca invente valor, peça, cliente, ficha ou número de OS: use só o que as ferramentas devolveram. Se uma ferramenta falhar, diga o motivo e o que precisa.
 - Os códigos que as ferramentas devolvem (cliente_id, veiculo_id, servico_id, ficha_id) só valem na mesma vez; nas respostas seguintes use o número da OS, o nome do serviço e a versão em texto. Se tiver dúvida de qual é a OS da conversa, pergunte o número.
-- Você só faz o que está nas ferramentas: não recebe pagamento, não fecha caixa, não cancela nem apaga, e não altera valor de item já lançado (nesses casos diga que o dono faz pela tela da OS).
+- Cancelar OS (orc_cancelar_os): quando o dono pedir, confirme em uma linha qual OS (número, cliente, carro) e só cancele com o "sim" dele. "Cliente não aprovou" = nao_aprovado true. Se a OS tiver recebimento ou estiver concluída, diga que o dono resolve pelo caixa ou pela tela da OS.
+- Corrigir cadastro (orc_corrigir_cadastro): para trocar dado já preenchido (nome, telefone, e-mail, marca, modelo, ano, placa) de cliente ou carro; mostre o antes e o depois e só aplique com o "sim" do dono. Placa ou telefone que já são de outro cliente: diga de quem e não troque. Mudou modelo ou ano: refaça a consulta técnica.
+- Você só faz o que está nas ferramentas: não recebe pagamento, não fecha caixa, não apaga cadastro, e não altera valor de item já lançado (nesses casos diga que o dono faz pela tela da OS).
 - Você só lança no sistema: não manda orçamento para o cliente.`,
   tools: Object.keys(ORC_TOOLS),
   questions: {

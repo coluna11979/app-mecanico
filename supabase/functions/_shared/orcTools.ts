@@ -324,6 +324,46 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  orc_cancelar_os: {
+    label: 'Cancelar a OS',
+    def: {
+      description: 'Cancela a OS pelo número (o estoque volta como na tela). Use SÓ depois do "sim" do dono nesta conversa. Com nao_aprovado=true marca como orçamento não aprovado pelo cliente (fica salvo para retomar o contato). Não cancela OS concluída nem com recebimento lançado (os_concluida_nao_cancela / os_com_recebimento: o dono resolve pelo caixa ou pela tela da OS).',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero'],
+        properties: { os_numero: { type: 'integer' }, nao_aprovado: { type: 'boolean', description: 'true = o cliente não aprovou o orçamento' } },
+      },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      return rpc(db, 'orc_cancel_os', { p_workshop: ws, p_os_number: os, p_declined: i.nao_aprovado === true });
+    },
+  },
+
+  orc_corrigir_cadastro: {
+    label: 'Corrigir cadastro do cliente e do carro',
+    def: {
+      description: 'CORRIGE (troca) dados já cadastrados: nome, telefone e e-mail do cliente; marca, modelo, ano e placa do carro. Informe os_numero (cliente e carro da OS) ou cliente_id/veiculo_id (desta mesma vez) e só os campos que mudam. Use só depois do "sim" do dono. Não duplica telefone nem placa (erro telefone_ja_cadastrado / placa_ja_cadastrada: diga de quem é). Se mudar modelo ou ano, a ficha técnica do carro é solta: consulte de novo com orc_ficha_tecnica. Para só PREENCHER campo vazio use orc_atualizar_carro.',
+      input_schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          os_numero: { type: 'integer' }, cliente_id: { type: 'string' }, veiculo_id: { type: 'string' },
+          nome: { type: 'string' }, telefone: { type: 'string' }, email: { type: 'string' },
+          marca: { type: 'string' }, modelo: { type: 'string' }, ano: { type: 'integer' }, placa: { type: 'string' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero), c = uuid(i.cliente_id), v = uuid(i.veiculo_id);
+      if (os == null && !c && !v) return err('informe_os_numero_ou_ids');
+      return rpc(db, 'orc_fix_registration', {
+        p_workshop: ws, p_os_number: os, p_customer: c, p_vehicle: v,
+        p_nome: str(i.nome, 100) || null, p_telefone: str(i.telefone, 30) || null, p_email: str(i.email, 120) || null,
+        p_marca: str(i.marca, 60) || null, p_modelo: str(i.modelo, 60) || null, p_ano: int(i.ano), p_placa: str(i.placa, 12) || null,
+      });
+    },
+  },
+
   orc_resumo_os: {
     label: 'Resumo da OS (totais e comissões)',
     def: {
