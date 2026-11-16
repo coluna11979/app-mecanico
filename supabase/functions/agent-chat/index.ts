@@ -393,7 +393,7 @@ Deno.serve(async (req) => {
     const isOrc = agent.template === 'orcamento';
     if (isOrc && playground) return json({ error: 'O Orçamentista grava de verdade, por isso não tem modo de teste.' }, 400);
     if (isOrc) feature = 'agent_orcamento';
-    const catalog: Record<string, { def: { description: string; input_schema: Record<string, unknown> }; run: (db: any, ws: string, input: Record<string, unknown>) => Promise<unknown> }> =
+    const catalog: Record<string, { def: { description: string; input_schema: Record<string, unknown> }; run: (db: any, ws: string, input: Record<string, unknown>, ctx: { userId: string }) => Promise<unknown> }> =
       isOrc ? ORC_TOOLS : TOOLS;
 
     const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: workshopId, _module: 'agentes' });
@@ -455,7 +455,7 @@ Deno.serve(async (req) => {
       for (const block of response.content.filter((b: any) => b.type === 'tool_use') as any[]) {
         try {
           if (!enabledTools.includes(block.name)) throw new Error('ferramenta não liberada');
-          const out = await catalog[block.name].run(admin, workshopId!, block.input ?? {});
+          const out = await catalog[block.name].run(admin, workshopId!, block.input ?? {}, { userId: userId! });
           results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out) });
         } catch (e) {
           console.error('[agent-chat tool]', block.name, e);
