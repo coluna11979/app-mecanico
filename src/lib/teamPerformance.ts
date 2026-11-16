@@ -44,7 +44,11 @@ const inRange = (iso: string | null | undefined, r: Range) => {
   const t = new Date(iso).getTime();
   return t >= r.from.getTime() && t < r.to.getTime();
 };
-const catOf = (o: PerfOs) => o.category?.trim() || 'Sem categoria';
+/** Categorias da OS ("Freios + Escapamento" → cada uma conta no relatório) */
+const catsOf = (o: PerfOs): string[] => {
+  const l = (o.category ?? '').split('+').map(x => x.trim()).filter(Boolean);
+  return l.length ? l : ['Sem categoria'];
+};
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 export type ReturnInfo = {
@@ -150,8 +154,7 @@ export function teamPerformance(list: PerfOs[], mechanics: PerfMechanic[], r: Ra
   for (const o of services) {
     const w = worked(o);
     if (w == null || w <= 0) continue;
-    const c = catOf(o);
-    catTimes.set(c, [...(catTimes.get(c) ?? []), w]);
+    for (const c of catsOf(o)) catTimes.set(c, [...(catTimes.get(c) ?? []), w]);
   }
   const shopAvg = new Map<string, number>();
   for (const [c, xs] of catTimes) if (xs.length >= MIN_CATEGORY) shopAvg.set(c, mean(xs)!);
@@ -169,7 +172,7 @@ export function teamPerformance(list: PerfOs[], mechanics: PerfMechanic[], r: Ra
       : null;
     return {
       id: rw.id, number: rw.number, title: rw.title, plate: rw.vehicle?.plate ?? null,
-      originalId: rw.rework_of_id!, originalNumber: orig?.number ?? null, category: orig ? catOf(orig) : catOf(rw),
+      originalId: rw.rework_of_id!, originalNumber: orig?.number ?? null, category: catsOf(orig ?? rw).join(' + '),
       cause: rw.rework_cause, counts: reworkCounts(rw.rework_cause), days,
       reworkMin: rw.status === 'completed' ? worked(rw) : null, createdAt: rw.created_at,
     };
@@ -195,15 +198,9 @@ export function teamPerformance(list: PerfOs[], mechanics: PerfMechanic[], r: Ra
     const cats = new Map<string, { times: number[]; count: number; returns: number }>();
 
     for (const o of mine) {
-      const c = catOf(o);
-      const cell = cats.get(c) ?? { times: [], count: 0, returns: 0 };
-      cell.count += 1;
       const w = worked(o);
       if (w != null && w > 0) {
         workedMin += w; timed += 1; laborTimed += Number(o.labor_cost ?? 0);
-        cell.times.push(w);
-        const avg = shopAvg.get(c);
-        if (avg) ratios.push(w / avg);
         if (o.estimated_hours) {
           withEstimate += 1; estSum += Number(o.estimated_hours) * 60; estWorked += w;
           if (w <= Number(o.estimated_hours) * 60) onTime += 1;
@@ -213,8 +210,18 @@ export function teamPerformance(list: PerfOs[], mechanics: PerfMechanic[], r: Ra
         if (!p.ended_at) continue;
         pausedMin += Math.max(0, Math.round((new Date(p.ended_at).getTime() - new Date(p.started_at).getTime()) / 60000));
       }
-      cell.returns += (returnsByOriginal.get(o.id) ?? []).filter(x => reworkCounts(x.rework_cause)).length;
-      cats.set(c, cell);
+      // Cada categoria da OS recebe a OS (relatório individual por categoria)
+      for (const c of catsOf(o)) {
+        const cell = cats.get(c) ?? { times: [], count: 0, returns: 0 };
+        cell.count += 1;
+        if (w != null && w > 0) {
+          cell.times.push(w);
+          const avg = shopAvg.get(c);
+          if (avg) ratios.push(w / avg);
+        }
+        cell.returns += (returnsByOriginal.get(o.id) ?? []).filter(x => reworkCounts(x.rework_cause)).length;
+        cats.set(c, cell);
+      }
     }
 
     // Qualidade: dos serviços dele no período, quantos voltaram
@@ -272,7 +279,7 @@ export function teamPerformance(list: PerfOs[], mechanics: PerfMechanic[], r: Ra
   // ── Tempo por tipo de serviço (a oficina toda, inclusive OS sem responsável) ──
   const nameOf = new Map(mechanics.map(m => [m.id, m.name]));
   const types = new Map<string, PerfOs[]>();
-  for (const o of services) types.set(catOf(o), [...(types.get(catOf(o)) ?? []), o]);
+  for (const o of services) for (const c of catsOf(o)) types.set(c, [...(types.get(c) ?? []), o]);
   const serviceTypes: ServiceType[] = [...types.entries()].map(([category, list2]) => {
     const times = list2.map(worked).filter((x): x is number => x != null && x > 0).sort((a, b) => a - b);
     const withLabor = list2.filter(o => Number(o.labor_cost ?? 0) > 0);
