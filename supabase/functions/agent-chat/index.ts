@@ -6,6 +6,7 @@
 // modelo próprio em 'ai_agent_model'; se vazio, usa o das notas / da leitura de fotos.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
+import { ORC_TOOLS } from '../_shared/orcTools.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -16,7 +17,8 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 // Padrões e tetos; o superadmin ajusta por agente (ai_agents.max_tool_turns / history_window / max_tokens)
-const DEFAULT_TURNS = 6, DEFAULT_HISTORY = 20, DEFAULT_MAX_TOKENS = 4000;
+// O Orçamentista encadeia várias ferramentas por mensagem (buscar, abrir OS, lançar itens), então tem mais voltas
+const DEFAULT_TURNS = 6, ORC_TURNS = 14, DEFAULT_HISTORY = 20, DEFAULT_MAX_TOKENS = 4000;
 const clamp = (v: unknown, min: number, max: number, def: number) => {
   const n = Number(v);
   return Number.isFinite(n) && v != null ? Math.min(max, Math.max(min, Math.round(n))) : def;
@@ -386,6 +388,14 @@ Deno.serve(async (req) => {
     workshopId = agent.workshop_id;
     if (!agent.enabled) return json({ error: 'Este agente está desligado' }, 403);
 
+    // Orçamentista: agente que ESCREVE na oficina (abre OS, lança itens). Conjunto próprio de ferramentas, outra métrica de uso
+    // e sem playground (o teste gravaria de verdade).
+    const isOrc = agent.template === 'orcamento';
+    if (isOrc && playground) return json({ error: 'O Orçamentista grava de verdade, por isso não tem modo de teste.' }, 400);
+    if (isOrc) feature = 'agent_orcamento';
+    const catalog: Record<string, { def: { description: string; input_schema: Record<string, unknown> }; run: (db: any, ws: string, input: Record<string, unknown>) => Promise<unknown> }> =
+      isOrc ? ORC_TOOLS : TOOLS;
+
     const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: workshopId, _module: 'agentes' });
     if (!modOn) return json({ error: 'Agentes de IA não liberados para esta oficina' }, 403);
 
@@ -402,10 +412,10 @@ Deno.serve(async (req) => {
     const draft = playground ? (agent.draft as { system_prompt?: string; tools?: string[] } | null) : null;
     const agentPrompt = (draft?.system_prompt ?? '').trim() || agent.system_prompt;
     const agentTools = Array.isArray(draft?.tools) ? (draft!.tools as string[]) : (agent.tools as string[]);
-    const enabledTools = agentTools.filter((k) => k in TOOLS);
-    const toolDefs = enabledTools.map((k) => ({ name: k, ...TOOLS[k].def }));
+    const enabledTools = agentTools.filter((k) => k in catalog);
+    const toolDefs = enabledTools.map((k) => ({ name: k, ...catalog[k].def }));
 
-    const maxTurns = clamp(agent.max_tool_turns, 1, 40, DEFAULT_TURNS);
+    const maxTurns = clamp(agent.max_tool_turns, 1, 40, isOrc ? ORC_TURNS : DEFAULT_TURNS);
     const maxTokens = clamp(agent.max_tokens, 500, 16000, DEFAULT_MAX_TOKENS);
     const history = clamp(agent.history_window, 2, 60, DEFAULT_HISTORY);
 
@@ -445,11 +455,13 @@ Deno.serve(async (req) => {
       for (const block of response.content.filter((b: any) => b.type === 'tool_use') as any[]) {
         try {
           if (!enabledTools.includes(block.name)) throw new Error('ferramenta não liberada');
-          const out = await TOOLS[block.name].run(admin, workshopId!, block.input ?? {});
+          const out = await catalog[block.name].run(admin, workshopId!, block.input ?? {});
           results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out) });
         } catch (e) {
           console.error('[agent-chat tool]', block.name, e);
-          results.push({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: 'Não consegui consultar isso agora.' });
+          // O Orçamentista escreve: o motivo do erro ajuda a IA a explicar ao dono (o banco desfaz tudo quando falha)
+          const why = isOrc && e instanceof Error ? ` Motivo: ${e.message.slice(0, 200)}` : '';
+          results.push({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: `Não consegui ${isOrc ? 'fazer' : 'consultar'} isso agora.${why}` });
         }
       }
       messages.push({ role: 'user', content: results });

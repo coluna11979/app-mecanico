@@ -405,6 +405,7 @@ export default function OsDetail() {
                   : <span className={`badge ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>}
                 {os.category && !isSale && <span className="badge bg-steel-100 text-steel-600">{os.category}</span>}
                 {os.source === 'whatsapp_agent' && <span className="badge bg-amber-100 text-amber-800">🤖 Aberta pela Recepção</span>}
+                {os.source === 'agent_orcamento' && <span className="badge bg-amber-100 text-amber-800">🧾 Aberta pelo Orçamentista</span>}
               </div>
               <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1.5">{os.title}</h1>
               {(os.customer || os.vehicle) && (
