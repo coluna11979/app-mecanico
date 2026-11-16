@@ -17,15 +17,16 @@ type Match = { customer: Customer; vehicle: Vehicle | null };
 /** Serviços mais comuns — um toque adiciona (pode escolher vários) */
 const QUICK_SERVICES: { label: string; category: string }[] = [
   { label: 'Revisão geral',   category: 'Revisão geral' },
-  { label: 'Troca de óleo',   category: 'Troca de óleo' },
+  { label: 'Troca de óleo',   category: 'Troca de óleo e filtros' },
   { label: 'Freios',          category: 'Freios' },
   { label: 'Suspensão',       category: 'Suspensão' },
+  { label: 'Direção',         category: 'Direção' },
   { label: 'Diagnóstico',     category: 'Diagnóstico' },
-  { label: 'Alinhamento',     category: 'Alinhamento' },
-  { label: 'Balanceamento',   category: 'Balanceamento' },
+  { label: 'Alinhamento',     category: 'Pneus e Rodas' },
+  { label: 'Balanceamento',   category: 'Pneus e Rodas' },
   { label: 'Elétrica',        category: 'Elétrica' },
   { label: 'Ar-condicionado', category: 'Ar-condicionado' },
-  { label: 'Embreagem',       category: 'Embreagem' },
+  { label: 'Embreagem',       category: 'Transmissão' },
   { label: 'Motor',           category: 'Motor' },
 ];
 

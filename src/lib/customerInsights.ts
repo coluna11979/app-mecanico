@@ -11,7 +11,7 @@
  */
 
 const DAY = 86400000;
-const OIL = new Set(['Troca de óleo', 'Revisão geral']);
+const OIL = new Set(['Troca de óleo', 'Troca de óleo e filtros', 'Revisão geral']);
 const isOilCat = (c: string | null | undefined) => (c ?? '').split('+').some(p => OIL.has(p.trim()));
 const OPEN = new Set(['open', 'awaiting_approval', 'approved', 'in_progress']);
 

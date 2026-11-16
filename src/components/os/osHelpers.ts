@@ -184,13 +184,13 @@ export function osNumber(os: { id: string; number?: number | null }) {
 /** Categorias de serviço da OS */
 export const OS_CATEGORIES = [
   // Captação / gratuitos
-  'Avaliação','Check-up',
+  'Check-up',
   // Mais comuns
-  'Troca de óleo','Revisão geral','Freios','Pneus','Alinhamento','Balanceamento',
+  'Troca de óleo e filtros','Pneus e Rodas','Freios','Revisão geral',
   // Mecânica
-  'Motor','Câmbio','Suspensão','Transmissão','Embreagem','Injeção eletrônica',
+  'Suspensão','Direção','Motor','Arrefecimento','Transmissão','Injeção eletrônica',
   // Elétrica / outros
-  'Escapamento','Elétrica','Ar-condicionado','Diagnóstico','Funilaria','Mão de obra','Outro',
+  'Escapamento','Elétrica','Ar-condicionado','Diagnóstico','Outro',
 ];
 
 const normName = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
