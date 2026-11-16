@@ -39,7 +39,7 @@ const PERIOD_LABEL: Record<PeriodFilter, string> = Object.fromEntries(PERIODS) a
 /** Lista enxuta: só o que os cartões e o quadro mostram (economiza dados do Supabase) */
 const OS_LIST_COLS = 'id, workshop_id, vehicle_id, customer_id, workshop_mechanic_id, executor, title, category, status, price, '
   + 'created_at, started_at, completed_at, scheduled_at, estimated_hours, km_reading, parts_cost, labor_cost, number, '
-  + 'quote_status, approval_requested_at, approved_at, rework_of_id, paid_amount, counter_discount, paid_at, pay_later_due, '
+  + 'source, quote_status, approval_requested_at, approved_at, rework_of_id, paid_amount, counter_discount, paid_at, pay_later_due, '
   + 'customer:customers(id, full_name, phone), vehicle:vehicles(id, plate, make, model, year), '
   + 'mechanic:workshop_mechanics!fk_so_workshop_mechanic(id, name, photo_url), pauses:service_order_pauses(id, reason, started_at, ended_at)';
 const ACTIVE_STATUSES = ['open', 'awaiting_approval', 'approved', 'in_progress'];

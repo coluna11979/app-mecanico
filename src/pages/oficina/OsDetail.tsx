@@ -404,6 +404,7 @@ export default function OsDetail() {
                   ? <span className={`badge ${os.status === 'cancelled' ? 'bg-steel-100 text-steel-600' : 'bg-signal-100 text-signal-700'}`}>🛒 {os.status === 'cancelled' ? 'Venda cancelada' : 'Venda de balcão'}</span>
                   : <span className={`badge ${osStatusColor(os)}`}>{osStatusLabel(os)}</span>}
                 {os.category && !isSale && <span className="badge bg-steel-100 text-steel-600">{os.category}</span>}
+                {os.source === 'whatsapp_agent' && <span className="badge bg-amber-100 text-amber-800">🤖 Aberta pela Recepção</span>}
               </div>
               <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mt-1.5">{os.title}</h1>
               {(os.customer || os.vehicle) && (
@@ -412,6 +413,11 @@ export default function OsDetail() {
                 </div>
               )}
               <div className="text-xs text-steel-500 mt-0.5">{isSale ? 'Vendida em' : 'Aberta em'} {fmtDateTime(os.created_at)}</div>
+              {os.source === 'whatsapp_agent' && (
+                <div className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2 mt-2">
+                  🤖 Pré-registro feito pela Recepção no WhatsApp, sem valor e sem horário. Confira o carro e o problema e confirme com o cliente.
+                </div>
+              )}
             </div>
             {!mech && <div className="text-left lg:text-right shrink-0">
               <div className="text-[10px] text-steel-400 uppercase tracking-wider">Total</div>

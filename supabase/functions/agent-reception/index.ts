@@ -45,13 +45,13 @@ Deno.serve(async (req) => {
 type Chat = {
   id: string; workshop_id: string; phone: string; name: string | null; customer_id: string | null;
   agent_state: string | null; agent_replies: number; agent_started_at: string | null;
-  lead_at: string | null; lead_note: string | null;
+  lead_at: string | null; lead_note: string | null; agent_os_id: string | null;
 };
 type Msg = { id: string; message_id: string | null; from_me: boolean; by_agent: boolean; content: string | null; message_type: string; sent_at: string };
 
 async function handle(admin: SupabaseClient, chatId: string, triggerId: string | null) {
   const { data: chat } = await admin.from('whatsapp_chats')
-    .select('id, workshop_id, phone, name, customer_id, agent_state, agent_replies, agent_started_at, lead_at, lead_note')
+    .select('id, workshop_id, phone, name, customer_id, agent_state, agent_replies, agent_started_at, lead_at, lead_note, agent_os_id')
     .eq('id', chatId).maybeSingle<Chat>();
   if (!chat || chat.agent_state !== 'active') return { skipped: 'not_active' };
   const wid = chat.workshop_id;
@@ -84,7 +84,7 @@ async function handle(admin: SupabaseClient, chatId: string, triggerId: string |
   if (!locked) return { skipped: 'busy' };
 
   const { data: agent } = await admin.from('ai_agents')
-    .select('id, system_prompt, enabled, model, max_tokens')
+    .select('id, system_prompt, enabled, model, max_tokens, settings')
     .eq('workshop_id', wid).eq('template', 'recepcao').maybeSingle();
   const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: wid, _module: 'agentes' });
   if (!agent?.enabled || !modOn) {
@@ -99,10 +99,16 @@ async function handle(admin: SupabaseClient, chatId: string, triggerId: string |
   const model = (agent.model ?? '').trim() || cfg.ai_agent_model || cfg.ai_invoice_model || cfg.ai_vision_model;
   if (!cfg.anthropic_api_key || !model) throw new Error('IA não configurada (chave ou modelo)');
 
+  // Abrir a OS é opcional (settings.open_os, desligado por padrão) e vale uma vez por atendimento
+  const canOpenOs = (agent.settings as { open_os?: boolean } | null)?.open_os === true && !chat.agent_os_id;
+  const tools = canOpenOs ? [...TOOLS, OPEN_OS_TOOL] : TOOLS;
+  let opened: number | null = null;
+
   const firstInbound = msgs.find((m) => !m.from_me)?.content ?? '';
   const system = [
     agent.system_prompt,
     RULES,
+    canOpenOs ? OPEN_OS_RULES : '',
     await workshopContext(admin, wid, now),
     `## Este cliente\n${describeEntry(leadEntry(firstInbound))}`,
     chat.customer_id ? await customerContext(admin, chat.customer_id) : `Nome no WhatsApp: ${chat.name || 'não informado'}. Ainda não é cliente cadastrado.`,
@@ -117,7 +123,7 @@ async function handle(admin: SupabaseClient, chatId: string, triggerId: string |
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const res = await client.messages.create({
-      model, max_tokens: Math.min(agent.max_tokens ?? 1200, 2000), system, messages, tools: TOOLS,
+      model, max_tokens: Math.min(agent.max_tokens ?? 1200, 2000), system, messages, tools,
     } as any);
     inTok += res.usage?.input_tokens ?? 0;
     outTok += res.usage?.output_tokens ?? 0;
@@ -131,6 +137,22 @@ async function handle(admin: SupabaseClient, chatId: string, triggerId: string |
       if (b.name === 'registrar_dados') {
         await registerLead(admin, chat, b.input ?? {});
         results.push({ type: 'tool_result', tool_use_id: b.id, content: 'Registrado no card do cliente.' });
+      } else if (b.name === 'abrir_os' && canOpenOs) {
+        const { data, error } = await admin.rpc('agent_open_os', {
+          p_chat: chat.id, p_car: b.input?.carro ?? null, p_plate: b.input?.placa ?? null,
+          p_problem: b.input?.problema ?? '', p_when: b.input?.quando ?? null,
+        });
+        const r = data as { ok?: boolean; already?: boolean; number?: number } | null;
+        if (error || !r?.ok) {
+          if (error) console.error('[agent-reception] agent_open_os', error);
+          results.push({ type: 'tool_result', tool_use_id: b.id, is_error: true,
+            content: 'Não foi possível abrir a OS agora. Siga normalmente: passe para a equipe e não diga que abriu.' });
+        } else {
+          if (!r.already) opened = r.number ?? null;
+          results.push({ type: 'tool_result', tool_use_id: b.id, content: r.already
+            ? `Já existe a OS ${r.number} neste atendimento. Não abra outra.`
+            : `OS ${r.number} aberta, sem valor e sem horário. Agora avise o cliente que a equipe confirma horário e valor.` });
+        }
       } else if (b.name === 'passar_para_equipe') {
         handoff = { resumo: String(b.input?.resumo ?? '').slice(0, 500), urgente: Boolean(b.input?.urgente) };
         results.push({ type: 'tool_result', tool_use_id: b.id, content: 'Equipe avisada. Agora mande a mensagem final ao cliente.' });
@@ -155,7 +177,7 @@ async function handle(admin: SupabaseClient, chatId: string, triggerId: string |
     await admin.from('whatsapp_chat_notes').insert({
       workshop_id: wid, chat_id: chat.id, author_name: AGENT_NAME,
       tag: handoff.urgente ? 'atencao' : 'retorno',
-      body: `${handoff.urgente ? '🚨 URGENTE · ' : ''}Recepção concluída: ${handoff.resumo || 'cliente aguardando a equipe.'}`,
+      body: `${handoff.urgente ? '🚨 URGENTE · ' : ''}Recepção concluída: ${handoff.resumo || 'cliente aguardando a equipe.'}${opened ? ` · OS ${opened} aberta (confirmar horário e valor).` : ''}`,
     });
   }
   // Só se a IA ainda está na conversa (alguém pode ter assumido enquanto ela pensava)
@@ -177,6 +199,28 @@ const RULES = `## Regras que você nunca quebra
 - Cliente irritado, reclamação, cobrança, garantia ou assunto que não é carro: não discuta, passe para a equipe.
 - Use registrar_dados sempre que descobrir algo novo (carro, problema, quando pode trazer).
 - Quando já souber o problema, o carro e quando ele pode trazer, ou se o cliente pedir para falar com uma pessoa: use passar_para_equipe e mande a mensagem final dizendo que a equipe responde em seguida (fora do horário: quando a oficina abre).`;
+
+// Só entra no prompt quando a oficina liga "abrir OS" na tela da Recepção
+const OPEN_OS_RULES = `## Abrir a OS
+- Quando já souber o problema e o carro (modelo; a placa só se o cliente oferecer, não peça), use abrir_os UMA vez.
+- A OS abre como pré-registro, sem valor e sem horário. Depois de abrir, diga ao cliente que já deixou o atendimento aberto e que a equipe confirma horário e valor. Pode citar o número da OS.
+- Nunca diga que está agendado ou confirmado.
+- Não abra OS para dúvida de preço, reclamação, cobrança ou conversa que não é um serviço. Risco à segurança: oriente parar o carro, abra a OS e passe para a equipe como urgente.`;
+
+const OPEN_OS_TOOL = {
+  name: 'abrir_os',
+  description: 'Abre a OS do cliente na oficina (sem valor e sem horário) para a equipe confirmar. Use uma vez por atendimento, só quando souber o problema.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      problema: { type: 'string', description: 'O serviço ou defeito, curto, nas palavras do cliente' },
+      carro: { type: 'string', description: 'Modelo e ano, ex.: "Onix 2019"' },
+      placa: { type: 'string', description: 'Só se o cliente disser; não pergunte' },
+      quando: { type: 'string', description: 'Quando pode trazer, como o cliente disse' },
+    },
+    required: ['problema'],
+  },
+};
 
 const TOOLS = [
   {

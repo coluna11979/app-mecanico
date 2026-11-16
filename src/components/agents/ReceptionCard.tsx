@@ -84,6 +84,11 @@ export default function ReceptionCard({ workshopId }: { workshopId: string }) {
   const scope: ReceptionScope = agent.settings?.scope ?? 'site';
   const hours: ReceptionHours = agent.settings?.hours ?? 'sempre';
   const returnDays = agent.settings?.return_days ?? 7;
+  const openOs = agent.settings?.open_os === true;
+  async function toggleOpenOs() {
+    if (!openOs && !window.confirm('Ligar a abertura de OS? A Recepção vai criar a OS (sem valor e sem horário) quando o cliente passar o problema e o carro. Você confere depois.')) return;
+    if (await patch({ settings: { ...agent!.settings, open_os: !openOs } })) toast.success(openOs ? 'Abertura de OS desligada' : 'Abertura de OS ligada ✓');
+  }
   return (
     <div className="card space-y-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -138,6 +143,20 @@ export default function ReceptionCard({ workshopId }: { workshopId: string }) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div>
+        <label className="label">Abrir a OS do cliente</label>
+        <label className="flex items-start gap-2 text-sm cursor-pointer rounded-xl border border-steel-200 dark:border-steel-700 p-3">
+          <input type="checkbox" className="mt-0.5" checked={openOs} onChange={toggleOpenOs} />
+          <span>
+            Abrir a OS quando o cliente passar o problema e o carro
+            <span className="block text-xs text-steel-500 mt-0.5">
+              A OS nasce como pré-registro 🤖, sem valor e sem horário, no nome do cliente (cadastra se for novo). Uma por atendimento, no máximo 15 por dia.
+              A equipe confere e confirma horário e valor.
+            </span>
+          </span>
+        </label>
       </div>
 
       {open && (

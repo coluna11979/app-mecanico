@@ -102,7 +102,7 @@ export type ReceptionHours = 'sempre' | 'fora';
 
 export type ReceptionAgent = {
   id: string; workshop_id: string; name: string; system_prompt: string; enabled: boolean;
-  settings: { scope?: ReceptionScope; return_days?: number; hours?: ReceptionHours };
+  settings: { scope?: ReceptionScope; return_days?: number; hours?: ReceptionHours; open_os?: boolean };
 };
 
 export const RECEPTION_TEMPLATE = {

@@ -61,6 +61,9 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink, mechan
             {os.category && (
               <span className="badge bg-steel-100 text-steel-600">{os.category}</span>
             )}
+            {os.source === 'whatsapp_agent' && (
+              <span className="badge bg-amber-100 text-amber-800" title="Aberta pela Recepção no WhatsApp: confirme horário e valor">🤖 Recepção</span>
+            )}
             {isScheduledFuture && (
               <span className="badge bg-brand-50 text-brand-700 border border-brand-200">
                 📅 {fmtDate(os.scheduled_at!)}
