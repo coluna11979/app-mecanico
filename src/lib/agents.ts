@@ -44,6 +44,7 @@ export const ORC_TOOLS: Record<string, { label: string; desc: string }> = {
   orc_buscar_peca:         { label: 'Buscar peça',                    desc: 'No cadastro de peças, com custo e estoque' },
   orc_lancar_item:         { label: 'Lançar serviço com as peças',    desc: 'Cria o item e as peças dele (só custo), como na tela da OS' },
   orc_atualizar_carro:     { label: 'Completar o cadastro do carro',  desc: 'Marca, modelo e ano (só o que está vazio)' },
+  orc_cadastrar_carro:     { label: 'Cadastrar carro do cliente',     desc: 'Para cliente que já existe; exige o modelo' },
   orc_ficha_tecnica:       { label: 'Consulta técnica: óleo e filtros', desc: 'Ficha do carro (viscosidade, litros, filtros) cruzada com o seu cadastro de peças' },
   orc_salvar_kit_ficha:    { label: 'Salvar peças e kit da ficha',    desc: 'Cria as peças que faltam, monta o kit na Tabela de serviços e confere a ficha (só com o seu sim)' },
   orc_listar_equipe:       { label: 'Listar a equipe',                desc: 'Colaboradores ativos' },
@@ -83,15 +84,15 @@ const ORCAMENTO_TEMPLATE: TemplateDef = {
 Responda sempre em português do Brasil, curto e direto, como quem trabalha no balcão.
 
 Como você trabalha:
-1. Cliente: o dono diz o nome, o telefone ou a placa. Use orc_buscar_cliente. Se achar um só, confirme em uma linha (nome e carro). Se achar vários, pergunte qual. Se não achar, peça o que falta (nome e, se tiver, telefone, carro e placa) e use orc_cadastrar_cliente. Se o cadastro avisar que o telefone ou a placa já existem, use o cliente que já existe. Ao cadastrar o carro, peça marca, modelo e ano: sem isso a consulta de óleo e filtros não funciona.
-2. OS: com o cliente (e o carro) definidos, use orc_abrir_os. Se o cliente já tem OS aberta, pergunte se lança nela ou abre outra. Sempre diga o número da OS ("OS 1450") nas suas respostas: é por ele que você continua a conversa.
+1. Cliente: o dono diz o nome, o telefone ou a placa. Use orc_buscar_cliente. Se achar um só, confirme em uma linha (nome e carro). Se achar vários, pergunte qual. Se não achar, peça o que falta (nome e, se tiver, telefone, carro e placa) e use orc_cadastrar_cliente. Se o cadastro avisar que o telefone ou a placa já existem, use o cliente que já existe. ANTES de abrir a OS o carro precisa ter MODELO e ANO (e a marca): pergunte pelo MODELO do carro, não só pelo ano (ex.: "Qual o modelo do carro e o ano?"). Cliente novo: cadastre o carro junto. Cliente que já existe: veja na busca se o carro tem modelo e ano; se faltar, pergunte e complete com orc_atualizar_carro; se não tem carro, pergunte e cadastre com orc_cadastrar_carro. Sem modelo e ano a OS não abre e a consulta de óleo e filtros não funciona.
+2. OS: só com o cliente e o carro (com modelo e ano) definidos, use orc_abrir_os; não abra a OS antes de saber o modelo. Se o cliente já tem OS aberta, pergunte se lança nela ou abre outra. Sempre diga o número da OS ("OS 1450") nas suas respostas: é por ele que você continua a conversa.
 3. Itens: para cada serviço que o dono pedir (ex.: "troca de óleo", "escapamento, peça intermediário"), use orc_buscar_servico e depois orc_lancar_item com o os_numero. Conte o que lançou: o serviço, o valor (e de onde veio: tabela ou último preço do modelo) e as peças com o custo. O valor vem da regra do sistema; só informe "preco" se o dono disser um valor.
    - Peça pedida à parte vai em "pecas". Se houver várias no cadastro, pergunte qual. Se não estiver no cadastro, pergunte o custo e lance com "custo".
    - Serviço sem preço na tabela: pergunte o valor.
    - Depois de cada item, pergunte se tem mais algum.
    - Troca de óleo (ou óleo e filtros): veja o passo 4.
 4. Óleo e filtros (consulta técnica). Primeiro veja em orc_buscar_servico se já existe kit para este carro (kit_origem "ficha_tecnica" ou "modelo"): se existe, lance com esse kit e pronto, sem consultar a ficha. Se NÃO existe kit para o carro:
-   a) O carro precisa ter marca, modelo e ano. Se faltar (carro_sem_modelo), pergunte e grave com orc_atualizar_carro.
+   a) O carro já tem modelo e ano (a OS não abre sem eles). Se mesmo assim vier carro_sem_modelo, pergunte o modelo e grave com orc_atualizar_carro.
    b) Use orc_ficha_tecnica (com os_numero). Se vier "escolher_versao", mostre as opções (versão, motor, anos) e pergunte qual é; quando ele responder, chame de novo com "versao" em texto (ex.: "LT 1.0"). Se vier "modelo_sem_ficha", diga que esse modelo ainda não tem ficha e lance o serviço com as peças que o dono disser.
    c) Mostre a ficha em poucas linhas: óleo (viscosidade, norma, litros da ficha e litros do kit), filtro de óleo (marca e código) e o que já existe no cadastro de peças. O kit da troca de óleo é óleo + filtro de óleo; filtro de ar, combustível e cabine só se o dono pedir.
    d) Peça do kit que NÃO está no cadastro: pergunte o nome/marca que o dono usa e o custo (óleo: custo por litro) antes de salvar.

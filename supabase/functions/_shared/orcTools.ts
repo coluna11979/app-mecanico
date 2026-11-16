@@ -58,7 +58,7 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
   orc_cadastrar_cliente: {
     label: 'Cadastrar cliente novo (e o carro)',
     def: {
-      description: 'Cadastra um cliente novo, com o carro se informado. Se o telefone ou a placa já existirem, NÃO duplica: devolve o cliente que já existe (erro telefone_ja_cadastrado / placa_ja_cadastrada) para você usar. Só cadastre depois de buscar e não achar.',
+      description: 'Cadastra um cliente novo, com o carro se informado. O carro EXIGE o modelo (erro modelo_obrigatorio: pergunte o modelo antes, não só o ano). Se o telefone ou a placa já existirem, NÃO duplica: devolve o cliente que já existe (erro telefone_ja_cadastrado / placa_ja_cadastrada) para você usar. Só cadastre depois de buscar e não achar.',
       input_schema: {
         type: 'object', additionalProperties: false, required: ['nome'],
         properties: {
@@ -76,16 +76,16 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
   orc_abrir_os: {
     label: 'Abrir a OS do cliente',
     def: {
-      description: 'Abre uma OS (status aberta, sem itens) para o cliente e o carro. Devolve o os_numero, que você usa em todas as outras ferramentas e cita ao dono. Se o cliente já tem OS aberta, pergunte ao dono se lança nela ou abre outra antes de chamar.',
+      description: 'Abre uma OS (status aberta, sem itens) para o cliente e o carro. O carro é obrigatório e precisa ter MODELO e ANO: se faltar, a OS não abre (carro_obrigatorio = cliente sem carro, use orc_cadastrar_carro; carro_incompleto = veja "faltando", pergunte ao dono e complete com orc_atualizar_carro). Devolve o os_numero, que você usa em todas as outras ferramentas e cita ao dono. Se o cliente já tem OS aberta, pergunte ao dono se lança nela ou abre outra antes de chamar.',
       input_schema: {
         type: 'object', additionalProperties: false, required: ['cliente_id'],
-        properties: { cliente_id: { type: 'string' }, veiculo_id: { type: 'string', description: 'Carro do cliente (da busca); omita se o cliente não tem carro' }, km: { type: 'integer' } },
+        properties: { cliente_id: { type: 'string' }, veiculo_id: { type: 'string', description: 'Carro do cliente (da busca ou do cadastro, desta mesma vez)' }, km: { type: 'integer' } },
       },
     },
     run: async (db, ws, i) => {
       const cliente = uuid(i.cliente_id);
       if (!cliente) return err('cliente_id_invalido: use o cliente_id devolvido pela busca nesta mesma resposta');
-      if (i.veiculo_id && !uuid(i.veiculo_id)) return err('veiculo_id_invalido');
+      if (!uuid(i.veiculo_id)) return err('veiculo_id_invalido: busque o cliente de novo e use o veiculo_id do carro (a OS precisa de carro com modelo e ano)');
       return rpc(db, 'orc_open_os', { p_workshop: ws, p_customer: cliente, p_vehicle: uuid(i.veiculo_id), p_km: int(i.km) });
     },
   },
@@ -159,16 +159,45 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
   orc_atualizar_carro: {
     label: 'Completar o cadastro do carro',
     def: {
-      description: 'Completa marca, modelo e ano do carro da OS. Só preenche o que está vazio ("Não informado" conta como vazio): dado já preenchido não é trocado. Use quando orc_ficha_tecnica devolver carro_sem_modelo, depois de perguntar ao dono.',
+      description: 'Completa marca, modelo e ano de um carro. Informe veiculo_id (carro do cliente, ANTES de abrir a OS) ou os_numero (carro da OS). Só preenche o que está vazio ("Não informado" conta como vazio): dado já preenchido não é trocado. Use quando o carro estiver sem modelo ou ano, depois de perguntar ao dono.',
       input_schema: {
-        type: 'object', additionalProperties: false, required: ['os_numero'],
-        properties: { os_numero: { type: 'integer' }, marca: { type: 'string' }, modelo: { type: 'string', description: 'Ex.: Onix, Uno, Gol' }, ano: { type: 'integer' } },
+        type: 'object', additionalProperties: false,
+        properties: {
+          veiculo_id: { type: 'string', description: 'Carro do cliente (da busca, desta mesma vez)' },
+          os_numero: { type: 'integer', description: 'Alternativa ao veiculo_id: o carro desta OS' },
+          marca: { type: 'string' }, modelo: { type: 'string', description: 'Ex.: Onix, Uno, Gol' }, ano: { type: 'integer' },
+        },
       },
     },
     run: async (db, ws, i) => {
+      const marca = str(i.marca, 60) || null, modelo = str(i.modelo, 60) || null, ano = int(i.ano);
+      if (i.veiculo_id) {
+        const v = uuid(i.veiculo_id);
+        if (!v) return err('veiculo_id_invalido: busque o cliente de novo');
+        return rpc(db, 'orc_update_vehicle_by_id', { p_workshop: ws, p_vehicle: v, p_marca: marca, p_modelo: modelo, p_ano: ano });
+      }
       const os = int(i.os_numero);
-      if (os == null) return err('os_numero_obrigatorio');
-      return rpc(db, 'orc_update_vehicle', { p_workshop: ws, p_os_number: os, p_marca: str(i.marca, 60) || null, p_modelo: str(i.modelo, 60) || null, p_ano: int(i.ano) });
+      if (os == null) return err('informe_veiculo_id_ou_os_numero');
+      return rpc(db, 'orc_update_vehicle', { p_workshop: ws, p_os_number: os, p_marca: marca, p_modelo: modelo, p_ano: ano });
+    },
+  },
+
+  orc_cadastrar_carro: {
+    label: 'Cadastrar carro para cliente existente',
+    def: {
+      description: 'Cadastra um carro para um cliente que já existe (sem carro, ou carro novo). EXIGE o modelo (modelo_obrigatorio: pergunte o modelo, não só o ano); marca e ano também devem ser perguntados. Não duplica placa (devolve o carro que já existe).',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['cliente_id', 'modelo'],
+        properties: {
+          cliente_id: { type: 'string', description: 'Da busca, desta mesma vez' },
+          marca: { type: 'string' }, modelo: { type: 'string' }, ano: { type: 'integer' }, placa: { type: 'string' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const c = uuid(i.cliente_id);
+      if (!c) return err('cliente_id_invalido: busque o cliente de novo');
+      return rpc(db, 'orc_add_vehicle', { p_workshop: ws, p_customer: c, p_marca: str(i.marca, 60) || null, p_modelo: str(i.modelo, 60) || null, p_ano: int(i.ano), p_placa: str(i.placa, 12) || null });
     },
   },
 
