@@ -1,0 +1,396 @@
+// Ferramentas do Orçamentista (agente interno do dono): abrir OS, lançar serviços com peças, responsável e resumo.
+// Cada ferramenta recebe a oficina (ws) do SERVIDOR e chama uma função do banco (orc_*) que confere que tudo é
+// daquela oficina e que só o service_role executa. A IA nunca escolhe a oficina.
+//
+// As ferramentas não guardam estado: a OS e os itens são identificados pelo NÚMERO da OS e pela ordem dos serviços,
+// porque o chat só lembra o texto das respostas (não o resultado das ferramentas).
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { summarizeOs, type OsHead, type OsItem, type TeamMember } from './orcSummary.ts';
+import type { ItemRule } from './commissionRules.ts';
+
+type Input = Record<string, unknown>;
+export type ToolDef = {
+  label: string;
+  def: { description: string; input_schema: Record<string, unknown> };
+  run: (db: SupabaseClient, ws: string, input: Input, ctx: { userId: string }) => Promise<unknown>;
+};
+
+const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const int = (v: unknown) => { const n = Number(v); return v != null && v !== '' && Number.isFinite(n) ? Math.trunc(n) : null; };
+const dec = (v: unknown) => { const n = Number(v); return v != null && v !== '' && Number.isFinite(n) ? n : null; };
+const uuid = (v: unknown) => (typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null);
+const err = (error: string) => ({ ok: false, error });
+const norm = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+/** Serviço pelo código (mesma resposta) ou pelo nome: só segue se achar um único (ou o de nome igual) */
+async function resolveService(db: SupabaseClient, ws: string, id: unknown, nome: unknown):
+  Promise<{ id: string } | { error: Record<string, unknown> }> {
+  const direct = uuid(id);
+  if (direct) return { id: direct };
+  const name = str(nome);
+  if (!name) return { error: err('servico_id_ou_servico_nome_obrigatorio') };
+  const lk = await rpc(db, 'orc_service_lookup', { p_workshop: ws, p_texto: name, p_os_number: null }) as { servicos?: { servico_id: string; nome: string }[] };
+  const list = lk?.servicos ?? [];
+  const exact = list.filter((x) => norm(x.nome) === norm(name));
+  const pick = list.length === 1 ? list[0] : exact.length === 1 ? exact[0] : null;
+  if (!pick) return { error: { ok: false, error: list.length ? 'varios_servicos' : 'servico_nao_encontrado', opcoes: list.map((x) => x.nome) } };
+  return { id: pick.servico_id };
+}
+
+async function rpc(db: SupabaseClient, fn: string, args: Record<string, unknown>) {
+  const { data, error } = await db.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+const noProps = { type: 'object', additionalProperties: false, properties: {} };
+
+export const ORC_TOOLS: Record<string, ToolDef> = {
+  orc_buscar_cliente: {
+    label: 'Buscar cliente (nome, telefone ou placa)',
+    def: {
+      description: 'Procura o cliente da oficina por nome, telefone ou placa. Devolve até 5 clientes com os carros (veiculo_id, placa, modelo, ano) e as OS abertas. Os ids (cliente_id, veiculo_id) só valem NESTA resposta: em uma conversa nova, busque de novo.',
+      input_schema: { type: 'object', additionalProperties: false, required: ['consulta'], properties: { consulta: { type: 'string', description: 'Nome, telefone ou placa' } } },
+    },
+    run: (db, ws, i) => rpc(db, 'orc_find_customer', { p_workshop: ws, p_query: str(i.consulta) }),
+  },
+
+  orc_cadastrar_cliente: {
+    label: 'Cadastrar cliente novo (e o carro)',
+    def: {
+      description: 'Cadastra um cliente novo, com o carro se informado. O carro EXIGE o modelo (erro modelo_obrigatorio: pergunte o modelo antes, não só o ano). Se o telefone ou a placa já existirem, NÃO duplica: devolve o cliente que já existe (erro telefone_ja_cadastrado / placa_ja_cadastrada) para você usar. Só cadastre depois de buscar e não achar.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['nome'],
+        properties: {
+          nome: { type: 'string' }, telefone: { type: 'string' }, marca: { type: 'string', description: 'Ex.: Chevrolet' },
+          modelo: { type: 'string', description: 'Ex.: Onix' }, ano: { type: 'integer' }, placa: { type: 'string' },
+        },
+      },
+    },
+    run: (db, ws, i) => rpc(db, 'orc_create_customer', {
+      p_workshop: ws, p_nome: str(i.nome, 100), p_telefone: str(i.telefone, 30) || null, p_marca: str(i.marca, 60) || null,
+      p_modelo: str(i.modelo, 60) || null, p_ano: int(i.ano), p_placa: str(i.placa, 12) || null,
+    }),
+  },
+
+  orc_abrir_os: {
+    label: 'Abrir a OS do cliente',
+    def: {
+      description: 'Abre uma OS (status aberta, sem itens) para o cliente e o carro. O carro é obrigatório e precisa ter MODELO e ANO: se faltar, a OS não abre (carro_obrigatorio = cliente sem carro, use orc_cadastrar_carro; carro_incompleto = veja "faltando", pergunte ao dono e complete com orc_atualizar_carro). Devolve o os_numero, que você usa em todas as outras ferramentas e cita ao dono. Se o cliente já tem OS aberta, pergunte ao dono se lança nela ou abre outra antes de chamar.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['cliente_id'],
+        properties: { cliente_id: { type: 'string' }, veiculo_id: { type: 'string', description: 'Carro do cliente (da busca ou do cadastro, desta mesma vez)' }, km: { type: 'integer' } },
+      },
+    },
+    run: async (db, ws, i) => {
+      const cliente = uuid(i.cliente_id);
+      if (!cliente) return err('cliente_id_invalido: use o cliente_id devolvido pela busca nesta mesma resposta');
+      if (!uuid(i.veiculo_id)) return err('veiculo_id_invalido: busque o cliente de novo e use o veiculo_id do carro (a OS precisa de carro com modelo e ano)');
+      return rpc(db, 'orc_open_os', { p_workshop: ws, p_customer: cliente, p_vehicle: uuid(i.veiculo_id), p_km: int(i.km) });
+    },
+  },
+
+  orc_buscar_servico: {
+    label: 'Buscar serviço na Tabela de serviços',
+    def: {
+      description: 'Procura o serviço na Tabela de serviços. Para cada um devolve o preço da tabela, o último preço cobrado neste MODELO de carro (se a OS tem carro) e o kit de peças do serviço para este carro (com o custo de cada peça). Use para saber o que vai ser lançado antes de lançar.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['texto'],
+        properties: { texto: { type: 'string', description: 'Ex.: troca de óleo' }, os_numero: { type: 'integer', description: 'OS atual, para considerar o carro dela' } },
+      },
+    },
+    run: (db, ws, i) => rpc(db, 'orc_service_lookup', { p_workshop: ws, p_texto: str(i.texto), p_os_number: int(i.os_numero) }),
+  },
+
+  orc_buscar_peca: {
+    label: 'Buscar peça no cadastro de peças',
+    def: {
+      description: 'Procura peças no cadastro (nome, marca ou código). Devolve até 8 com custo e estoque. Use quando o dono pedir uma peça específica e você precisar escolher entre várias.',
+      input_schema: { type: 'object', additionalProperties: false, required: ['texto'], properties: { texto: { type: 'string' } } },
+    },
+    run: (db, ws, i) => rpc(db, 'orc_part_lookup', { p_workshop: ws, p_texto: str(i.texto) }),
+  },
+
+  orc_lancar_item: {
+    label: 'Lançar serviço com as peças na OS',
+    def: {
+      description: [
+        'Lança UM serviço na OS, com as peças dele. Preço: o que você informar; senão o último cobrado neste modelo de carro; senão o da tabela (a resposta diz a origem). Com usar_kit=true (padrão) entram as peças do kit do serviço para este carro; peças pedidas à parte vão em "pecas". Troca de óleo sem kit para o carro: faça antes a consulta técnica (orc_ficha_tecnica) e salve o kit (orc_salvar_kit_ficha).',
+        'Dentro de um serviço a peça entra só com CUSTO (o preço que o cliente paga já está no serviço).',
+        'Erros que você deve resolver conversando: preco_necessario (pergunte o valor), revisar_pecas (peça com várias opções: pergunte qual; peça fora do cadastro: pergunte o CUSTO e chame de novo com "custo"). Nada é gravado quando há erro.',
+        'Devolve item_numero (a ordem do serviço na OS), preco, pecas com custo, avisos e total_os.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero'],
+        properties: {
+          os_numero: { type: 'integer' },
+          servico_id: { type: 'string', description: 'servico_id da busca (serviço da tabela)' },
+          servico_nome: { type: 'string', description: 'Só para serviço que NÃO está na tabela' },
+          preco: { type: 'number', description: 'Valor cobrado do cliente pelo serviço; omita para usar o da regra' },
+          usar_kit: { type: 'boolean', description: 'Lançar as peças do kit do serviço (padrão: sim)' },
+          pecas: {
+            type: 'array', maxItems: 20,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                nome: { type: 'string' }, peca_id: { type: 'string', description: 'Da busca de peças, quando o dono escolheu uma' },
+                qtd: { type: 'number' }, custo: { type: 'number', description: 'Custo unitário; só para peça fora do cadastro' },
+              },
+            },
+          },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      if (i.servico_id && !uuid(i.servico_id)) return err('servico_id_invalido: use o servico_id da busca nesta mesma resposta');
+      const pecas = (Array.isArray(i.pecas) ? i.pecas : []).slice(0, 20).map((p) => {
+        const o = (p ?? {}) as Input;
+        return { nome: str(o.nome, 120), peca_id: uuid(o.peca_id), qtd: dec(o.qtd) ?? 1, custo: dec(o.custo) };
+      });
+      return rpc(db, 'orc_add_item', {
+        p_workshop: ws, p_os_number: os, p_servico_id: uuid(i.servico_id), p_servico_nome: str(i.servico_nome) || null,
+        p_preco: dec(i.preco), p_usar_kit: i.usar_kit !== false, p_pecas: pecas,
+      });
+    },
+  },
+
+  orc_atualizar_carro: {
+    label: 'Completar o cadastro do carro',
+    def: {
+      description: 'Completa marca, modelo e ano de um carro. Informe veiculo_id (carro do cliente, ANTES de abrir a OS) ou os_numero (carro da OS). Só preenche o que está vazio ("Não informado" conta como vazio): dado já preenchido não é trocado. Use quando o carro estiver sem modelo ou ano, depois de perguntar ao dono.',
+      input_schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          veiculo_id: { type: 'string', description: 'Carro do cliente (da busca, desta mesma vez)' },
+          os_numero: { type: 'integer', description: 'Alternativa ao veiculo_id: o carro desta OS' },
+          marca: { type: 'string' }, modelo: { type: 'string', description: 'Ex.: Onix, Uno, Gol' }, ano: { type: 'integer' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const marca = str(i.marca, 60) || null, modelo = str(i.modelo, 60) || null, ano = int(i.ano);
+      if (i.veiculo_id) {
+        const v = uuid(i.veiculo_id);
+        if (!v) return err('veiculo_id_invalido: busque o cliente de novo');
+        return rpc(db, 'orc_update_vehicle_by_id', { p_workshop: ws, p_vehicle: v, p_marca: marca, p_modelo: modelo, p_ano: ano });
+      }
+      const os = int(i.os_numero);
+      if (os == null) return err('informe_veiculo_id_ou_os_numero');
+      return rpc(db, 'orc_update_vehicle', { p_workshop: ws, p_os_number: os, p_marca: marca, p_modelo: modelo, p_ano: ano });
+    },
+  },
+
+  orc_cadastrar_carro: {
+    label: 'Cadastrar carro para cliente existente',
+    def: {
+      description: 'Cadastra um carro para um cliente que já existe (sem carro, ou carro novo). EXIGE o modelo (modelo_obrigatorio: pergunte o modelo, não só o ano); marca e ano também devem ser perguntados. Não duplica placa (devolve o carro que já existe).',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['cliente_id', 'modelo'],
+        properties: {
+          cliente_id: { type: 'string', description: 'Da busca, desta mesma vez' },
+          marca: { type: 'string' }, modelo: { type: 'string' }, ano: { type: 'integer' }, placa: { type: 'string' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const c = uuid(i.cliente_id);
+      if (!c) return err('cliente_id_invalido: busque o cliente de novo');
+      return rpc(db, 'orc_add_vehicle', { p_workshop: ws, p_customer: c, p_marca: str(i.marca, 60) || null, p_modelo: str(i.modelo, 60) || null, p_ano: int(i.ano), p_placa: str(i.placa, 12) || null });
+    },
+  },
+
+  orc_ficha_tecnica: {
+    label: 'Consulta técnica (óleo e filtros do carro)',
+    def: {
+      description: [
+        'Consulta a ficha técnica do carro da OS: óleo (viscosidade, norma, litros da ficha e litros no kit, já arredondados para cima) e filtros (óleo, ar, combustível, cabine), cruzados com as peças do cadastro da oficina, mais uma sugestao_kit.',
+        'Resultados: carro_sem_modelo (complete o carro com orc_atualizar_carro); motivo "escolher_versao" (várias versões: pergunte ao dono e chame de novo com "versao" em texto, ex.: "LT 1.0"); motivo "modelo_sem_ficha" (o modelo não está no catálogo); ou a ficha com verificada=true/false.',
+        'verificada=false significa ficha em RASCUNHO (ainda não conferida): o dono precisa conferir antes de você salvar qualquer coisa. Não grava nada.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero'],
+        properties: {
+          os_numero: { type: 'integer' },
+          versao: { type: 'string', description: 'A versão/motor que o dono escolheu, em texto (ex.: "LT 1.0", "1.4 8V")' },
+          ficha_id: { type: 'string', description: 'Só se veio de uma resposta de ferramenta desta mesma vez' },
+          servico_id: { type: 'string', description: 'Para saber se já existe kit deste serviço para este carro' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      if (i.ficha_id && !uuid(i.ficha_id)) return err('ficha_id_invalido: use a versão em texto');
+      const out = await rpc(db, 'orc_tech_sheet', {
+        p_workshop: ws, p_os_number: os, p_ficha: uuid(i.ficha_id), p_servico: uuid(i.servico_id), p_escolha: str(i.versao, 80) || null,
+      }) as { ok?: boolean; ficha?: { ficha_id: string } | null; motivo?: string; carro?: { modelo?: string; ano?: number } };
+      // Registra a busca como a tela faz: é o que diz ao admin quais modelos cadastrar primeiro
+      if (out?.ok && (out.ficha || out.motivo === 'modelo_sem_ficha') && out.carro?.modelo) {
+        await db.from('tech_lookup_log').insert({ workshop_id: ws, query: out.carro.modelo, year: out.carro.ano ?? null, vehicle_id: out.ficha?.ficha_id ?? null });
+      }
+      return out;
+    },
+  },
+
+  orc_salvar_kit_ficha: {
+    label: 'Salvar peças e kit da ficha (e conferir a ficha)',
+    def: {
+      description: [
+        'GRAVA: cria no cadastro as peças que faltam, monta o KIT do serviço para este carro na Tabela de serviços, vincula o carro à ficha e, com conferir_ficha=true, marca a ficha como conferida (vale para todas as oficinas).',
+        'SÓ chame depois que o dono disser SIM, nesta conversa, ao que você explicou. Use conferir_ficha=true só se ele concordou em marcar a ficha como conferida.',
+        'pecas: [{tipo: oleo | filtro_oleo | filtro_ar | filtro_combustivel | filtro_cabine, nome, qtd, custo?, marca?, codigo?}]. Peça que já existe no cadastro entra pelo nome igual; peça nova EXIGE custo (óleo: custo por litro). Óleo: qtd em litros inteiros (litros_no_kit).',
+        'Devolve revisar_pecas (sem_custo etc.) sem gravar nada, ou o que foi criado.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero', 'pecas'],
+        properties: {
+          os_numero: { type: 'integer' },
+          servico_nome: { type: 'string', description: 'Ex.: Troca de óleo' },
+          servico_id: { type: 'string', description: 'Só se veio de uma resposta de ferramenta desta mesma vez' },
+          versao: { type: 'string', description: 'A versão/motor da ficha escolhida, em texto, se o carro ainda não está vinculado' },
+          ficha_id: { type: 'string', description: 'Só se veio de uma resposta de ferramenta desta mesma vez' },
+          conferir_ficha: { type: 'boolean' },
+          pecas: {
+            type: 'array', minItems: 1, maxItems: 8,
+            items: {
+              type: 'object', additionalProperties: false, required: ['tipo', 'nome'],
+              properties: {
+                tipo: { type: 'string', enum: ['oleo', 'filtro_oleo', 'filtro_ar', 'filtro_combustivel', 'filtro_cabine'] },
+                nome: { type: 'string' }, qtd: { type: 'number' }, custo: { type: 'number' }, marca: { type: 'string' }, codigo: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    run: async (db, ws, i, ctx) => {
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      const svc = await resolveService(db, ws, i.servico_id, i.servico_nome);
+      if ('error' in svc) return svc.error;
+      let ficha = uuid(i.ficha_id);
+      if (!ficha) {
+        const sh = await rpc(db, 'orc_tech_sheet', { p_workshop: ws, p_os_number: os, p_ficha: null, p_servico: svc.id, p_escolha: str(i.versao, 80) || null }) as
+          { ok?: boolean; ficha?: { ficha_id: string } | null; motivo?: string; candidatos?: unknown };
+        if (!sh?.ok) return sh;
+        if (!sh.ficha?.ficha_id) return { ok: false, error: 'ficha_nao_definida', motivo: sh.motivo, candidatos: sh.candidatos };
+        ficha = sh.ficha.ficha_id;
+      }
+      const pecas = (Array.isArray(i.pecas) ? i.pecas : []).slice(0, 8).map((p) => {
+        const o = (p ?? {}) as Input;
+        return { tipo: str(o.tipo, 30), nome: str(o.nome, 120), qtd: dec(o.qtd) ?? 1, custo: dec(o.custo), marca: str(o.marca, 60) || null, codigo: str(o.codigo, 60) || null };
+      });
+      return rpc(db, 'orc_save_kit', {
+        p_workshop: ws, p_os_number: os, p_servico: svc.id, p_ficha: ficha, p_pecas: pecas, p_verify: i.conferir_ficha === true, p_user: ctx.userId,
+      });
+    },
+  },
+
+  orc_listar_equipe: {
+    label: 'Listar a equipe (responsáveis)',
+    def: {
+      description: 'Lista os colaboradores ativos da oficina e se ganham comissão por serviço. Use antes de definir responsáveis ou quando o dono citar um nome que você não tem certeza.',
+      input_schema: noProps,
+    },
+    run: async (db, ws) => {
+      const { data, error } = await db.from('workshop_mechanics')
+        .select('name, role_title, no_commission, commission_revenue_only').eq('workshop_id', ws).eq('active', true).order('name');
+      if (error) throw new Error(error.message);
+      return {
+        ok: true,
+        equipe: (data ?? []).map((m: any) => ({
+          nome: m.name, funcao: m.role_title ?? null,
+          comissao_por_servico: !(m.no_commission || m.commission_revenue_only),
+        })),
+      };
+    },
+  },
+
+  orc_definir_responsavel: {
+    label: 'Definir o responsável de cada item',
+    def: {
+      description: 'Define quem fez o item N da OS (N = a ordem do serviço na OS, como devolvida em item_numero). O nome é achado pelo início das palavras (ex.: "rafa" → Rafael); se houver mais de um, devolve as opções para você perguntar. É o responsável que define a comissão.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero', 'item_numero', 'colaborador'],
+        properties: { os_numero: { type: 'integer' }, item_numero: { type: 'integer' }, colaborador: { type: 'string' } },
+      },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero), item = int(i.item_numero);
+      if (os == null || item == null) return err('os_numero_e_item_numero_obrigatorios');
+      return rpc(db, 'orc_set_responsible', { p_workshop: ws, p_os_number: os, p_item_number: item, p_colaborador: str(i.colaborador, 80) });
+    },
+  },
+
+  orc_cancelar_os: {
+    label: 'Cancelar a OS',
+    def: {
+      description: 'Cancela a OS pelo número (o estoque volta como na tela). Use SÓ depois do "sim" do dono nesta conversa. Com nao_aprovado=true marca como orçamento não aprovado pelo cliente (fica salvo para retomar o contato). Não cancela OS concluída nem com recebimento lançado (os_concluida_nao_cancela / os_com_recebimento: o dono resolve pelo caixa ou pela tela da OS).',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero'],
+        properties: { os_numero: { type: 'integer' }, nao_aprovado: { type: 'boolean', description: 'true = o cliente não aprovou o orçamento' } },
+      },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      return rpc(db, 'orc_cancel_os', { p_workshop: ws, p_os_number: os, p_declined: i.nao_aprovado === true });
+    },
+  },
+
+  orc_corrigir_cadastro: {
+    label: 'Corrigir cadastro do cliente e do carro',
+    def: {
+      description: 'CORRIGE (troca) dados já cadastrados: nome, telefone e e-mail do cliente; marca, modelo, ano e placa do carro. Informe os_numero (cliente e carro da OS) ou cliente_id/veiculo_id (desta mesma vez) e só os campos que mudam. Use só depois do "sim" do dono. Não duplica telefone nem placa (erro telefone_ja_cadastrado / placa_ja_cadastrada: diga de quem é). Se mudar modelo ou ano, a ficha técnica do carro é solta: consulte de novo com orc_ficha_tecnica. Para só PREENCHER campo vazio use orc_atualizar_carro.',
+      input_schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          os_numero: { type: 'integer' }, cliente_id: { type: 'string' }, veiculo_id: { type: 'string' },
+          nome: { type: 'string' }, telefone: { type: 'string' }, email: { type: 'string' },
+          marca: { type: 'string' }, modelo: { type: 'string' }, ano: { type: 'integer' }, placa: { type: 'string' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero), c = uuid(i.cliente_id), v = uuid(i.veiculo_id);
+      if (os == null && !c && !v) return err('informe_os_numero_ou_ids');
+      return rpc(db, 'orc_fix_registration', {
+        p_workshop: ws, p_os_number: os, p_customer: c, p_vehicle: v,
+        p_nome: str(i.nome, 100) || null, p_telefone: str(i.telefone, 30) || null, p_email: str(i.email, 120) || null,
+        p_marca: str(i.marca, 60) || null, p_modelo: str(i.modelo, 60) || null, p_ano: int(i.ano), p_placa: str(i.placa, 12) || null,
+      });
+    },
+  },
+
+  orc_resumo_os: {
+    label: 'Resumo da OS (totais e comissões)',
+    def: {
+      description: 'Resumo da OS: cada serviço com valor, peças (custo), responsável e comissão, mais os totais: valor dos serviços, total da OS, custo de peças e comissões (por pessoa e total), com a MESMA regra da tela de Comissões. Chame ao terminar de lançar e definir os responsáveis, e sempre que o dono pedir os números.',
+      input_schema: { type: 'object', additionalProperties: false, required: ['os_numero'], properties: { os_numero: { type: 'integer' } } },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      const data = await rpc(db, 'orc_os_data', { p_workshop: ws, p_os_number: os }) as
+        { ok: boolean; error?: string; os: OsHead; itens: OsItem[] };
+      if (!data?.ok) return data;
+      const [{ data: team, error: e1 }, { data: rules, error: e2 }] = await Promise.all([
+        db.from('workshop_mechanics').select('id, name, no_commission, commission_revenue_only').eq('workshop_id', ws),
+        db.from('commission_item_rules').select('id, workshop_id, keyword, mechanic_id, amount, per_units, percent, active').eq('workshop_id', ws),
+      ]);
+      if (e1) throw new Error(e1.message);
+      if (e2) throw new Error(e2.message);
+      const norm: ItemRule[] = (rules ?? []).map((r: any) => ({
+        ...r, amount: Number(r.amount), per_units: Number(r.per_units), percent: Number(r.percent ?? 0),
+      }));
+      const items: OsItem[] = (data.itens ?? []).map((x) => ({
+        ...x, quantity: Number(x.quantity), unit_price: Number(x.unit_price),
+        unit_cost: x.unit_cost == null ? null : Number(x.unit_cost),
+        commission_amount: x.commission_amount == null ? null : Number(x.commission_amount),
+      }));
+      return { ok: true, ...summarizeOs({ ...data.os, preco: Number(data.os.preco), desconto: Number(data.os.desconto ?? 0) }, items, (team ?? []) as TeamMember[], norm) };
+    },
+  },
+};
