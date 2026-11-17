@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { saveKit, type KitCar, type KitProposal } from '@/lib/osKits';
+import { useServiceCategories } from '@/lib/serviceCategories';
 
 /**
  * Ao concluir a OS: "esse serviço usou estas peças — salvar como kit na Tabela de serviços?"
@@ -10,6 +11,7 @@ import { saveKit, type KitCar, type KitProposal } from '@/lib/osKits';
 export default function SaveKitsModal({ proposals, workshopId, car, onClose }: {
   proposals: KitProposal[]; workshopId: string; car: KitCar | null; onClose: () => void;
 }) {
+  const categories = useServiceCategories(workshopId);
   const [done, setDone] = useState<Record<string, 'saved' | 'skipped'>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>(() => Object.fromEntries(proposals.map(p => [p.key, `${p.name} (ajustado)`])));
@@ -19,7 +21,7 @@ export default function SaveKitsModal({ proposals, workshopId, car, onClose }: {
 
   async function save(p: KitProposal) {
     setBusy(p.key); setError(e => ({ ...e, [p.key]: '' }));
-    const err = await saveKit(p, { workshopId, name: names[p.key], forModel: !!forModel[p.key], car });
+    const err = await saveKit(p, { workshopId, name: names[p.key], forModel: !!forModel[p.key], car, categories: categories.names });
     setBusy(null);
     if (err) { setError(e => ({ ...e, [p.key]: err })); return; }
     toast.success(p.kind === 'new' ? 'Kit salvo na Tabela de serviços' : 'Kit novo criado na Tabela de serviços');

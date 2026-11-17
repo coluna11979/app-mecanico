@@ -186,6 +186,13 @@ export default function OsDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  // OS concluída há pouco e ainda sem a pergunta do kit (concluída pelo quadro, pelo caixa ou por outra tela): pergunta ao abrir
+  useEffect(() => {
+    if (!os || os.status !== 'completed' || os.source === 'balcao' || !os.completed_at) return;
+    if (Date.now() - new Date(os.completed_at).getTime() > 3 * 86400000) return;
+    offerKits();
+  }, [os?.id, os?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** OS aberta antes de hoje → pergunta a data da conclusão; de hoje → conclui agora */
   function askConclude() {
     if (!os) return;
@@ -228,16 +235,18 @@ export default function OsDetail() {
   }
 
   /** Concluiu: pergunta se os serviços com peças viram kit na Tabela de serviços (uma vez por OS) */
-  async function offerKits() {
+  async function offerKits(force = false) {
     if (!os || mech || !canDo(session, balcao, 'pecas_estoque')) return;
     const asked = `os_kits_asked:${os.id}`;
-    try { if (localStorage.getItem(asked)) return; } catch { /* sem armazenamento: pergunta */ }
+    if (!force) {
+      try { if (localStorage.getItem(asked)) return; } catch { /* sem armazenamento: pergunta */ }
+    }
     const car: KitCar | null = os.vehicle
       ? { model: os.vehicle.model ?? null, make: os.vehicle.make ?? null, year: os.vehicle.year ?? null, techId: (os.vehicle as { tech_vehicle_id?: string | null }).tech_vehicle_id ?? null }
       : null;
     try {
       const proposals = await loadKitProposals(os.id, os.workshop_id, car);
-      if (!proposals.length) return;
+      if (!proposals.length) { if (force) toast.info('Nenhum serviço desta OS tem peças dentro para virar kit'); return; }
       try { localStorage.setItem(asked, '1'); } catch { /* ignore */ }
       setKitOffer({ proposals, car });
     } catch { /* o kit é um extra: nunca atrapalha concluir a OS */ }
@@ -397,6 +406,8 @@ export default function OsDetail() {
     ...(canOpen('/oficina/checkup') ? [{ label: '🔍 Check-up do veículo', onClick: () => nav(`/oficina/checkup?os=${os.id}`) }] : []),
     ...(feature('os.imprimir') ? [{ label: '🖨️ Imprimir / PDF', onClick: () => nav(`/oficina/os/${os.id}/imprimir`), mobileOnly: true }] : []),
     ...(!closed ? [{ label: '✏️ Editar dados', onClick: () => setEditing(true) }] : []),
+    ...(os.status === 'completed' && !isSale && canDo(session, balcao, 'pecas_estoque')
+      ? [{ label: '📦 Salvar kits desta OS', onClick: () => offerKits(true) }] : []),
     ...(os.status === 'completed' && Number(os.paid_amount ?? 0) > 0 && canDo(session, balcao, 'cancelar_recebimento')
       ? [{ label: '💳 Corrigir pagamento', onClick: () => setFixPay(n => n + 1) }] : []),
     ...(closed && os.quote_status !== 'declined' ? [{ label: '✏️ Corrigir OS (reabrir)', onClick: () => changeStatus('open') }] : []),
@@ -739,10 +750,15 @@ export default function OsDetail() {
             )}
             {!isSale && os.status !== 'cancelled' && canDo(session, balcao, 'caixa') && itemsDirty && (
               <p className="rounded-xl border border-pending-300 bg-pending-50 px-4 py-2.5 text-sm text-pending-800">
-                ⚠️ Há itens ainda não salvos. Clique em <strong>Salvar itens</strong> para eles aparecerem aqui e você atribuir quem fez cada serviço.
+                ⚠️ Os itens que você lançou ainda não foram salvos, por isso o quadro abaixo mostra os itens antigos. Salve para cada serviço aparecer aqui e você escolher quem fez.
+                <button type="button" onClick={() => document.getElementById('os-save-items')?.click()}
+                  className="mt-2 flex w-full sm:w-auto items-center justify-center min-h-[44px] px-4 rounded-xl bg-brand-500 text-white text-sm font-bold">
+                  💾 Salvar itens agora
+                </button>
               </p>
             )}
             {!isSale && os.status !== 'cancelled' && canDo(session, balcao, 'caixa') && (
+              <div className={itemsDirty ? 'opacity-40 pointer-events-none select-none' : ''} aria-disabled={itemsDirty}>
               <OsCommissionCard
                 key={items.map(i => `${i.id}:${i.kind}:${i.executor ?? ''}:${i.workshop_mechanic_id ?? ''}:${i.quantity}:${i.unit_price}`).join('|') + `|${os.workshop_mechanic_id ?? ''}`}
                 os={{ id: os.id, executor: os.executor ?? null, workshop_mechanic_id: os.workshop_mechanic_id ?? null }}
@@ -753,6 +769,7 @@ export default function OsDetail() {
                   if (canOpen('/oficina/dashboard')) setPublishing(true);
                   else toast.info('Serviço marcado para a plataforma. Peça a quem publica demandas para chamar o mecânico.');
                 }} />
+              </div>
             )}
 
             {(os.description || os.notes) && (
