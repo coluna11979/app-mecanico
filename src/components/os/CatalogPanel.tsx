@@ -90,7 +90,7 @@ export default function CatalogPanel({ suggestions, partFits, services, itemCoun
     const words = norm(q).split(/\s+/).filter(Boolean);
     return rankHits(suggestions
       .filter(s => (tab === 'peca' ? s.kind === 'part' && fitOk(s) : isLabor(s) && (!cat || catOf(s) === cat)))
-      .filter(s => { const n = norm(`${s.description} ${s.code ?? ''}`); return words.every(w => n.includes(w)); }), words);
+      .filter(s => { const n = norm(`${s.description} ${s.code ?? ''} ${s.search ?? ''}`); return words.every(w => n.includes(w)); }), words);
   }, [suggestions, tab, q, cat, allParts, partFits]);
   const list = matches.slice(0, LIST_MAX);
 
@@ -105,7 +105,7 @@ export default function CatalogPanel({ suggestions, partFits, services, itemCoun
   const partHits = useMemo(() => {
     const words = norm(pq).split(/\s+/).filter(Boolean);
     if (!words.length) return [];
-    return rankHits(suggestions.filter(s => s.kind === 'part' && fitOk(s) && words.every(w => norm(`${s.description} ${s.code ?? ''}`).includes(w))), words).slice(0, 6);
+    return rankHits(suggestions.filter(s => s.kind === 'part' && fitOk(s) && words.every(w => norm(`${s.description} ${s.code ?? ''} ${s.search ?? ''}`).includes(w))), words).slice(0, 6);
   }, [suggestions, pq, allParts, partFits]);
 
   function openVehicle() {
