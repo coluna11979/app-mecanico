@@ -97,6 +97,21 @@ export default function CatalogPanel({ suggestions, partFits, services, itemCoun
   }, [suggestions, tab, q, cat, allParts, partFits, validTarget]);
   const list = matches.slice(0, LIST_MAX);
 
+  // Aba Peças sem resultado por causa do filtro: quantas peças de OUTROS carros/famílias combinam com a busca
+  const hiddenByFilter = useMemo(() => {
+    const words = norm(q).split(/\s+/).filter(Boolean);
+    if (tab !== 'peca' || allParts || !words.length) return 0;
+    return suggestions.filter(s => s.kind === 'part' && words.every(w => norm(`${s.description} ${s.code ?? ''} ${s.search ?? ''}`).includes(w))).length;
+  }, [suggestions, tab, q, allParts]);
+
+  // Na aba Serviços: avisa quando a busca também acha PEÇAS (ex.: "silencioso"), que ficam na outra aba
+  const partsForQuery = useMemo(() => {
+    const words = norm(q).split(/\s+/).filter(Boolean);
+    if (tab !== 'servico' || q.trim().length < 2) return 0;
+    return suggestions.filter(s => s.kind === 'part' && fitOk(s, validTarget)
+      && words.every(w => norm(`${s.description} ${s.code ?? ''} ${s.search ?? ''}`).includes(w))).length;
+  }, [suggestions, tab, q, allParts, partFits, validTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const modelHits = useMemo(() => {
     const words = norm(vq).split(/\s+/).filter(Boolean);
@@ -318,7 +333,35 @@ export default function CatalogPanel({ suggestions, partFits, services, itemCoun
           </div>
         ) : (
           <ul className="flex-1 overflow-y-auto divide-y divide-steel-100">
-            {list.length === 0 && (
+            {partsForQuery > 0 && (
+              <li>
+                <button type="button" onClick={() => setTab('peca')}
+                  className="w-full min-h-[52px] px-4 py-2 flex items-center justify-between gap-3 text-left text-sm bg-brand-50 hover:bg-brand-100">
+                  <span className="font-semibold text-brand-800">🔩 Procurando uma peça? {partsForQuery} peça{partsForQuery === 1 ? '' : 's'} com “{q.trim()}”</span>
+                  <span className="shrink-0 text-xs font-bold text-brand-700">Ver na aba Peças ›</span>
+                </button>
+              </li>
+            )}
+            {list.length === 0 && tab === 'peca' && q.trim().length >= 2 && (
+              <li className="px-4 py-5 space-y-2.5">
+                <div className="text-sm text-steel-600">Nenhuma peça de <strong>“{q.trim()}”</strong> {hiddenByFilter > 0 ? 'para este veículo e item.' : 'no cadastro.'}</div>
+                {hiddenByFilter > 0 && (
+                  <button type="button" onClick={() => setAllParts(true)}
+                    className="w-full min-h-[48px] px-4 rounded-xl border border-steel-200 bg-white text-sm font-semibold text-steel-800 text-left hover:bg-steel-50">
+                    👁 Ver as {hiddenByFilter} peça{hiddenByFilter === 1 ? '' : 's'} de outros carros
+                    <span className="block text-xs font-normal text-steel-500">Serve para confirmar se a peça é compatível</span>
+                  </button>
+                )}
+                {validTarget && (
+                  <button type="button" onClick={() => { onPick({ description: q.trim(), kind: 'part', unit_price: 0, qty: 1 }, validTarget); flash(q.trim()); setQ(''); }}
+                    className="w-full min-h-[48px] px-4 rounded-xl bg-brand-50 text-sm font-bold text-brand-800 text-left hover:bg-brand-100">
+                    ➕ Adicionar “{q.trim()}” como peça do item
+                    <span className="block text-xs font-normal text-steel-500">Peça sem cadastro (ou sob encomenda): o custo e o valor você preenche na linha</span>
+                  </button>
+                )}
+              </li>
+            )}
+            {list.length === 0 && !(tab === 'peca' && q.trim().length >= 2) && (
               <li className="px-4 py-10 text-center text-sm text-steel-500">
                 {suggestions.some(s => (tab === 'peca' ? s.kind === 'part' : isLabor(s)))
                   ? 'Nada encontrado com essa busca.'
