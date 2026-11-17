@@ -31,7 +31,7 @@ export default function Servicos() {
   const [editing, setEditing] = useState<WorkshopService | 'new' | null>(null);
   const [busy, setBusy]       = useState(false);
   /** "Tabela" ou "Por veículo" (preços já cobrados em cada carro, vindos das OS) */
-  const [tab, setTab]         = useState<'tabela' | 'veiculo'>('tabela');
+  const [tab, setTab]         = useState<'tabela' | 'veiculo' | 'kits'>('tabela');
   const [charges, setCharges] = useState<ServiceCharge[] | null>(null);
 
   // O histórico por veículo só é carregado quando alguém pede (aba ou ficha do serviço)
@@ -167,7 +167,7 @@ export default function Servicos() {
             )}
 
             <div className="inline-flex rounded-xl bg-steel-100 p-1">
-              {([['tabela', '🛠️ Tabela de preços'], ['veiculo', '🚗 Histórico por veículo']] as const).map(([k, label]) => (
+              {([['tabela', '🛠️ Tabela de preços'], ['veiculo', '🚗 Histórico por veículo'], ['kits', '📦 Kits por modelo']] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setTab(k)}
                   className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${tab === k ? 'bg-white text-steel-900 shadow-sm' : 'text-steel-500 hover:text-steel-700'}`}>
                   {label}
@@ -175,7 +175,7 @@ export default function Servicos() {
               ))}
             </div>
 
-            {tab === 'veiculo' ? <ByVehicle charges={charges} /> : <>
+            {tab === 'kits' ? <KitsByModel wid={wid!} /> : tab === 'veiculo' ? <ByVehicle charges={charges} /> : <>
             <div className="flex flex-wrap items-center gap-3">
               <input className="input !w-auto flex-1 min-w-[220px]" placeholder="Buscar serviço"
                 value={q} onChange={e => setQ(e.target.value)} />
@@ -388,6 +388,179 @@ function PricesByVehicle({ service, charges }: { service: WorkshopService; charg
 }
 
 /** Faixa de preço do serviço neste veículo: ponto = último valor cobrado */
+type KitListRow = {
+  id: string; service_id: string; description: string; quantity: number; position: number;
+  vehicle_make: string | null; vehicle_model: string | null; year_from: number | null; year_to: number | null;
+  workshop_services: { name: string; category: string | null } | null;
+};
+
+/** Todos os kits criados, agrupados por marca → modelo → serviço, para acompanhar o que já foi montado */
+function KitsByModel({ wid }: { wid: string }) {
+  const [rows, setRows] = useState<KitListRow[] | null>(null);
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [cat, setCat] = useState<string | null>(null);
+  const [sure, setSure] = useState<string | null>(null);
+  const [newPart, setNewPart] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const all: KitListRow[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase.from('workshop_service_parts')
+          .select('id, service_id, description, quantity, position, vehicle_make, vehicle_model, year_from, year_to, workshop_services(name, category)')
+          .eq('workshop_id', wid).order('position').range(from, from + 999);
+        if (error) { toast.error('Não foi possível carregar os kits: ' + error.message); break; }
+        all.push(...((data ?? []) as unknown as KitListRow[]));
+        if ((data ?? []).length < 1000) break;
+      }
+      if (live) setRows(all);
+    })();
+    return () => { live = false; };
+  }, [wid]);
+
+  const tree = useMemo(() => {
+    const t = norm(q);
+    const makes = new Map<string, Map<string, Map<string, KitListRow[]>>>();
+    for (const r of rows ?? []) {
+      const make = r.vehicle_model ? (r.vehicle_make?.trim() || 'Sem marca') : 'Kit geral (qualquer carro)';
+      const model = r.vehicle_model?.trim() || 'Todos os modelos';
+      const svc = r.workshop_services?.name ?? 'Serviço';
+      if (cat && (r.workshop_services?.category ?? 'Outro') !== cat) continue;
+      if (t && !norm(`${make} ${model} ${svc} ${r.description}`).includes(t)) continue;
+      const mm = makes.get(make) ?? new Map(); makes.set(make, mm);
+      const sm = mm.get(model) ?? new Map(); mm.set(model, sm);
+      sm.set(svc, [...(sm.get(svc) ?? []), r]);
+    }
+    return [...makes.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [rows, q, cat]);
+
+  const cats = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows ?? []) { const c = r.workshop_services?.category ?? 'Outro'; m.set(c, (m.get(c) ?? 0) + 1); }
+    return [...m.keys()].sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  async function setQty(r: KitListRow, v: string) {
+    const n = parseMoney(v);
+    if (!Number.isFinite(n) || n <= 0 || n === Number(r.quantity)) return;
+    const { error } = await supabase.from('workshop_service_parts').update({ quantity: n }).eq('id', r.id);
+    if (error) return toast.error('Não foi possível salvar: ' + error.message);
+    setRows(xs => (xs ?? []).map(x => x.id === r.id ? { ...x, quantity: n } : x));
+  }
+  async function setDesc(r: KitListRow, v: string) {
+    const d = v.trim();
+    if (!d || d === r.description) return;
+    const { error } = await supabase.from('workshop_service_parts').update({ description: d }).eq('id', r.id);
+    if (error) return toast.error('Não foi possível salvar: ' + error.message);
+    setRows(xs => (xs ?? []).map(x => x.id === r.id ? { ...x, description: d } : x));
+  }
+  async function removeParts(ids: string[]) {
+    const { error } = await supabase.from('workshop_service_parts').delete().in('id', ids);
+    if (error) return toast.error('Não foi possível remover: ' + error.message);
+    setRows(xs => (xs ?? []).filter(x => !ids.includes(x.id)));
+  }
+  async function addPart(base: KitListRow, text: string) {
+    const d = text.trim();
+    if (!d) return;
+    const { data, error } = await supabase.from('workshop_service_parts').insert({
+      workshop_id: wid, service_id: base.service_id, description: d, quantity: 1, part_id: null, position: 999,
+      vehicle_model: base.vehicle_model, vehicle_make: base.vehicle_make, year_from: base.year_from, year_to: base.year_to,
+      tech_vehicle_id: null,
+    }).select('id, service_id, description, quantity, position, vehicle_make, vehicle_model, year_from, year_to').single();
+    if (error) return toast.error('Não foi possível adicionar: ' + error.message);
+    setRows(xs => [...(xs ?? []), { ...(data as unknown as KitListRow), workshop_services: base.workshop_services }]);
+    setNewPart(n => ({ ...n, [`${base.service_id}|${base.vehicle_model ?? ''}`]: '' }));
+  }
+
+  if (rows === null) return <div className="text-sm text-steel-500 py-6">Carregando kits…</div>;
+  const totalKits = tree.reduce((n, [, mm]) => n + [...mm.values()].reduce((m, sm) => m + sm.size, 0), 0);
+  const toggle = (k: string) => setOpen(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <input className="input !w-auto flex-1 min-w-[220px]" placeholder="Buscar marca, modelo, serviço ou peça"
+          value={q} onChange={e => setQ(e.target.value)} />
+        <span className="text-sm text-steel-500">{totalKits} kit{totalKits === 1 ? '' : 's'} em {tree.length} marca{tree.length === 1 ? '' : 's'}</span>
+      </div>
+      {cats.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {[null, ...cats].map(c => (
+            <button key={c ?? 'all'} type="button" onClick={() => setCat(c)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold border ${cat === c ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-steel-600 border-steel-200 hover:border-steel-400'}`}>
+              {c ?? 'Todas as categorias'}
+            </button>
+          ))}
+        </div>
+      )}
+      {tree.length === 0 && (
+        <div className="card p-6 text-sm text-steel-600">
+          Nenhum kit ainda. Ao salvar uma OS com peças dentro de um serviço, o sistema pergunta se você quer criar o kit.
+        </div>
+      )}
+      {tree.map(([make, models]) => (
+        <section key={make} className="card overflow-hidden">
+          <h3 className="px-4 py-2.5 bg-steel-50 border-b border-steel-100 font-bold text-steel-900">
+            {make} <span className="font-normal text-steel-500 text-sm">· {models.size} modelo{models.size === 1 ? '' : 's'}</span>
+          </h3>
+          <div className="divide-y divide-steel-100">
+            {[...models.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([model, svcs]) => (
+              <div key={model} className="px-4 py-3">
+                <div className="font-semibold text-steel-800">{model} <span className="font-normal text-xs text-steel-500">· {svcs.size} kit{svcs.size === 1 ? '' : 's'}</span></div>
+                <div className="mt-2 space-y-1.5">
+                  {[...svcs.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([svc, parts]) => {
+                    const k = `${make}|${model}|${svc}`;
+                    const years = fmtYearRange(parts[0]) || null;
+                    return (
+                      <div key={k} className="rounded-lg border border-steel-200">
+                        <button type="button" onClick={() => toggle(k)} className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm">
+                          <span className="font-medium text-steel-900">{svc}{parts[0].workshop_services?.category && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-steel-500 bg-steel-100 rounded px-1.5 py-0.5">{parts[0].workshop_services.category}</span>}{years && <span className="text-xs text-steel-500"> · {years}</span>}</span>
+                          <span className="text-xs text-steel-500 shrink-0">{parts.length} peça{parts.length === 1 ? '' : 's'} {open.has(k) ? '▲' : '▼'}</span>
+                        </button>
+                        {open.has(k) && (
+                          <div className="px-3 pb-3 space-y-1.5">
+                            {parts.map(p => (
+                              <div key={p.id} className="flex items-center gap-2">
+                                <input className="input !py-1.5 text-sm w-16 text-center shrink-0" defaultValue={String(Number(p.quantity)).replace('.', ',')}
+                                  onBlur={e => setQty(p, e.target.value)} aria-label="Quantidade" />
+                                <input className="input !py-1.5 text-sm flex-1 min-w-0" defaultValue={p.description}
+                                  onBlur={e => setDesc(p, e.target.value)} aria-label="Peça" />
+                                <button type="button" className="text-steel-400 hover:text-red-600 px-1" title="Tirar a peça do kit"
+                                  onClick={() => removeParts([p.id])}>✕</button>
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-2 pt-1">
+                              <input className="input !py-1.5 text-sm flex-1 min-w-0" placeholder="+ Adicionar peça ao kit"
+                                value={newPart[`${parts[0].service_id}|${parts[0].vehicle_model ?? ''}`] ?? ''}
+                                onChange={e => setNewPart(n => ({ ...n, [`${parts[0].service_id}|${parts[0].vehicle_model ?? ''}`]: e.target.value }))}
+                                onKeyDown={e => { if (e.key === 'Enter') addPart(parts[0], newPart[`${parts[0].service_id}|${parts[0].vehicle_model ?? ''}`] ?? ''); }} />
+                              <button type="button" className="btn-secondary text-xs !py-1.5"
+                                onClick={() => addPart(parts[0], newPart[`${parts[0].service_id}|${parts[0].vehicle_model ?? ''}`] ?? '')}>Adicionar</button>
+                            </div>
+                            <div className="pt-1 text-right">
+                              {sure === k
+                                ? <span className="text-xs">Excluir este kit inteiro?{' '}
+                                    <button type="button" className="font-bold text-red-600 hover:underline" onClick={() => { removeParts(parts.map(p => p.id)); setSure(null); }}>Sim, excluir</button>{' · '}
+                                    <button type="button" className="text-steel-500 hover:underline" onClick={() => setSure(null)}>Não</button></span>
+                                : <button type="button" className="text-xs text-steel-500 hover:text-red-600 hover:underline" onClick={() => setSure(k)}>Excluir kit</button>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function PriceBar({ min, max, last }: { min: number; max: number; last: number }) {
   if (min === max) return <span className="text-[11px] text-steel-400">preço fixo</span>;
   const pos = Math.min(100, Math.max(0, ((last - min) / (max - min)) * 100));
