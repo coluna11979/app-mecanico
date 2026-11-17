@@ -331,8 +331,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   // Peça de nota recém-lançada ainda não tem veículo vinculado: vale também o nome ("... LOGAN SANDERO" serve no Sandero)
   const modelWord = norm(vehModel).split(/[^a-z0-9]+/).find(w => w.length >= 3) ?? '';
   const nameHasModel = (name: string) => !!modelWord && new RegExp(`(^|[^a-z0-9])${modelWord}([^a-z0-9]|$)`).test(norm(name));
+  const makeWord = norm(vehMake).split(/[^a-z0-9]+/).find(w => w.length >= 3) ?? '';
+  const nameHasMake = (name: string) => !!makeWord && new RegExp(`(^|[^a-z0-9])${makeWord}([^a-z0-9]|$)`).test(norm(name));
   const vehFits = vehModel && partVeh
     ? (s: Suggestion) => !s.part_id || !!s.universal || fitsVehicle(partVeh.get(s.part_id), vehMake, vehModel, vehicle?.year ?? null) || nameHasModel(s.description)
+      // Peça nova, ainda sem veículo vinculado, com só a marca no nome ("... EMBREAGEM PEUGEOT")
+      || (!partVeh.get(s.part_id)?.length && nameHasMake(s.description))
     : undefined;
   // Peça do item: só as da família dele (troca de óleo → óleos e filtros; freios → freios…), além do veículo
   const itemPartCats = (desc: string): string[] | null => {
