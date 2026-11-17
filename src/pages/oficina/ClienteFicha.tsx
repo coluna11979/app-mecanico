@@ -14,7 +14,7 @@ import { onlyDigits, timeAgo } from '@/lib/customers';
 import { useInboxAccess } from '@/lib/inbox';
 import { useModuleAllows } from '@/lib/modules';
 import {
-  SEGMENTS, approvalProfile, birthdaySoon, customerInsight, fmtMonthYear, habits, shopContext, spendByCategory, vehicleUsage,
+  SEGMENTS, type CatItem, approvalProfile, birthdaySoon, customerInsight, fmtMonthYear, habits, shopContext, spendByCategory, vehicleUsage,
   type InsOs, type InsRec, type ShopContext,
 } from '@/lib/customerInsights';
 import type { Customer, Vehicle } from '@/types/database';
@@ -37,6 +37,8 @@ export default function ClienteFicha() {
   const [mechNames, setMechNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [catItems, setCatItems] = useState<CatItem[]>([]);
+  const [catTable, setCatTable] = useState<{ name: string; category: string | null }[]>([]);
   const [vehForm, setVehForm] = useState<{ vehicle: Vehicle | null } | null>(null);
   const [carFilter, setCarFilter] = useState<string | 'all'>('all');
   // Inbox ligado: o botão do WhatsApp abre a conversa no sistema (número da oficina)
@@ -56,9 +58,19 @@ export default function ClienteFicha() {
     setCustomer((c.data as Customer) ?? null);
     setVehicles((v.data as Vehicle[]) ?? []);
     setOs((o.data as FichaOs[]) ?? []);
+    // Itens para dividir o valor por categoria (só o que cada serviço custou)
+    const ids = ((o.data ?? []) as { id: string }[]).map(x => x.id);
+    if (ids.length) {
+      const [it, tb] = await Promise.all([
+        supabase.from('service_order_items').select('id, service_order_id, kind, description, quantity, unit_price, used_in_item_id').in('service_order_id', ids.slice(0, 300)),
+        wid ? supabase.from('workshop_services').select('name, category').eq('workshop_id', wid) : Promise.resolve({ data: [] }),
+      ]);
+      setCatItems((it.data ?? []) as CatItem[]);
+      setCatTable((tb.data ?? []) as { name: string; category: string | null }[]);
+    }
     setRecs((r.data as InsRec[]) ?? []);
     setLoading(false);
-  }, [id]);
+  }, [id, wid]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -89,7 +101,7 @@ export default function ClienteFicha() {
   }, [wid, id]);
 
   const ins = useMemo(() => (ctx ? customerInsight(os, recs, ctx) : null), [os, recs, ctx]);
-  const cats = useMemo(() => spendByCategory(os), [os]);
+  const cats = useMemo(() => spendByCategory(os, catItems, catTable), [os, catItems, catTable]);
   const appr = useMemo(() => approvalProfile(os), [os]);
   const hab = useMemo(() => habits(os), [os]);
   const shownOs = carFilter === 'all' ? os : os.filter(o => o.vehicle_id === carFilter);

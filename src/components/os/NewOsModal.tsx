@@ -17,15 +17,16 @@ type Match = { customer: Customer; vehicle: Vehicle | null };
 /** Serviços mais comuns — um toque adiciona (pode escolher vários) */
 const QUICK_SERVICES: { label: string; category: string }[] = [
   { label: 'Revisão geral',   category: 'Revisão geral' },
-  { label: 'Troca de óleo',   category: 'Troca de óleo' },
+  { label: 'Troca de óleo',   category: 'Troca de óleo e filtros' },
   { label: 'Freios',          category: 'Freios' },
   { label: 'Suspensão',       category: 'Suspensão' },
+  { label: 'Direção',         category: 'Direção' },
   { label: 'Diagnóstico',     category: 'Diagnóstico' },
-  { label: 'Alinhamento',     category: 'Alinhamento' },
-  { label: 'Balanceamento',   category: 'Balanceamento' },
+  { label: 'Alinhamento',     category: 'Pneus e Rodas' },
+  { label: 'Balanceamento',   category: 'Pneus e Rodas' },
   { label: 'Elétrica',        category: 'Elétrica' },
   { label: 'Ar-condicionado', category: 'Ar-condicionado' },
-  { label: 'Embreagem',       category: 'Embreagem' },
+  { label: 'Embreagem',       category: 'Transmissão' },
   { label: 'Motor',           category: 'Motor' },
 ];
 
@@ -267,13 +268,13 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   const hasCustomer = !!picked || (newCar && person.name.trim().length > 0);
   const carOk = !newCar || !car.plate.trim() || (car.make.trim() && car.model.trim());
   const allServices = custom.trim() && !services.includes(custom.trim()) ? [...services, custom.trim()] : services;
-  const canSave = hasCustomer && allServices.length > 0 && !!carOk && (!schedule || !!when);
+  // Serviço é opcional na abertura: muita gente marcava qualquer um só para abrir. Os serviços entram depois, pelo catálogo da OS
+  const canSave = hasCustomer && !!carOk && (!schedule || !!when);
 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!hasCustomer) { toast.error('Escolha ou cadastre o cliente'); return; }
     if (!carOk) { toast.error('Informe marca e modelo do carro'); return; }
-    if (!allServices.length) { toast.error('Escolha pelo menos um serviço'); return; }
     if (schedule && !when) { toast.error('Escolha a data do agendamento'); return; }
 
     setSaving(true);
@@ -321,7 +322,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
         workshop_id: workshopId,
         customer_id: customerId,
         vehicle_id: vehicleId,
-        title: allServices.join(' + '),
+        title: allServices.join(' + ') || report.trim().slice(0, 80) || 'Serviço a definir',
         category: category || null,
         description: report.trim() || null,
         km_reading: km ? parseInt(digits(km), 10) || null : null,
@@ -334,11 +335,13 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
       if (error) throw error;
 
       // Cada serviço vira um item (valor preenchido depois, na página da OS)
-      const { error: itErr } = await supabase.from('service_order_items').insert(allServices.map((s, i) => ({
-        service_order_id: os.id, workshop_id: workshopId, kind: 'labor',
-        description: s, quantity: 1, unit_price: 0, position: i,
-      })));
-      if (itErr) console.warn('[NewOsModal] itens não criados:', itErr.message);
+      if (allServices.length) {
+        const { error: itErr } = await supabase.from('service_order_items').insert(allServices.map((s, i) => ({
+          service_order_id: os.id, workshop_id: workshopId, kind: 'labor',
+          description: s, quantity: 1, unit_price: 0, position: i,
+        })));
+        if (itErr) console.warn('[NewOsModal] itens não criados:', itErr.message);
+      }
 
       if (platform) toast.info('Lance os valores dos serviços e toque em "🔧 Chamar mecânico" no Caixa — os serviços já vão preenchidos.');
 
@@ -496,8 +499,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
 
           {/* ── 2. Serviços ── */}
           <section>
-            <div className="text-sm font-bold text-steel-800">2. Quais serviços?</div>
-            <div className="text-xs text-steel-500 mb-2">Pode escolher vários. Cada um vira um item da OS.</div>
+            <div className="text-sm font-bold text-steel-800">2. Quais serviços? <span className="font-medium text-steel-400">(opcional)</span></div>
+            <div className="text-xs text-steel-500 mb-2">Se ainda não sabe, deixe em branco: ao abrir a OS você escolhe o serviço e as peças pelo catálogo.</div>
 
             {recs.length > 0 && (
               <div className="mb-3 bg-pending-50 border border-pending-200 rounded-xl p-3">

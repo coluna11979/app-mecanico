@@ -184,14 +184,36 @@ export function osNumber(os: { id: string; number?: number | null }) {
 /** Categorias de serviço da OS */
 export const OS_CATEGORIES = [
   // Captação / gratuitos
-  'Avaliação','Check-up',
+  'Check-up',
   // Mais comuns
-  'Troca de óleo','Revisão geral','Freios','Pneus','Alinhamento','Balanceamento',
+  'Troca de óleo e filtros','Pneus e Rodas','Freios','Revisão geral',
   // Mecânica
-  'Motor','Câmbio','Suspensão','Transmissão','Embreagem','Injeção eletrônica',
+  'Suspensão','Direção','Motor','Arrefecimento','Transmissão','Injeção eletrônica',
   // Elétrica / outros
-  'Escapamento','Elétrica','Ar-condicionado','Diagnóstico','Funilaria','Outro',
+  'Escapamento','Elétrica','Ar-condicionado','Diagnóstico','Outro',
 ];
+
+const normName = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * Categoria da OS a partir dos serviços que ela realmente tem ("Freios + Escapamento").
+ * Serviço fora da tabela e a categoria genérica "Mão de obra" não entram.
+ */
+export function categoryFromServices(
+  laborDescriptions: string[],
+  table: { name: string; category: string | null }[],
+): string {
+  const byName = new Map(table.map(t => [normName(t.name), t.category]));
+  const out: string[] = [];
+  for (const d of laborDescriptions) {
+    const c = byName.get(normName(d));
+    if (c && c !== 'Mão de obra' && c !== 'Outro' && !out.includes(c)) out.push(c);
+  }
+  return out.join(' + ');
+}
+
+/** Categoria combinada ("Freios + Escapamento") → cada parte */
+export const categoryParts = (c: string | null | undefined) => (c ?? '').split('+').map(s => s.trim()).filter(Boolean);
 
 /**
  * Lê valor digitado do jeito brasileiro: "85,50", "1.234,56", "85.50", "85".

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
-import { fmtBRL, moneyInput, parseMoney } from './osHelpers';
+import { categoryFromServices, fmtBRL, moneyInput, parseMoney } from './osHelpers';
 import { DEFAULT_MARGIN, fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
 import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
@@ -160,7 +160,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   /** Cadastro rápido de peça: key = linha que vai receber a peça (null = cria linha nova) */
   const [quick, setQuick]       = useState<{ key: string | null; name: string; qty: number } | null>(null);
   const [team, setTeam]         = useState<TeamMember[]>([]);
-  const [catalogOpen, setCatalogOpen] = useState(false);
+  // OS aberta sem serviço: já abre o catálogo (serviço da tabela e, logo abaixo, as peças dele)
+  const [catalogOpen, setCatalogOpen] = useState(() => items.length === 0 && !readOnly && !saleMode);
   /** Regras por item da loja (ex.: alinhamento sem comissão) — para mostrar a comissão de cada serviço */
   const [itemRules, setItemRules] = useState<ItemRule[]>([]);
   /** Serviço com o campo de comissão aberto */
@@ -505,6 +506,19 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         const { error } = await supabase.from('service_orders').update({ discount: disc }).eq('id', osId);
         if (error) throw error;
       }
+
+      // Categoria da OS = serviços que ela tem de fato (não o chip escolhido na abertura)
+      try {
+        const [{ data: tbl }, { data: cur }] = await Promise.all([
+          supabase.from('workshop_services').select('name, category').eq('workshop_id', workshopId),
+          supabase.from('service_orders').select('title, category').eq('id', osId).single(),
+        ]);
+        const cat = categoryFromServices(rows.filter(r => r.kind === 'labor').map(r => r.description), (tbl ?? []) as { name: string; category: string | null }[]);
+        if (cat && cur && cat !== cur.category) {
+          const autoTitle = !cur.title || cur.title === cur.category || cur.title === 'Serviço a definir';
+          await supabase.from('service_orders').update({ category: cat, ...(autoTitle ? { title: cat } : {}) }).eq('id', osId);
+        }
+      } catch (e) { console.warn('[OsItemsEditor] categoria não atualizada:', e); }
 
       toast.success('Itens salvos ✓');
       onSaved();

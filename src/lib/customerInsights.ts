@@ -11,7 +11,8 @@
  */
 
 const DAY = 86400000;
-const OIL = new Set(['Troca de óleo', 'Revisão geral']);
+const OIL = new Set(['Troca de óleo', 'Troca de óleo e filtros', 'Revisão geral']);
+const isOilCat = (c: string | null | undefined) => (c ?? '').split('+').some(p => OIL.has(p.trim()));
 const OPEN = new Set(['open', 'awaiting_approval', 'approved', 'in_progress']);
 
 export type InsOs = {
@@ -60,7 +61,7 @@ export function shopContext(os: InsOs[], spentByCustomer: number[]): ShopContext
   const avg = (xs: InsOs[]) => (xs.length ? xs.reduce((a, o) => a + Number(o.price), 0) / xs.length : 0);
   const sorted = spentByCustomer.filter(x => x > 0).sort((a, b) => b - a);
   const cut = sorted.length >= 5 ? sorted[Math.max(0, Math.ceil(sorted.length * 0.2) - 1)] : Infinity;
-  return { shopTicket: avg(sales), oilTicket: avg(sales.filter(o => OIL.has(o.category ?? ''))) || avg(sales), vipThreshold: cut };
+  return { shopTicket: avg(sales), oilTicket: avg(sales.filter(o => isOilCat(o.category))) || avg(sales), vipThreshold: cut };
 }
 
 /** Perfil e oportunidade de UM cliente (OS e recomendações só dele) */
@@ -104,7 +105,7 @@ export function customerInsight(os: InsOs[], recs: InsRec[], ctx: ShopContext, n
   if (declinedValue > 0) parts.push({ key: 'declined', label: `${declined.length} orçamento${declined.length > 1 ? 's' : ''} não aprovado${declined.length > 1 ? 's' : ''}`, value: declinedValue });
   const recentRecs = recs.filter(r => (now - new Date(r.recommended_at).getTime()) / DAY <= 365);
   if (recentRecs.length) parts.push({ key: 'recs', label: `${recentRecs.length} serviço${recentRecs.length > 1 ? 's' : ''} recomendado${recentRecs.length > 1 ? 's' : ''}`, value: typical });
-  const lastOilOs = [...sales].reverse().find(o => OIL.has(o.category ?? ''));
+  const lastOilOs = [...sales].reverse().find(o => isOilCat(o.category));
   const lastOil = lastOilOs ? when(lastOilOs) : null;
   const oilAge = lastOil ? (now - new Date(lastOil).getTime()) / DAY : Infinity;
   if (oilAge > 150 && oilAge <= 365 && segment !== 'gone') parts.push({ key: 'oil', label: 'troca de óleo vencida', value: ctx.oilTicket });
@@ -159,9 +160,41 @@ export function baseInsights(customerIds: string[], os: InsOs[], recs: InsRec[],
 
 /* ── Detalhes só da ficha ─────────────────────────────────────────────── */
 
-export function spendByCategory(os: InsOs[]) {
+export type CatItem = { id: string; service_order_id: string; kind: string; description: string; quantity: number; unit_price: number; used_in_item_id: string | null };
+
+/**
+ * Valor por categoria. Com os itens da OS, cada categoria recebe só o valor dos serviços dela
+ * (mais as peças ligadas a esses serviços); o que não dá para atribuir fica em "Outros".
+ * Sem itens, cai na categoria da OS (dividida se houver mais de uma).
+ */
+export function spendByCategory(os: InsOs[], items: CatItem[] = [], table: { name: string; category: string | null }[] = []) {
   const m = new Map<string, number>();
-  for (const o of os) if (isSale(o)) m.set(o.category?.trim() || 'Outros', (m.get(o.category?.trim() || 'Outros') ?? 0) + Number(o.price));
+  const add = (c: string, v: number) => m.set(c, (m.get(c) ?? 0) + v);
+  const norm = (x: string) => x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const catOfName = new Map(table.map(t => [norm(t.name), t.category]));
+  const byOs = new Map<string, CatItem[]>();
+  for (const i of items) byOs.set(i.service_order_id, [...(byOs.get(i.service_order_id) ?? []), i]);
+  for (const o of os) {
+    if (!isSale(o)) continue;
+    const its = byOs.get(o.id) ?? [];
+    const total = its.reduce((a, i) => a + Number(i.quantity) * Number(i.unit_price), 0);
+    if (its.length && total > 0) {
+      const scale = Number(o.price) / total; // desconto/arredondamento: o total da OS se mantém
+      const svcCat = new Map<string, string>();
+      for (const i of its) if (i.kind === 'labor') {
+        const c = catOfName.get(norm(i.description));
+        if (c && c !== 'Mão de obra' && c !== 'Outro') svcCat.set(i.id, c);
+      }
+      for (const i of its) {
+        const c = (i.kind === 'labor' ? svcCat.get(i.id) : i.used_in_item_id ? svcCat.get(i.used_in_item_id) : undefined) ?? 'Outros';
+        add(c, Number(i.quantity) * Number(i.unit_price) * scale);
+      }
+      continue;
+    }
+    const cs = (o.category ?? '').split('+').map(x => x.trim()).filter(Boolean);
+    const list = cs.length ? cs : ['Outros'];
+    for (const c of list) add(c, Number(o.price) / list.length);
+  }
   return [...m.entries()].map(([category, value]) => ({ category, value })).sort((a, b) => b.value - a.value);
 }
 
@@ -212,7 +245,7 @@ export function vehicleUsage(os: InsOs[], vehicleId: string, now = Date.now(), i
   const lastKm = last ? Number(last.km_reading) : null;
   const estKm = lastKm != null && kmPerMonth ? Math.round(lastKm + kmPerMonth * ((now - new Date(when(last)).getTime()) / (30 * DAY))) : lastKm;
 
-  const oil = os.filter(o => o.vehicle_id === vehicleId && isSale(o) && OIL.has(o.category ?? '')).sort((a, b) => when(b).localeCompare(when(a)))[0];
+  const oil = os.filter(o => o.vehicle_id === vehicleId && isSale(o) && isOilCat(o.category)).sort((a, b) => when(b).localeCompare(when(a)))[0];
   let nextOilDays: number | null = null;
   if (oil) {
     const byTime = new Date(when(oil)).getTime() + 182 * DAY;              // 6 meses

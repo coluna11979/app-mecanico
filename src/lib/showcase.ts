@@ -41,7 +41,7 @@ export const PHOTO_SLOTS: { kind: PhotoKind; label: string; tip: string; max: nu
   { kind: 'team',         label: 'Equipe',               tip: 'Sua equipe uniformizada. Gente de verdade gera confiança.', max: 3 },
 ];
 
-export const SHOWCASE_SERVICES = OS_CATEGORIES.filter(c => c !== 'Outro' && c !== 'Avaliação');
+export const SHOWCASE_SERVICES = OS_CATEGORIES.filter(c => c !== 'Outro' && c !== 'Check-up');
 export const VEHICLE_TYPES = ['Carros de passeio', 'SUVs e picapes', 'Motos', 'Utilitários / vans', 'Diesel', 'Caminhões', 'Híbridos e elétricos', 'Carros antigos / clássicos'];
 export const BRAND_SUGGESTIONS = ['Todas as marcas', 'Nacionais', 'Importados', 'Fiat', 'Volkswagen', 'Chevrolet', 'Ford', 'Toyota', 'Honda', 'Hyundai', 'Renault', 'Nissan', 'Jeep', 'Peugeot / Citroën', 'BMW', 'Mercedes-Benz', 'Audi'];
 export const EQUIPMENT = ['Scanner automotivo', 'Alinhamento 3D', 'Balanceadora', 'Elevadores', 'Recarga de ar-condicionado', 'Máquina de troca de óleo', 'Limpeza de bicos', 'Analisador de gases', 'Teste de bateria', 'Troca de fluido de câmbio automático', 'Dinamômetro', 'Cabine de pintura'];
