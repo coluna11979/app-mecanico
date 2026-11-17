@@ -436,7 +436,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       // Escolheu um item já usado antes → completa tipo e preço (se vazio).
       // Peça do cadastro → também guarda de qual peça veio e o custo de agora.
       if (patch.description !== undefined) {
-        const s = suggestions.find(x => x.description.toLowerCase() === patch.description!.trim().toLowerCase());
+        // Item de serviço não vira peça só porque o nome (ex.: "Escapamento") bate com uma peça do cadastro
+        const s = suggestions.find(x => x.description.toLowerCase() === patch.description!.trim().toLowerCase() && (r.kind !== 'labor' || x.kind === 'labor'));
         if (s) {
           next.kind = s.kind;
           if (r.kind === 'labor' && s.kind === 'part') { next.standalone = true; next.stype = ''; }
@@ -1193,9 +1194,10 @@ function ServicePicker({ value, services, onChange }: { value: string; services:
   }, [services]);
   const words = norm(value).split(' ').filter(Boolean);
   const exact = services.some(s => norm(s.description) === norm(value));
+  // Digitar filtra as CATEGORIAS; só se nenhuma bater, procura pelo nome do serviço
+  const catHits = words.length ? cats.filter(([c]) => words.every(w => norm(c).includes(w))) : cats;
   const hits = words.length
-    // Digitar acha pelo nome do serviço ou pela categoria ("geome" traz os serviços de Geometria)
-    ? services.filter(s => words.every(w => norm(`${s.description} ${s.fromTable ? s.category ?? '' : ''}`).includes(w))).slice(0, 12)
+    ? (catHits.length ? [] : services.filter(s => words.every(w => norm(s.description).includes(w))).slice(0, 12))
     : cat ? services.filter(s => catOf(s) === cat).slice(0, 80) : [];
   const pick = (s: Suggestion) => { onChange(s.description); setOpen(false); setCat(null); };
 
@@ -1205,7 +1207,7 @@ function ServicePicker({ value, services, onChange }: { value: string; services:
         onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
         onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setCat(null); } }}
         onChange={e => { setOpen(true); onChange(e.target.value); }} />
-      {open && !exact && (cats.length > 0 || hits.length > 0) && (
+      {open && !exact && (catHits.length > 0 || hits.length > 0) && (
         <div className="mt-1.5 rounded-xl border border-steel-200 bg-white overflow-hidden">
           {hits.length > 0 ? (
             <>
@@ -1235,7 +1237,7 @@ function ServicePicker({ value, services, onChange }: { value: string; services:
             </>
           ) : (
             <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
-              {cats.map(([c, n]) => (
+              {catHits.map(([c, n]) => (
                 <li key={c} className="flex items-stretch">
                   <button type="button" onClick={() => setCat(c)}
                     className="flex-1 min-w-0 min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
