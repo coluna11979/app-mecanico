@@ -30,8 +30,10 @@ type Step = { key: string; name: string; kit: Suggestion[]; kitModel: string | n
  * Passo 3: peças do serviço — opcional: kit cadastrado, estoque ou descrição livre (o cliente costuma pedir a peça descrita).
  * Fica aberto para adicionar vários itens seguidos.
  */
-export default function CatalogPanel({ suggestions, services, itemCount, total, partsAsCost, showCost, onPick, kitFor, vehicleModel, osHasVehicle, onVehicle, loadModels, priceFor, onClose }: {
+export default function CatalogPanel({ suggestions, partFits, services, itemCount, total, partsAsCost, showCost, onPick, kitFor, vehicleModel, osHasVehicle, onVehicle, loadModels, priceFor, onClose }: {
   suggestions: Suggestion[];
+  /** Peça serve no veículo da OS? (undefined = sem veículo, não filtra) */
+  partFits?: (s: Suggestion) => boolean;
   /** Serviços já na OS (destino das peças): key + nome */
   services: { key: string; name: string }[];
   itemCount: number;
@@ -58,6 +60,8 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
     : (p.unit_price > 0 ? fmtBRL(p.unit_price) : 'a definir'));
   const [tab, setTab] = useState<Tab>('servico');
   const [q, setQ] = useState('');
+  const [allParts, setAllParts] = useState(false);
+  const fitOk = (s: Suggestion) => allParts || !partFits || partFits(s);
   const [cat, setCat] = useState<string | null>(null);
   const [target, setTarget] = useState(services.at(-1)?.key ?? '');
   const [justAdded, setJustAdded] = useState<string | null>(null);
@@ -85,9 +89,9 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   const matches = useMemo(() => {
     const words = norm(q).split(/\s+/).filter(Boolean);
     return rankHits(suggestions
-      .filter(s => (tab === 'peca' ? s.kind === 'part' : isLabor(s) && (!cat || catOf(s) === cat)))
+      .filter(s => (tab === 'peca' ? s.kind === 'part' && fitOk(s) : isLabor(s) && (!cat || catOf(s) === cat)))
       .filter(s => { const n = norm(`${s.description} ${s.code ?? ''}`); return words.every(w => n.includes(w)); }), words);
-  }, [suggestions, tab, q, cat]);
+  }, [suggestions, tab, q, cat, allParts, partFits]);
   const list = matches.slice(0, LIST_MAX);
 
   // O destino pode sumir (serviço removido) — cai para o último
@@ -101,8 +105,8 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
   const partHits = useMemo(() => {
     const words = norm(pq).split(/\s+/).filter(Boolean);
     if (!words.length) return [];
-    return rankHits(suggestions.filter(s => s.kind === 'part' && words.every(w => norm(`${s.description} ${s.code ?? ''}`).includes(w))), words).slice(0, 6);
-  }, [suggestions, pq]);
+    return rankHits(suggestions.filter(s => s.kind === 'part' && fitOk(s) && words.every(w => norm(`${s.description} ${s.code ?? ''}`).includes(w))), words).slice(0, 6);
+  }, [suggestions, pq, allParts, partFits]);
 
   function openVehicle() {
     setVehOpen(true);
@@ -209,6 +213,12 @@ export default function CatalogPanel({ suggestions, services, itemCount, total, 
                       {c} <span className="opacity-60">({n})</span>
                     </button>
                   ))}
+                </div>
+              )}
+              {tab === 'peca' && partFits && (
+                <div className="mt-3 flex items-center gap-2 text-xs text-steel-500">
+                  <span className="flex-1 min-w-0">{allParts ? 'Mostrando todas as peças do cadastro' : <>Só peças do <strong className="text-steel-700">{vehicleModel}</strong> e universais</>}</span>
+                  <button type="button" onClick={() => setAllParts(v => !v)} className="shrink-0 font-semibold text-brand-700 hover:underline">{allParts ? 'Só do veículo' : 'Ver todas'}</button>
                 </div>
               )}
               {tab === 'peca' && services.length > 0 && (

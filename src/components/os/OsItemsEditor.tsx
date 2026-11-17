@@ -9,6 +9,8 @@ import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
 import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
 import { groupBy, loadServiceCharges, loadWorkshopModels, norm, type PriceSummary } from '@/lib/servicePrices';
+import { pickKitRows } from '@/lib/osKits';
+import { fitsVehicle, loadPartVehicles, type PartVehicle } from '@/lib/partVehicles';
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -85,7 +87,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string; universal?: boolean };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -170,6 +172,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const [vehPrices, setVehPrices] = useState<Map<string, PriceSummary>>(new Map());
   /** Modelo escolhido no painel quando a OS não tem veículo: só para sugerir preço */
   const [refModel, setRefModel] = useState('');
+  const [partVeh, setPartVeh] = useState<Map<string, PartVehicle[]> | null>(null);
   const vehModel = vehicle?.model?.trim() || refModel;
   useEffect(() => {
     if (!vehModel || saleMode || readOnly) { setVehPrices(new Map()); return; }
@@ -251,8 +254,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [cat, svc, hist, margin] = await Promise.all([
-        loadAllParts(workshopId, 'id, name, code, category, cost, margin_percent, sale_price, stock_qty, unit').then(data => ({ data })),
+      const [cat, svc, hist, margin, pv] = await Promise.all([
+        loadAllParts(workshopId, 'id, name, code, category, cost, margin_percent, sale_price, stock_qty, unit, universal').then(data => ({ data })),
         supabase.from('workshop_services').select('name, price, category')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
@@ -261,13 +264,14 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           .order('created_at', { ascending: false })
           .limit(300),
         loadMargins(workshopId),
+        loadPartVehicles(workshopId).catch(() => null),
       ]);
       if (!alive) return;
       const seen = new Map<string, Suggestion>();
-      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit'>[]) {
+      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit' | 'universal'>[]) {
         // Mesmo nome com código diferente é outra peça (ex.: marcas diferentes)
         const k = `${p.name.trim().toLowerCase()}|${(p.code ?? '').trim()}`;
-        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit });
+        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit, universal: !!p.universal });
       }
       // Tabela de serviços da oficina: preço oficial da mão de obra
       for (const s of (svc.data ?? []) as { name: string; price: number; category: string | null }[]) {
@@ -282,9 +286,16 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       }
       setSugg([...seen.values()]);
       setMargin(margin);
+      setPartVeh(pv);
     })();
     return () => { alive = false; };
   }, [workshopId]);
+
+  // Peças só do veículo da OS: as cadastradas para o carro (marca/modelo/ano) e as universais
+  const vehMake = /^n(ã|a)o informad/i.test((vehicle?.make ?? '').trim()) ? '' : (vehicle?.make ?? '').trim();
+  const partFits = vehModel && partVeh
+    ? (s: Suggestion) => !s.part_id || !!s.universal || fitsVehicle(partVeh.get(s.part_id), vehMake, vehModel, vehicle?.year ?? null)
+    : undefined;
 
   const parts = rows.filter(r => r.kind === 'part').reduce((a, r) => a + rowTotal(r), 0);
   const labor = rows.filter(r => r.kind === 'labor').reduce((a, r) => a + rowTotal(r), 0);
@@ -359,29 +370,13 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       .eq('workshop_id', workshopId).ilike('workshop_services.name', esc).order('position');
     type KitDb = { description: string; quantity: number; part_id: string | null; vehicle_model: string | null; tech_vehicle_id: string | null; year_from: number | null; year_to: number | null };
     const rows = (data ?? []) as unknown as KitDb[];
-    const mk = norm(vehModel);
-    // Kit do carro: 1) a ficha do catálogo técnico do veículo; 2) o modelo, na faixa de anos do carro
-    // (kit sem faixa vale para qualquer ano); 3) sem nada disso, o kit geral
-    let forModel: KitDb[] = [];
-    const techId = vehicle?.tech_vehicle_id ?? null;
-    if (techId) forModel = rows.filter(r => r.tech_vehicle_id === techId);
-    if (!forModel.length && mk) {
-      const groups = new Map<string, KitDb[]>();
-      for (const r of rows.filter(r => r.vehicle_model && norm(r.vehicle_model) === mk)) {
-        const k = r.tech_vehicle_id ?? 'm';
-        groups.set(k, [...(groups.get(k) ?? []), r]);
-      }
-      const yr = vehicle?.year ?? null;
-      const fits = (g: KitDb[]) => yr == null || ((g[0].year_from == null || g[0].year_from <= yr) && (g[0].year_to == null || g[0].year_to >= yr));
-      const cands = [...groups.values()];
-      forModel = cands.find(g => fits(g) && (g[0].year_from != null || g[0].year_to != null)) ?? cands.find(g => fits(g) && g[0].year_from == null && g[0].year_to == null) ?? [];
-    }
-    const chosen = forModel.length ? forModel : rows.filter(r => !r.vehicle_model);
-    const items = chosen.map(k => {
+    // Kit do carro (ficha técnica → modelo/ano → geral): mesma regra usada ao salvar kits na conclusão da OS
+    const picked = pickKitRows(rows, { model: vehModel, year: vehicle?.year ?? null, techId: vehicle?.tech_vehicle_id ?? null });
+    const items = picked.rows.map(k => {
       const cat = k.part_id ? suggestions.find(x => x.part_id === k.part_id) : undefined;
       return cat ? { ...cat, qty: Number(k.quantity) } : { description: k.description, kind: 'part' as const, unit_price: 0, qty: Number(k.quantity) };
     });
-    return { items, model: forModel.length ? forModel[0].vehicle_model : null };
+    return { items, model: picked.model };
   }
   function update(key: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => {
@@ -535,9 +530,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Descrição */}
             <div className="col-span-12 md:col-span-4">
               {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
-                <input className="input !py-2 text-sm" placeholder={r.kind === 'part' ? 'Ex.: Pastilha de freio dianteira' : 'Ex.: Troca de óleo, Pastilha de freio, Alinhamento…'}
-                  list={`os-items-sugg-${osId}`} value={r.description}
-                  onChange={e => update(r.key, { description: e.target.value })} />
+                r.kind === 'labor'
+                  ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')}
+                      onChange={v => update(r.key, { description: v })} />
+                  : <input className="input !py-2 text-sm" placeholder="Ex.: Pastilha de freio dianteira"
+                      list={`os-items-sugg-${osId}`} value={r.description}
+                      onChange={e => update(r.key, { description: e.target.value })} />
               )}
               {!readOnly && r.kind === 'labor' && (() => {
                 const vp = vehPrices.get(norm(r.description));
@@ -771,7 +769,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       )}
 
       {catalogOpen && (
-        <CatalogPanel suggestions={suggestions} itemCount={blocks.length} total={total}
+        <CatalogPanel suggestions={suggestions} partFits={partFits} itemCount={blocks.length} total={total}
           partsAsCost={rows.some(r => r.kind === 'labor')} showCost={!!showCost}
           services={rows.filter(r => r.kind === 'labor').map(r => ({ key: r.key, name: r.description.trim() }))}
           onPick={addFromCatalog} kitFor={kitFor}
@@ -795,7 +793,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       )}
 
       <datalist id={`os-items-sugg-${osId}`}>
-        {suggestions.map(s => <option key={s.description} value={s.description}>{s.part_id ? `${s.code ? `Cód. ${s.code} · ` : ''}Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
+        {suggestions.filter(s => s.kind === 'part' && (!partFits || partFits(s))).map(s => <option key={s.description} value={s.description}>{s.part_id ? `${s.code ? `Cód. ${s.code} · ` : ''}Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
       </datalist>
 
       <div className="divide-y divide-steel-100">
@@ -1002,6 +1000,69 @@ function CostLine({ row, readOnly, onCost, onPrice }: {
           className="font-semibold text-brand-700 hover:underline" title="Grava esta margem na peça do cadastro">
           {saving ? 'Salvando…' : '💾 usar sempre nesta peça'}
         </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Campo de serviço da OS: ao tocar, mostra só as CATEGORIAS (da Tabela de serviços); escolhida a categoria,
+ * aparecem os serviços dela. Digitando, busca direto pelo nome. As peças entram depois, dentro do serviço.
+ */
+function ServicePicker({ value, services, onChange }: { value: string; services: Suggestion[]; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [cat, setCat] = useState<string | null>(null);
+  const catOf = (s: Suggestion) => (s.fromTable ? s.category || 'Sem categoria' : 'Já usados antes');
+  const cats = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of services) m.set(catOf(s), (m.get(catOf(s)) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => Number(a[0] === 'Já usados antes') - Number(b[0] === 'Já usados antes') || a[0].localeCompare(b[0], 'pt-BR'));
+  }, [services]);
+  const words = norm(value).split(' ').filter(Boolean);
+  const exact = services.some(s => norm(s.description) === norm(value));
+  const hits = words.length
+    ? services.filter(s => words.every(w => norm(s.description).includes(w))).slice(0, 8)
+    : cat ? services.filter(s => catOf(s) === cat).slice(0, 80) : [];
+  const pick = (s: Suggestion) => { onChange(s.description); setOpen(false); setCat(null); };
+
+  return (
+    <div onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setOpen(false); setCat(null); } }}>
+      <input className="input !py-2 text-sm" placeholder="Toque para escolher a categoria ou digite o serviço…" value={value}
+        onFocus={() => setOpen(true)} onChange={e => { setOpen(true); onChange(e.target.value); }} />
+      {open && !exact && (cats.length > 0 || hits.length > 0) && (
+        <div className="mt-1.5 rounded-xl border border-steel-200 bg-white overflow-hidden" onMouseDown={e => e.preventDefault()}>
+          {hits.length > 0 ? (
+            <>
+              {!words.length && cat && (
+                <button type="button" onClick={() => setCat(null)}
+                  className="w-full px-3 py-2 text-left text-xs font-semibold text-brand-700 bg-steel-50 border-b border-steel-100">← Categorias · {cat}</button>
+              )}
+              <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
+                {hits.map(s => (
+                  <li key={s.description}>
+                    <button type="button" onClick={() => pick(s)}
+                      className="w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
+                      <span className="min-w-0 truncate font-medium text-steel-800">{s.description}</span>
+                      <span className="shrink-0 text-xs text-steel-500">{s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
+              {cats.map(([c, n]) => (
+                <li key={c}>
+                  <button type="button" onClick={() => setCat(c)}
+                    className="w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
+                    <span className="font-semibold text-steel-800">{c}</span>
+                    <span className="shrink-0 text-xs text-steel-400">{n} ›</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );
