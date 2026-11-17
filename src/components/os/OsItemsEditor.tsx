@@ -10,14 +10,11 @@ import { RULE } from '@/lib/commission';
 import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
 import { groupBy, loadServiceCharges, loadWorkshopModels, norm, type PriceSummary } from '@/lib/servicePrices';
 import { pickKitRows } from '@/lib/osKits';
+import { useServiceCategories } from '@/lib/serviceCategories';
 import { fitsVehicle, loadPartVehicles, type PartVehicle } from '@/lib/partVehicles';
 
 /** Pneu/roda: nome vem como "205/70R15 Marca" */
 const TIRE_RE = /\b(pneus?|rodas?|camaras? de ar)\b|\b\d{3}\/\d{2} ?z?r ?\d{2}/;
-
-/** Categorias em que a peça é o que se vende (pneu): o item é só o cabeçalho e as peças entram como itens com preço de venda */
-const SELLS_PARTS = new Set(['pneus e rodas']);
-const sellsParts = (r: { kind: OsItemKind; description: string } | undefined) => !!r && r.kind === 'labor' && SELLS_PARTS.has(norm(r.description));
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -184,6 +181,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const [vehPrices, setVehPrices] = useState<Map<string, PriceSummary>>(new Map());
   /** Modelo escolhido no painel quando a OS não tem veículo: só para sugerir preço */
   const [refModel, setRefModel] = useState('');
+  // Categorias em que a peça é o que se vende (pneu): o item é só o cabeçalho e as peças entram como itens com preço de venda
+  const { sellsSet } = useServiceCategories(workshopId);
+  const sellsParts = (r: { kind: OsItemKind; description: string } | undefined) => !!r && r.kind === 'labor' && sellsSet.has(norm(r.description));
   const [partVeh, setPartVeh] = useState<Map<string, PartVehicle[]> | null>(null);
   const vehModel = vehicle?.model?.trim() || refModel;
   useEffect(() => {
@@ -627,7 +627,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             <div className="col-span-12 md:col-span-4">
               {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
                 r.kind === 'labor'
-                  ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')}
+                  ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')} sells={sellsSet}
                       onChange={v => update(r.key, { description: v })} />
                   : <input className="input !py-2 text-sm" placeholder="Ex.: Pastilha de freio dianteira"
                       list={`os-items-sugg-${osId}`} value={r.description}
@@ -1137,7 +1137,7 @@ function CostLine({ row, readOnly, onCost, onPrice }: {
  * Campo de serviço da OS: ao tocar, mostra só as CATEGORIAS (da Tabela de serviços); escolhida a categoria,
  * aparecem os serviços dela. Digitando, busca direto pelo nome. As peças entram depois, dentro do serviço.
  */
-function ServicePicker({ value, services, onChange }: { value: string; services: Suggestion[]; onChange: (v: string) => void }) {
+function ServicePicker({ value, services, sells, onChange }: { value: string; services: Suggestion[]; sells: Set<string>; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const [cat, setCat] = useState<string | null>(null);
   const catOf = (s: Suggestion) => (s.fromTable ? s.category || 'Sem categoria' : 'Já usados antes');
@@ -1165,7 +1165,7 @@ function ServicePicker({ value, services, onChange }: { value: string; services:
                 <>
                   <button type="button" onClick={() => setCat(null)}
                     className="w-full px-3 py-2 text-left text-xs font-semibold text-brand-700 bg-steel-50 border-b border-steel-100">← Categorias · {cat}</button>
-                  {cat !== 'Já usados antes' && (
+                  {sells.has(norm(cat)) && (
                     <button type="button" onClick={() => { onChange(cat); setOpen(false); setCat(null); }}
                       className="w-full min-h-[44px] px-3 py-2 text-left text-sm font-semibold text-brand-800 bg-brand-50 border-b border-steel-100">
                       ✓ Usar “{cat}” como item <span className="font-normal text-steel-500">· depois é só incluir as peças</span>

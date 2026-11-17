@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from './LicensePlate';
-import { fmtDur, fmtPhone, OS_CATEGORIES } from './osHelpers';
+import { fmtDur, fmtPhone } from './osHelpers';
+import { useServiceCategories } from '@/lib/serviceCategories';
 import { teamPerformance, type PerfOs, type ServiceType } from '@/lib/teamPerformance';
 import { fetchAll } from '@/lib/fetchAll';
 import { findDuplicatesRemote } from '@/components/customers/CustomerForm';
@@ -17,10 +18,6 @@ import type { Customer, ServiceRecommendation, Vehicle, WorkshopMechanic } from 
 type CustomerWithVehicles = Customer & { vehicles: Vehicle[] };
 type Match = { customer: Customer; vehicle: Vehicle | null };
 
-/** Categorias da oficina (as mesmas da Jota Car, padrão nas duas lojas) — um toque adiciona */
-const QUICK_SERVICES: { label: string; category: string }[] = OS_CATEGORIES
-  .filter(c => c !== 'Check-up' && c !== 'Outro')
-  .map(c => ({ label: c, category: c }));
 
 const plateNorm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const digits = (s: string) => s.replace(/\D/g, '');
@@ -67,6 +64,11 @@ interface Props {
  */
 export default function NewOsModal({ workshopId, preset, onClose, onCreated, onManageTeam }: Props) {
   const nav = useNavigate();
+  // Categorias da oficina (as mesmas em todas as lojas do dono) — um toque adiciona
+  const catList = useServiceCategories(workshopId);
+  const QUICK_SERVICES: { label: string; category: string }[] = catList.names
+    .filter(c => c !== 'Check-up' && c !== 'Outro')
+    .map(c => ({ label: c, category: c }));
 
   // 1. Carro / cliente
   const [query, setQuery]       = useState('');
