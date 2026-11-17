@@ -681,7 +681,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             <div className="col-span-12 md:col-span-4">
               {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
                 r.kind === 'labor'
-                  ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')}
+                  ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')} allCats={catNames}
                       onChange={v => update(r.key, { description: v })} />
                   : <input className="input !py-2 text-sm" placeholder="Ex.: Pastilha de freio dianteira"
                       list={`os-items-sugg-${osId}-${groupOf(rows).get(r.key)?.key ?? 'x'}`} value={r.description}
@@ -1194,7 +1194,7 @@ function CostLine({ row, readOnly, onCost, onPrice }: {
  * Campo de serviço da OS: ao tocar, mostra só as CATEGORIAS (da Tabela de serviços); escolhida a categoria,
  * aparecem os serviços dela. Digitando, busca direto pelo nome. As peças entram depois, dentro do serviço.
  */
-function ServicePicker({ value, services, onChange }: { value: string; services: Suggestion[]; onChange: (v: string) => void }) {
+function ServicePicker({ value, services, allCats, onChange }: { value: string; services: Suggestion[]; allCats: string[]; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const [cat, setCat] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -1209,8 +1209,10 @@ function ServicePicker({ value, services, onChange }: { value: string; services:
   const cats = useMemo(() => {
     const m = new Map<string, number>();
     for (const s of services) m.set(catOf(s), (m.get(catOf(s)) ?? 0) + 1);
+    // Categoria criada pela oficina que ainda não tem serviço (ex.: "Mão de obra") também aparece, para usar como item
+    for (const c of allCats) if (!m.has(c) && ![...m.keys()].some(k => norm(k) === norm(c))) m.set(c, 0);
     return [...m.entries()].sort((a, b) => Number(a[0] === 'Já usados antes') - Number(b[0] === 'Já usados antes') || a[0].localeCompare(b[0], 'pt-BR'));
-  }, [services]);
+  }, [services, allCats]);
   const words = norm(value).split(' ').filter(Boolean);
   const exact = services.some(s => norm(s.description) === norm(value));
   // Digitar filtra as CATEGORIAS; só se nenhuma bater, procura pelo nome do serviço
@@ -1258,10 +1260,10 @@ function ServicePicker({ value, services, onChange }: { value: string; services:
             <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
               {catHits.map(([c, n]) => (
                 <li key={c} className="flex items-stretch">
-                  <button type="button" onClick={() => setCat(c)}
+                  <button type="button" onClick={() => (n === 0 ? (onChange(c), setOpen(false), setCat(null)) : setCat(c))}
                     className="flex-1 min-w-0 min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
                     <span className="font-semibold text-steel-800 truncate">{c}</span>
-                    <span className="shrink-0 text-xs text-steel-400">{n} ›</span>
+                    <span className="shrink-0 text-xs text-steel-400">{n === 0 ? 'sem serviços' : `${n} ›`}</span>
                   </button>
                   {c !== 'Já usados antes' && c !== 'Sem categoria' && (
                     <button type="button" onClick={() => { onChange(c); setOpen(false); setCat(null); }}
