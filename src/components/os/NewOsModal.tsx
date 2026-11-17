@@ -9,6 +9,9 @@ import { teamPerformance, type PerfOs, type ServiceType } from '@/lib/teamPerfor
 import { fetchAll } from '@/lib/fetchAll';
 import { findDuplicatesRemote } from '@/components/customers/CustomerForm';
 import { maskPhone } from '@/lib/customers';
+import { lookupPlate } from '@/lib/techCatalog';
+import { carFromPlate, engineNote, ENGINE_OPTIONS } from '@/lib/plateToCar';
+import { useWorkshopModules } from '@/lib/modules';
 import type { Customer, ServiceRecommendation, Vehicle, WorkshopMechanic } from '@/types/database';
 
 type CustomerWithVehicles = Customer & { vehicles: Vehicle[] };
@@ -33,6 +36,14 @@ const QUICK_SERVICES: { label: string; category: string }[] = [
 const plateNorm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const digits = (s: string) => s.replace(/\D/g, '');
 /** Parece placa (antiga AAA1234 ou Mercosul AAA1A23), mesmo incompleta */
+/** Placa completa (antiga ou Mercosul): só então consulta os dados do carro */
+const PLATE_FULL = /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/;
+const PLATE_WARN: Record<string, string> = {
+  not_found: 'Placa não encontrada. Preencha o carro abaixo.',
+  not_configured: 'Busca por placa ainda não ativada. Preencha o carro abaixo.',
+  limit: 'Limite diário de consultas por placa atingido. Preencha o carro abaixo.',
+  unavailable: 'Consulta de placa fora do ar agora. Preencha o carro abaixo.',
+};
 const looksLikePlate = (s: string) => /^[A-Z]{3}[0-9][A-Z0-9]?[0-9]{0,2}$/.test(plateNorm(s));
 
 export interface NewOsPreset {
@@ -79,6 +90,15 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   const [ignoreDups, setIgnoreDups] = useState(false);
   const [car, setCar]           = useState({ plate: '', make: '', model: '', year: '' });
   const [person, setPerson]     = useState({ name: '', phone: '' });
+  // Dados do carro trazidos pela placa (módulo Consulta técnica): marca, modelo, ano e motor
+  // Motor e combustível da placa → Obs. técnicas do carro ("Motor 1.8 · Flex"). Nem toda placa traz a
+  // cilindrada: nesse caso o lojista escolhe o motor (needEngine).
+  const [plateEngine, setPlateEngine] = useState('');
+  const [plateFuel, setPlateFuel] = useState('');
+  const [needEngine, setNeedEngine] = useState(false);
+  const [plateInfo, setPlateInfo] = useState<{ kind: 'busy' | 'ok' | 'warn'; text: string } | null>(null);
+  const lookedPlate = useRef('');
+  const canPlate = !useWorkshopModules(s => s.disabled).includes('consulta');
   const [recs, setRecs]         = useState<ServiceRecommendation[]>([]);
   const [lastKm, setLastKm]     = useState<number | null>(null);
 
@@ -195,6 +215,27 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
     return () => { alive = false; clearTimeout(t); };
   }, [query, picked, workshopId]);
 
+  // Placa completa no cadastro do carro → preenche marca, modelo, ano e cor (uma consulta por placa digitada)
+  useEffect(() => {
+    const p = plateNorm(car.plate);
+    if (!PLATE_FULL.test(p)) { lookedPlate.current = ''; setPlateInfo(null); setPlateEngine(''); setPlateFuel(''); setNeedEngine(false); return; }
+    if (!newCar || !canPlate || lookedPlate.current === p) return;
+    lookedPlate.current = p;
+    setPlateInfo({ kind: 'busy', text: 'Buscando os dados da placa…' });
+    lookupPlate(workshopId, p).then(r => {
+      if (lookedPlate.current !== p) return; // a placa mudou enquanto buscava
+      if (r.status !== 'found') {
+        setPlateInfo(PLATE_WARN[r.status] ? { kind: 'warn', text: PLATE_WARN[r.status] } : null);
+        return;
+      }
+      const c = carFromPlate(r.car);
+      setCar(prev => (plateNorm(prev.plate) === p ? { ...prev, make: c.make, model: c.model, year: c.year } : prev));
+      setPlateEngine(c.engine); setPlateFuel(c.fuel); setNeedEngine(!c.engine);
+      const details = [c.engine, c.fuel].filter(Boolean).join(' · ');
+      setPlateInfo({ kind: 'ok', text: `Dados da placa preenchidos${details ? ` (${details})` : ''}. Confira antes de abrir a OS.` });
+    });
+  }, [car.plate, newCar, canPlate, workshopId]);
+
   // Ao escolher o carro: recomendações pendentes e último KM
   useEffect(() => {
     if (!picked) { setRecs([]); setLastKm(null); setMonthlyKm(''); return; }
@@ -306,6 +347,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
           make: car.make.trim() || 'Não informado',
           model: car.model.trim() || 'Não informado',
           year: car.year ? parseInt(car.year, 10) || null : null,
+          ...(engineNote(plateEngine, plateFuel) ? { notes: engineNote(plateEngine, plateFuel) } : {}),
           ...(monthlyKmNum ? { monthly_km: monthlyKmNum } : {}),
         }).select('id').single();
         if (error) throw error;
@@ -456,7 +498,18 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
                 <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest pt-1">🚗 Carro</div>
                 <input className="input !py-2 uppercase font-mono" placeholder="Placa" value={car.plate}
                   onChange={e => { setCar(c => ({ ...c, plate: e.target.value.toUpperCase() })); setDups([]); setIgnoreDups(false); }} />
+                {plateInfo && (
+                  <p className={`text-xs ${plateInfo.kind === 'warn' ? 'text-pending-700' : plateInfo.kind === 'ok' ? 'text-signal-700' : 'text-steel-500'}`}>
+                    {plateInfo.text}
+                  </p>
+                )}
                 <CarFields value={car} onChange={v => setCar(c => ({ ...c, ...v }))} />
+                {needEngine && (
+                  <select className="input !py-2" value={plateEngine} onChange={e => setPlateEngine(e.target.value)} aria-label="Motor">
+                    <option value="">Motor (a placa não informou)…</option>
+                    {ENGINE_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                )}
                 {dups.length > 0 && !ignoreDups && (
                   <div className="bg-pending-50 border border-pending-200 rounded-xl p-3 text-sm space-y-2">
                     <div className="font-semibold text-pending-900">⚠️ Esse cliente parece já estar cadastrado:</div>
