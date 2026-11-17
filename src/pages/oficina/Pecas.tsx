@@ -15,6 +15,7 @@ import {
   SITUATIONS, ago, costToConfirm, isBelowMin, isNegative, isZeroBought, loadStockData, matchSituation, osShortage,
   type Situation, type StockData,
 } from '@/lib/stock';
+import { VEHICLE_CATALOG } from '@/lib/vehicleCatalog';
 import VehiclePicker from '@/components/parts/VehiclePicker';
 import { addVehicleToParts, fitsVehicle, fmtVehicle, fmtYears, isAnyModel, loadPartVehicles, markPartsUniversal, norm, partLabel, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
 import SupplierPicker from '@/components/parts/SupplierPicker';
@@ -107,18 +108,43 @@ export default function Pecas() {
   const yearNum = /^\d{4}$/.test(vYear.trim()) ? Number(vYear.trim()) : null;
   const hasVehicleFilter = !!(vBrand.trim() || vModel.trim() || yearNum);
 
-  // Sugestões de marca/modelo a partir do que já foi cadastrado
+  // Marcas e modelos: o catálogo de veículos + o que a oficina já cadastrou (assim o filtro nunca fica vazio)
   const brandOptions = useMemo(() => {
     const m = new Map<string, string>();
+    for (const b of Object.keys(VEHICLE_CATALOG)) m.set(norm(b), b);
     for (const l of vehicles.values()) for (const v of l) if (!m.has(norm(v.brand))) m.set(norm(v.brand), v.brand);
     return [...m.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [vehicles]);
   const modelOptionsFor = (brand: string) => {
     const m = new Map<string, string>();
+    const cat = Object.entries(VEHICLE_CATALOG).find(([b]) => norm(b) === norm(brand));
+    if (cat) for (const x of cat[1]) m.set(norm(x), x);
     for (const l of vehicles.values()) for (const v of l)
       if ((!brand.trim() || norm(v.brand) === norm(brand)) && !isAnyModel(v.model) && !m.has(norm(v.model))) m.set(norm(v.model), v.model);
     return [...m.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   };
+  /** Quantas peças ativas servem em cada marca / em cada modelo da marca escolhida (universais não entram na conta) */
+  const activeIds = useMemo(() => new Set((parts ?? []).filter(p => p.active).map(p => p.id)), [parts]);
+  const brandCounts = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const [id, l] of vehicles) {
+      if (!activeIds.has(id)) continue;
+      for (const b of new Set(l.map(v => norm(v.brand)))) c.set(b, (c.get(b) ?? 0) + 1);
+    }
+    return c;
+  }, [vehicles, activeIds]);
+  const modelCounts = useMemo(() => {
+    const c = new Map<string, number>();
+    if (!vBrand) return c;
+    for (const [id, l] of vehicles) {
+      if (!activeIds.has(id)) continue;
+      const mine = l.filter(v => norm(v.brand) === norm(vBrand));
+      if (!mine.length) continue;
+      if (mine.some(v => isAnyModel(v.model))) { c.set('*', (c.get('*') ?? 0) + 1); continue; }
+      for (const m of new Set(mine.map(v => norm(v.model)))) c.set(m, (c.get(m) ?? 0) + 1);
+    }
+    return c;
+  }, [vehicles, activeIds, vBrand]);
 
   const list = useMemo(() => {
     if (!data || !parts) return [];
@@ -247,17 +273,17 @@ export default function Pecas() {
           {data && parts && parts.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-steel-600">🚗 Serve em:</span>
-              <select className="input !py-1.5 !w-40 text-sm" value={vBrand}
+              <select className="input !py-1.5 !w-auto min-w-[11rem] text-sm" value={vBrand}
                 onChange={e => { setVBrand(e.target.value); setVModel(''); if (e.target.value) setNoVehicle(false); }}>
                 <option value="">Todas as marcas</option>
-                {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                {brandOptions.map(b => <option key={b} value={b}>{b}{brandCounts.get(norm(b)) ? ` (${brandCounts.get(norm(b))})` : ''}</option>)}
               </select>
-              <select className="input !py-1.5 !w-40 text-sm" value={vModel}
+              <select className="input !py-1.5 !w-auto min-w-[11rem] text-sm" value={vModel} disabled={!vBrand}
                 onChange={e => { setVModel(e.target.value); if (e.target.value) setNoVehicle(false); }}>
-                <option value="">Todos os modelos</option>
-                {modelOptionsFor(vBrand).map(m => <option key={m} value={m}>{m}</option>)}
+                <option value="">{vBrand ? `Todos os modelos${modelCounts.get('*') ? ` (+${modelCounts.get('*')} da marca toda)` : ''}` : 'Escolha a marca'}</option>
+                {modelOptionsFor(vBrand).map(m => <option key={m} value={m}>{m}{modelCounts.get(norm(m)) ? ` (${modelCounts.get(norm(m))})` : ''}</option>)}
               </select>
-              <select className="input !py-1.5 !w-32 text-sm" value={vYear}
+              <select className="input !py-1.5 !w-auto min-w-[8.5rem] text-sm" value={vYear}
                 onChange={e => { setVYear(e.target.value); if (e.target.value) setNoVehicle(false); }}>
                 <option value="">Todos os anos</option>
                 {Array.from({ length: new Date().getFullYear() + 1 - 1989 }, (_, i) => new Date().getFullYear() + 1 - i)
