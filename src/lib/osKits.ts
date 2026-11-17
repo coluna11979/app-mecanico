@@ -129,14 +129,16 @@ export async function loadKitProposals(osId: string, workshopId: string, car: Ki
  * novo com o nome escolhido e o kit ajustado — o serviço e o kit originais não são tocados.
  * `forModel` = o kit vale só para o modelo do carro desta OS (senão, para qualquer carro).
  */
-export async function saveKit(p: KitProposal, o: { workshopId: string; name?: string; forModel: boolean; car: KitCar | null }): Promise<string | null> {
+export async function saveKit(p: KitProposal, o: { workshopId: string; name?: string; forModel: boolean; car: KitCar | null; categories?: string[] }): Promise<string | null> {
   let serviceId = p.kind === 'new' ? p.service?.id ?? null : null;
   let created = false;
   if (!serviceId) {
     const name = (p.kind === 'changed' ? o.name ?? '' : p.name).trim();
     if (!name) return 'Dê um nome ao serviço';
     const { data, error } = await supabase.from('workshop_services')
-      .insert({ workshop_id: o.workshopId, name, price: p.price > 0 ? p.price : 0, estimated_minutes: p.minutes })
+      .insert({ workshop_id: o.workshopId, name, price: p.price > 0 ? p.price : 0, estimated_minutes: p.minutes,
+        // O item entrou pela categoria ("Troca de óleo e filtros"): o serviço novo fica nessa categoria
+        category: o.categories?.find(c => norm(c) === norm(name)) ?? null })
       .select('id').single();
     if (error) return error.code === '23505' ? 'Já existe um serviço com esse nome. Escolha outro nome.' : 'Não foi possível criar o serviço: ' + error.message;
     serviceId = data.id as string; created = true;

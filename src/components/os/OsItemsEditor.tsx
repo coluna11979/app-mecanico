@@ -1072,7 +1072,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               className="btn-ghost text-sm !py-2" disabled={saving}>
               Descartar
             </button>
-            <button type="button" onClick={save} className="btn-primary text-sm !py-2" disabled={saving}>
+            <button type="button" id="os-save-items" onClick={save} className="btn-primary text-sm !py-2" disabled={saving}>
               {saving ? 'Salvando…' : '💾 Salvar itens'}
             </button>
           </div>
