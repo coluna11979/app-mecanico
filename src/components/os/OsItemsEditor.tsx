@@ -12,6 +12,13 @@ import { groupBy, loadServiceCharges, loadWorkshopModels, norm, type PriceSummar
 import { pickKitRows } from '@/lib/osKits';
 import { fitsVehicle, loadPartVehicles, type PartVehicle } from '@/lib/partVehicles';
 
+/** Pneu/roda: nome vem como "205/70R15 Marca" */
+const TIRE_RE = /\b(pneus?|rodas?|camaras? de ar)\b|\b\d{3}\/\d{2} ?z?r ?\d{2}/;
+
+/** Categorias em que a peça é o que se vende (pneu): o item é só o cabeçalho e as peças entram como itens com preço de venda */
+const SELLS_PARTS = new Set(['pneus e rodas']);
+const sellsParts = (r: { kind: OsItemKind; description: string } | undefined) => !!r && r.kind === 'labor' && SELLS_PARTS.has(norm(r.description));
+
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
   key: string;
@@ -87,7 +94,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string; universal?: boolean };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string; universal?: boolean; /** Palavras extras da busca (categoria, "pneu") */ search?: string };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -276,7 +283,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit' | 'universal'>[]) {
         // Mesmo nome com código diferente é outra peça (ex.: marcas diferentes)
         const k = `${p.name.trim().toLowerCase()}|${(p.code ?? '').trim()}`;
-        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit, universal: !!p.universal });
+        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit, category: p.category ?? undefined,
+          search: `${p.category ?? ''} ${TIRE_RE.test(norm(`${p.category ?? ''} ${p.name}`)) ? 'pneu pneus' : ''}`,
+          // Pneu/roda serve em qualquer carro (a medida é escolhida na hora; o nome vem como "205/70R15 Marca"), mesmo sem estar marcado como universal
+          universal: !!p.universal || TIRE_RE.test(norm(`${p.category ?? ''} ${p.name}`)) });
       }
       // Tabela de serviços da oficina: preço oficial da mão de obra
       for (const s of (svc.data ?? []) as { name: string; price: number; category: string | null }[]) {
@@ -328,7 +338,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       const i = rs.findIndex(r => r.key === serviceKey);
       let j = i + 1;
       while (j < rs.length && rs[j].kind === 'part') j++;
-      const row: Row = { key: newKey(), kind: 'part', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: '', comm: '' };
+      const row: Row = { key: newKey(), kind: 'part', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: '', comm: '',
+        standalone: sellsParts(rs[i]) ? true : undefined };
       return [...rs.slice(0, j), row, ...rs.slice(j)];
     });
   }
@@ -357,6 +368,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       if (i < 0) return [...rs, { ...row, standalone: rs.some(x => x.kind === 'labor') ? true : undefined }];
       let j = i + 1;
       while (j < rs.length && rs[j].kind === 'part') j++;
+      // Pneu e rodas: a peça é vendida (item próprio, com o preço de venda do cadastro)
+      if (sellsParts(rs[i])) return [...rs.slice(0, j), { ...row, standalone: true }, ...rs.slice(j)];
       // Dentro de um item, a peça é só custo: o preço que o cliente paga já está no item
       return [...rs.slice(0, j), { ...row, unit_price: '' }, ...rs.slice(j)];
     });
@@ -908,7 +921,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       )}
 
       <datalist id={`os-items-sugg-${osId}`}>
-        {suggestions.filter(s => s.kind === 'part' && (!partFits || partFits(s))).map(s => <option key={s.description} value={s.description}>{s.part_id ? `${s.code ? `Cód. ${s.code} · ` : ''}Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
+        {suggestions.filter(s => s.kind === 'part' && (!partFits || partFits(s))).map(s => <option key={s.description} value={s.description}>{s.part_id ? `${s.code ? `Cód. ${s.code} · ` : ''}${s.search?.trim() ? `${s.search.trim()} · ` : ''}Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
       </datalist>
 
       <div className="divide-y divide-steel-100">
@@ -924,8 +937,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 <div className="pl-9 pr-5 pb-3 pt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   {!readOnly && (
                     <button type="button" onClick={() => addPartTo(b.svc!.key)} className="text-steel-500 hover:text-brand-700 hover:underline"
-                      title="Opcional: separe a peça para controlar estoque e custo. O valor do item continua sendo o fechado.">
-                      + detalhar peça (estoque / custo)
+                      title={sellsParts(b.svc) ? 'A peça é vendida: entra como item da OS com o preço de venda do cadastro.' : 'Opcional: separe a peça para controlar estoque e custo. O valor do item continua sendo o fechado.'}>
+                      {sellsParts(b.svc) ? '+ pneu / peça vendida (com preço)' : '+ detalhar peça (estoque / custo)'}
                     </button>
                   )}
                   {!readOnly && !hasParts && (
@@ -1149,8 +1162,16 @@ function ServicePicker({ value, services, onChange }: { value: string; services:
           {hits.length > 0 ? (
             <>
               {!words.length && cat && (
-                <button type="button" onClick={() => setCat(null)}
-                  className="w-full px-3 py-2 text-left text-xs font-semibold text-brand-700 bg-steel-50 border-b border-steel-100">← Categorias · {cat}</button>
+                <>
+                  <button type="button" onClick={() => setCat(null)}
+                    className="w-full px-3 py-2 text-left text-xs font-semibold text-brand-700 bg-steel-50 border-b border-steel-100">← Categorias · {cat}</button>
+                  {cat !== 'Já usados antes' && (
+                    <button type="button" onClick={() => { onChange(cat); setOpen(false); setCat(null); }}
+                      className="w-full min-h-[44px] px-3 py-2 text-left text-sm font-semibold text-brand-800 bg-brand-50 border-b border-steel-100">
+                      ✓ Usar “{cat}” como item <span className="font-normal text-steel-500">· depois é só incluir as peças</span>
+                    </button>
+                  )}
+                </>
               )}
               <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
                 {hits.map(s => (
