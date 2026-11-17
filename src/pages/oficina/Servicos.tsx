@@ -4,7 +4,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
-import { OS_CATEGORIES, fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
+import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
+import { useServiceCategories } from '@/lib/serviceCategories';
+import CategoriesModal from '@/components/servicos/CategoriesModal';
 import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/services';
 import { fmtDate } from '@/lib/purchasing';
 import { DEFAULT_MARGIN, loadAllParts, loadMargins } from '@/lib/parts';
@@ -30,6 +32,8 @@ export default function Servicos() {
   const [cat, setCat]         = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
   const [editing, setEditing] = useState<WorkshopService | 'new' | null>(null);
+  const [catsOpen, setCatsOpen] = useState(false);
+  const categories = useServiceCategories(wid);
   const [busy, setBusy]       = useState(false);
   /** "Tabela" ou "Por veículo" (preços já cobrados em cada carro, vindos das OS) */
   const [tab, setTab]         = useState<'tabela' | 'veiculo' | 'kits'>('tabela');
@@ -131,6 +135,7 @@ export default function Servicos() {
                 📥 Trazer das OS ({history.length})
               </button>
             )}
+            <button className="btn-ghost border border-steel-200 bg-white" onClick={() => setCatsOpen(true)}>⚙️ Categorias</button>
             <button className="btn-primary" onClick={() => setEditing('new')}>+ Novo serviço</button>
           </div>
         </div>
@@ -240,16 +245,21 @@ export default function Servicos() {
         )}
       </div>
 
+      {catsOpen && categories.ownerId && (
+        <CategoriesModal ownerId={categories.ownerId} custom={categories.custom} cats={categories.cats}
+          onClose={() => setCatsOpen(false)} onChanged={() => { categories.reload(); load(); }} />
+      )}
+
       {editing && wid && (
-        <ServiceForm wid={wid} service={editing === 'new' ? null : editing} charges={charges}
+        <ServiceForm wid={wid} categories={categories.names} service={editing === 'new' ? null : editing} charges={charges}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}
     </WorkshopLayout>
   );
 }
 
-function ServiceForm({ wid, service, charges, onClose, onSaved }: {
-  wid: string; service: WorkshopService | null; charges: ServiceCharge[] | null; onClose: () => void; onSaved: () => void;
+function ServiceForm({ wid, categories, service, charges, onClose, onSaved }: {
+  wid: string; categories: string[]; service: WorkshopService | null; charges: ServiceCharge[] | null; onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName]         = useState(service?.name ?? '');
   const [category, setCategory] = useState(service?.category ?? '');
@@ -298,7 +308,7 @@ function ServiceForm({ wid, service, charges, onClose, onSaved }: {
             <label className="label">Categoria</label>
             <select className="input" value={category} onChange={e => setCategory(e.target.value)}>
               <option value="">— Sem categoria —</option>
-              {OS_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {(service?.category && !categories.includes(service.category) ? [...categories, service.category] : categories).map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">

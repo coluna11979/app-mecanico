@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { Customer, ServiceOrder, Vehicle, WorkshopMechanic } from '@/types/database';
-import { OS_CATEGORIES } from './osHelpers';
+import { useServiceCategories } from '@/lib/serviceCategories';
 
 function toLocalInput(iso: string | null) {
   if (!iso) return '';
@@ -20,6 +20,7 @@ interface Props {
 }
 
 export default function OsEditModal({ os, workshopId, onClose, onSaved }: Props) {
+  const categories = useServiceCategories(workshopId);
   const [form, setForm] = useState({
     title:                os.title,
     description:          os.description ?? '',
@@ -126,7 +127,7 @@ export default function OsEditModal({ os, workshopId, onClose, onSaved }: Props)
                 <label className="label">Categoria</label>
                 <select className="input" value={form.category} onChange={set('category')}>
                   <option value="">— Sem categoria —</option>
-                  {OS_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {(os.category && !categories.names.includes(os.category) ? [...categories.names, os.category] : categories.names).map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
