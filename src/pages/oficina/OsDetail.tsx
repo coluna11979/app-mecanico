@@ -18,6 +18,8 @@ import ResponsibleTimers from '@/components/os/ResponsibleTimers';
 import ServiceAssign from '@/components/os/ServiceAssign';
 import ResponsiblesModal from '@/components/os/ResponsiblesModal';
 import AddItemModal from '@/components/os/AddItemModal';
+import SaveKitsModal from '@/components/os/SaveKitsModal';
+import { loadKitProposals, type KitCar, type KitProposal } from '@/lib/osKits';
 import { recommendationQuote } from '@/lib/recommendations';
 import Recommendations from '@/components/os/Recommendations';
 import ServiceTimer from '@/components/os/ServiceTimer';
@@ -86,6 +88,8 @@ export default function OsDetail() {
   const [startWarn, setStartWarn] = useState(false);
   /** Concluir escolhendo a data (OS de outro dia, ex.: nota importada ou reaberta para corrigir) */
   const [concluding, setConcluding] = useState(false);
+  /** Kits para oferecer ao concluir a OS (serviços com peças dentro) */
+  const [kitOffer, setKitOffer] = useState<{ proposals: KitProposal[]; car: KitCar | null } | null>(null);
   /** Abre a correção do pagamento (sem mudar o status da OS) */
   const [fixPay, setFixPay] = useState(0);
   const nav = useNavigate();
@@ -220,6 +224,23 @@ export default function OsDetail() {
     toast.success(message);
     setApproving(false);
     load();
+    if (status === 'completed') offerKits();
+  }
+
+  /** Concluiu: pergunta se os serviços com peças viram kit na Tabela de serviços (uma vez por OS) */
+  async function offerKits() {
+    if (!os || mech || !canDo(session, balcao, 'pecas_estoque')) return;
+    const asked = `os_kits_asked:${os.id}`;
+    try { if (localStorage.getItem(asked)) return; } catch { /* sem armazenamento: pergunta */ }
+    const car: KitCar | null = os.vehicle
+      ? { model: os.vehicle.model ?? null, make: os.vehicle.make ?? null, year: os.vehicle.year ?? null, techId: (os.vehicle as { tech_vehicle_id?: string | null }).tech_vehicle_id ?? null }
+      : null;
+    try {
+      const proposals = await loadKitProposals(os.id, os.workshop_id, car);
+      if (!proposals.length) return;
+      try { localStorage.setItem(asked, '1'); } catch { /* ignore */ }
+      setKitOffer({ proposals, car });
+    } catch { /* o kit é um extra: nunca atrapalha concluir a OS */ }
   }
 
   /** ⏸ Pausa o serviço (tempo parado não conta como trabalhado) */
@@ -498,6 +519,10 @@ export default function OsDetail() {
               <span className="text-xs text-steel-400">🔒 OS concluída — reabra para editar</span>
             )}
           </div>
+
+          {kitOffer && (
+            <SaveKitsModal proposals={kitOffer.proposals} workshopId={os.workshop_id} car={kitOffer.car} onClose={() => setKitOffer(null)} />
+          )}
 
           {concluding && (
             <ConcludeAt createdAt={os.created_at} busy={busy}
