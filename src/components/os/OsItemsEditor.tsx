@@ -13,8 +13,28 @@ import { pickKitRows } from '@/lib/osKits';
 import { useServiceCategories } from '@/lib/serviceCategories';
 import { fitsVehicle, loadPartVehicles, type PartVehicle } from '@/lib/partVehicles';
 
+/** Categoria do serviço (trecho do nome, sem acento) → categorias de peça do cadastro que fazem sentido nele */
+const PART_FAMILIES: [string, string[]][] = [
+  ['troca de oleo', ['oleos_filtros']],
+  ['pneu', ['rodas']],
+  ['freio', ['freios']],
+  ['suspens', ['suspensao']],
+  ['direc', ['suspensao']],
+  ['arrefec', ['arrefecimento']],
+  ['transmiss', ['transmissao']],
+  ['embreag', ['transmissao']],
+  ['cambio', ['transmissao']],
+  ['injec', ['ignicao_injecao']],
+  ['escapament', ['escapamento']],
+  ['eletric', ['eletrica']],
+  ['ar-condicionado', ['ar_condicionado']],
+  ['ar condicionado', ['ar_condicionado']],
+  ['motor', ['motor', 'ignicao_injecao', 'arrefecimento']],
+  ['revisao', ['oleos_filtros', 'freios', 'ignicao_injecao', 'motor']],
+];
+
 /** Pneu/roda: nome vem como "205/70R15 Marca" */
-const TIRE_RE = /\b(pneus?|rodas?|camaras? de ar)\b|\b\d{3}\/\d{2} ?z?r ?\d{2}/;
+const TIRE_RE = /\b(pneus?|camaras? de ar)\b|\b\d{3}\/\d{2} ?z?r ?\d{2}/;
 
 /** Linha em edição (strings para os campos digitados) */
 type Row = {
@@ -91,7 +111,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string; universal?: boolean; /** Palavras extras da busca (categoria, "pneu") */ search?: string };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string; /** Categoria da peça no cadastro (freios, oleos_filtros…) */ pcat?: string; universal?: boolean; /** Palavras extras da busca (categoria, "pneu") */ search?: string };
 
 const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
 
@@ -182,7 +202,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   /** Modelo escolhido no painel quando a OS não tem veículo: só para sugerir preço */
   const [refModel, setRefModel] = useState('');
   // Categorias em que a peça é o que se vende (pneu): o item é só o cabeçalho e as peças entram como itens com preço de venda
-  const { sellsSet } = useServiceCategories(workshopId);
+  const { sellsSet, names: catNames } = useServiceCategories(workshopId);
   const sellsParts = (r: { kind: OsItemKind; description: string } | undefined) => !!r && r.kind === 'labor' && sellsSet.has(norm(r.description));
   const [partVeh, setPartVeh] = useState<Map<string, PartVehicle[]> | null>(null);
   const vehModel = vehicle?.model?.trim() || refModel;
@@ -283,10 +303,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit' | 'universal'>[]) {
         // Mesmo nome com código diferente é outra peça (ex.: marcas diferentes)
         const k = `${p.name.trim().toLowerCase()}|${(p.code ?? '').trim()}`;
-        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit, category: p.category ?? undefined,
-          search: `${p.category ?? ''} ${TIRE_RE.test(norm(`${p.category ?? ''} ${p.name}`)) ? 'pneu pneus' : ''}`,
+        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit, category: p.category ?? undefined, pcat: p.category ?? undefined,
+          search: `${p.category ?? ''} ${TIRE_RE.test(norm(p.name)) ? 'pneu pneus' : ''}`,
           // Pneu/roda serve em qualquer carro (a medida é escolhida na hora; o nome vem como "205/70R15 Marca"), mesmo sem estar marcado como universal
-          universal: !!p.universal || TIRE_RE.test(norm(`${p.category ?? ''} ${p.name}`)) });
+          universal: TIRE_RE.test(norm(p.name)) });
       }
       // Tabela de serviços da oficina: preço oficial da mão de obra
       for (const s of (svc.data ?? []) as { name: string; price: number; category: string | null }[]) {
@@ -308,9 +328,21 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   // Peças só do veículo da OS: as cadastradas para o carro (marca/modelo/ano) e as universais
   const vehMake = /^n(ã|a)o informad/i.test((vehicle?.make ?? '').trim()) ? '' : (vehicle?.make ?? '').trim();
-  const partFits = vehModel && partVeh
+  const vehFits = vehModel && partVeh
     ? (s: Suggestion) => !s.part_id || !!s.universal || fitsVehicle(partVeh.get(s.part_id), vehMake, vehModel, vehicle?.year ?? null)
     : undefined;
+  // Peça do item: só as da família dele (troca de óleo → óleos e filtros; freios → freios…), além do veículo
+  const itemPartCats = (desc: string): string[] | null => {
+    const d = norm(desc);
+    const c = norm(suggestions.find(x => x.kind === 'labor' && norm(x.description) === d)?.category ?? catNames.find(n => norm(n) === d) ?? '');
+    return PART_FAMILIES.find(([k]) => c.includes(k))?.[1] ?? null;
+  };
+  const partFits = (s: Suggestion, itemKey?: string) => {
+    if (vehFits && !vehFits(s)) return false;
+    const item = itemKey ? rows.find(r => r.key === itemKey) : undefined;
+    const allowed = item ? itemPartCats(item.description) : null;
+    return !allowed || (!!s.pcat && allowed.includes(s.pcat)) || (!!s.universal && allowed.includes('rodas'));
+  };
 
   const parts = rows.filter(r => r.kind === 'part').reduce((a, r) => a + rowTotal(r), 0);
   const labor = rows.filter(r => r.kind === 'labor').reduce((a, r) => a + rowTotal(r), 0);
@@ -610,6 +642,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const hasLegacyValues = rows.length === 0 && items.length === 0
     && (legacy.parts != null || legacy.labor != null || legacy.price > 0);
 
+  const hideQty = (r: Row, bi: number) => r.kind === 'labor' && parseMoney(r.quantity) === 1
+    && (sellsParts(r) || (blocks[bi]?.svc?.key === r.key && blocks[bi].parts.length > 0));
   const renderRow = (r: Row, num: number, nested: boolean, bi: number, bc: number) => (
           <div key={r.key} className={`${nested ? 'pl-9 pr-5 py-2 bg-steel-50/70' : 'px-5 py-3'} grid grid-cols-12 gap-2 items-center`}>
             {/* Tipo (cada lançamento = 1 item, como num cupom) */}
@@ -627,10 +661,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             <div className="col-span-12 md:col-span-4">
               {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
                 r.kind === 'labor'
-                  ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')} sells={sellsSet}
+                  ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')}
                       onChange={v => update(r.key, { description: v })} />
                   : <input className="input !py-2 text-sm" placeholder="Ex.: Pastilha de freio dianteira"
-                      list={`os-items-sugg-${osId}`} value={r.description}
+                      list={`os-items-sugg-${osId}-${groupOf(rows).get(r.key)?.key ?? 'x'}`} value={r.description}
                       onChange={e => update(r.key, { description: e.target.value })} />
               )}
               {!readOnly && r.kind === 'labor' && (() => {
@@ -680,9 +714,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             </div>
             {/* Qtd */}
             <div className="col-span-3 md:col-span-1">
-              {/* Serviço é sempre 1: a quantidade fica nas peças (só aparece se a nota antiga tinha outro valor) */}
-              {r.kind === 'labor' && parseMoney(r.quantity) === 1 ? null : <span className="md:hidden text-[10px] text-steel-400 uppercase">Qtd</span>}
-              {r.kind === 'labor' && parseMoney(r.quantity) === 1 ? null : readOnly ? <div className="text-sm text-right">{r.quantity}</div> : (
+              {/* Serviço com peças dentro (ou cabeçalho de pneu) é sempre 1: a quantidade fica nas peças.
+                  Serviço sem peça (balanceamento, cambagem, alinhamento) é por unidade e mostra a quantidade. */}
+              {hideQty(r, bi) ? null : <span className="md:hidden text-[10px] text-steel-400 uppercase">Qtd</span>}
+              {hideQty(r, bi) ? null : readOnly ? <div className="text-sm text-right">{r.quantity}</div> : (
                 <input className="input !py-2 text-sm text-right" inputMode="decimal" value={r.quantity}
                   onChange={e => update(r.key, { quantity: e.target.value })} />
               )}
@@ -920,9 +955,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           }} />
       )}
 
-      <datalist id={`os-items-sugg-${osId}`}>
-        {suggestions.filter(s => s.kind === 'part' && (!partFits || partFits(s))).map(s => <option key={s.description} value={s.description}>{s.part_id ? `${s.code ? `Cód. ${s.code} · ` : ''}${s.search?.trim() ? `${s.search.trim()} · ` : ''}Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
+      {['x', ...rows.filter(r => r.kind === 'labor').map(r => r.key)].map(k => (
+      <datalist key={k} id={`os-items-sugg-${osId}-${k}`}>
+        {suggestions.filter(s => s.kind === 'part' && partFits(s, k === 'x' ? undefined : k)).map(s => <option key={s.description} value={s.description}>{s.part_id ? `${s.code ? `Cód. ${s.code} · ` : ''}${s.search?.trim() ? `${s.search.trim()} · ` : ''}Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
       </datalist>
+      ))}
 
       <div className="divide-y divide-steel-100">
         {blocks.map((b, bi) => {
@@ -1137,7 +1174,7 @@ function CostLine({ row, readOnly, onCost, onPrice }: {
  * Campo de serviço da OS: ao tocar, mostra só as CATEGORIAS (da Tabela de serviços); escolhida a categoria,
  * aparecem os serviços dela. Digitando, busca direto pelo nome. As peças entram depois, dentro do serviço.
  */
-function ServicePicker({ value, services, sells, onChange }: { value: string; services: Suggestion[]; sells: Set<string>; onChange: (v: string) => void }) {
+function ServicePicker({ value, services, onChange }: { value: string; services: Suggestion[]; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const [cat, setCat] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -1176,7 +1213,7 @@ function ServicePicker({ value, services, sells, onChange }: { value: string; se
                 <>
                   <button type="button" onClick={() => setCat(null)}
                     className="w-full px-3 py-2 text-left text-xs font-semibold text-brand-700 bg-steel-50 border-b border-steel-100">← Categorias · {cat}</button>
-                  {sells.has(norm(cat)) && (
+                  {cat !== 'Já usados antes' && cat !== 'Sem categoria' && (
                     <button type="button" onClick={() => { onChange(cat); setOpen(false); setCat(null); }}
                       className="w-full min-h-[44px] px-3 py-2 text-left text-sm font-semibold text-brand-800 bg-brand-50 border-b border-steel-100">
                       ✓ Usar “{cat}” como item <span className="font-normal text-steel-500">· depois é só incluir as peças</span>
@@ -1199,12 +1236,17 @@ function ServicePicker({ value, services, sells, onChange }: { value: string; se
           ) : (
             <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
               {cats.map(([c, n]) => (
-                <li key={c}>
+                <li key={c} className="flex items-stretch">
                   <button type="button" onClick={() => setCat(c)}
-                    className="w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
-                    <span className="font-semibold text-steel-800">{c}</span>
+                    className="flex-1 min-w-0 min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
+                    <span className="font-semibold text-steel-800 truncate">{c}</span>
                     <span className="shrink-0 text-xs text-steel-400">{n} ›</span>
                   </button>
+                  {c !== 'Já usados antes' && c !== 'Sem categoria' && (
+                    <button type="button" onClick={() => { onChange(c); setOpen(false); setCat(null); }}
+                      className="shrink-0 px-3 text-xs font-bold text-brand-700 bg-brand-50 border-l border-steel-100 hover:bg-brand-100"
+                      title="Entra na OS com o nome da categoria; depois é só incluir as peças">＋ usar</button>
+                  )}
                 </li>
               ))}
             </ul>
