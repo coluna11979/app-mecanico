@@ -116,6 +116,9 @@ export default function Painel() {
   const revenueRows = useMemo(() => revenueByService(m.services.rows), [m.services]);
   const partsShare = partsSharePct(m.services.rows);
   const abc = useMemo(() => abcCurve(m.services.rows), [m.services]);
+  /** Aba do gráfico: null = automático (por serviço num dia só, por dia/mês nos períodos maiores) */
+  const [chartTab, setChartTab] = useState<'servico' | 'tempo' | null>(null);
+  const tab = chartTab ?? (m.series.length <= 1 ? 'servico' : 'tempo');
 
   return (
     <WorkshopLayout>
@@ -226,9 +229,28 @@ export default function Painel() {
                 )}
               </div>
               <div className="card lg:col-span-2">
-                <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest mb-3">Faturamento por {m.series.length > 62 ? 'mês' : 'dia'}</div>
-                {m.series.length <= 1 ? (
-                  <div className="text-sm text-steel-500 py-6 text-center">Escolha um período maior para ver o gráfico.</div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">
+                    {tab === 'servico' ? 'Faturamento por serviço' : `Faturamento por ${m.series.length > 62 ? 'mês' : 'dia'}`}
+                  </div>
+                  <div className="flex gap-1 bg-steel-100 rounded-lg p-0.5" role="tablist">
+                    {([['servico', 'Por serviço'], ['tempo', m.series.length > 62 ? 'Por mês' : 'Por dia']] as const).map(([k, l]) => (
+                      <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setChartTab(k)}
+                        className={`h-8 px-3 rounded-md text-xs font-semibold transition ${tab === k ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {tab === 'servico' ? (
+                  <ServiceDonut rows={revenueRows} total={m.services.total} selected={service}
+                    pickable={n => m.services.rows.some(x => x.name === n)}
+                    onPick={n => setService(service === n ? '' : n)} />
+                ) : m.series.length <= 1 ? (
+                  <div className="text-sm text-steel-500 py-6 text-center">
+                    Num dia só não há barras para comparar.{' '}
+                    <button type="button" onClick={() => setChartTab('servico')} className="font-semibold text-brand-600 underline">Ver por serviço</button>
+                  </div>
                 ) : (
                   <div className="flex items-end gap-1 h-40">
                     {m.series.map((s, i) => (
@@ -573,6 +595,87 @@ function ServiceSalesCard({ service, sales }: { service: string; sales: ServiceS
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/** Cores das fatias, na ordem do maior para o menor (laranja da marca primeiro); "outros" e "não identificado" em cinza */
+const DONUT_COLORS = ['#FF6B1A', '#33414F', '#10B981', '#3B82F6', '#F5A524', '#8B5CF6', '#EC4899', '#14B8A6'];
+const donutColor = (name: string, i: number) =>
+  name.startsWith('Outros serviços') ? '#CBD3DD' : name === 'Serviço não identificado' ? '#94A3B8' : DONUT_COLORS[i % DONUT_COLORS.length];
+
+/** Rosca do faturamento por serviço: fatia por serviço, legenda com valor e %, clique filtra o painel */
+function ServiceDonut({ rows, total, selected, pickable, onPick }: {
+  rows: { name: string; revenue: number }[]; total: number; selected: string;
+  pickable: (name: string) => boolean; onPick: (name: string) => void;
+}) {
+  const [hover, setHover] = useState<string | null>(null);
+  const slices = rows.filter(r => r.revenue > 0);
+  if (!slices.length || total <= 0) return <p className="text-sm text-steel-400 py-6 text-center">Sem serviços no período.</p>;
+
+  const R = 84, STROKE = 28, C = 2 * Math.PI * R;
+  const gap = slices.length > 1 ? 2 : 0;
+  let acc = 0;
+  const arcs = slices.map((r, i) => {
+    const len = (r.revenue / total) * C;
+    const arc = { ...r, color: donutColor(r.name, i), len: Math.max(0, len - gap), offset: acc };
+    acc += len;
+    return arc;
+  });
+  const focus = hover ?? (selected || null);
+  const focused = focus ? arcs.find(a => a.name === focus) : undefined;
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-6">
+      <div className="relative shrink-0" style={{ width: 2 * (R + STROKE / 2), height: 2 * (R + STROKE / 2) }}>
+        <svg viewBox={`0 0 ${2 * (R + STROKE / 2)} ${2 * (R + STROKE / 2)}`} className="w-full h-full -rotate-90" aria-hidden>
+          <circle cx={R + STROKE / 2} cy={R + STROKE / 2} r={R} fill="none" stroke="#F1F4F8" strokeWidth={STROKE} />
+          {arcs.map(a => {
+            const dim = focus && focus !== a.name;
+            return (
+              <circle key={a.name} cx={R + STROKE / 2} cy={R + STROKE / 2} r={R} fill="none"
+                stroke={a.color} strokeWidth={focus === a.name ? STROKE + 4 : STROKE}
+                strokeDasharray={`${a.len} ${C - a.len}`} strokeDashoffset={-a.offset}
+                className={`transition-all duration-200 ${pickable(a.name) ? 'cursor-pointer' : ''}`}
+                style={{ opacity: dim ? 0.3 : 1 }}
+                onMouseEnter={() => setHover(a.name)} onMouseLeave={() => setHover(null)}
+                onClick={() => pickable(a.name) && onPick(a.name)} />
+            );
+          })}
+        </svg>
+        <div className="absolute inset-0 grid place-items-center text-center pointer-events-none px-10">
+          {focused ? (
+            <div>
+              <div className="font-display text-xl font-bold tabular-nums text-steel-900">{Math.round((focused.revenue / total) * 100)}%</div>
+              <div className="text-[11px] text-steel-500 leading-tight line-clamp-2">{focused.name}</div>
+            </div>
+          ) : (
+            <div>
+              <div className="font-display text-lg font-bold tabular-nums text-steel-900 whitespace-nowrap">{fmtBRL(total)}</div>
+              <div className="text-[11px] text-steel-500">em serviços</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <ul className="flex-1 min-w-0 w-full space-y-1">
+        {arcs.map(a => {
+          const on = selected === a.name;
+          const can = pickable(a.name);
+          return (
+            <li key={a.name}>
+              <button type="button" disabled={!can} onClick={() => onPick(a.name)} aria-pressed={on}
+                onMouseEnter={() => setHover(a.name)} onMouseLeave={() => setHover(null)}
+                className={`w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition disabled:cursor-default ${on ? 'bg-brand-50 ring-1 ring-brand-300' : can ? 'hover:bg-steel-50' : ''}`}>
+                <span className="h-3 w-3 rounded-sm shrink-0" style={{ background: a.color }} />
+                <span className="flex-1 min-w-0 truncate text-sm text-steel-700">{a.name}</span>
+                <span className="text-sm font-bold tabular-nums shrink-0">{fmtBRL(a.revenue)}</span>
+                <span className="text-xs text-steel-500 tabular-nums w-10 text-right shrink-0">{Math.round((a.revenue / total) * 100)}%</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
