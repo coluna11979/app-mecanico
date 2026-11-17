@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
-import { categoryFromServices, fmtBRL, moneyInput, parseMoney } from './osHelpers';
+import { categoryFromServices, categoryParts, fmtBRL, moneyInput, parseMoney } from './osHelpers';
 import { DEFAULT_MARGIN, fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
 import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
@@ -151,10 +151,14 @@ interface Props {
   onSaved: () => void;
 }
 
+type KitOffer = { name: string; serviceId: string | null; price: number; checked: boolean; parts: { description: string; quantity: number; part_id: string | null }[] };
+
 export default function OsItemsEditor({ osId, workshopId, items, discount, legacy, readOnly, showCost, osLabel = 'OS', osMechanicId, canAssign, customerBroughtParts = false, saleMode = false, planning = false, vehicle = null, onDirtyChange, onSaved }: Props) {
   const [rows, setRows]         = useState<Row[]>(() => initRows(items));
   const [discountStr, setDisc]  = useState(() => (discount ? moneyInput(discount) : ''));
   const [saving, setSaving]     = useState(false);
+  const [kitOffer, setKitOffer] = useState<KitOffer[] | null>(null);
+  const [kitBusy, setKitBusy]   = useState(false);
   const [suggestions, setSugg]  = useState<Suggestion[]>([]);
   const [margin, setMargin]     = useState<Margins>({ base: DEFAULT_MARGIN, byCategory: {} });
   /** Cadastro rápido de peça: key = linha que vai receber a peça (null = cria linha nova) */
@@ -435,6 +439,66 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     });
   }
 
+  /** Serviços da OS com peças dentro, que ainda não têm kit para o carro desta OS */
+  async function buildKitOffers(grp: ReturnType<typeof groupOf>): Promise<KitOffer[]> {
+    const labors = rows.filter(r => r.kind === 'labor' && !r.standalone && r.description.trim());
+    const withParts = labors.map(l => ({
+      l, parts: rows.filter(p => p.kind === 'part' && grp.get(p.key)?.key === l.key && p.description.trim()),
+    })).filter(x => x.parts.length > 0);
+    if (!withParts.length) return [];
+    const { data: tbl } = await supabase.from('workshop_services').select('id, name').eq('workshop_id', workshopId);
+    const byName = new Map(((tbl ?? []) as { id: string; name: string }[]).map(t => [norm(t.name), t.id]));
+    const ids = withParts.map(x => byName.get(norm(x.l.description))).filter(Boolean) as string[];
+    const { data: kits } = ids.length
+      ? await supabase.from('workshop_service_parts').select('service_id, vehicle_model, tech_vehicle_id').in('service_id', ids)
+      : { data: [] as { service_id: string; vehicle_model: string | null; tech_vehicle_id: string | null }[] };
+    const mk = norm(vehModel);
+    const techId = vehicle?.tech_vehicle_id ?? null;
+    const hasKit = (sid: string) => ((kits ?? []) as { service_id: string; vehicle_model: string | null; tech_vehicle_id: string | null }[])
+      .some(k => k.service_id === sid && (techId || mk
+        ? (techId && k.tech_vehicle_id === techId) || (mk && k.vehicle_model && norm(k.vehicle_model) === mk)
+        : !k.vehicle_model));
+    void techId;
+    return withParts.flatMap(({ l, parts }) => {
+      const sid = byName.get(norm(l.description)) ?? null;
+      if (sid && hasKit(sid)) return [];
+      return [{
+        name: l.description.trim(), serviceId: sid, price: parseMoney(l.unit_price || '0') || 0, checked: true,
+        parts: parts.map(p => ({ description: p.description.trim(), quantity: parseMoney(p.quantity) || 1, part_id: p.part_id })),
+      }];
+    });
+  }
+  async function saveKits() {
+    if (!kitOffer) return;
+    setKitBusy(true);
+    try {
+      const { data: cur } = await supabase.from('service_orders').select('category').eq('id', osId).single();
+      const cat = categoryParts(cur?.category)[0] ?? 'Outro';
+      for (const o of kitOffer.filter(x => x.checked)) {
+        let sid = o.serviceId;
+        if (!sid) {
+          const { data, error } = await supabase.from('workshop_services')
+            .insert({ workshop_id: workshopId, name: o.name, category: cat, price: o.price }).select('id').single();
+          if (error) throw error;
+          sid = data.id as string;
+        }
+        const { error } = await supabase.from('workshop_service_parts').insert(o.parts.map((p, i) => ({
+          workshop_id: workshopId, service_id: sid, part_id: p.part_id, description: p.description, quantity: p.quantity, position: i,
+          // Kit do MODELO (qualquer carro desse modelo, de qualquer cliente): sem ficha nem ano específicos
+          vehicle_model: vehModel || null, tech_vehicle_id: null, vehicle_make: vehicle?.make ?? null,
+          year_from: null, year_to: null,
+        })));
+        if (error) throw error;
+      }
+      toast.success('Kit salvo na Tabela de serviços ✓');
+      setKitOffer(null);
+    } catch (e: any) {
+      toast.error('Não foi possível salvar o kit: ' + (e?.message ?? 'erro'));
+    } finally {
+      setKitBusy(false);
+    }
+  }
+
   async function save() {
     // Validação
     for (const r of rows) {
@@ -522,6 +586,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
       toast.success('Itens salvos ✓');
       onSaved();
+      // Pergunta se quer guardar como kit os serviços que levaram peças (e ainda não têm kit para este carro)
+      try {
+        const offers = await buildKitOffers(grp);
+        if (offers.length) setKitOffer(offers);
+      } catch (e) { console.warn('[OsItemsEditor] kit não sugerido:', e); }
     } catch (e: any) {
       console.error('[OsItemsEditor] erro:', e);
       toast.error('Não foi possível salvar os itens: ' + (e?.message ?? 'erro'));
@@ -792,6 +861,37 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           vehicleModel={vehModel} osHasVehicle={!!vehicle?.model?.trim()} onVehicle={setRefModel} loadModels={loadModels}
           priceFor={sg => { const vp = vehPrices.get(norm(sg.description)); return vp ? { price: vp.last, count: vp.count } : null; }}
           onClose={() => setCatalogOpen(false)} />
+      )}
+
+      {kitOffer && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-3" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-display font-bold text-steel-900 text-lg">📦 Criar kit {kitOffer.length > 1 ? 'dos itens' : 'do item'}?</h3>
+            <p className="text-sm text-steel-600 mt-1">
+              As peças lançadas ficam salvas como kit{vehModel ? <> do modelo <b>{vehModel}</b></> : ' geral'}, valendo para qualquer {vehModel ? 'carro desse modelo, de qualquer cliente' : 'carro'}. Na próxima OS, ao escolher o serviço, elas entram sozinhas.
+            </p>
+            <div className="mt-3 space-y-2">
+              {kitOffer.map((o, i) => (
+                <label key={o.name} className="block border border-steel-200 rounded-xl p-3 cursor-pointer">
+                  <span className="flex items-center gap-2 font-semibold text-sm text-steel-900">
+                    <input type="checkbox" checked={o.checked}
+                      onChange={e => setKitOffer(ks => ks && ks.map((k, j) => j === i ? { ...k, checked: e.target.checked } : k))} />
+                    {o.name}
+                  </span>
+                  <ul className="mt-1 pl-6 text-xs text-steel-600 list-disc">
+                    {o.parts.map((p, j) => <li key={j}>{fmtQty(p.quantity)}× {p.description}</li>)}
+                  </ul>
+                </label>
+              ))}
+            </div>
+            <div className="mt-4 flex gap-2 justify-end">
+              <button type="button" className="btn-secondary" disabled={kitBusy} onClick={() => setKitOffer(null)}>Agora não</button>
+              <button type="button" className="btn-primary" disabled={kitBusy || !kitOffer.some(k => k.checked)} onClick={saveKits}>
+                {kitBusy ? 'Salvando…' : 'Criar kit'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {quick && (
