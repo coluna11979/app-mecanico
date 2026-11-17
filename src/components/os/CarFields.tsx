@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { VEHICLE_CATALOG, VEHICLE_MAKES, vehicleYears } from '@/lib/vehicleCatalog';
 
 const OTHER = '__other__';
@@ -16,6 +16,14 @@ export default function CarFields({ value, onChange }: { value: CarValue; onChan
   // "Outro" fica ligado enquanto o valor digitado não é da lista (ou o usuário escolheu a opção)
   const [otherMake, setOtherMake] = useState<boolean>(() => !!value.make && !knownMake);
   const [otherModel, setOtherModel] = useState<boolean>(() => !!value.model && !!VEHICLE_CATALOG[value.make] && !VEHICLE_CATALOG[value.make].includes(value.model));
+
+  // Valor que chega de fora (ex.: preenchido pela placa) e não está na lista → liga o "Outro";
+  // se está na lista, desliga. Valor vazio não mexe (o usuário pode estar digitando a "Outra marca…").
+  useEffect(() => {
+    if (value.make) setOtherMake(!VEHICLE_CATALOG[value.make]);
+    const list = VEHICLE_CATALOG[value.make];
+    if (value.model && list) setOtherModel(!list.includes(value.model));
+  }, [value.make, value.model]);
 
   const makeSel = otherMake ? OTHER : value.make;
   const modelSel = otherModel ? OTHER : value.model;

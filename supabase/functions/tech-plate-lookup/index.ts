@@ -1,10 +1,11 @@
-// Consulta técnica: placa → carro (marca, modelo, versão, ano).
+// Consulta técnica: placa → carro (marca, modelo, versão, ano, cilindrada, combustível).
 // Ordem, do mais barato para o mais caro:
 //   1) carro já cadastrado nos clientes da oficina (grátis)
 //   2) placa já consultada por qualquer oficina (cache, grátis)
 //   3) serviço pago de consulta de placa (Simples API) — grava no cache
 // Só oficinas com o módulo `consulta` ligado, com teto diário de consultas pagas por oficina.
 // A chave fica em app_settings.plate_api_token (Admin → Configurações), nunca no navegador.
+// O cache guarda só o que a oficina usa (nada de tabela FIPE, preços ou ficha técnica de fábrica).
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const CORS = {
@@ -92,7 +93,7 @@ Deno.serve(async (req) => {
   }
   const data = await res.json().catch(() => null);
   if (res.status === 404) {
-    await admin.from('tech_plate_cache').upsert({ plate, found: false, workshop_id: workshopId, raw: data, created_at: new Date().toISOString() });
+    await admin.from('tech_plate_cache').upsert({ plate, found: false, workshop_id: workshopId, raw: null, created_at: new Date().toISOString() });
     return json({ status: 'not_found', plate });
   }
   const info = data?.vehicle_info;
@@ -104,7 +105,9 @@ Deno.serve(async (req) => {
   const row = {
     plate, found: true, make: str(info.brand), model: str(info.model), version: str(info.version),
     year: int(info.year), model_year: int(info.model_year), fuel: str(info.fuel), engine_cc: int(info.engine_cc),
-    raw: data, workshop_id: workshopId, created_at: new Date().toISOString(),
+    // Só o que a oficina usa, nas colunas acima. O resto da resposta da API (tabela FIPE, cor, pesos…) é descartado.
+    raw: null,
+    workshop_id: workshopId, created_at: new Date().toISOString(),
   };
   const { error } = await admin.from('tech_plate_cache').upsert(row);
   if (error) console.error('tech-plate-lookup cache', error.message);
