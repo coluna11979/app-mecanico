@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
@@ -1140,6 +1140,14 @@ function CostLine({ row, readOnly, onCost, onPrice }: {
 function ServicePicker({ value, services, sells, onChange }: { value: string; services: Suggestion[]; sells: Set<string>; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const [cat, setCat] = useState<string | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  // Fecha ao tocar fora (sem depender de foco/blur, que muda de navegador para navegador)
+  useEffect(() => {
+    if (!open) return;
+    const off = (e: Event) => { if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); setCat(null); } };
+    document.addEventListener('pointerdown', off);
+    return () => document.removeEventListener('pointerdown', off);
+  }, [open]);
   const catOf = (s: Suggestion) => (s.fromTable ? s.category || 'Sem categoria' : 'Já usados antes');
   const cats = useMemo(() => {
     const m = new Map<string, number>();
@@ -1154,11 +1162,13 @@ function ServicePicker({ value, services, sells, onChange }: { value: string; se
   const pick = (s: Suggestion) => { onChange(s.description); setOpen(false); setCat(null); };
 
   return (
-    <div onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setOpen(false); setCat(null); } }}>
+    <div ref={box}>
       <input className="input !py-2 text-sm" placeholder="Toque para escolher a categoria ou digite o serviço…" value={value}
-        onFocus={() => setOpen(true)} onChange={e => { setOpen(true); onChange(e.target.value); }} />
+        onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
+        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setCat(null); } }}
+        onChange={e => { setOpen(true); onChange(e.target.value); }} />
       {open && !exact && (cats.length > 0 || hits.length > 0) && (
-        <div className="mt-1.5 rounded-xl border border-steel-200 bg-white overflow-hidden" onMouseDown={e => e.preventDefault()}>
+        <div className="mt-1.5 rounded-xl border border-steel-200 bg-white overflow-hidden">
           {hits.length > 0 ? (
             <>
               {!words.length && cat && (
