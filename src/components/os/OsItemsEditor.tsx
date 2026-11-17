@@ -328,8 +328,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   // Peças só do veículo da OS: as cadastradas para o carro (marca/modelo/ano) e as universais
   const vehMake = /^n(ã|a)o informad/i.test((vehicle?.make ?? '').trim()) ? '' : (vehicle?.make ?? '').trim();
+  // Peça de nota recém-lançada ainda não tem veículo vinculado: vale também o nome ("... LOGAN SANDERO" serve no Sandero)
+  const modelWord = norm(vehModel).split(/[^a-z0-9]+/).find(w => w.length >= 3) ?? '';
+  const nameHasModel = (name: string) => !!modelWord && new RegExp(`(^|[^a-z0-9])${modelWord}([^a-z0-9]|$)`).test(norm(name));
   const vehFits = vehModel && partVeh
-    ? (s: Suggestion) => !s.part_id || !!s.universal || fitsVehicle(partVeh.get(s.part_id), vehMake, vehModel, vehicle?.year ?? null)
+    ? (s: Suggestion) => !s.part_id || !!s.universal || fitsVehicle(partVeh.get(s.part_id), vehMake, vehModel, vehicle?.year ?? null) || nameHasModel(s.description)
     : undefined;
   // Peça do item: só as da família dele (troca de óleo → óleos e filtros; freios → freios…), além do veículo
   const itemPartCats = (desc: string): string[] | null => {
@@ -341,8 +344,24 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     if (vehFits && !vehFits(s)) return false;
     const item = itemKey ? rows.find(r => r.key === itemKey) : undefined;
     const allowed = item ? itemPartCats(item.description) : null;
-    return !allowed || (!!s.pcat && allowed.includes(s.pcat)) || (!!s.universal && allowed.includes('rodas'));
+    return !allowed || !s.pcat || s.pcat === 'outros' || allowed.includes(s.pcat) || (!!s.universal && allowed.includes('rodas'));
   };
+
+  // A Tabela de serviços pode mudar com a OS aberta (serviço novo, categoria nova): recarrega só os serviços
+  // (leve) ao voltar para a aba e ao abrir o seletor — as peças, que são muitas, não são recarregadas
+  async function refreshServices() {
+    const { data } = await supabase.from('workshop_services').select('name, price, category').eq('workshop_id', workshopId).eq('active', true).order('name');
+    if (!data) return;
+    const fresh = (data as { name: string; price: number; category: string | null }[]).map<Suggestion>(s => ({
+      description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true, category: s.category ?? undefined }));
+    const names = new Set(fresh.map(f => f.description.toLowerCase()));
+    setSugg(prev => [...prev.filter(x => x.kind !== 'labor' || (!x.fromTable && !names.has(x.description.toLowerCase()))), ...fresh]);
+  }
+  useEffect(() => {
+    const onFocus = () => { refreshServices(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [workshopId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const parts = rows.filter(r => r.kind === 'part').reduce((a, r) => a + rowTotal(r), 0);
   const labor = rows.filter(r => r.kind === 'labor').reduce((a, r) => a + rowTotal(r), 0);
@@ -829,7 +848,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
             {!saleMode && (
-              <button type="button" onClick={() => addRow('labor')}
+              <button type="button" onClick={() => { refreshServices(); addRow('labor'); }}
                 className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
                 + Item
               </button>
@@ -839,7 +858,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
               {saleMode ? '+ Peça' : '+ Peça (com preço)'}
             </button>
-            <button type="button" onClick={() => setCatalogOpen(true)}
+            <button type="button" onClick={() => { refreshServices(); setCatalogOpen(true); }}
               className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
               🧭 Escolher serviço e peças
             </button>
