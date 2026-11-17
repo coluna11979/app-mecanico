@@ -9,6 +9,7 @@ import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/service
 import { fmtDate } from '@/lib/purchasing';
 import { DEFAULT_MARGIN, loadAllParts, loadMargins } from '@/lib/parts';
 import QuickPartModal from '@/components/parts/QuickPartModal';
+import { planKitCopy } from '@/lib/kitCopy';
 import {
   commonName, groupBy, loadServiceCharges, norm, vehicleLabel, type ServiceCharge,
 } from '@/lib/servicePrices';
@@ -704,6 +705,9 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [techCars, setTechCars] = useState<TechVehicle[] | null>(null);
   const [tech, setTech] = useState<{ car: TechVehicle; rows: TechSug[]; unverified: boolean } | null>(null);
+  /** Copiar este kit para outros carros: busca no catálogo + carros marcados */
+  const [copy, setCopy] = useState<{ text: string; results: TechVehicle[] | null; sel: KitCar[] } | null>(null);
+  useEffect(() => { setCopy(null); }, [car?.key]); // trocou de carro: fecha o painel de cópia
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('workshop_service_parts')
@@ -818,6 +822,35 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
     setTechCars(null); setTech({ car: sheet.vehicle, rows, unverified });
   }
 
+  // Busca no catálogo enquanto digita (painel "Copiar para outros carros")
+  useEffect(() => {
+    if (!copy) return;
+    const text = copy.text.trim();
+    if (text.length < 2) return;
+    let live = true;
+    const t = setTimeout(() => { searchCatalogCars(text).then(r => { if (live) setCopy(c => c && c.text.trim() === text ? { ...c, results: r } : c); }); }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [copy?.text]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleCopy = (c: KitCar) => setCopy(st => st && ({ ...st, sel: st.sel.some(x => x.key === c.key) ? st.sel.filter(x => x.key !== c.key) : [...st.sel, c] }));
+
+  /** Copia as peças deste kit para os carros marcados; o que o destino já tem é pulado (nada duplica) */
+  async function copyKit() {
+    if (!copy || !copy.sel.length || !items?.length) return;
+    setBusy(true);
+    const plan = planKitCopy({
+      workshopId: wid, serviceId: service.id,
+      source: items.map(i => ({ part_id: i.part_id, description: i.description, quantity: i.quantity })),
+      targets: copy.sel.map(c => ({ car: c, existing: (all ?? []).filter(r => kitKey(r) === c.key) })),
+    });
+    if (!plan.rows.length) { setBusy(false); return toast.error('Esses carros já têm todas as peças deste kit.'); }
+    const { error } = await supabase.from('workshop_service_parts').insert(plan.rows);
+    setBusy(false);
+    if (error) return toast.error('Não foi possível copiar: ' + error.message);
+    toast.success(`Kit copiado para ${plan.carsTouched} carro(s)${plan.skipped ? ` · ${plan.skipped} peça(s) já existiam e foram puladas` : ''}`);
+    setCopy(null);
+    load();
+  }
+
   async function copyFromGeneral() {
     const base = (all ?? []).filter(r => !r.vehicle_model);
     await add(base.map(r => ({ description: r.description, part_id: r.part_id, quantity: r.quantity })));
@@ -899,6 +932,64 @@ function ServiceKit({ wid, service }: { wid: string; service: WorkshopService })
             </li>
           ))}
         </ul>
+      )}
+
+      {items && items.length > 0 && (
+        <div className="px-3 py-2 border-t border-steel-100 space-y-2">
+          {!copy ? (
+            <button type="button" onClick={() => setCopy({ text: '', results: null, sel: [] })}
+              className="text-xs font-semibold text-brand-700 hover:underline">📋 Copiar este kit para outros carros</button>
+          ) : (
+            <div className="rounded-lg bg-steel-50 p-2 space-y-1.5">
+              <p className="text-[11px] text-steel-600">
+                Copiar as <strong>{items.length} peça(s)</strong> {car ? <>do kit do <strong>{carLabel(car)}</strong></> : 'do kit geral'} para outros carros.
+                Peça que o carro já tem não é repetida.
+              </p>
+              <input className="input !py-2 text-sm w-full" autoFocus placeholder="Marca, modelo e ano: Prisma, Onix 2016, VW Gol…" value={copy.text}
+                onChange={e => setCopy({ ...copy, text: e.target.value, results: null })} />
+              {copy.results && copy.results.length > 0 && (
+                <ul className="max-h-56 overflow-y-auto rounded-lg border border-steel-200 divide-y divide-steel-100 bg-white">
+                  {copy.results.filter(v => v.id !== car?.key).map(v => {
+                    const c = carOfTech(v);
+                    const on = copy.sel.some(x => x.key === c.key);
+                    const has = carsWithKit.some(k => k.key === c.key);
+                    return (
+                      <li key={v.id}>
+                        <button type="button" onClick={() => toggleCopy(c)} aria-pressed={on}
+                          className={`w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-brand-50 ${on ? 'bg-brand-50' : ''}`}>
+                          <span className={`h-4 w-4 shrink-0 rounded border grid place-items-center text-[10px] ${on ? 'bg-brand-600 border-brand-600 text-white' : 'border-steel-300 bg-white'}`}>{on ? '✓' : ''}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold text-steel-800">{v.make} {v.model}</span>
+                            <span className="block text-[11px] text-steel-500">{vehicleDetail(v) || 'sem detalhes'}</span>
+                          </span>
+                          {has && <span className="text-[10px] text-steel-400 shrink-0">já tem kit</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {copy.results && copy.results.length === 0 && <p className="text-[11px] text-steel-500">Nenhum carro do catálogo técnico com esse nome.</p>}
+              {copy.text.trim().length >= 2 && (
+                <button type="button" onClick={() => { const t = copy.text.trim(); toggleCopy({ key: `m:${norm(t)}`, model: t, techId: null, make: null, engine: null, from: null, to: null }); }}
+                  className="text-xs font-semibold text-brand-700 hover:underline">Não está no catálogo? Marcar só “{copy.text.trim()}” como modelo</button>
+              )}
+              {copy.sel.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {copy.sel.map(c => (
+                    <button key={c.key} type="button" onClick={() => toggleCopy(c)} title="Tirar da cópia"
+                      className="text-[11px] px-2 py-1 rounded-lg bg-brand-600 text-white">{carLabel(c)} ✕</button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2 pt-0.5">
+                <button type="button" disabled={busy || copy.sel.length === 0} onClick={copyKit}
+                  className="btn-primary text-xs !py-1.5 disabled:opacity-50">Copiar para {copy.sel.length || ''} carro(s)</button>
+                <button type="button" onClick={() => setCopy(null)} className="text-xs text-steel-500 hover:underline">Cancelar</button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="px-3 py-2 border-t border-steel-100 space-y-2">
