@@ -1157,7 +1157,8 @@ function ServicePicker({ value, services, sells, onChange }: { value: string; se
   const words = norm(value).split(' ').filter(Boolean);
   const exact = services.some(s => norm(s.description) === norm(value));
   const hits = words.length
-    ? services.filter(s => words.every(w => norm(s.description).includes(w))).slice(0, 8)
+    // Digitar acha pelo nome do serviço ou pela categoria ("geome" traz os serviços de Geometria)
+    ? services.filter(s => words.every(w => norm(`${s.description} ${s.fromTable ? s.category ?? '' : ''}`).includes(w))).slice(0, 12)
     : cat ? services.filter(s => catOf(s) === cat).slice(0, 80) : [];
   const pick = (s: Suggestion) => { onChange(s.description); setOpen(false); setCat(null); };
 
