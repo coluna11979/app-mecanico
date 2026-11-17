@@ -667,8 +667,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             </div>
             {/* Qtd */}
             <div className="col-span-3 md:col-span-1">
-              <span className="md:hidden text-[10px] text-steel-400 uppercase">Qtd</span>
-              {readOnly ? <div className="text-sm text-right">{r.quantity}</div> : (
+              {/* Serviço é sempre 1: a quantidade fica nas peças (só aparece se a nota antiga tinha outro valor) */}
+              {r.kind === 'labor' && parseMoney(r.quantity) === 1 ? null : <span className="md:hidden text-[10px] text-steel-400 uppercase">Qtd</span>}
+              {r.kind === 'labor' && parseMoney(r.quantity) === 1 ? null : readOnly ? <div className="text-sm text-right">{r.quantity}</div> : (
                 <input className="input !py-2 text-sm text-right" inputMode="decimal" value={r.quantity}
                   onChange={e => update(r.key, { quantity: e.target.value })} />
               )}
