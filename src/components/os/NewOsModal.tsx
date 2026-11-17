@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import LicensePlate from './LicensePlate';
-import { fmtDur, fmtPhone } from './osHelpers';
+import { fmtDur, fmtPhone, OS_CATEGORIES } from './osHelpers';
 import { teamPerformance, type PerfOs, type ServiceType } from '@/lib/teamPerformance';
 import { fetchAll } from '@/lib/fetchAll';
 import { findDuplicatesRemote } from '@/components/customers/CustomerForm';
@@ -14,21 +14,10 @@ import type { Customer, ServiceRecommendation, Vehicle, WorkshopMechanic } from 
 type CustomerWithVehicles = Customer & { vehicles: Vehicle[] };
 type Match = { customer: Customer; vehicle: Vehicle | null };
 
-/** Serviços mais comuns — um toque adiciona (pode escolher vários) */
-const QUICK_SERVICES: { label: string; category: string }[] = [
-  { label: 'Revisão geral',   category: 'Revisão geral' },
-  { label: 'Troca de óleo',   category: 'Troca de óleo e filtros' },
-  { label: 'Freios',          category: 'Freios' },
-  { label: 'Suspensão',       category: 'Suspensão' },
-  { label: 'Direção',         category: 'Direção' },
-  { label: 'Diagnóstico',     category: 'Diagnóstico' },
-  { label: 'Alinhamento',     category: 'Pneus e Rodas' },
-  { label: 'Balanceamento',   category: 'Pneus e Rodas' },
-  { label: 'Elétrica',        category: 'Elétrica' },
-  { label: 'Ar-condicionado', category: 'Ar-condicionado' },
-  { label: 'Embreagem',       category: 'Transmissão' },
-  { label: 'Motor',           category: 'Motor' },
-];
+/** Categorias da oficina (as mesmas da Jota Car, padrão nas duas lojas) — um toque adiciona */
+const QUICK_SERVICES: { label: string; category: string }[] = OS_CATEGORIES
+  .filter(c => c !== 'Check-up' && c !== 'Outro')
+  .map(c => ({ label: c, category: c }));
 
 const plateNorm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const digits = (s: string) => s.replace(/\D/g, '');
