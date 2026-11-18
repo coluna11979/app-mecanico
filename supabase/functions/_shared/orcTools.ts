@@ -12,7 +12,7 @@ type Input = Record<string, unknown>;
 export type ToolDef = {
   label: string;
   def: { description: string; input_schema: Record<string, unknown> };
-  run: (db: SupabaseClient, ws: string, input: Input, ctx: { userId: string }) => Promise<unknown>;
+  run: (db: SupabaseClient, ws: string, input: Input, ctx: { userId: string; authHeader?: string }) => Promise<unknown>;
 };
 
 const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -200,6 +200,28 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
       const c = uuid(i.cliente_id);
       if (!c) return err('cliente_id_invalido: busque o cliente de novo');
       return rpc(db, 'orc_add_vehicle', { p_workshop: ws, p_customer: c, p_marca: str(i.marca, 60) || null, p_modelo: str(i.modelo, 60) || null, p_ano: int(i.ano), p_placa: str(i.placa, 12) || null });
+    },
+  },
+
+  orc_consultar_placa: {
+    label: 'Consulta de placa (descobre o carro)',
+    def: {
+      description: 'Descobre o carro pela PLACA (marca, modelo, versão, ano, combustível), usando a mesma consulta técnica da tela: primeiro o carro já cadastrado na oficina, depois o histórico de placas consultadas e por fim o serviço de consulta de placa. Use quando o dono passar só a placa e orc_buscar_cliente não achar o carro. Não grava nada: depois cadastre o cliente com o carro (orc_cadastrar_cliente) usando marca, modelo e ano devolvidos. Status: found (use "carro"), not_found (placa não achada: pergunte o modelo e o ano), invalid (placa inválida), limit/unavailable/not_configured (diga que a consulta não está disponível agora e pergunte o modelo e o ano).',
+      input_schema: { type: 'object', additionalProperties: false, required: ['placa'], properties: { placa: { type: 'string', description: 'Ex.: ABC1D23' } } },
+    },
+    run: async (_db, ws, i, ctx) => {
+      const placa = str(i.placa, 12).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!placa) return err('placa_obrigatoria');
+      if (!ctx.authHeader) return err('sem_credencial');
+      const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/tech-plate-lookup`, {
+        method: 'POST',
+        headers: { Authorization: ctx.authHeader, 'Content-Type': 'application/json', apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '' },
+        body: JSON.stringify({ workshop_id: ws, plate: placa }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const out = await res.json().catch(() => null) as { status?: string; error?: string; car?: unknown; source?: string } | null;
+      if (!res.ok) return err(out?.error ?? `consulta_placa_${res.status}`);
+      return { ok: true, placa, ...(out ?? {}) };
     },
   },
 
