@@ -2,10 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { PART_CATEGORIES, fmtQty } from '@/lib/parts';
 import { fmtBRL } from './osHelpers';
 import type { Suggestion } from './OsItemsEditor';
+import { codeHit, matchesAll, searchHay, searchWords } from '@/lib/partSearch';
 
 const norm = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-const words = (q: string) => norm(q).split(/\s+/).filter(Boolean);
-const hay = (s: Suggestion) => norm(`${s.description} ${s.code ?? ''} ${s.search ?? ''} ${s.category ?? ''}`);
+const words = (q: string) => searchWords(q);
+const hayCache = new WeakMap<Suggestion, string>();
+const hay = (s: Suggestion) => { let h = hayCache.get(s); if (h == null) { h = searchHay(s.description, s.code, s.search, s.category); hayCache.set(s, h); } return h; };
+const fits = (s: Suggestion, ws: string[]) => matchesAll(hay(s), ws);
 
 /** Kit pronto para o carro da OS: serviço da Tabela + as peças dele */
 export type CarKit = { svc: Suggestion; parts: string[]; model: string | null };
@@ -18,7 +21,7 @@ function rank(list: Suggestion[], ws: string[]) {
   if (!ws.length) return list;
   const score = (s: Suggestion) => {
     const n = norm(s.description);
-    return (s.code && ws.includes(norm(s.code)) ? 4 : 0) + (n.startsWith(ws[0]) ? 2 : n.split(/[^a-z0-9]+/).some(t => t.startsWith(ws[0])) ? 1 : 0) + ((s.stock ?? 0) > 0 ? 1 : 0);
+    return (codeHit(s.code, ws) ? 4 : 0) + (n.startsWith(ws[0]) ? 2 : n.split(/[^a-z0-9]+/).some(t => t.startsWith(ws[0])) ? 1 : 0) + ((s.stock ?? 0) > 0 ? 1 : 0);
   };
   return list.map((s, i) => ({ s, i, k: score(s) })).sort((a, b) => b.k - a.k || a.i - b.i).map(x => x.s);
 }
@@ -95,18 +98,19 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   }, [categories, labor]);
   const partCats = useMemo(() => PART_CATEGORIES.filter(c => partsBase.some(p => (p.pcat ?? 'outros') === c.value)), [partsBase]);
 
-  const svcHits = useMemo(() => rank(labor.filter(s => (!chip || norm(s.category ?? '') === norm(chip)) && ws.every(w => hay(s).includes(w))), ws),
+  const svcHits = useMemo(() => rank(labor.filter(s => (!chip || norm(s.category ?? '') === norm(chip)) && fits(s, ws)), ws),
     [labor, chip, q]); // eslint-disable-line react-hooks/exhaustive-deps
   const kitHits = useMemo(() => (kits ?? []).filter(k => (!chip || norm(k.svc.category ?? '') === norm(chip))
-    && ws.every(w => norm(`${k.svc.description} ${k.parts.join(' ')}`).includes(w))), [kits, chip, q]); // eslint-disable-line react-hooks/exhaustive-deps
+    && matchesAll(searchHay(k.svc.description, ...k.parts), ws)), [kits, chip, q]); // eslint-disable-line react-hooks/exhaustive-deps
   const partHits = useMemo(() => {
     if (!partMode && !ws.length) return [];
-    return rank(partsBase.filter(s => (!partMode || !chip || (s.pcat ?? 'outros') === chip) && ws.every(w => hay(s).includes(w))), ws);
+    return rank(partsBase.filter(s => (!partMode || !chip || (s.pcat ?? 'outros') === chip) && fits(s, ws)), ws);
   }, [partsBase, chip, q, partMode]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Peças que só aparecem ampliando a busca (outros carros / outro tipo)
-  const hiddenParts = useMemo(() => {
-    if (!ws.length || scope === 'all') return 0;
-    return suggestions.filter(s => s.kind === 'part' && ws.every(w => hay(s).includes(w))).length - partHits.length;
+  // Digitou e a peça não é do carro/tipo do serviço: mostra logo abaixo as de outros carros e sem carro
+  const otherHits = useMemo(() => {
+    if (!ws.length || scope === 'all') return [];
+    const seen = new Set(partHits);
+    return rank(suggestions.filter(s => s.kind === 'part' && !seen.has(s) && fits(s, ws)), ws);
   }, [suggestions, q, scope, partHits]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const top = useMemo(() => topServices.map(n => labor.find(s => norm(s.description) === norm(n))).filter(Boolean).slice(0, 8) as Suggestion[], [topServices, labor]);
@@ -157,8 +161,8 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   const partSub = (p: Suggestion) => [p.code ? `cód. ${p.code}` : null, p.part_id ? `${fmtQty(p.stock ?? 0)} ${p.unit ?? 'un'} em estoque` : null].filter(Boolean).join(' · ');
 
   const nothing = cur.kind === 'top'
-    ? ws.length > 0 && !svcHits.length && !kitHits.length && !partHits.length
-    : partHits.length === 0;
+    ? ws.length > 0 && !svcHits.length && !kitHits.length && !partHits.length && !otherHits.length
+    : partHits.length === 0 && otherHits.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-steel-900/50 flex items-end md:items-center justify-center md:p-6" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
@@ -276,12 +280,24 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
             </>
           )}
 
-          {/* Ampliar a busca de peças */}
-          {(partMode || ws.length > 0) && scope !== 'all' && (hiddenParts > 0 || (partMode && !partHits.length)) && (
+          {otherHits.length > 0 && (
+            <>
+              <Group label={vehicleLabel ? 'Outras peças do cadastro (outros carros ou sem carro)' : 'Outras peças do cadastro'} />
+              {otherHits.slice(0, 60).map(p => (
+                <Line key={'o' + (p.part_id ?? '') + p.description} name={p.description} sub={partSub(p)} price={partPrice(p)}
+                  tag={!partMode ? { text: 'peça', cls: 'bg-brand-50 text-brand-700' } : undefined}
+                  onClick={() => pickPart(p)} done={justAdded === p.description || (partMode && added.includes(p.description))} />
+              ))}
+              {otherHits.length > 60 && <li className="px-4 py-3 text-xs text-center text-steel-500">Mostrando 60 de {otherHits.length}. Digite mais (medida, marca ou código).</li>}
+            </>
+          )}
+
+          {/* Ampliar a busca de peças (sem nada digitado) */}
+          {partMode && !ws.length && scope !== 'all' && (
             <li className="px-4 pt-3">
               <button type="button" onClick={() => setScope(scope === 'item' ? 'car' : 'all')}
                 className="w-full min-h-[48px] px-4 rounded-xl border border-steel-200 text-sm font-semibold text-steel-700 text-left hover:bg-steel-50">
-                {scope === 'item' ? '👁 Ver peças de outros tipos deste carro' : '👁 Ver peças de outros carros'}{hiddenParts > 0 ? ` (${hiddenParts})` : ''}
+                {scope === 'item' ? '👁 Ver peças de outros tipos deste carro' : '👁 Ver todas as peças do cadastro'}
               </button>
             </li>
           )}

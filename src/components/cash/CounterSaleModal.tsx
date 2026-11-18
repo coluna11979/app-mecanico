@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { codeHit, matchesAll, searchHay, searchWords } from '@/lib/partSearch';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { METHODS, RECEIVE_METHODS, brl, moneyStr, parseMoney, type PayMethod } from '@/lib/cash';
@@ -63,17 +64,12 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
   // pela busca, com estoque.
   const found = useMemo(() => {
     if (!catalog) return [];
-    const all = norm(q).split(/\s+/).filter(Boolean);
-    const ws = all.filter(w => !/^(\d+([.,]\d+)?(l|lt|lts|ml)?|l|lt|lts|litros?|ml|un|und|unid|unidades?|de|do|da|x)$/.test(w));
-    const words = ws.length ? ws : all;
+    const words = searchWords(q);
     if (!words.length) return [];
-    const hits = catalog.filter(p => {
-      const h = norm(`${p.name} ${p.code ?? ''} ${p.brand ?? ''}`).replace(/\s+/g, ' ');
-      return words.every(w => h.includes(w));
-    });
+    const hits = catalog.filter(p => matchesAll(searchHay(p.name, p.code, p.brand), words));
     const score = (p: CatPart) => {
       const n = norm(p.name).replace(/\s+/g, ' ').trim();
-      return (p.code && words.includes(norm(p.code)) ? 4 : 0) + (n.startsWith(words[0]) ? 2 : 0) + (Number(p.stock_qty) > 0 ? 1 : 0);
+      return (codeHit(p.code, words) ? 4 : 0) + (n.startsWith(words[0]) ? 2 : 0) + (Number(p.stock_qty) > 0 ? 1 : 0);
     };
     return hits.map((p, i) => ({ p, i, k: score(p) })).sort((a, b) => b.k - a.k || a.i - b.i).map(x => x.p).slice(0, 40);
   }, [q, catalog]);
