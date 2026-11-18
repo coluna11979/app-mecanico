@@ -28,7 +28,7 @@ function rank(list: Suggestion[], ws: string[]) {
  * e os mais usados na frente. Dentro de um serviço, abre só com as peças daquele serviço.
  */
 export default function AddSheet({ mode, suggestions, categories, topServices, loadKits, kitOf, partFits, wantsParts, priceFor, vehicleLabel, showCost,
-  onService, onKit, onPart, onFreeItem, onFreePart, onNewPart, onClose }: {
+  onService, onKit, onPart, onFreeItem, onFreePart, onNewPart, onCombo, onClose }: {
   mode: SheetMode;
   suggestions: Suggestion[];
   /** Categorias de serviço da oficina (na ordem dela) */
@@ -52,6 +52,8 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   onFreeItem: (name: string) => void;
   onFreePart: (name: string, target: string) => void;
   onNewPart?: (name: string, target: string) => void;
+  /** Peça + serviço: item de mão de obra com as peças dentro (comissão de 4% sobre o item). Devolve a key do item */
+  onCombo?: () => string | undefined;
   onClose: () => void;
 }) {
   const [cur, setCur] = useState<SheetMode>(mode);
@@ -194,6 +196,20 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
         </div>
 
         <ul className="flex-1 overflow-y-auto">
+          {/* Peça + serviço: a mão de obra digitada na OS e as peças dentro (4% sobre o item) */}
+          {cur.kind === 'top' && onCombo && !ws.length && !chip && (
+            <li className="px-4 pt-4">
+              <button type="button" onClick={() => { const key = onCombo(); if (key) setCur({ kind: 'part', key, name: 'Peça + serviço', sells: false }); else onClose(); }}
+                className="w-full min-h-[64px] px-4 py-3 rounded-2xl border-2 border-brand-300 bg-brand-50 text-left hover:bg-brand-100 flex items-center gap-3">
+                <span className="h-11 w-11 shrink-0 rounded-xl bg-brand-500 text-white grid place-items-center text-xl font-bold">＋</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[15px] font-bold text-brand-900">Peça + serviço</span>
+                  <span className="block text-xs text-steel-600">Mão de obra com as peças dentro · você digita o valor na OS · comissão 4% sobre o item</span>
+                </span>
+              </button>
+            </li>
+          )}
+
           {/* Categoria escolhida: dá para lançar ela mesma como item (ex.: Escapamento, Mão de obra) */}
           {!partMode && chip && !ws.length && (
             <li>

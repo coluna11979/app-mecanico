@@ -949,6 +949,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           onFreeItem={name => addFromCatalog({ description: name, kind: 'labor', unit_price: 0 }, '')}
           onFreePart={(name, target) => addFromCatalog({ description: name, kind: 'part', unit_price: 0, qty: 1 }, target)}
           onNewPart={showCost ? (name, target) => { const k = target ? addPartTo(target) : null; const sv = rows.find(r => r.key === target); setSheet(null); setQuick({ key: k, name, qty: 1, cat: sv ? itemPartCats(sv.description)?.[0] ?? null : null }); } : undefined}
+          onCombo={saleMode ? undefined : () => {
+            const key = newKey();
+            setRows(rs => [...rs, { key, kind: 'labor', description: 'Mão de obra', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
+            return key;
+          }}
           onClose={() => setSheet(null)} />
       )}
 
