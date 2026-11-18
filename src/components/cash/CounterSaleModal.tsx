@@ -55,13 +55,27 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
       ]);
       setCatalog(c);
       setMargin(m);
-    })();
+    })().catch(e => { console.error('[venda] peças não carregaram:', e); setCatalog([]); toast.error('Não foi possível carregar as peças. Recarregue a página.'); });
   }, [wid]);
 
+  // Busca por palavras, em qualquer ordem ("óleo 5w30" acha "ÓLEO LUBRAX TOP AUTO 5W30"). Quantidade e unidade
+  // digitadas ("1 litro", "2 un") não entram na busca. Mais prováveis primeiro: código exato, nome começando
+  // pela busca, com estoque.
   const found = useMemo(() => {
-    const t = norm(q.trim());
-    if (!t || !catalog) return [];
-    return catalog.filter(p => norm(`${p.name} ${p.code ?? ''} ${p.brand ?? ''}`).includes(t)).slice(0, 8);
+    if (!catalog) return [];
+    const all = norm(q).split(/\s+/).filter(Boolean);
+    const ws = all.filter(w => !/^(\d+([.,]\d+)?(l|lt|lts|ml)?|l|lt|lts|litros?|ml|un|und|unid|unidades?|de|do|da|x)$/.test(w));
+    const words = ws.length ? ws : all;
+    if (!words.length) return [];
+    const hits = catalog.filter(p => {
+      const h = norm(`${p.name} ${p.code ?? ''} ${p.brand ?? ''}`).replace(/\s+/g, ' ');
+      return words.every(w => h.includes(w));
+    });
+    const score = (p: CatPart) => {
+      const n = norm(p.name).replace(/\s+/g, ' ').trim();
+      return (p.code && words.includes(norm(p.code)) ? 4 : 0) + (n.startsWith(words[0]) ? 2 : 0) + (Number(p.stock_qty) > 0 ? 1 : 0);
+    };
+    return hits.map((p, i) => ({ p, i, k: score(p) })).sort((a, b) => b.k - a.k || a.i - b.i).map(x => x.p).slice(0, 40);
   }, [q, catalog]);
 
   function addPart(p: CatPart) {
@@ -192,6 +206,8 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (found[0]) addPart(found[0]); else if (q.trim()) openNewPart(); } }} />
       {q.trim() && (
         <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-steel-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="max-h-[50vh] overflow-y-auto">
+          {found.length === 0 && catalog !== null && <div className="px-3 py-2 text-sm text-steel-500">Nenhuma peça com “{q.trim()}”.</div>}
           {found.map(p => (
             <button key={p.id} type="button" onClick={() => addPart(p)}
               className="w-full text-left px-3 py-2 hover:bg-steel-50 flex justify-between gap-3 text-sm">
@@ -202,6 +218,7 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
               </span>
             </button>
           ))}
+          </div>
           <button type="button" onClick={openNewPart} className="w-full text-left px-3 py-2 hover:bg-steel-50 text-sm text-brand-700 font-semibold border-t border-steel-100">
             + Cadastrar “{q.trim()}” (custo e preço)
           </button>
