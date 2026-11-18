@@ -7,6 +7,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { ORC_TOOLS } from '../_shared/orcTools.ts';
+import { ADM_TOOLS } from '../_shared/admTools.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,7 +19,7 @@ const json = (body: unknown, status = 200) =>
 
 // Padrões e tetos; o superadmin ajusta por agente (ai_agents.max_tool_turns / history_window / max_tokens)
 // O Orçamentista encadeia várias ferramentas por mensagem (buscar, abrir OS, lançar itens), então tem mais voltas
-const DEFAULT_TURNS = 6, ORC_TURNS = 14, DEFAULT_HISTORY = 20, DEFAULT_MAX_TOKENS = 4000;
+const DEFAULT_TURNS = 6, ORC_TURNS = 14, ADM_TURNS = 10, DEFAULT_HISTORY = 20, DEFAULT_MAX_TOKENS = 4000;
 const clamp = (v: unknown, min: number, max: number, def: number) => {
   const n = Number(v);
   return Number.isFinite(n) && v != null ? Math.min(max, Math.max(min, Math.round(n))) : def;
@@ -358,6 +359,7 @@ Deno.serve(async (req) => {
   let model: string | null = null;
   let inTok = 0, outTok = 0;
   let feature = 'agent_socio';
+  let platformAgent = false;
 
   const log = (row: Record<string, unknown>) =>
     admin.from('ai_usage_log').insert({
@@ -388,16 +390,29 @@ Deno.serve(async (req) => {
     workshopId = agent.workshop_id;
     if (!agent.enabled) return json({ error: 'Este agente está desligado' }, 403);
 
+    // Acompanhante de cadastros: agente da PLATAFORMA (sem oficina), só para o admin. Lê o funil de cadastro e manda e-mails
+    // (lembretes e campanhas) pelas funções que já conferem o admin; o texto e quem recebe são aprovados pelo admin no chat.
+    const isAdm = agent.template === 'admin_cadastros';
+    if (isAdm) {
+      const { data: prof } = await admin.from('profiles').select('role').eq('id', user.id).maybeSingle();
+      if (prof?.role !== 'admin') return json({ error: 'Só o admin da plataforma usa este agente' }, 403);
+      if (playground) return json({ error: 'Este agente envia e-mails de verdade, por isso não tem modo de teste.' }, 400);
+      platformAgent = true;
+      feature = 'agent_admin';
+    }
+
     // Orçamentista: agente que ESCREVE na oficina (abre OS, lança itens). Conjunto próprio de ferramentas, outra métrica de uso
     // e sem playground (o teste gravaria de verdade).
     const isOrc = agent.template === 'orcamento';
     if (isOrc && playground) return json({ error: 'O Orçamentista grava de verdade, por isso não tem modo de teste.' }, 400);
     if (isOrc) feature = 'agent_orcamento';
-    const catalog: Record<string, { def: { description: string; input_schema: Record<string, unknown> }; run: (db: any, ws: string, input: Record<string, unknown>, ctx: { userId: string }) => Promise<unknown> }> =
-      isOrc ? ORC_TOOLS : TOOLS;
+    const catalog: Record<string, { def: { description: string; input_schema: Record<string, unknown> }; run: (db: any, ws: string, input: Record<string, unknown>, ctx: { userId: string; authHeader?: string }) => Promise<unknown> }> =
+      isAdm ? ADM_TOOLS : isOrc ? ORC_TOOLS : TOOLS;
 
-    const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: workshopId, _module: 'agentes' });
-    if (!modOn) return json({ error: 'Agentes de IA não liberados para esta oficina' }, 403);
+    if (!isAdm) {
+      const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: workshopId, _module: 'agentes' });
+      if (!modOn) return json({ error: 'Agentes de IA não liberados para esta oficina' }, 403);
+    }
 
     const { data: rows } = await admin.from('app_settings').select('key, value')
       .in('key', ['anthropic_api_key', 'ai_agent_model', 'ai_invoice_model', 'ai_vision_model', 'ai_vision_effort']);
@@ -415,7 +430,7 @@ Deno.serve(async (req) => {
     const enabledTools = agentTools.filter((k) => k in catalog);
     const toolDefs = enabledTools.map((k) => ({ name: k, ...catalog[k].def }));
 
-    const maxTurns = clamp(agent.max_tool_turns, 1, 40, isOrc ? ORC_TURNS : DEFAULT_TURNS);
+    const maxTurns = clamp(agent.max_tool_turns, 1, 40, isAdm ? ADM_TURNS : isOrc ? ORC_TURNS : DEFAULT_TURNS);
     const maxTokens = clamp(agent.max_tokens, 500, 16000, DEFAULT_MAX_TOKENS);
     const history = clamp(agent.history_window, 2, 60, DEFAULT_HISTORY);
 
@@ -455,13 +470,13 @@ Deno.serve(async (req) => {
       for (const block of response.content.filter((b: any) => b.type === 'tool_use') as any[]) {
         try {
           if (!enabledTools.includes(block.name)) throw new Error('ferramenta não liberada');
-          const out = await catalog[block.name].run(admin, workshopId!, block.input ?? {}, { userId: userId! });
+          const out = await catalog[block.name].run(admin, workshopId ?? '', block.input ?? {}, { userId: userId!, authHeader });
           results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out) });
         } catch (e) {
           console.error('[agent-chat tool]', block.name, e);
           // O Orçamentista escreve: o motivo do erro ajuda a IA a explicar ao dono (o banco desfaz tudo quando falha)
-          const why = isOrc && e instanceof Error ? ` Motivo: ${e.message.slice(0, 200)}` : '';
-          results.push({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: `Não consegui ${isOrc ? 'fazer' : 'consultar'} isso agora.${why}` });
+          const why = (isOrc || isAdm) && e instanceof Error ? ` Motivo: ${e.message.slice(0, 200)}` : '';
+          results.push({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: `Não consegui ${isOrc || isAdm ? 'fazer' : 'consultar'} isso agora.${why}` });
         }
       }
       messages.push({ role: 'user', content: results });
@@ -485,7 +500,7 @@ Deno.serve(async (req) => {
       msg = `erro da IA (${e.status})${detail ? `: ${String(detail).slice(0, 300)}` : ''}`;
     }
     console.error('[agent-chat]', e);
-    if (workshopId) await log({ ok: false, error: msg.slice(0, 500) });
+    if (workshopId || platformAgent) await log({ ok: false, error: msg.slice(0, 500) });
     return json({ error: msg }, 500);
   }
 });

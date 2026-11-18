@@ -459,6 +459,26 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  orc_pecas_excluir: {
+    label: 'Cadastro de peças: excluir',
+    def: {
+      description: 'EXCLUI peças do cadastro (até 50 por chamada), com os peca_id de orc_pecas_listar ou orc_pecas_duplicadas DESTA mesma vez. Peça sem nenhum uso é apagada de verdade; peça que já foi usada em OS, compra, estoque, kit ou check-up não pode ser apagada sem quebrar o histórico e fica ARQUIVADA (desativada). Use SÓ depois de mostrar ao dono a lista exata (nome, marca, código, estoque) e ter o "sim" dele para ESTA lista (confirmado=true). Não use para duplicadas: nelas prefira orc_pecas_unir, que preserva o histórico.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['peca_ids', 'confirmado'],
+        properties: {
+          peca_ids: { type: 'array', maxItems: 50, items: { type: 'string' } },
+          confirmado: { type: 'boolean', description: 'true só depois do "sim" do dono para esta lista' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      if (i.confirmado !== true) return err('sem_confirmacao_do_dono: mostre a lista e peça o "sim"');
+      const ids = Array.isArray(i.peca_ids) ? i.peca_ids.map(uuid).filter((x): x is string => !!x).slice(0, 50) : [];
+      if (!ids.length) return err('lista_vazia');
+      return rpc(db, 'orc_parts_remove', { p_workshop: ws, p_ids: ids });
+    },
+  },
+
   orc_resumo_os: {
     label: 'Resumo da OS (totais e comissões)',
     def: {

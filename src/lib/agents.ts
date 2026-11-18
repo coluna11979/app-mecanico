@@ -2,13 +2,14 @@
    O agente é só configuração (nome, prompt, tools). Quem executa é a edge function
    agent-chat; as chaves de tool abaixo precisam existir lá (TOOLS). */
 
-export type AgentTemplate = 'socio' | 'orcamento';
+export type AgentTemplate = 'socio' | 'orcamento' | 'admin_cadastros';
 
 /** Configuração editável do agente: o rascunho e cada versão publicada têm este formato */
 export type AgentDraft = { name: string; system_prompt: string; tools: string[] };
 
 export type Agent = {
-  id: string; workshop_id: string; template: AgentTemplate; name: string;
+  /** null = agente da plataforma (só o admin) */
+  id: string; workshop_id: string | null; template: AgentTemplate; name: string;
   system_prompt: string; tools: string[]; enabled: boolean; questions_seeded: boolean;
   /** Edições ainda não publicadas (null = nenhuma). name/system_prompt/tools acima são a versão publicada. */
   draft: AgentDraft | null;
@@ -56,13 +57,26 @@ export const ORC_TOOLS: Record<string, { label: string; desc: string }> = {
   orc_pecas_corrigir:      { label: 'Peças: corrigir e vincular',     desc: 'Categoria, marca e veículos (marca/modelo/ano), em lote' },
   orc_pecas_duplicadas:    { label: 'Peças: achar duplicadas',        desc: 'Mesmo nome+marca ou mesmo código+marca' },
   orc_pecas_unir:          { label: 'Peças: unir duplicadas',         desc: 'Passa OS, estoque e kits para uma só; as outras ficam desativadas' },
+  orc_pecas_excluir:       { label: 'Peças: excluir',                 desc: 'Só com o seu sim; peça já usada fica arquivada em vez de apagada' },
   orc_resumo_os:           { label: 'Resumo da OS',                   desc: 'Total dos serviços, custo de peças e comissões, pela regra da tela' },
+};
+
+/** Ferramentas do Acompanhante de cadastros (admin). As chaves existem em supabase/functions/_shared/admTools.ts */
+export const ADM_TOOLS: Record<string, { label: string; desc: string }> = {
+  adm_funil_resumo:     { label: 'Funil: resumo',                  desc: 'Totais por status e por estágio, e quantos estão parados há mais de 7 dias' },
+  adm_funil_listar:     { label: 'Funil: quem falta o quê',        desc: 'Lista os cadastros com o que falta, documentos pedidos e dias parado' },
+  adm_cadastro_detalhe: { label: 'Cadastro: detalhe e histórico',  desc: 'Mensagens trocadas, documentos e verificação de um cadastro' },
+  adm_enviar_lembrete:  { label: 'Enviar lembrete / pedir documentos', desc: 'Grava no histórico e manda o e-mail (só com o seu sim)' },
+  adm_campanha_previa:  { label: 'Campanha: quantos recebem',      desc: 'Conta o público do e-mail, sem enviar' },
+  adm_campanha_teste:   { label: 'Campanha: teste para você',      desc: 'Manda uma cópia só para o seu e-mail' },
+  adm_campanha_enviar:  { label: 'Campanha: enviar',               desc: 'Dispara o e-mail para o público (só com o seu sim e a contagem aprovada)' },
 };
 
 /** Ferramentas que cada tipo de agente pode ter (o servidor também só libera o conjunto do tipo) */
 export const TOOL_CATALOG: Record<AgentTemplate, Record<string, { label: string; desc: string }>> = {
   socio: AGENT_TOOLS,
   orcamento: ORC_TOOLS,
+  admin_cadastros: ADM_TOOLS,
 };
 
 type TemplateDef = {
@@ -114,7 +128,8 @@ Regras:
 - Cancelar OS (orc_cancelar_os): quando o dono pedir, confirme em uma linha qual OS (número, cliente, carro) e só cancele com o "sim" dele. "Cliente não aprovou" = nao_aprovado true. Se a OS tiver recebimento ou estiver concluída, diga que o dono resolve pelo caixa ou pela tela da OS.
 - Corrigir cadastro (orc_corrigir_cadastro): para trocar dado já preenchido (nome, telefone, e-mail, marca, modelo, ano, placa) de cliente ou carro; mostre o antes e o depois e só aplique com o "sim" do dono. Placa ou telefone que já são de outro cliente: diga de quem e não troque. Mudou modelo ou ano: refaça a consulta técnica.
 - Organizar o cadastro de peças (orc_pecas_*): comece com orc_pecas_resumo e mostre os números. Trabalhe em etapas, uma por vez, sempre mostrando ao dono o que vai mudar e só aplicando com o "sim" dele (um "sim" vale para o lote mostrado): (1) categorias: liste "outros" e ponha cada peça na categoria certa (ex.: amortecedor, bandeja, bieleta, pivô = suspensao; pneu = rodas; bico, vela = ignicao_injecao); (2) marca: quando a marca aparece no nome da peça, preencha; (3) veículos: para peças sem veículo, vincule marca, modelo e anos que o nome da peça indica (ex.: "AMORT TRAS I30 2009" = Hyundai I30 a partir de 2009); se o nome não diz o carro com segurança, deixe de fora e liste para o dono; (4) duplicadas: mostre os grupos, escolha manter a peça mais completa e una; se as duas têm estoque, pergunte se soma. Anote o que ficou pendente. Nunca invente marca, modelo ou ano que o nome não indica.
-- Você só faz o que está nas ferramentas: não recebe pagamento, não fecha caixa, não apaga cadastro, e não altera valor de item já lançado (nesses casos diga que o dono faz pela tela da OS).
+- Excluir peças (orc_pecas_excluir): só quando o dono pedir. Liste as peças (orc_pecas_listar ou orc_pecas_duplicadas) e mostre a lista EXATA (nome, marca, código, estoque) e quantas são; só exclua com o "sim" do dono para essa lista, com confirmado=true. Como o chat não guarda os ids, depois do "sim" liste de novo com o mesmo filtro, confira que é a mesma lista e exclua na mesma vez. Diga que peça já usada em OS, compra, estoque ou kit é arquivada em vez de apagada, para não quebrar o histórico. Para duplicadas prefira unir (orc_pecas_unir). Nunca exclua por conta própria.
+- Você só faz o que está nas ferramentas: não recebe pagamento, não fecha caixa, só exclui peças do cadastro com o sim do dono (não apaga cliente, carro nem OS), e não altera valor de item já lançado (nesses casos diga que o dono faz pela tela da OS).
 - Você só lança no sistema: não manda orçamento para o cliente.`,
   tools: Object.keys(ORC_TOOLS),
   questions: {
@@ -138,8 +153,56 @@ Regras:
   },
 };
 
+const ADMIN_CADASTROS_TEMPLATE: TemplateDef = {
+  name: 'Acompanhante de cadastros',
+  icon: '🧭',
+  desc: 'Acompanha o funil de cadastro de mecânicos e oficinas e prepara os e-mails para você aprovar.',
+  section: 'Acompanhante de cadastros · só o admin da plataforma',
+  placeholder: 'Pergunte sobre os cadastros ou peça um e-mail…',
+  working: 'está consultando os cadastros…',
+  emptyHint: 'Pergunte quem ainda não finalizou o cadastro, quem precisa mandar documentos, ou escolha uma pergunta salva logo abaixo. 👇',
+  toolsWord: 'ações', toolsTitle: 'O que ele pode fazer',
+  playground: false,
+  prompt: `Você é o Acompanhante de cadastros da plataforma Mecânico App: ajuda o admin a acompanhar quem está se cadastrando (mecânicos e oficinas), quem terminou, quem ainda não, quem precisa mandar documentos, e a preparar os e-mails para pedir o que falta.
+Responda sempre em português do Brasil, curto e direto, como um assistente de operação.
+
+Como você trabalha:
+1. Começo do dia ou pergunta ampla: use adm_funil_resumo e conte o que importa: quantos aguardam o cadastrado (aguardando_cliente), quantos responderam e esperam a análise do admin (respondeu_aguardando_analise), quantos têm cadastro incompleto, quantos estão parados há mais de 7 dias. Priorize quem responderam e esperam análise (o admin é o gargalo) e depois os mais parados.
+2. Para ver nomes, use adm_funil_listar (filtre por tipo, estágio e dias parado). Mostre em lista curta: nome, tipo, o que falta, dias parado e se já pediram documentos. Não despeje a lista inteira se for grande: mostre os mais parados e diga quantos há.
+3. Um cadastro específico: adm_cadastro_detalhe mostra o histórico de mensagens e a verificação. Verificação com "error" é falha da consulta, não reprovação do cadastrado.
+4. Lembretes (adm_enviar_lembrete): escreva o texto (curto, cordial, com {nome} e dizendo exatamente o que falta; para documentos diga que ele anexa em "Aguardando aprovação" no app), mostre ao admin o TEXTO e QUEM recebe (nomes e quantidade) e peça o "sim". Só envie depois do "sim", com confirmado=true. Como o chat não guarda os ids, envie por "selecao" (tipo, estágio, dias parado) e destinatarios_esperados com o número que o admin aprovou; se voltar contagem_mudou, mostre o número novo e peça outro sim.
+5. Campanhas de e-mail (adm_campanha_*): defina o público (audience, status, state), use adm_campanha_previa para dizer quantos recebem, escreva assunto, título, texto e botão (link https do app, ex.: o app público /aguardando-aprovacao), mande adm_campanha_teste para o e-mail do admin e peça o "sim" para o envio real. Só então use adm_campanha_enviar (confirmado=true e destinatarios_esperados = a contagem aprovada). "pending" no público inclui pendentes e em análise, não os em espera por região.
+6. Quem está em espera por região (em_espera_regiao) NÃO recebe pedido de documentos: a região ainda não abriu (lançamento previsto para dezembro). Se o admin quiser avisar esse grupo, proponha uma campanha de "novidades" separada, sem pedir documentos.
+
+Regras:
+- Nunca invente nome, número ou situação: use só o que as ferramentas devolveram. Se uma ferramenta falhar, diga o motivo.
+- Nunca envie e-mail sem o "sim" do admin nesta conversa para aquele texto e aquele público. Sem exceção, nem para um só destinatário.
+- Você não aprova, rejeita nem muda status de cadastro: isso o admin faz na tela de Aprovações. Você também não envia WhatsApp.
+- Não repita pedido de documentos para quem já recebeu há menos de 3 dias, a não ser que o admin peça.
+- Mostre telefone só quando o admin pedir. Não coloque dados pessoais (CPF, CNH, endereço) no texto de e-mails: diga só o nome do que falta.`,
+  tools: Object.keys(ADM_TOOLS),
+  questions: {
+    'Visão geral': [
+      'Resumo do funil de cadastros de hoje',
+      'Quem respondeu e está esperando a minha análise?',
+      'Quais cadastros estão parados há mais de 7 dias?',
+    ],
+    'Quem falta o quê': [
+      'Quais mecânicos ainda não finalizaram o cadastro e o que falta em cada um?',
+      'Quem está com documentos pedidos e ainda não respondeu?',
+      'Quais oficinas estão com cadastro incompleto?',
+    ],
+    'E-mails': [
+      'Escreva um lembrete de documentos para quem não respondeu há mais de 3 dias e me mostre antes de enviar',
+      'Monte uma campanha para os mecânicos com cadastro em análise, mande o teste para mim',
+      'Quantos receberiam uma campanha para as oficinas aprovadas de SP?',
+    ],
+  },
+};
+
 export const AGENT_TEMPLATES: Record<AgentTemplate, TemplateDef> = {
   orcamento: ORCAMENTO_TEMPLATE,
+  admin_cadastros: ADMIN_CADASTROS_TEMPLATE,
   socio: {
     name: 'Sócio operacional',
     icon: '🤝',
