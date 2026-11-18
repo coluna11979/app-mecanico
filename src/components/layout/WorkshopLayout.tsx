@@ -629,6 +629,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   }, [op.session?.session_id, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   // No modo balcão só o gestor troca de loja (e a outra loja abre travada, na tela de PIN)
   const canSwitchStore = !op.balcao || role === 'gestor';
+  // Busca rápida (telas, preço, óleo): só o dono (login normal) e o gerente no balcão
+  const canQuickSearch = !op.balcao || role === 'gestor';
   // Acesso equipe (login remoto): sair encerra a conta do colaborador e volta pra tela de equipe
   const exitRemote = async () => { op.clear(); await signOut(); nav('/equipe'); };
 
@@ -850,7 +852,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
             <WalletChip total={wallet.balance.total} light={sideTheme === 'light'} />
           )}
           {/* Busca rápida: telas, preço e óleo/filtros num campo só (Ctrl+K) */}
-          <button onClick={() => setPalette(true)} title="Busca rápida: telas, preço e óleo (Ctrl+K)"
+          {canQuickSearch && <button onClick={() => setPalette(true)} title="Busca rápida: telas, preço e óleo (Ctrl+K)"
             className={`w-full flex items-center rounded-lg transition ${T.tool} ${rail ? 'h-10 justify-center' : 'h-9 gap-2.5 px-3'}`}>
             <Icon name="search" size={16} />
             {!rail && (
@@ -859,7 +861,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
                 <kbd className={`font-mono text-[10px] leading-none rounded px-1.5 py-1 ${T.kbd}`}>{isMac ? '⌘K' : 'Ctrl K'}</kbd>
               </>
             )}
-          </button>
+          </button>}
         </div>
 
         {/* Navegação */}
@@ -1022,7 +1024,7 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
       )}
 
       {/* Busca rápida (Ctrl+K / ⌘K): vai direto para qualquer tela liberada */}
-      {palette && (
+      {palette && canQuickSearch && (
         <CommandPalette onClose={() => setPalette(false)} onGo={to => { setPalette(false); nav(to); }}
           actions={[
             ...(shopId ? [{
@@ -1066,6 +1068,14 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
           )}
 
           {wallet.balance && allowed('/oficina/carteira') && <WalletChip total={wallet.balance.total} compact />}
+
+          {/* Busca rápida (mobile): só dono e gerente */}
+          {canQuickSearch && (
+            <button onClick={() => setPalette(true)} aria-label="Busca rápida"
+              className="shrink-0 h-11 w-11 grid place-items-center rounded-xl text-steel-600 hover:bg-steel-100 transition">
+              <Icon name="search" size={20} />
+            </button>
+          )}
 
           {/* Sino de avisos (mobile) */}
           <button
@@ -1466,7 +1476,7 @@ function CommandPalette({ items, actions, onGo, onClose }: {
   return (
     <div className="fixed inset-0 z-[90] px-4" role="dialog" aria-modal="true" aria-label="Busca rápida">
       <div className="absolute inset-0 bg-steel-900/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose} />
-      <div className="relative mx-auto mt-[12vh] max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-steel-200 overflow-hidden animate-fade-in">
+      <div className="relative mx-auto mt-[8vh] sm:mt-[12vh] max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-steel-200 overflow-hidden animate-fade-in">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-steel-100">
           {mode === 'telas' ? (
             <button type="button" onClick={() => { setMode('menu'); input.current?.focus(); }} aria-label="Voltar às opções"
@@ -1477,7 +1487,8 @@ function CommandPalette({ items, actions, onGo, onClose }: {
           <input ref={input} autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
             placeholder={mode === 'telas' ? 'Qual tela?' : 'Peça, serviço, carro, placa ou tela…'}
             className="flex-1 min-w-0 bg-transparent text-[15px] text-steel-900 placeholder:text-steel-400 outline-none" />
-          <kbd className="font-mono text-[10px] text-steel-500 bg-steel-100 ring-1 ring-steel-200 rounded px-1.5 py-1">Esc</kbd>
+          <button type="button" onClick={onClose} className="sm:hidden text-xs font-semibold text-steel-500 px-2 h-8">Fechar</button>
+          <kbd className="hidden sm:block font-mono text-[10px] text-steel-500 bg-steel-100 ring-1 ring-steel-200 rounded px-1.5 py-1">Esc</kbd>
         </div>
         <div ref={listRef} className="max-h-[55vh] overflow-y-auto py-1.5">
           {mode === 'menu'
@@ -1488,7 +1499,7 @@ function CommandPalette({ items, actions, onGo, onClose }: {
               : screens.map((i, n) => row(n, i.icon, i.label,
                   i.group ? <span className="text-xs text-steel-400 shrink-0">{i.group}</span> : null))}
         </div>
-        <div className="flex items-center gap-4 px-4 h-9 border-t border-steel-100 bg-steel-50/70 font-mono text-[10.5px] text-steel-400">
+        <div className="hidden sm:flex items-center gap-4 px-4 h-9 border-t border-steel-100 bg-steel-50/70 font-mono text-[10.5px] text-steel-400">
           <span>↑ ↓ navegar</span><span>↵ abrir</span><span>{mode === 'telas' ? 'esc voltar' : 'esc fechar'}</span>
         </div>
       </div>
