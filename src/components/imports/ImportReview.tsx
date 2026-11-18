@@ -18,6 +18,8 @@ import ServiceTitleInput from './ServiceTitleInput';
 type ItemRow = { key: number; tipo: OsItemKind; descricao: string; quantidade: string; valor: string; who: string;
   /** Só peças: escolhida no cadastro (fica ligada a ela; não cria peça nova) */
   part_id?: string | null; part_cost?: number;
+  /** Só peças: quanto a oficina pagou pela peça (por unidade) — para o lucro e o estoque; em branco = estimado pela margem */
+  custo?: string;
   /** Só serviços: 'servico' = serviço + peças (ex.: troca de óleo já com óleo e filtro) · 'mao_de_obra' = só o trabalho */
   stype?: 'servico' | 'mao_de_obra' };
 /** Serviço que já inclui o material no valor (troca de óleo/filtro): na nota vem numa linha só */
@@ -376,11 +378,13 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
       if (toCatalog) {
         try {
           catalog = (await ensureCatalogParts(wid, items.filter(r => r.tipo === 'part' && !r.part_id && r.descricao.trim())
-            .map(r => ({ name: catalogName(r.descricao), price: parseMoney(r.valor || '0') })))).map;
+            .map(r => ({ name: catalogName(r.descricao), price: parseMoney(r.valor || '0'), cost: parseMoney(r.custo || '0') })))).map;
         } catch (err) {
           console.warn('[ImportReview] peças não foram para o cadastro:', err);
         }
       }
+      /** Custo digitado na conferência (por unidade); null = não informado */
+      const typedCost = (r: ItemRow) => { const c = parseMoney(r.custo || '0'); return Number.isFinite(c) && c > 0 ? c : null; };
       const rowsFor = (soId: string) => items.map((r, idx) => ({
           service_order_id: soId, workshop_id: wid, kind: r.tipo,
           service_type: r.tipo === 'labor' ? r.stype ?? 'mao_de_obra' : null,
@@ -389,11 +393,11 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
           unit_price: parseMoney(r.valor || '0'),
           position: idx,
           ...(r.tipo === 'part' && r.part_id
-            ? { part_id: r.part_id, unit_cost: (r.part_cost ?? 0) > 0 ? r.part_cost : null }
+            ? { part_id: r.part_id, unit_cost: typedCost(r) ?? ((r.part_cost ?? 0) > 0 ? r.part_cost : null) }
             : r.tipo === 'part' && catalog.get(partKey(catalogName(r.descricao)))
             ? { part_id: catalog.get(partKey(catalogName(r.descricao)))!.id,
-                unit_cost: catalog.get(partKey(catalogName(r.descricao)))!.cost > 0 ? catalog.get(partKey(catalogName(r.descricao)))!.cost : null }
-            : {}),
+                unit_cost: typedCost(r) ?? (catalog.get(partKey(catalogName(r.descricao)))!.cost > 0 ? catalog.get(partKey(catalogName(r.descricao)))!.cost : null) }
+            : r.tipo === 'part' && typedCost(r) != null ? { unit_cost: typedCost(r) } : {}),
           // Serviço leva quem fez; peça segue o serviço logo acima dela (comissão)
           ...(done && r.tipo === 'labor' && whoOf(r)
             ? whoOf(r) === PLATFORM
@@ -781,7 +785,7 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
                   {r.tipo === 'part' ? (
                     <PartSearchInput className={cls(`itens[${idx}].descricao`)} value={r.descricao} partId={r.part_id ?? null} catalog={catalogParts}
                       onType={v => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: v, part_id: null, part_cost: undefined } : i))}
-                      onPick={p => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: p.name, part_id: p.id, part_cost: p.cost, valor: i.valor || moneyInput(p.price) } : i))} />
+                      onPick={p => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: p.name, part_id: p.id, part_cost: p.cost, custo: p.cost > 0 ? moneyInput(p.cost) : i.custo, valor: i.valor || moneyInput(p.price) } : i))} />
                   ) : (
                     <input className={`${cls(`itens[${idx}].descricao`)} col-span-9`} placeholder="Descrição" value={r.descricao}
                       onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, descricao: e.target.value } : i))} />
@@ -802,6 +806,24 @@ export default function ImportReview({ imp, imageUrl, isPdf, onClose, onDone, ed
                   </div>
                   <button type="button" onClick={() => setItems(s => s.filter(i => i.key !== r.key))} title="Remover item"
                     className="col-span-1 self-end mb-0.5 h-9 rounded-lg bg-steel-100 hover:bg-alert-100 text-steel-500 hover:text-alert-600 text-xs">✕</button>
+                  {r.tipo === 'part' && (
+                    <>
+                      <label className="col-span-4 text-[10px] text-steel-400 uppercase">
+                        Custo unit. <span className="normal-case">(quanto pagou)</span>
+                        <input className="input !py-2 text-sm text-right mt-0.5" inputMode="decimal" placeholder="opcional" value={r.custo ?? ''}
+                          onChange={e => setItems(s => s.map(i => i.key === r.key ? { ...i, custo: e.target.value } : i))} />
+                      </label>
+                      <div className="col-span-8 self-end pb-2 text-[11px] text-steel-500">
+                        {(() => {
+                          const c = parseMoney(r.custo || '0'), v = parseMoney(r.valor || '0'), q = parseMoney(r.quantidade || '1');
+                          if (!(c > 0)) return 'Sem custo informado: o sistema estima pela margem da loja.';
+                          if (!(v > 0)) return null;
+                          const lucro = (v - c) * (Number.isFinite(q) ? q : 1);
+                          return <>Lucro nesta peça: <strong className={lucro < 0 ? 'text-alert-600' : 'text-signal-700'}>{fmtBRL(lucro)}</strong>{v > 0 ? ` (${Math.round(((v - c) / v) * 100)}%)` : ''}</>;
+                        })()}
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
               <div className="flex justify-end items-center gap-3 pt-2 text-sm">

@@ -121,12 +121,12 @@ export const partKey = (name: string) =>
  * o que falta entra com o preço de venda da nota e o custo pela margem da loja (100% → metade do preço).
  * A peça nova fica sem preço fixo: a venda sai do custo + margem (da categoria, se tiver; = o preço da nota). Dá para mudar depois.
  */
-export async function ensureCatalogParts(wid: string, list: { name: string; price: number }[]) {
+export async function ensureCatalogParts(wid: string, list: { name: string; price: number; cost?: number }[]) {
   const out = new Map<string, { id: string; cost: number }>();
-  const wanted = new Map<string, { name: string; price: number }>();
+  const wanted = new Map<string, { name: string; price: number; cost?: number }>();
   for (const p of list) {
     const k = partKey(p.name);
-    if (k && !wanted.has(k)) wanted.set(k, { name: p.name.trim(), price: p.price });
+    if (k && !wanted.has(k)) wanted.set(k, { name: p.name.trim(), price: p.price, cost: p.cost });
   }
   if (!wanted.size) return { map: out, created: 0 };
   const [existing, margin] = await Promise.all([
@@ -140,7 +140,7 @@ export async function ensureCatalogParts(wid: string, list: { name: string; pric
   const toCreate = [...wanted.entries()].filter(([k, p]) => !out.has(k) && p.price > 0);
   if (toCreate.length) {
     const rows = toCreate.map(([, p]) => ({
-      workshop_id: wid, name: p.name, cost: round2(p.price / (1 + margin.base / 100)), margin_percent: null, sale_price: null,
+      workshop_id: wid, name: p.name, cost: (p.cost ?? 0) > 0 ? round2(p.cost!) : round2(p.price / (1 + margin.base / 100)), margin_percent: null, sale_price: null,
     }));
     const { data, error } = await supabase.from('workshop_parts').insert(rows).select('id, name, cost, category');
     if (error) throw error;
@@ -148,7 +148,8 @@ export async function ensureCatalogParts(wid: string, list: { name: string; pric
       // A categoria sai do nome, no banco: se ela tem margem própria, refaz o custo para a venda continuar = preço da nota
       const m = categoryMargin(margin, p.category);
       let cost = Number(p.cost);
-      if (m !== margin.base) {
+      // Custo informado na nota vale como está (a margem da categoria só refaz o custo estimado)
+      if (m !== margin.base && !((wanted.get(partKey(p.name))?.cost ?? 0) > 0)) {
         cost = round2(wanted.get(partKey(p.name))!.price / (1 + m / 100));
         await supabase.from('workshop_parts').update({ cost }).eq('id', p.id);
       }
