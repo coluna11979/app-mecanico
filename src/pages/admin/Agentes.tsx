@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
+import AgentChat from '@/components/agents/AgentChat';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 
 type Row = {
-  id: string; name: string; enabled: boolean; workshop_id: string;
+  id: string; name: string; enabled: boolean; workshop_id: string | null;
   model: string | null; max_tokens: number | null; history_window: number | null; max_tool_turns: number | null;
   workshop: { business_name: string } | null;
 };
@@ -81,6 +82,8 @@ export default function AdminAgentes() {
   return (
     <AdminLayout>
       <div className="max-w-3xl space-y-5">
+        <AgentChat key="admin_cadastros" workshopId={null} template="admin_cadastros" />
+
         <div>
           <h1 className="text-2xl font-bold">🤖 Agentes de IA</h1>
           <p className="text-sm text-steel-500 mt-1">
@@ -92,12 +95,12 @@ export default function AdminAgentes() {
           : rows.length === 0 ? <div className="card text-sm text-steel-500">Nenhuma oficina criou um agente ainda.</div>
           : rows.map(r => {
             const d = drafts[r.id];
-            const u = usage[r.workshop_id];
+            const u = r.workshop_id ? usage[r.workshop_id] : undefined;
             const dirty = JSON.stringify(d) !== JSON.stringify(toDraft(r));
             return (
               <div key={r.id} className="card space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="font-semibold">{r.workshop?.business_name ?? 'Oficina'}</div>
+                  <div className="font-semibold">{r.workshop?.business_name ?? (r.workshop_id ? 'Oficina' : 'Plataforma (admin)')}</div>
                   <span className="text-sm text-steel-500">· {r.name}</span>
                   {!r.enabled && <span className="text-xs rounded-full bg-steel-100 dark:bg-steel-700 px-2 py-0.5">desligado</span>}
                 </div>

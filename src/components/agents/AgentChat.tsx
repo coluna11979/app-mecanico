@@ -10,8 +10,10 @@ const norm = (d: AgentDraft) => JSON.stringify({ n: d.name.trim(), p: d.system_p
 const fmtDate = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 /** Chat de um agente interno (Sócio: só consulta · Orçamentista: abre OS e lança itens). Um card por tipo. */
-export default function AgentChat({ workshopId, template }: { workshopId: string; template: AgentTemplate }) {
+export default function AgentChat({ workshopId, template }: { workshopId: string | null; template: AgentTemplate }) {
   const wid = workshopId;
+  /** Agente da plataforma (admin): não pertence a nenhuma oficina */
+  const platform = template === 'admin_cadastros';
   const tpl = AGENT_TEMPLATES[template];
   const toolCatalog = TOOL_CATALOG[template];
 
@@ -101,9 +103,10 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
   }
 
   const load = useCallback(async () => {
-    if (!wid) return;
+    if (!wid && !platform) return;
     setLoading(true);
-    const { data } = await supabase.from('ai_agents').select(COLS).eq('workshop_id', wid).eq('template', template).maybeSingle();
+    const base = supabase.from('ai_agents').select(COLS).eq('template', template);
+    const { data } = await (platform ? base.is('workshop_id', null) : base.eq('workshop_id', wid!)).maybeSingle();
     const a = data as Agent | null;
     setAgent(a);
     if (a) {
@@ -115,14 +118,14 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
       await loadQuestions(a);
     }
     setLoading(false);
-  }, [wid]);
+  }, [wid, platform]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, sending]);
 
   async function createAgent() {
-    if (!wid) return;
+    if (!wid && !platform) return;
     const { data, error } = await supabase.from('ai_agents')
-      .insert({ workshop_id: wid, template, name: tpl.name, system_prompt: tpl.prompt, tools: tpl.tools })
+      .insert({ workshop_id: platform ? null : wid, template, name: tpl.name, system_prompt: tpl.prompt, tools: tpl.tools })
       .select(COLS).single();
     if (error) return toast.error(error.message);
     setAgent(data as Agent);
