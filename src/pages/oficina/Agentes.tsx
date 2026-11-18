@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOperator } from '@/lib/operators';
@@ -13,6 +15,14 @@ export default function Agentes() {
   const showBudget = useWorkshopModules(s => !s.off.includes('os'));
   const balcao = useOperator((s) => s.balcao);
   const wid = currentWorkshop?.id;
+  // Atalho da Busca rápida: /oficina/agentes?agente=orcamento leva direto ao agente
+  const [params] = useSearchParams();
+  const alvo = params.get('agente');
+  useEffect(() => {
+    if (!alvo) return;
+    const t = setTimeout(() => document.getElementById(`agente-${alvo}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400);
+    return () => clearTimeout(t);
+  }, [alvo, wid]);
 
   if (balcao) {
     return (
@@ -41,9 +51,9 @@ export default function Agentes() {
           </section>
         )}
 
-        {wid && showBudget && <AgentChat key="orcamento" workshopId={wid} template="orcamento" />}
-        {wid && <AgentChat key="diagnostico" workshopId={wid} template="diagnostico" />}
-        {wid && showPartner && <AgentChat key="socio" workshopId={wid} template="socio" />}
+        {wid && showBudget && <div id="agente-orcamento" className="scroll-mt-20"><AgentChat key="orcamento" workshopId={wid} template="orcamento" /></div>}
+        {wid && <div id="agente-diagnostico" className="scroll-mt-20"><AgentChat key="diagnostico" workshopId={wid} template="diagnostico" /></div>}
+        {wid && showPartner && <div id="agente-socio" className="scroll-mt-20"><AgentChat key="socio" workshopId={wid} template="socio" /></div>}
       </div>
     </WorkshopLayout>
   );
