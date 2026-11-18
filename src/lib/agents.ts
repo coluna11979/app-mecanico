@@ -51,6 +51,11 @@ export const ORC_TOOLS: Record<string, { label: string; desc: string }> = {
   orc_definir_responsavel: { label: 'Definir responsável do item',    desc: 'Quem fez cada item (define a comissão)' },
   orc_cancelar_os:         { label: 'Cancelar OS',                    desc: 'Só com o sim do dono; não cancela OS concluída ou já recebida' },
   orc_corrigir_cadastro:   { label: 'Corrigir cadastro',              desc: 'Troca nome, telefone, e-mail, marca, modelo, ano e placa (com o sim do dono)' },
+  orc_pecas_resumo:        { label: 'Peças: diagnóstico do cadastro', desc: 'Quantas em Outros, sem marca, sem veículo e duplicadas' },
+  orc_pecas_listar:        { label: 'Peças: listar por problema',     desc: 'Outros, sem marca, sem código ou sem veículo' },
+  orc_pecas_corrigir:      { label: 'Peças: corrigir e vincular',     desc: 'Categoria, marca e veículos (marca/modelo/ano), em lote' },
+  orc_pecas_duplicadas:    { label: 'Peças: achar duplicadas',        desc: 'Mesmo nome+marca ou mesmo código+marca' },
+  orc_pecas_unir:          { label: 'Peças: unir duplicadas',         desc: 'Passa OS, estoque e kits para uma só; as outras ficam desativadas' },
   orc_resumo_os:           { label: 'Resumo da OS',                   desc: 'Total dos serviços, custo de peças e comissões, pela regra da tela' },
 };
 
@@ -108,6 +113,7 @@ Regras:
 - Os códigos que as ferramentas devolvem (cliente_id, veiculo_id, servico_id, ficha_id) só valem na mesma vez; nas respostas seguintes use o número da OS, o nome do serviço e a versão em texto. Se tiver dúvida de qual é a OS da conversa, pergunte o número.
 - Cancelar OS (orc_cancelar_os): quando o dono pedir, confirme em uma linha qual OS (número, cliente, carro) e só cancele com o "sim" dele. "Cliente não aprovou" = nao_aprovado true. Se a OS tiver recebimento ou estiver concluída, diga que o dono resolve pelo caixa ou pela tela da OS.
 - Corrigir cadastro (orc_corrigir_cadastro): para trocar dado já preenchido (nome, telefone, e-mail, marca, modelo, ano, placa) de cliente ou carro; mostre o antes e o depois e só aplique com o "sim" do dono. Placa ou telefone que já são de outro cliente: diga de quem e não troque. Mudou modelo ou ano: refaça a consulta técnica.
+- Organizar o cadastro de peças (orc_pecas_*): comece com orc_pecas_resumo e mostre os números. Trabalhe em etapas, uma por vez, sempre mostrando ao dono o que vai mudar e só aplicando com o "sim" dele (um "sim" vale para o lote mostrado): (1) categorias: liste "outros" e ponha cada peça na categoria certa (ex.: amortecedor, bandeja, bieleta, pivô = suspensao; pneu = rodas; bico, vela = ignicao_injecao); (2) marca: quando a marca aparece no nome da peça, preencha; (3) veículos: para peças sem veículo, vincule marca, modelo e anos que o nome da peça indica (ex.: "AMORT TRAS I30 2009" = Hyundai I30 a partir de 2009); se o nome não diz o carro com segurança, deixe de fora e liste para o dono; (4) duplicadas: mostre os grupos, escolha manter a peça mais completa e una; se as duas têm estoque, pergunte se soma. Anote o que ficou pendente. Nunca invente marca, modelo ou ano que o nome não indica.
 - Você só faz o que está nas ferramentas: não recebe pagamento, não fecha caixa, não apaga cadastro, e não altera valor de item já lançado (nesses casos diga que o dono faz pela tela da OS).
 - Você só lança no sistema: não manda orçamento para o cliente.`,
   tools: Object.keys(ORC_TOOLS),
