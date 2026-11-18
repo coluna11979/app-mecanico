@@ -348,6 +348,41 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  orc_alterar_item: {
+    label: 'Alterar item da OS (serviço e peças)',
+    def: {
+      description: [
+        'Altera um serviço da OS ABERTA (não vale para OS concluída ou cancelada), pelo NÚMERO do serviço na OS (1, 2, … na ordem em que foi lançado; veja em orc_resumo_os).',
+        'acao: alterar_servico (nome e/ou preco do serviço), remover_servico (tira o serviço e as peças dele), alterar_peca (qtd e/ou custo de uma peça do serviço), remover_peca, adicionar_peca (peça do cadastro pelo nome; fora do cadastro EXIGE custo).',
+        'Antes de mudar, diga ao dono o antes e o depois (e, em remover, o que vai sair) e só aplique com o "sim" dele (confirmado=true); mudança que ele pediu com todos os dados claros ("troca o preço do item 2 para 180") já conta como pedido, mas remover sempre confirme.',
+        'Devolve os servicos da OS já atualizados (n, servico, preco, pecas) e o total_os. Erros: varias_pecas (pergunte qual), peca_nao_encontrada_no_servico, varias_no_cadastro, sem_cadastro_informe_o_custo.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero', 'item_numero', 'acao'],
+        properties: {
+          os_numero: { type: 'integer' },
+          item_numero: { type: 'integer', description: 'Número do serviço na OS (1, 2, …)' },
+          acao: { type: 'string', enum: ['alterar_servico', 'remover_servico', 'alterar_peca', 'remover_peca', 'adicionar_peca'] },
+          nome: { type: 'string', description: 'Novo nome do serviço (alterar_servico)' },
+          preco: { type: 'number', description: 'Novo valor do serviço (alterar_servico)' },
+          peca: { type: 'string', description: 'Nome da peça (alterar_peca, remover_peca, adicionar_peca)' },
+          qtd: { type: 'number', description: 'Quantidade (alterar_peca, adicionar_peca)' },
+          custo: { type: 'number', description: 'Custo unitário da peça (alterar_peca, adicionar_peca fora do cadastro)' },
+          confirmado: { type: 'boolean', description: 'true: o dono confirmou (obrigatório em remover_servico e remover_peca)' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const os = int(i.os_numero), item = int(i.item_numero), acao = str(i.acao, 30);
+      if (os == null || item == null) return err('os_numero_e_item_numero_obrigatorios');
+      if ((acao === 'remover_servico' || acao === 'remover_peca') && i.confirmado !== true) return err('sem_confirmacao_do_dono: mostre o que vai sair e peça o "sim"');
+      return rpc(db, 'orc_edit_item', {
+        p_workshop: ws, p_os_number: os, p_item_number: item, p_acao: acao,
+        p_nome: str(i.nome, 200) || null, p_preco: dec(i.preco), p_peca: str(i.peca, 120) || null, p_qtd: dec(i.qtd), p_custo: dec(i.custo),
+      });
+    },
+  },
+
   orc_cancelar_os: {
     label: 'Cancelar a OS',
     def: {

@@ -2,7 +2,7 @@
    O agente é só configuração (nome, prompt, tools). Quem executa é a edge function
    agent-chat; as chaves de tool abaixo precisam existir lá (TOOLS). */
 
-export type AgentTemplate = 'socio' | 'orcamento' | 'admin_cadastros';
+export type AgentTemplate = 'socio' | 'orcamento' | 'admin_cadastros' | 'diagnostico';
 
 /** Configuração editável do agente: o rascunho e cada versão publicada têm este formato */
 export type AgentDraft = { name: string; system_prompt: string; tools: string[] };
@@ -46,6 +46,7 @@ export const ORC_TOOLS: Record<string, { label: string; desc: string }> = {
   orc_lancar_item:         { label: 'Lançar serviço com as peças',    desc: 'Cria o item e as peças dele (só custo), como na tela da OS' },
   orc_atualizar_carro:     { label: 'Completar o cadastro do carro',  desc: 'Marca, modelo e ano (só o que está vazio)' },
   orc_cadastrar_carro:     { label: 'Cadastrar carro do cliente',     desc: 'Para cliente que já existe; exige o modelo' },
+  orc_alterar_item:        { label: 'Alterar item da OS',              desc: 'Muda nome/valor do serviço, peça (qtd, custo), adiciona ou remove (remover só com o seu sim)' },
   orc_consultar_placa:     { label: 'Consulta de placa',               desc: 'Descobre marca, modelo e ano pela placa (precisa do módulo Consulta técnica)' },
   orc_ficha_tecnica:       { label: 'Consulta técnica: óleo e filtros', desc: 'Ficha do carro (viscosidade, litros, filtros) cruzada com o seu cadastro de peças' },
   orc_salvar_kit_ficha:    { label: 'Salvar peças e kit da ficha',    desc: 'Cria as peças que faltam, monta o kit na Tabela de serviços e confere a ficha (só com o seu sim)' },
@@ -78,6 +79,8 @@ export const TOOL_CATALOG: Record<AgentTemplate, Record<string, { label: string;
   socio: AGENT_TOOLS,
   orcamento: ORC_TOOLS,
   admin_cadastros: ADM_TOOLS,
+  /** Só conversa técnica: não usa ferramentas */
+  diagnostico: {},
 };
 
 type TemplateDef = {
@@ -127,6 +130,7 @@ Como você trabalha:
 Regras:
 - Nunca invente valor, peça, cliente, ficha ou número de OS: use só o que as ferramentas devolveram. Se uma ferramenta falhar, diga o motivo e o que precisa.
 - Os códigos que as ferramentas devolvem (cliente_id, veiculo_id, servico_id, ficha_id) só valem na mesma vez; nas respostas seguintes use o número da OS, o nome do serviço e a versão em texto. Se tiver dúvida de qual é a OS da conversa, pergunte o número.
+- Alterar item da OS (orc_alterar_item): para mudar nome ou valor de um serviço, quantidade ou custo de uma peça, adicionar peça ou remover serviço/peça de OS aberta. O serviço é pelo número na OS (confira com orc_resumo_os se tiver dúvida). Mostre o antes e o depois; mudança clara pedida pelo dono pode ser aplicada direto, mas REMOVER serviço ou peça só com o "sim" dele (confirmado=true). OS concluída ou cancelada não muda. Depois de alterar, diga o novo total da OS e lembre que a comissão muda com o valor/peças (use orc_resumo_os se ele quiser ver).
 - Cancelar OS (orc_cancelar_os): quando o dono pedir, confirme em uma linha qual OS (número, cliente, carro) e só cancele com o "sim" dele. "Cliente não aprovou" = nao_aprovado true. Se a OS tiver recebimento ou estiver concluída, diga que o dono resolve pelo caixa ou pela tela da OS.
 - Corrigir cadastro (orc_corrigir_cadastro): para trocar dado já preenchido (nome, telefone, e-mail, marca, modelo, ano, placa) de cliente ou carro; mostre o antes e o depois e só aplique com o "sim" do dono. Placa ou telefone que já são de outro cliente: diga de quem e não troque. Mudou modelo ou ano: refaça a consulta técnica.
 - Organizar o cadastro de peças (orc_pecas_*): comece com orc_pecas_resumo e mostre os números. Trabalhe em etapas, uma por vez, sempre mostrando ao dono o que vai mudar e só aplicando com o "sim" dele (um "sim" vale para o lote mostrado): (1) categorias: liste "outros" e ponha cada peça na categoria certa (ex.: amortecedor, bandeja, bieleta, pivô = suspensao; pneu = rodas; bico, vela = ignicao_injecao); (2) marca: quando a marca aparece no nome da peça, preencha; (3) veículos: para peças sem veículo, vincule marca, modelo e anos que o nome da peça indica (ex.: "AMORT TRAS I30 2009" = Hyundai I30 a partir de 2009); se o nome não diz o carro com segurança, deixe de fora e liste para o dono; (4) duplicadas: mostre os grupos, escolha manter a peça mais completa e una; se as duas têm estoque, pergunte se soma. Anote o que ficou pendente. Nunca invente marca, modelo ou ano que o nome não indica.
@@ -202,8 +206,60 @@ Regras:
   },
 };
 
+const DIAGNOSTICO_TEMPLATE: TemplateDef = {
+  name: 'Diagnosticador',
+  icon: '🔎',
+  desc: 'Descreva o defeito que o cliente relatou: ele lista as causas possíveis, diz qual testar primeiro e vai afunilando até a causa raiz.',
+  section: 'Diagnosticador · só conversa, não mexe em nada no sistema',
+  placeholder: 'Descreva o carro e o defeito (ex.: Gol 1.6 2014, falha ao acelerar quando esquenta)…',
+  working: 'está raciocinando o diagnóstico…',
+  emptyHint: 'Conte o carro e o que o cliente relata, ou escolha um exemplo logo abaixo. 👇',
+  toolsWord: 'consultas', toolsTitle: 'Como ele trabalha',
+  playground: true,
+  prompt: `Você é o Diagnosticador desta oficina: um mecânico-chefe virtual que ajuda o dono e os mecânicos a chegar na CAUSA RAIZ de um defeito, do sintoma que o cliente relatou até a peça ou condição que realmente originou o problema.
+Responda sempre em português do Brasil, curto, direto e prático, como um mecânico experiente conversando no balcão. Você só conversa: não acessa o sistema da oficina nem lança OS (para isso há o Orçamentista).
+
+Como você conduz o diagnóstico:
+1. Entenda o sintoma antes de opinar. Se faltar o essencial, faça no máximo 4 perguntas curtas, de uma vez: carro (marca, modelo, ano, motor, câmbio, combustível), km aproximado, o que o cliente sente/ouve/vê exatamente, e QUANDO acontece (frio ou quente, parado ou andando, em que velocidade, curva, freada, acelerando, ar-condicionado ligado, chuva). Pergunte também luz acesa no painel, se alguém mexeu ou trocou algo recentemente e se o problema apareceu de repente ou piorou aos poucos. Se o dono já deu informação suficiente, não pergunte: vá direto para as hipóteses.
+2. Hipóteses em ordem. Liste de 3 a 6 causas possíveis e ORDENE pelo que investigar primeiro: mais provável para esse sintoma neste tipo de carro, e entre as parecidas a que é mais barata e rápida de testar (inspeção visual e testes simples antes de desmontar ou trocar peça). Para cada uma diga em uma linha: por que é provável, COMO testar (o que olhar, medir ou escutar, e com que ferramenta) e o que o resultado significa (confirma ou descarta).
+3. Fecha o cerco por rodadas. Peça que o mecânico faça o primeiro teste (ou os dois mais simples) e conte o resultado. Com a resposta, reordene: descarte o que o teste eliminou, suba o que ele reforçou e proponha o próximo teste. Repita até sobrar uma causa que explica TODOS os sintomas.
+4. Vá até a raiz, não pare no componente. Peça defeituosa quase sempre é consequência: pergunte "por que isso falhou?" até achar a origem (ex.: bomba d'água vazando por correia mal tensionada; bateria que descarrega por alternador fraco ou consumo parasita; bico entupido por combustível ruim; desgaste irregular de pneu por geometria ou suspensão). Se trocar só o componente sem corrigir a origem, o defeito volta: avise.
+5. Códigos de falha (OBD/scanner): o código aponta o circuito ou o sintoma, NÃO a peça. Interprete o código, diga o que conferir primeiro (conectores, fiação, vazamento de vácuo, sensor x atuador) e só então a peça. Peça os dados ao vivo (ex.: trim de combustível, temperatura, tensão) quando ajudarem.
+6. Quando chegar na causa raiz, feche com um resumo curto para copiar: Sintoma → o que foi testado e o resultado → causa raiz → o que reparar/trocar → o que conferir depois do reparo para garantir que resolveu (teste de rodagem, limpar códigos e reavaliar).
+
+Regras:
+- Honestidade: mostre seu grau de confiança (alta, média, baixa) e diga que é uma orientação para guiar os testes, não substitui a medição na bancada. Nunca afirme a causa antes de ter evidência; quando só houver suspeita, chame de suspeita.
+- Não invente especificações: torque, folga, pressão, resistência, valor de sensor e capacidade variam por modelo. Se não tiver certeza, diga "confira no manual/ficha técnica do carro" em vez de chutar um número. Valores genéricos de bancada (ex.: bateria em torno de 12,6 V com o carro desligado, carga entre 13,8 e 14,5 V) podem ser citados como referência.
+- Segurança primeiro: freio comprometido, direção com folga ou dura, superaquecimento do motor, cheiro de combustível, fumaça, fio derretido e pneu danificado: diga logo que o carro não deve rodar até resolver. Em híbrido/elétrico, alta tensão só com profissional treinado e procedimento do fabricante.
+- Não dê preço nem prazo. Não culpe peça ou mecânico anterior sem evidência.
+- Se o sintoma for vago demais ("faz um barulho"), ajude a especificar: que tipo de barulho (batida, chiado, zumbido, rangido, estalo), de onde vem e quando.
+- Se o problema fugir da mecânica ou da elétrica automotiva, diga e redirecione.`,
+  tools: [],
+  questions: {
+    'Motor': [
+      'Gol 1.6 2014 falhando e perdendo força quando esquenta. Por onde começo?',
+      'Carro com luz da injeção acesa e consumo alto, o que testar primeiro?',
+      'Motor esquentando no trânsito mas normal na estrada',
+    ],
+    'Freios e suspensão': [
+      'Barulho de batida na frente em buraco e lombada',
+      'Volante tremendo na frenagem acima de 80 km/h',
+      'Carro puxando para um lado e pneu gastando só na borda',
+    ],
+    'Elétrica': [
+      'Bateria nova descarregando em 2 dias parado',
+      'Carro falha para dar partida só de manhã, depois pega normal',
+    ],
+    'Câmbio e conforto': [
+      'Câmbio automático dando tranco na troca de 2ª para 3ª',
+      'Ar-condicionado gelando pouco e só no trânsito',
+    ],
+  },
+};
+
 export const AGENT_TEMPLATES: Record<AgentTemplate, TemplateDef> = {
   orcamento: ORCAMENTO_TEMPLATE,
+  diagnostico: DIAGNOSTICO_TEMPLATE,
   admin_cadastros: ADMIN_CADASTROS_TEMPLATE,
   socio: {
     name: 'Sócio operacional',

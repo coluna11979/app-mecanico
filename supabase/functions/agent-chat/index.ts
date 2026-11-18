@@ -406,8 +406,11 @@ Deno.serve(async (req) => {
     const isOrc = agent.template === 'orcamento';
     if (isOrc && playground) return json({ error: 'O Orçamentista grava de verdade, por isso não tem modo de teste.' }, 400);
     if (isOrc) feature = 'agent_orcamento';
+    // Diagnosticador: só conversa técnica (sem ferramentas, não lê nem grava dados da oficina)
+    const isDiag = agent.template === 'diagnostico';
+    if (isDiag) feature = 'agent_diagnostico';
     const catalog: Record<string, { def: { description: string; input_schema: Record<string, unknown> }; run: (db: any, ws: string, input: Record<string, unknown>, ctx: { userId: string; authHeader?: string }) => Promise<unknown> }> =
-      isAdm ? ADM_TOOLS : isOrc ? ORC_TOOLS : TOOLS;
+      isDiag ? {} : isAdm ? ADM_TOOLS : isOrc ? ORC_TOOLS : TOOLS;
 
     if (!isAdm) {
       const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: workshopId, _module: 'agentes' });

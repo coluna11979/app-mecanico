@@ -1033,6 +1033,24 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
               hint: 'Peça ou serviço, sem sair da tela',
               run: (q: string) => { setPalette(false); setPriceQuery(q); setPriceLookup(true); },
             }] : []),
+            // Agentes de IA: só quem abre a tela Agentes (gestor/dono; as outras funções não têm essa rota) e conforme os módulos
+            ...(allowed('/oficina/agentes') ? [
+              ...(!mods.disabled.includes('os') ? [{
+                key: 'ag-orc', icon: 'bot' as IconName,
+                label: () => 'Orçamentista (agente)', hint: 'Abre OS, lança itens, cancela e organiza peças',
+                run: () => { setPalette(false); nav('/oficina/agentes?agente=orcamento'); },
+              }] : []),
+              {
+                key: 'ag-diag', icon: 'stethoscope' as IconName,
+                label: () => 'Diagnosticador (agente)', hint: 'Do sintoma à causa raiz do defeito',
+                run: () => { setPalette(false); nav('/oficina/agentes?agente=diagnostico'); },
+              },
+              ...(!mods.disabled.includes('caixa') ? [{
+                key: 'ag-socio', icon: 'bot' as IconName,
+                label: () => 'Sócio operacional (agente)', hint: 'Converse sobre os números da oficina',
+                run: () => { setPalette(false); nav('/oficina/agentes?agente=socio'); },
+              }] : []),
+            ] : []),
             ...(allowed('/oficina/consulta') ? [{
               key: 'oleo', icon: 'car' as IconName,
               label: (q: string) => q ? `Consultar óleo e filtros de “${q}”` : 'Consulta de óleo e filtros',
@@ -1415,7 +1433,7 @@ type PaletteAction = {
 };
 
 /**
- * Busca rápida: abre só com as três opções (Buscar tela, Consultar preço, Consulta de óleo e filtros).
+ * Busca rápida: abre só com as opções (Buscar tela, Consultar preço, Consulta de óleo e filtros e, para o gestor, os Agentes de IA).
  * A lista de telas aparece só depois de escolher "Buscar tela"; o texto digitado segue junto.
  */
 function CommandPalette({ items, actions, onGo, onClose }: {
