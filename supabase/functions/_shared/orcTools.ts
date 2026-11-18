@@ -119,7 +119,7 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
       description: [
         'Lança UM serviço na OS, com as peças dele. Preço: o que você informar; senão o último cobrado neste modelo de carro; senão o da tabela (a resposta diz a origem). Com usar_kit=true (padrão) entram as peças do kit do serviço para este carro; peças pedidas à parte vão em "pecas". Troca de óleo sem kit para o carro: faça antes a consulta técnica (orc_ficha_tecnica) e salve o kit (orc_salvar_kit_ficha).',
         'Dentro de um serviço a peça entra só com CUSTO (o preço que o cliente paga já está no serviço).',
-        'Erros que você deve resolver conversando: preco_necessario (pergunte o valor), revisar_pecas (peça com várias opções: pergunte qual; peça fora do cadastro: pergunte o CUSTO e chame de novo com "custo"). Nada é gravado quando há erro.',
+        'REGRA: peça SEM CUSTO não entra na OS. Erros que você deve resolver conversando: preco_necessario (pergunte o valor), revisar_pecas (varias_no_cadastro: pergunte qual; sem_cadastro ou sem_custo: pergunte o CUSTO ao dono e chame de novo com "custo" na peça; kit_sem_custo: a peça do kit está sem custo no cadastro: lance com usar_kit=false e passe as peças em "pecas" com o custo que o dono disser). Nunca invente custo nem lance com custo zero. Nada é gravado quando há erro.',
         'Devolve item_numero (a ordem do serviço na OS), preco, pecas com custo, avisos e total_os.',
       ].join(' '),
       input_schema: {
