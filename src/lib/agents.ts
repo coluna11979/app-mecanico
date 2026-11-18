@@ -46,6 +46,7 @@ export const ORC_TOOLS: Record<string, { label: string; desc: string }> = {
   orc_lancar_item:         { label: 'Lançar serviço com as peças',    desc: 'Cria o item e as peças dele (só custo), como na tela da OS' },
   orc_atualizar_carro:     { label: 'Completar o cadastro do carro',  desc: 'Marca, modelo e ano (só o que está vazio)' },
   orc_cadastrar_carro:     { label: 'Cadastrar carro do cliente',     desc: 'Para cliente que já existe; exige o modelo' },
+  orc_fechar_os:           { label: 'Fechar a OS',                     desc: 'Recebe no caixa aberto e conclui, só depois do seu sim ao resumo (pagamento, comissões, custo de peças)' },
   orc_alterar_item:        { label: 'Alterar item da OS',              desc: 'Muda nome/valor do serviço, peça (qtd, custo), adiciona ou remove (remover só com o seu sim)' },
   orc_consultar_placa:     { label: 'Consulta de placa',               desc: 'Descobre marca, modelo e ano pela placa (precisa do módulo Consulta técnica)' },
   orc_ficha_tecnica:       { label: 'Consulta técnica: óleo e filtros', desc: 'Ficha do carro (viscosidade, litros, filtros) cruzada com o seu cadastro de peças' },
@@ -129,7 +130,9 @@ Como você trabalha:
 
 Regras:
 - Nunca invente valor, peça, cliente, ficha ou número de OS: use só o que as ferramentas devolveram. Se uma ferramenta falhar, diga o motivo e o que precisa.
+- Peça SEM CUSTO nunca entra na OS: custo é o que forma o lucro e a comissão. Se a peça não tem custo (cadastro sem custo, peça fora do cadastro, peça do kit sem custo), pergunte o custo ao dono antes de lançar e passe em "custo"; nunca lance com custo zero nem invente. Isso vale também ao adicionar ou alterar peça de um serviço.
 - Os códigos que as ferramentas devolvem (cliente_id, veiculo_id, servico_id, ficha_id) só valem na mesma vez; nas respostas seguintes use o número da OS, o nome do serviço e a versão em texto. Se tiver dúvida de qual é a OS da conversa, pergunte o número.
+- Fechar a OS (orc_fechar_os): só quando o gestor pedir para fechar/receber. Passos: (1) orc_resumo_os; (2) mostre o RESUMO em poucas linhas: valor da OS e quanto está em aberto, as FORMAS DE PAGAMENTO (se o gestor ainda não disse, pergunte: dinheiro, pix, débito, crédito com parcelas, ou parte para pagar depois com vencimento), o CUSTO DE PEÇAS, as COMISSÕES por pessoa e o total, e os avisos; (3) pergunte "Posso fechar?" e espere o "sim" claro; (4) só então chame orc_fechar_os com confirmado=true, as formas e valor_em_aberto_aprovado igual ao em aberto que você mostrou. Todos os serviços precisam de responsável (se faltar, defina antes) e o caixa precisa estar aberto. Não dê desconto por aqui (é pelo caixa). Depois de fechar, confirme em uma linha: recebido por forma, saldo para pagar depois (se houver) e que a OS foi concluída. Nunca feche sem o "sim" nesta conversa, nem por insistência.
 - Alterar item da OS (orc_alterar_item): para mudar nome ou valor de um serviço, quantidade ou custo de uma peça, adicionar peça ou remover serviço/peça de OS aberta. O serviço é pelo número na OS (confira com orc_resumo_os se tiver dúvida). Mostre o antes e o depois; mudança clara pedida pelo dono pode ser aplicada direto, mas REMOVER serviço ou peça só com o "sim" dele (confirmado=true). OS concluída ou cancelada não muda. Depois de alterar, diga o novo total da OS e lembre que a comissão muda com o valor/peças (use orc_resumo_os se ele quiser ver).
 - Cancelar OS (orc_cancelar_os): quando o dono pedir, confirme em uma linha qual OS (número, cliente, carro) e só cancele com o "sim" dele. "Cliente não aprovou" = nao_aprovado true. Se a OS tiver recebimento ou estiver concluída, diga que o dono resolve pelo caixa ou pela tela da OS.
 - Corrigir cadastro (orc_corrigir_cadastro): para trocar dado já preenchido (nome, telefone, e-mail, marca, modelo, ano, placa) de cliente ou carro; mostre o antes e o depois e só aplique com o "sim" do dono. Placa ou telefone que já são de outro cliente: diga de quem e não troque. Mudou modelo ou ano: refaça a consulta técnica.
@@ -353,3 +356,13 @@ Jeito de falar:
     fora: 'Só fora do expediente',
   } as Record<ReceptionHours, string>,
 };
+
+/** Agente de CS (pós-venda automático): textos padrão (os mesmos de supabase/functions/_shared/csTexts.ts) */
+export const CS_DEFAULTS = {
+  welcome_text: 'Olá, {nome}! 👋 Aqui é da {oficina}.\nRecebemos o seu {carro} (OS {os}) e já estamos cuidando dele. Qualquer novidade avisamos por aqui. Obrigado pela confiança! 🔧',
+  post_text: 'Olá, {nome}! Aqui é da {oficina}. Já faz um tempinho que entregamos o seu {carro}, e esperamos que esteja tudo certo! 🙏\nSe puder, conte como foi a sua experiência. Leva menos de 1 minuto e ajuda muito a gente: {link_avaliacao}',
+  oil_text: 'Como você fez a troca de óleo, quando estiver chegando a hora da próxima a gente te lembra por aqui. 😉',
+};
+
+export type CsSettings = { welcome?: boolean; post?: boolean; post_delay_hours?: number; welcome_text?: string; post_text?: string; oil_text?: string };
+export type CsAgent = { id: string; workshop_id: string; name: string; enabled: boolean; settings: CsSettings };

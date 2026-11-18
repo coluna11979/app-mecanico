@@ -119,7 +119,7 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
       description: [
         'Lança UM serviço na OS, com as peças dele. Preço: o que você informar; senão o último cobrado neste modelo de carro; senão o da tabela (a resposta diz a origem). Com usar_kit=true (padrão) entram as peças do kit do serviço para este carro; peças pedidas à parte vão em "pecas". Troca de óleo sem kit para o carro: faça antes a consulta técnica (orc_ficha_tecnica) e salve o kit (orc_salvar_kit_ficha).',
         'Dentro de um serviço a peça entra só com CUSTO (o preço que o cliente paga já está no serviço).',
-        'Erros que você deve resolver conversando: preco_necessario (pergunte o valor), revisar_pecas (peça com várias opções: pergunte qual; peça fora do cadastro: pergunte o CUSTO e chame de novo com "custo"). Nada é gravado quando há erro.',
+        'REGRA: peça SEM CUSTO não entra na OS. Erros que você deve resolver conversando: preco_necessario (pergunte o valor), revisar_pecas (varias_no_cadastro: pergunte qual; sem_cadastro ou sem_custo: pergunte o CUSTO ao dono e chame de novo com "custo" na peça; kit_sem_custo: a peça do kit está sem custo no cadastro: lance com usar_kit=false e passe as peças em "pecas" com o custo que o dono disser). Nunca invente custo nem lance com custo zero. Nada é gravado quando há erro.',
         'Devolve item_numero (a ordem do serviço na OS), preco, pecas com custo, avisos e total_os.',
       ].join(' '),
       input_schema: {
@@ -533,6 +533,49 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
       const ids = Array.isArray(i.peca_ids) ? i.peca_ids.map(uuid).filter((x): x is string => !!x).slice(0, 50) : [];
       if (!ids.length) return err('lista_vazia');
       return rpc(db, 'orc_parts_remove', { p_workshop: ws, p_ids: ids });
+    },
+  },
+
+  orc_fechar_os: {
+    label: 'Fechar a OS (receber e concluir)',
+    def: {
+      description: [
+        'FECHA a OS: registra o recebimento no caixa ABERTO, combina "pagar depois" se sobrar saldo e marca a OS como concluída (baixa o estoque das peças). É o mesmo que "Receber OS" + "Concluir" da tela.',
+        'SÓ chame depois de: (1) orc_resumo_os para a OS; (2) mostrar ao gestor o RESUMO (valor da OS e em aberto, formas de pagamento com valores, custo de peças, comissões por pessoa e total, avisos) e perguntar "posso fechar?"; (3) ter o "sim" dele NESTA conversa. Sem o sim, confirmado=false: não grava nada.',
+        'formas: [{forma: dinheiro | pix | debito | credito, valor, parcelas?}]. valor_em_aberto_aprovado = o "em aberto" que você mostrou (se o valor mudou, não fecha). Se as formas não cobrem tudo, informe pagar_depois_vencimento (AAAA-MM-DD) para o saldo. Sem desconto aqui.',
+        'Erros que você resolve conversando: faltam_responsaveis (defina com orc_definir_responsavel), caixa_fechado (peça para o gestor abrir o caixa), valor_mudou (refaça o resumo), falta_valor, so_gestor_fecha_a_os.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero', 'valor_em_aberto_aprovado', 'confirmado'],
+        properties: {
+          os_numero: { type: 'integer' },
+          valor_em_aberto_aprovado: { type: 'number', description: 'O valor em aberto que o gestor aprovou no resumo' },
+          formas: {
+            type: 'array', maxItems: 6,
+            items: {
+              type: 'object', additionalProperties: false, required: ['forma', 'valor'],
+              properties: { forma: { type: 'string', enum: ['dinheiro', 'pix', 'debito', 'credito'] }, valor: { type: 'number' }, parcelas: { type: 'integer' } },
+            },
+          },
+          pagar_depois_vencimento: { type: 'string', description: 'AAAA-MM-DD, quando o saldo restante fica para pagar depois' },
+          pagar_depois_obs: { type: 'string' },
+          confirmado: { type: 'boolean', description: 'true só depois do "sim" do gestor ao resumo' },
+        },
+      },
+    },
+    run: async (db, ws, i, ctx) => {
+      if (i.confirmado !== true) return err('sem_confirmacao_do_gestor: mostre o resumo e peça o "sim"');
+      const os = int(i.os_numero), esperado = dec(i.valor_em_aberto_aprovado);
+      if (os == null || esperado == null) return err('os_numero_e_valor_em_aberto_obrigatorios');
+      const formas = (Array.isArray(i.formas) ? i.formas : []).slice(0, 6).map((f: any) => ({
+        method: str(f?.forma, 20), amount: dec(f?.valor), installments: int(f?.parcelas) ?? 1,
+      }));
+      const due = str(i.pagar_depois_vencimento, 10);
+      if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return err('vencimento_invalido: use AAAA-MM-DD');
+      return rpc(db, 'orc_close_os', {
+        p_workshop: ws, p_user: ctx.userId, p_os_number: os, p_parts: formas, p_expected: esperado,
+        p_later_due: due || null, p_later_note: str(i.pagar_depois_obs, 200) || null,
+      });
     },
   },
 
