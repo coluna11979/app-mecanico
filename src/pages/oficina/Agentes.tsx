@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOperator } from '@/lib/operators';
@@ -18,6 +18,8 @@ export default function Agentes() {
   // Atalho da Busca rápida: /oficina/agentes?agente=orcamento leva direto ao agente
   const [params] = useSearchParams();
   const alvo = params.get('agente');
+  /** No celular, vindo da Busca rápida: só o agente escolhido na hora fica na tela (os demais ficam escondidos) */
+  const only = (k: string) => (alvo && alvo !== k ? 'hidden lg:block' : '');
   useEffect(() => {
     if (!alvo) return;
     const t = setTimeout(() => document.getElementById(`agente-${alvo}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400);
@@ -35,7 +37,10 @@ export default function Agentes() {
   return (
     <WorkshopLayout>
       <div className="max-w-3xl space-y-4">
-        <div>
+        {alvo && (
+          <Link to="/oficina/agentes" className="lg:hidden inline-flex items-center min-h-[44px] text-sm font-medium text-brand-600">← Ver todos os agentes</Link>
+        )}
+        <div className={alvo ? 'hidden lg:block' : ''}>
           <h1 className="text-2xl font-bold">🤖 Agentes de IA</h1>
           <p className="text-sm text-steel-500 mt-1">
             {showPartner
@@ -45,15 +50,15 @@ export default function Agentes() {
         </div>
 
         {wid && (
-          <section className="space-y-2">
+          <section className={`space-y-2 ${alvo ? 'hidden lg:block' : ''}`}>
             <h2 className="text-sm font-semibold text-steel-500 uppercase tracking-wide">Atendimento no WhatsApp</h2>
             <ReceptionCard workshopId={wid} />
           </section>
         )}
 
-        {wid && showBudget && <div id="agente-orcamento" className="scroll-mt-20"><AgentChat key="orcamento" workshopId={wid} template="orcamento" /></div>}
-        {wid && <div id="agente-diagnostico" className="scroll-mt-20"><AgentChat key="diagnostico" workshopId={wid} template="diagnostico" /></div>}
-        {wid && showPartner && <div id="agente-socio" className="scroll-mt-20"><AgentChat key="socio" workshopId={wid} template="socio" /></div>}
+        {wid && showBudget && <div id="agente-orcamento" className={`scroll-mt-20 ${only('orcamento')}`}><AgentChat key="orcamento" workshopId={wid} template="orcamento" /></div>}
+        {wid && <div id="agente-diagnostico" className={`scroll-mt-20 ${only('diagnostico')}`}><AgentChat key="diagnostico" workshopId={wid} template="diagnostico" /></div>}
+        {wid && showPartner && <div id="agente-socio" className={`scroll-mt-20 ${only('socio')}`}><AgentChat key="socio" workshopId={wid} template="socio" /></div>}
       </div>
     </WorkshopLayout>
   );
