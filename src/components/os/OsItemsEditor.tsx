@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { categoryFromServices, categoryParts, fmtBRL, moneyInput, parseMoney } from './osHelpers';
-import { DEFAULT_MARGIN, fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
+import { DEFAULT_MARGIN, PART_CATEGORIES, fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
 import CatalogPanel from './CatalogPanel';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
@@ -687,9 +687,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                 r.kind === 'labor'
                   ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')} allCats={catNames}
                       onChange={v => update(r.key, { description: v })} />
-                  : <input className="input !py-2 text-sm" placeholder="Ex.: Pastilha de freio dianteira"
-                      list={`os-items-sugg-${osId}-${groupOf(rows).get(r.key)?.key ?? 'x'}`} value={r.description}
-                      onChange={e => update(r.key, { description: e.target.value })} />
+                  : <PartPicker value={r.description}
+                      parts={suggestions.filter(s => s.kind === 'part' && partFits(s, groupOf(rows).get(r.key)?.key))}
+                      wider={suggestions.filter(s => s.kind === 'part' && partFits(s))}
+                      onChange={v => update(r.key, { description: v })} />
               )}
               {!readOnly && r.kind === 'labor' && (() => {
                 const vp = vehPrices.get(norm(r.description));
@@ -1189,6 +1190,94 @@ function CostLine({ row, readOnly, onCost, onPrice }: {
           className="font-semibold text-brand-700 hover:underline" title="Grava esta margem na peça do cadastro">
           {saving ? 'Salvando…' : '💾 usar sempre nesta peça'}
         </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Campo de peça de dentro de um item: ao tocar, mostra as CATEGORIAS de peça (só as do carro e do tipo de serviço);
+ * escolhida a categoria, aparecem as peças. Digitando, filtra categorias e, se nenhuma bater, busca pelo nome/código.
+ * Texto livre continua valendo (peça avulsa, só nesta OS).
+ */
+function PartPicker({ value, parts, wider, onChange }: { value: string; parts: Suggestion[]; wider: Suggestion[]; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [cat, setCat] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e: Event) => { if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); setCat(null); } };
+    document.addEventListener('pointerdown', off);
+    return () => document.removeEventListener('pointerdown', off);
+  }, [open]);
+  const list = all ? wider : parts;
+  const pcatOf = (s: Suggestion) => (s.pcat && PART_CATEGORIES.some(c => c.value === s.pcat) ? s.pcat : 'outros');
+  const cats = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of list) m.set(pcatOf(s), (m.get(pcatOf(s)) ?? 0) + 1);
+    return PART_CATEGORIES.filter(c => m.has(c.value)).map(c => ({ ...c, n: m.get(c.value)! }));
+  }, [list]);
+  const words = norm(value).split(' ').filter(Boolean);
+  const exact = list.some(s => norm(s.description) === norm(value));
+  const catHits = words.length ? cats.filter(c => words.every(w => norm(c.label).includes(w))) : cats;
+  const hits = words.length
+    ? (catHits.length ? [] : list.filter(s => words.every(w => norm(`${s.description} ${s.code ?? ''}`).includes(w))).slice(0, 15))
+    : cat ? list.filter(s => pcatOf(s) === cat).slice(0, 100) : [];
+  const pick = (s: Suggestion) => { onChange(s.description); setOpen(false); setCat(null); };
+  const catLabel = PART_CATEGORIES.find(c => c.value === cat)?.label;
+
+  return (
+    <div ref={box}>
+      <input className="input !py-2 text-sm" placeholder="Toque para escolher a categoria da peça ou digite…" value={value}
+        onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
+        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setCat(null); } }}
+        onChange={e => { setOpen(true); onChange(e.target.value); }} />
+      {open && !exact && (
+        <div className="mt-1.5 rounded-xl border border-steel-200 bg-white overflow-hidden">
+          {hits.length > 0 ? (
+            <>
+              {!words.length && cat && (
+                <button type="button" onClick={() => setCat(null)}
+                  className="w-full px-3 py-2 text-left text-xs font-semibold text-brand-700 bg-steel-50 border-b border-steel-100">← Categorias · {catLabel}</button>
+              )}
+              <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
+                {hits.map(s => (
+                  <li key={`${s.part_id}-${s.description}`}>
+                    <button type="button" onClick={() => pick(s)}
+                      className="w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-steel-800">{s.description}</span>
+                        <span className="block text-[11px] text-steel-500">{s.code ? `Cód. ${s.code} · ` : ''}{fmtQty(s.stock ?? 0)} {s.unit ?? 'un'} em estoque</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-steel-500">{s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : catHits.length > 0 ? (
+            <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
+              {catHits.map(c => (
+                <li key={c.value}>
+                  <button type="button" onClick={() => setCat(c.value)}
+                    className="w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
+                    <span className="font-semibold text-steel-800 truncate">{c.icon} {c.label}</span>
+                    <span className="shrink-0 text-xs text-steel-400">{c.n} ›</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="px-3 py-3 text-xs text-steel-500">Nenhuma peça encontrada{all ? '' : ' para este carro e serviço'}. Escrever o nome deixa a peça avulsa só nesta OS.</div>
+          )}
+          {wider.length > parts.length && !words.length && (
+            <button type="button" onClick={() => { setAll(a => !a); setCat(null); }}
+              className="w-full px-3 py-2 text-left text-[11px] font-semibold text-steel-500 hover:text-brand-700 border-t border-steel-100 bg-steel-50">
+              {all ? '← Só as categorias deste serviço' : 'Ver peças de outras categorias do carro'}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
