@@ -356,3 +356,13 @@ Jeito de falar:
     fora: 'Só fora do expediente',
   } as Record<ReceptionHours, string>,
 };
+
+/** Agente de CS (pós-venda automático): textos padrão (os mesmos de supabase/functions/_shared/csTexts.ts) */
+export const CS_DEFAULTS = {
+  welcome_text: 'Olá, {nome}! 👋 Aqui é da {oficina}.\nRecebemos o seu {carro} (OS {os}) e já estamos cuidando dele. Qualquer novidade avisamos por aqui. Obrigado pela confiança! 🔧',
+  post_text: 'Olá, {nome}! Aqui é da {oficina}. Já faz um tempinho que entregamos o seu {carro}, e esperamos que esteja tudo certo! 🙏\nSe puder, conte como foi a sua experiência. Leva menos de 1 minuto e ajuda muito a gente: {link_avaliacao}',
+  oil_text: 'Como você fez a troca de óleo, quando estiver chegando a hora da próxima a gente te lembra por aqui. 😉',
+};
+
+export type CsSettings = { welcome?: boolean; post?: boolean; post_delay_hours?: number; welcome_text?: string; post_text?: string; oil_text?: string };
+export type CsAgent = { id: string; workshop_id: string; name: string; enabled: boolean; settings: CsSettings };

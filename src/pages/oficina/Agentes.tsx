@@ -4,6 +4,7 @@ import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOperator } from '@/lib/operators';
 import ReceptionCard from '@/components/agents/ReceptionCard';
+import CsCard from '@/components/agents/CsCard';
 import AgentChat from '@/components/agents/AgentChat';
 import { useWorkshopModules } from '@/lib/modules';
 
@@ -53,6 +54,13 @@ export default function Agentes() {
           <section className={`space-y-2 ${alvo ? 'hidden lg:block' : ''}`}>
             <h2 className="text-sm font-semibold text-steel-500 uppercase tracking-wide">Atendimento no WhatsApp</h2>
             <ReceptionCard workshopId={wid} />
+          </section>
+        )}
+
+        {wid && (
+          <section className={`space-y-2 ${alvo ? 'hidden lg:block' : ''}`}>
+            <h2 className="text-sm font-semibold text-steel-500 uppercase tracking-wide">Pós-venda automático</h2>
+            <CsCard workshopId={wid} />
           </section>
         )}
 
