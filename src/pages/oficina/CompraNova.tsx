@@ -12,12 +12,21 @@ import {
 } from '@/lib/parts';
 import { NO_STOCK_NOTE, addDaysISO, fmtDate, splitInstallments, todayISO, type Supplier } from '@/lib/purchasing';
 import { Restricted, SupplierForm } from './Fornecedores';
+import NotePartOrganizer from '@/components/parts/NotePartOrganizer';
+import { detectVehicles } from '@/lib/vehicleMatch';
+import { loadPartVehicles, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
 import { hasAiInvoice, parseNfeXml, readInvoiceWithAi, type InvoiceData } from '@/lib/invoiceImport';
 import { BUCKET, mergePages, type PurchaseImport } from '@/lib/purchaseImports';
 
 /** code: código do produto do fornecedor (vem da nota; vai para a peça) */
 /** split = unidades por caixa quando a linha foi dividida sozinha na leitura da nota (dá para desfazer) */
-type Row = { key: string; part_id: string | null; code: string; name: string; unit: string; quantity: string; unit_cost: string; split?: number };
+type Row = {
+  key: string; part_id: string | null; code: string; name: string; unit: string; quantity: string; unit_cost: string; split?: number;
+  /** Categoria escolhida à mão para a peça nova ('' = a automática do banco) */
+  category?: PartCategory | '';
+  /** Carros em que a peça serve: lidos da descrição, editáveis (peça nova ou sem carro cadastrado) */
+  vehicles?: VehicleDraft[]; vehEdited?: boolean;
+};
 type Inst = { due_date: string; amount: string };
 
 let seq = 0;
@@ -37,6 +46,8 @@ const boxSizeOf = (name: string) => {
   const k = c ? Number(c[1]) : 0;
   return k >= 2 && k <= 200 ? k : null;
 };
+/** Tira o lixo que a nota põe no fim da descrição ("CÓD. PRODUTO ANP: 620505001 UF DE CONSUMO: SP") */
+const cleanName = (n: string) => n.replace(/\s*C[ÓO]D\.?\s*PRODUTO\s*ANP.*$/i, '').replace(/\s+/g, ' ').trim();
 const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
 /** "10190 SILENCIOSO INT." com código 10190 → "SILENCIOSO INT." (a leitura às vezes repete o código no nome) */
 const stripCode = (name: string, code: string | null) => {
@@ -54,6 +65,8 @@ export default function CompraNova() {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [parts, setParts]         = useState<WorkshopPart[]>([]);
+  /** Carros já cadastrados em cada peça (peça que já tem carro não é mexida pela nota) */
+  const [partVeh, setPartVeh]     = useState<Map<string, PartVehicle[]>>(new Map());
   /** fornecedor|código → peça: a nota seguinte reconhece pelo código, mesmo com a descrição mudada no cadastro */
   const [supCodes, setSupCodes]   = useState<Map<string, string>>(new Map());
   const [margin, setMargin]       = useState<Margins>({ base: DEFAULT_MARGIN, byCategory: {} });
@@ -90,7 +103,7 @@ export default function CompraNova() {
   useEffect(() => {
     if (!wid || !allowed) return;
     (async () => {
-      const [s, p, m, sc] = await Promise.all([
+      const [s, p, m, sc, pv] = await Promise.all([
         supabase.from('suppliers').select('*').eq('workshop_id', wid).eq('active', true).order('name'),
         loadAllParts(wid).then(data => ({ data })),
         loadMargins(wid),
@@ -98,7 +111,9 @@ export default function CompraNova() {
         fetchAll<{ supplier_id: string; code: string; part_id: string }>((a, b) =>
           supabase.from('part_supplier_codes').select('supplier_id, code, part_id').eq('workshop_id', wid).range(a, b) as unknown as PromiseLike<{ data: { supplier_id: string; code: string; part_id: string }[] | null; error: unknown }>)
           .catch(() => ({ data: [] })),
+        loadPartVehicles(wid).catch(() => new Map<string, PartVehicle[]>()),
       ]);
+      setPartVeh(pv);
       setSupCodes(new Map(sc.data.map(x => [supCodeKey(x.supplier_id, x.code), x.part_id])));
       setSuppliers((s.data as Supplier[]) ?? []);
       setParts((p.data as WorkshopPart[]) ?? []);
@@ -191,6 +206,8 @@ export default function CompraNova() {
         } else {
           next.part_id = null;
         }
+        // Carros: relê da descrição enquanto a pessoa não mexeu neles; peça que já tem carro não é mexida
+        if (!r.vehEdited) next.vehicles = p && partVeh.get(p.id)?.length ? undefined : detectVehicles(patch.name);
       }
       return next;
     }));
@@ -224,11 +241,14 @@ export default function CompraNova() {
     const byCode = new Map(parts.filter(p => p.code).map(p => [p.code!.trim().toLowerCase(), p]));
     setRows(d.items.length ? d.items.map(it => {
       const viaSup = sup && it.code ? byId.get(supCodes.get(supCodeKey(sup.id, it.code)) ?? '') : undefined;
-      const p = viaSup || (it.code && byCode.get(it.code.trim().toLowerCase())) || byName.get(stripCode(it.name, it.code).toLowerCase()) || byName.get(it.name.toLowerCase());
+      const nm = cleanName(it.name);
+      const p = viaSup || (it.code && byCode.get(it.code.trim().toLowerCase())) || byName.get(stripCode(nm, it.code).toLowerCase()) || byName.get(stripCode(it.name, it.code).toLowerCase()) || byName.get(it.name.toLowerCase());
       // Item em caixa ("24X1", "CX C/12"…): já entra por unidade — quantidade × caixa, custo ÷ caixa. O total não muda.
       const box = it.unitCost > 0 && it.qty > 0 ? boxSizeOf(it.name) : null;
       return {
-        key: `r${++seq}`, part_id: p?.id ?? null, code: it.code || p?.code || '', name: p ? p.name : stripCode(it.name, it.code),
+        key: `r${++seq}`, part_id: p?.id ?? null, code: it.code || p?.code || '', name: p ? p.name : stripCode(nm, it.code),
+        // peça nova ou ainda sem carro: já sugere os carros que a descrição cita
+        ...(!p || !partVeh.get(p.id)?.length ? { vehicles: detectVehicles(p ? p.name : stripCode(nm, it.code)) } : {}),
         unit: box ? 'un' : p ? p.unit : it.unit,
         quantity: String(box ? it.qty * box : it.qty).replace('.', ','),
         unit_cost: costInput(box ? Math.round(it.unitCost / box * 10000) / 10000 : it.unitCost),
@@ -304,8 +324,32 @@ export default function CompraNova() {
     if (rowsUp.length) await supabase.from('part_supplier_codes').upsert(rowsUp, { onConflict: 'supplier_id,code' });
   }
 
+  /** Categoria escolhida e carros de cada peça da nota (peça nova ou que ainda não tinha carro) */
+  async function saveOrganization(invoiceId: string) {
+    const todo = rows.filter(r => r.name.trim() && ((!r.part_id && r.category) || r.vehicles?.length));
+    if (!todo.length || !wid) return;
+    const { data: its } = await supabase.from('purchase_items').select('description, part_id').eq('invoice_id', invoiceId);
+    const byDesc = new Map(((its ?? []) as { description: string; part_id: string }[]).map(i => [i.description.trim().toLowerCase(), i.part_id]));
+    let failed = 0;
+    for (const r of todo) {
+      const partId = r.part_id || byDesc.get(r.name.trim().toLowerCase());
+      if (!partId) continue;
+      if (!r.part_id && r.category) {
+        const { error } = await supabase.from('workshop_parts').update({ category: r.category }).eq('id', partId);
+        if (error) failed++;
+      }
+      // Peça que já tinha carro cadastrado não é mexida
+      if (r.vehicles?.length && !partVeh.get(partId)?.length) {
+        const err = await savePartVehicles(wid, partId, r.vehicles);
+        if (err) failed++;
+      }
+    }
+    if (failed) toast.error(`Nota lançada, mas ${failed} categoria(s)/carro(s) não foram salvos. Ajuste em Peças.`);
+  }
+
   async function finishQueued(invoiceId: string) {
     await saveSupplierCodes(invoiceId);
+    await saveOrganization(invoiceId);
     if (queued) {
       await supabase.from('purchase_imports')
         .update({ status: 'confirmed', invoice_id: invoiceId, confirmed_at: new Date().toISOString() }).in('id', queued.map(q => q.imp.id));
@@ -569,11 +613,16 @@ export default function CompraNova() {
                       ) : (
                         <span className="text-brand-700">
                           ✨ <strong>Peça nova</strong> — será cadastrada
-                          {guess[r.name.trim()] && <> em <strong>{partCategory(guess[r.name.trim()]).icon} {partCategory(guess[r.name.trim()]).label}</strong></>}
-                          {' '}com a margem {margin.byCategory[guess[r.name.trim()]] != null ? 'da categoria' : 'padrão'} ({categoryMargin(margin, guess[r.name.trim()])}%) → venda {fmtBRL(salePriceOf({ cost: newCost, margin_percent: null, sale_price: null, category: guess[r.name.trim()] }, margin))}
+                          {(r.category || guess[r.name.trim()]) && <> em <strong>{partCategory((r.category || guess[r.name.trim()]) as PartCategory).icon} {partCategory((r.category || guess[r.name.trim()]) as PartCategory).label}</strong></>}
+                          {' '}com a margem {margin.byCategory[(r.category || guess[r.name.trim()]) as PartCategory] != null ? 'da categoria' : 'padrão'} ({categoryMargin(margin, r.category || guess[r.name.trim()])}%) → venda {fmtBRL(salePriceOf({ cost: newCost, margin_percent: null, sale_price: null, category: r.category || guess[r.name.trim()] }, margin))}
                         </span>
                       )}
                     </div>
+                  )}
+                  {r.name.trim() && (!part || !partVeh.get(part.id)?.length) && (
+                    <NotePartOrganizer isNew={!part} autoCategory={guess[r.name.trim()]}
+                      category={r.category ?? ''} onCategory={c => update(r.key, { category: c })}
+                      vehicles={r.vehicles ?? []} onVehicles={v => update(r.key, { vehicles: v, vehEdited: true })} />
                   )}
                 </div>
               );
