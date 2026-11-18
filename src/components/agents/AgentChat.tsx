@@ -299,7 +299,7 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                   )}
                 </div>
                 <div className="text-xs text-steel-500">
-                  {agent.tools.length} {tpl.toolsWord} liberadas · Publicada: <strong>v{agent.version}</strong>
+                  {Object.keys(toolCatalog).length > 0 && <>{agent.tools.length} {tpl.toolsWord} liberadas · </>}Publicada: <strong>v{agent.version}</strong>
                   {publishedAt ? ` em ${fmtDate(publishedAt)}` : ''}
                 </div>
               </div>
@@ -336,7 +336,7 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                     Restaurar instruções originais
                   </button>
                 </div>
-                <div>
+                {Object.keys(toolCatalog).length > 0 && <div>
                   <label className="label">O que ele pode consultar</label>
                   <div className="grid sm:grid-cols-2 gap-2">
                     {Object.entries(toolCatalog).map(([key, t]) => (
@@ -347,7 +347,7 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                       </label>
                     ))}
                   </div>
-                </div>
+                </div>}
                 <div className="rounded-xl bg-steel-50 dark:bg-steel-900 p-3 text-xs text-steel-500">
                   O agente só usa o que está <strong>publicado</strong> (v{agent.version}). Edite à vontade{tpl.playground ? ', teste no 🧪 Playground' : ''}
                   e publique quando estiver bom. Cada publicação fica guardada no histórico.

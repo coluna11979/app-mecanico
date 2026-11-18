@@ -42,6 +42,7 @@ export default function Agentes() {
         )}
 
         {wid && showBudget && <AgentChat key="orcamento" workshopId={wid} template="orcamento" />}
+        {wid && <AgentChat key="diagnostico" workshopId={wid} template="diagnostico" />}
         {wid && showPartner && <AgentChat key="socio" workshopId={wid} template="socio" />}
       </div>
     </WorkshopLayout>
