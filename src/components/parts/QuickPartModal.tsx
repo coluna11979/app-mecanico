@@ -3,19 +3,45 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
-import { UNITS, priceFromMargin } from '@/lib/parts';
+import { PART_CATEGORIES, UNITS, categoryMargin, priceFromMargin, type Margins } from '@/lib/parts';
+import { savePartVehicles } from '@/lib/partVehicles';
 import { addDaysISO, todayISO, type Supplier } from '@/lib/purchasing';
 import SupplierPicker from './SupplierPicker';
 
-export type QuickPartResult = { part_id: string; name: string; cost: number; price: number; unit: string; quantity: number };
+export type QuickPartResult = { part_id: string; name: string; cost: number; price: number; unit: string; quantity: number;
+  category: string | null; universal: boolean; vehicle: { brand: string; model: string } | null };
+
+const n0 = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/** Categoria pelo nome da peça (a primeira regra que bater) */
+const GUESS: [RegExp, string][] = [
+  [/embreag|cambio|homocinet|semi.?eixo|trizeta|plato|atuador/, 'transmissao'],
+  [/\b(pneus?|camaras? de ar)\b|^rodas?\b|\b\d{3}\/\d{2}/, 'rodas'],
+  [/oleo|filtro/, 'oleos_filtros'],
+  [/freio|pastilha|disco|lona|tambor|pinca|sapata|cilindro de roda/, 'freios'],
+  [/amortec|bandeja|bieleta|pivo|terminal|barra|bucha|coxim|mola|batente|caixa de direc|rolamento|cubo|axial|coifa/, 'suspensao'],
+  [/vela|bobina|bico|sonda|tbi|injec/, 'ignicao_injecao'],
+  [/radiador|bomba d.?agua|termost|mangueira|reservatorio|aditivo|ventoinha/, 'arrefecimento'],
+  [/escap|silencios|catalis|abafador|ponteira/, 'escapamento'],
+  [/compressor|condensador|evaporador|ar.condicionado/, 'ar_condicionado'],
+  [/bateria|lampada|farol|lanterna|alternador|motor de partida|fusivel|rele|sensor|chicote/, 'eletrica'],
+  [/correia|junta|retentor|tensor|polia|cabecote|pistao|bronzina|valvula/, 'motor'],
+  [/para.?choque|retrovisor|macaneta|vidro|paralama|capo|grade/, 'carroceria'],
+];
+const guessCategory = (name: string) => GUESS.find(([re]) => re.test(n0(name)))?.[1] ?? null;
 
 /**
  * Cadastrar uma peça sem sair da OS. Com "Comprei agora para esta OS" (o caso da
  * autopeças de pronta entrega): lança a compra — a peça entra no estoque (e sai
  * quando a OS for concluída) — e a conta: paga na hora ou para pagar depois.
  */
-export default function QuickPartModal({ wid, osLabel, initialName, quantity, defaultMargin, registerOnly, onClose, onSaved }: {
+export default function QuickPartModal({ wid, osLabel, initialName, quantity, defaultMargin, margins, vehicle, defaultCategory, registerOnly, onClose, onSaved }: {
   wid: string; osLabel: string; initialName: string; quantity: number; defaultMargin: number;
+  /** Margem por categoria da oficina (a margem acompanha a categoria escolhida) */
+  margins?: Margins;
+  /** Carro da OS: a peça já sai marcada como "serve neste carro" */
+  vehicle?: { make?: string | null; model?: string | null } | null;
+  /** Categoria sugerida pelo serviço onde a peça vai entrar */
+  defaultCategory?: string | null;
   /** Só cadastra a peça (sem lançar compra): usado fora da OS, como no kit do serviço */
   registerOnly?: boolean;
   onClose: () => void; onSaved: (r: QuickPartResult) => void;
@@ -24,13 +50,21 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const sid = balcao ? session?.session_id ?? null : null;
 
   const [name, setName]         = useState(initialName);
+  const [category, setCategory] = useState<string | null>(() => guessCategory(initialName) ?? defaultCategory ?? null);
+  /** Escolhida à mão: o nome deixa de mudar a categoria */
+  const [catTouched, setCatTouched] = useState(false);
+  const hasCar = !!vehicle?.model?.trim();
+  const [fit, setFit] = useState<'car' | 'universal' | 'none'>(hasCar ? 'car' : 'none');
+  const [brand, setBrand] = useState((vehicle?.make ?? '').trim());
+  const [model, setModel] = useState((vehicle?.model ?? '').trim());
+  const [marginTouched, setMarginTouched] = useState(false);
   const [code, setCode]         = useState('');
   const [unit, setUnit]         = useState('un');
   const [cost, setCost]         = useState('');
   /** custo = preço sai do custo + margem · venda = só o preço de venda (custo depois, em Peças e estoque) */
   const [mode, setMode]         = useState<'custo' | 'venda'>('custo');
   const [salePrice, setSalePrice] = useState('');
-  const [marginStr, setMarginStr] = useState(String(defaultMargin));
+  const [marginStr, setMarginStr] = useState(String(margins ? categoryMargin(margins, guessCategory(initialName) ?? defaultCategory ?? null) : defaultMargin));
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [bought, setBought]     = useState(!registerOnly);
   const [qty, setQty]           = useState(String(quantity || 1).replace('.', ','));
@@ -44,6 +78,10 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
     supabase.from('cash_registers').select('id').eq('workshop_id', wid).eq('status', 'open').maybeSingle()
       .then(({ data }) => setHasRegister(!!data));
   }, [wid]);
+  // Nome digitado sugere a categoria (até a pessoa escolher uma); a margem segue a da categoria
+  useEffect(() => { if (!catTouched) { const g = guessCategory(name); if (g) setCategory(g); } }, [name, catTouched]);
+  const baseMargin = margins ? categoryMargin(margins, category) : defaultMargin;
+  useEffect(() => { if (!marginTouched) setMarginStr(String(baseMargin)); }, [baseMargin, marginTouched]);
   // Prazo do fornecedor sugere o vencimento
   useEffect(() => { if (supplier) setDue(addDaysISO(todayISO(), supplier.payment_days || 30)); }, [supplier]);
 
@@ -52,12 +90,13 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const m = parseMoney(marginStr);
   const marginOk = Number.isFinite(m) && m >= 0 && m <= 1000;
   const sp = Number.isFinite(parseMoney(salePrice)) ? parseMoney(salePrice) : 0;
-  const price = mode === 'venda' ? sp : priceFromMargin(c, marginOk ? m : defaultMargin);
+  const price = mode === 'venda' ? sp : priceFromMargin(c, marginOk ? m : baseMargin);
   const total = Math.round(c * q * 100) / 100;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return toast.error('Informe o nome da peça');
+    if (fit === 'car' && (!brand.trim() || !model.trim())) return toast.error('Informe a marca e o modelo do carro (ou escolha "Qualquer carro")');
     if (mode === 'custo') {
       if (!(c > 0)) return toast.error('Informe o custo da peça (ou escolha "Só preço de venda")');
       if (!marginOk) return toast.error('Margem inválida');
@@ -74,12 +113,16 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
         .insert(mode === 'venda'
           // Só preço de venda: preço fixo; custo fica 0 até alguém informar em Peças e estoque
           ? { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c > 0 ? c : 0, supplier_id: supplier?.id ?? null,
-              sale_price: sp, margin_percent: null }
+              sale_price: sp, margin_percent: null, universal: fit === 'universal', ...(category ? { category } : {}) }
           : { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c, supplier_id: supplier?.id ?? null,
-              margin_percent: Math.abs(m - defaultMargin) > 0.001 ? m : null })
+              margin_percent: Math.abs(m - baseMargin) > 0.001 ? m : null, universal: fit === 'universal', ...(category ? { category } : {}) })
         .select('id').single();
       if (error) throw error;
       const partId = (part as { id: string }).id;
+      if (fit === 'car') {
+        const ve = await savePartVehicles(wid, partId, [{ brand: brand.trim(), model: model.trim(), year_from: null, year_to: null }]);
+        if (ve) toast.warning('Peça cadastrada, mas o carro não foi vinculado: ' + ve.message);
+      }
 
       if (bought && supplier) {
         const { data: inv, error: e2 } = await supabase.rpc('purchase_post', {
@@ -99,7 +142,8 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
         }
       }
       toast.success(bought ? 'Peça cadastrada e compra lançada ✓' : 'Peça cadastrada ✓');
-      onSaved({ part_id: partId, name: name.trim(), cost: c, price, unit, quantity: bought ? q : 1 });
+      onSaved({ part_id: partId, name: name.trim(), cost: c, price, unit, quantity: bought ? q : 1, category,
+        universal: fit === 'universal', vehicle: fit === 'car' ? { brand: brand.trim(), model: model.trim() } : null });
     } catch (err: unknown) {
       toast.error('Não foi possível salvar: ' + ((err as { message?: string })?.message ?? 'erro'));
     } finally {
@@ -116,13 +160,44 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             <h2 className="text-lg font-bold">Cadastrar peça</h2>
             <p className="text-xs text-steel-500">Fica no cadastro para as próximas OS.</p>
           </div>
-          <button type="button" onClick={onClose} className="h-8 w-8 rounded-lg grid place-items-center text-steel-500 hover:bg-steel-100">✕</button>
+          <button type="button" onClick={onClose} className="h-11 w-11 rounded-lg grid place-items-center text-steel-500 hover:bg-steel-100">✕</button>
         </div>
 
         <div className="px-6 py-4 space-y-4 overflow-y-auto">
           <div>
             <label className="label">Nome da peça *</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus={!initialName} />
+            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus={!initialName} placeholder="Ex.: Amortecedor dianteiro Cofap" />
+          </div>
+          <div>
+            <label className="label">Categoria <span className="font-normal normal-case text-steel-400">— é por ela que a peça aparece na OS</span></label>
+            <div className="flex flex-wrap gap-1.5">
+              {PART_CATEGORIES.map(pc => (
+                <button key={pc.value} type="button" onClick={() => { setCategory(pc.value); setCatTouched(true); }}
+                  className={`min-h-[36px] px-3 rounded-full border text-xs font-semibold transition ${category === pc.value ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-700 border-steel-200 hover:border-steel-400'}`}>
+                  {pc.icon} {pc.label}
+                </button>
+              ))}
+            </div>
+            {!category && <p className="text-[11px] text-pending-700 mt-1">Escolha a categoria para a peça aparecer no serviço certo.</p>}
+          </div>
+          <div>
+            <label className="label">Serve em</label>
+            <div className="grid grid-cols-3 gap-2">
+              {([['car', hasCar ? 'Este carro' : 'Um carro'], ['universal', 'Qualquer carro'], ['none', 'Não sei']] as const).map(([v, l]) => (
+                <button key={v} type="button" onClick={() => setFit(v)}
+                  className={`min-h-[44px] px-2 rounded-xl border text-sm font-semibold ${fit === v ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 text-steel-600'}`}>{l}</button>
+              ))}
+            </div>
+            {fit === 'car' && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <input className="input" placeholder="Marca (ex.: Chevrolet)" value={brand} onChange={e => setBrand(e.target.value)} aria-label="Marca" />
+                <input className="input" placeholder="Modelo (ex.: Cruze)" value={model} onChange={e => setModel(e.target.value)} aria-label="Modelo" />
+              </div>
+            )}
+            <p className="text-[11px] text-steel-500 mt-1">
+              {fit === 'car' ? 'Aparece nas OS desse modelo. Outros carros você inclui depois em Peças e estoque.'
+                : fit === 'universal' ? 'Aparece em todas as OS (ex.: pneu, óleo, lâmpada).' : 'A peça pode não aparecer na busca da OS até informar o carro.'}
+            </p>
           </div>
           <div>
             <label className="label">Fornecedor / autopeças {bought && '*'}</label>
@@ -188,10 +263,10 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-steel-500">Margem</div>
               <div className="relative mx-auto w-24 mt-0.5">
-                <input className="input !py-1 !pr-6 text-right font-bold" inputMode="decimal" value={marginStr} onChange={e => setMarginStr(e.target.value)} />
+                <input className="input !py-1 !pr-6 text-right font-bold" inputMode="decimal" value={marginStr} onChange={e => { setMarginStr(e.target.value); setMarginTouched(true); }} />
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-steel-400 text-xs">%</span>
               </div>
-              <div className="text-[10px] text-steel-400 mt-0.5">{Math.abs((marginOk ? m : defaultMargin) - defaultMargin) < 0.001 ? 'padrão' : `padrão é ${defaultMargin}%`}</div>
+              <div className="text-[10px] text-steel-400 mt-0.5">{Math.abs((marginOk ? m : baseMargin) - baseMargin) < 0.001 ? 'padrão' : `padrão é ${baseMargin}%`}</div>
             </div>
           </div>}
 

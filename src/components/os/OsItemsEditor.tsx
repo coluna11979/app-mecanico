@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
 import { categoryFromServices, categoryParts, fmtBRL, moneyInput, parseMoney } from './osHelpers';
-import { DEFAULT_MARGIN, PART_CATEGORIES, fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
-import CatalogPanel from './CatalogPanel';
+import { DEFAULT_MARGIN, fmtPct, fmtQty, loadAllParts, loadMargins, marginOf, salePriceOf, type Margins, type WorkshopPart } from '@/lib/parts';
+import AddSheet, { type CarKit, type SheetMode } from './AddSheet';
 import QuickPartModal from '@/components/parts/QuickPartModal';
 import { RULE } from '@/lib/commission';
 import { loadItemRules, serviceCommission, type ItemRule } from '@/lib/commissionRules';
-import { groupBy, loadServiceCharges, loadWorkshopModels, norm, type PriceSummary } from '@/lib/servicePrices';
-import { pickKitRows } from '@/lib/osKits';
+import { groupBy, loadServiceCharges, norm, type PriceSummary } from '@/lib/servicePrices';
+import { pickKitRows, type KitDbRow } from '@/lib/osKits';
 import { useServiceCategories } from '@/lib/serviceCategories';
 import { fitsVehicle, loadPartVehicles, type PartVehicle } from '@/lib/partVehicles';
 
@@ -113,8 +113,6 @@ type TeamMember = { id: string; name: string; active: boolean; no_commission?: b
 
 export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string; /** Categoria da peça no cadastro (freios, oleos_filtros…) */ pcat?: string; universal?: boolean; /** Palavras extras da busca (categoria, "pneu") */ search?: string };
 
-const KIND_LABEL: Record<OsItemKind, string> = { part: 'Peça', labor: 'Serviço' };
-
 let keySeq = 0;
 const newKey = () => `new-${++keySeq}`;
 
@@ -188,10 +186,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const [suggestions, setSugg]  = useState<Suggestion[]>([]);
   const [margin, setMargin]     = useState<Margins>({ base: DEFAULT_MARGIN, byCategory: {} });
   /** Cadastro rápido de peça: key = linha que vai receber a peça (null = cria linha nova) */
-  const [quick, setQuick]       = useState<{ key: string | null; name: string; qty: number } | null>(null);
+  const [quick, setQuick]       = useState<{ key: string | null; name: string; qty: number; cat?: string | null } | null>(null);
   const [team, setTeam]         = useState<TeamMember[]>([]);
-  // OS aberta sem serviço: já abre o catálogo (serviço da tabela e, logo abaixo, as peças dele)
-  const [catalogOpen, setCatalogOpen] = useState(() => items.length === 0 && !readOnly && !saleMode);
+  // Janela de "Adicionar": OS nova, sem itens, já abre nela
+  const [sheet, setSheet] = useState<SheetMode | null>(() => (items.length === 0 && !readOnly && !saleMode ? { kind: 'top' } : null));
+  /** Serviços mais lançados pela oficina (atalhos da janela de Adicionar) */
+  const [topServices, setTopServices] = useState<string[]>([]);
   /** Regras por item da loja (ex.: alinhamento sem comissão) — para mostrar a comissão de cada serviço */
   const [itemRules, setItemRules] = useState<ItemRule[]>([]);
   /** Serviço com o campo de comissão aberto */
@@ -199,13 +199,11 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
   /** Preço já cobrado de cada serviço neste modelo de veículo (outras OS) — chave = nome normalizado */
   const [vehPrices, setVehPrices] = useState<Map<string, PriceSummary>>(new Map());
-  /** Modelo escolhido no painel quando a OS não tem veículo: só para sugerir preço */
-  const [refModel, setRefModel] = useState('');
   // Categorias em que a peça é o que se vende (pneu): o item é só o cabeçalho e as peças entram como itens com preço de venda
   const { sellsSet, names: catNames } = useServiceCategories(workshopId);
   const sellsParts = (r: { kind: OsItemKind; description: string } | undefined) => !!r && r.kind === 'labor' && sellsSet.has(norm(r.description));
   const [partVeh, setPartVeh] = useState<Map<string, PartVehicle[]> | null>(null);
-  const vehModel = vehicle?.model?.trim() || refModel;
+  const vehModel = vehicle?.model?.trim() || '';
   useEffect(() => {
     if (!vehModel || saleMode || readOnly) { setVehPrices(new Map()); return; }
     let alive = true;
@@ -320,6 +318,14 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         if (!seen.has(k)) seen.set(k, { description: d.description.trim(), kind: d.kind, unit_price: Number(d.unit_price) });
       }
       setSugg([...seen.values()]);
+      // Mais usados: os serviços que mais aparecem nas OS recentes
+      const freq = new Map<string, { n: number; name: string }>();
+      for (const d of (hist.data ?? []) as Suggestion[]) {
+        if (d.kind !== 'labor' || !d.description?.trim()) continue;
+        const k = norm(d.description);
+        freq.set(k, { n: (freq.get(k)?.n ?? 0) + 1, name: d.description.trim() });
+      }
+      setTopServices([...freq.values()].filter(f => f.n >= 2).sort((a, b) => b.n - a.n).map(f => f.name));
       setMargin(margin);
       setPartVeh(pv);
     })();
@@ -381,22 +387,18 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     || Math.abs(disc - (discount ?? 0)) > 0.001;
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  function addRow(kind: OsItemKind | 'mao_de_obra') {
-    // Peça lançada pelo botão de cima é item próprio (com preço); a peça de dentro de um item vem de "+ detalhar peça"
-    setRows(rs => [...rs, { key: newKey(), kind: kind === 'part' ? 'part' : 'labor', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '',
-      standalone: kind === 'part' && rs.some(r => r.kind === 'labor') ? true : undefined,
-      stype: kind === 'part' ? '' : 'servico', comm: '' }]);
-  }
   /** Peça já dentro de um serviço: entra logo abaixo dele (e das peças que ele já tem) */
-  function addPartTo(serviceKey: string) {
+  function addPartTo(serviceKey: string): string {
+    const key = newKey();
     setRows(rs => {
       const i = rs.findIndex(r => r.key === serviceKey);
       let j = i + 1;
       while (j < rs.length && rs[j].kind === 'part') j++;
-      const row: Row = { key: newKey(), kind: 'part', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: '', comm: '',
+      const row: Row = { key, kind: 'part', description: '', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: '', comm: '',
         standalone: sellsParts(rs[i]) ? true : undefined };
       return [...rs.slice(0, j), row, ...rs.slice(j)];
     });
+    return key;
   }
   /** Item escolhido no painel do catálogo: serviço entra como item; peça entra dentro do serviço escolhido (ou avulsa se não há serviço) */
   function addFromCatalog(sg: Suggestion, targetKey: string): string | undefined {
@@ -429,8 +431,29 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       return [...rs.slice(0, j), { ...row, unit_price: '' }, ...rs.slice(j)];
     });
   }
-  /** Modelos de veículo já atendidos pela oficina (para escolher um quando a OS abriu sem veículo) */
-  const loadModels = () => loadWorkshopModels(workshopId);
+  /** Kits prontos para o carro desta OS (um por serviço da Tabela que tem peças cadastradas) */
+  async function loadCarKits(): Promise<CarKit[]> {
+    const { data } = await supabase.from('workshop_service_parts')
+      .select('description, quantity, part_id, position, vehicle_model, tech_vehicle_id, year_from, year_to, workshop_services!inner(name, active)')
+      .eq('workshop_id', workshopId).eq('workshop_services.active', true).order('position').limit(5000);
+    type R = KitDbRow & { workshop_services: { name: string } | { name: string }[] };
+    const bySvc = new Map<string, R[]>();
+    for (const r of (data ?? []) as unknown as R[]) {
+      const ws = Array.isArray(r.workshop_services) ? r.workshop_services[0] : r.workshop_services;
+      if (!ws?.name) continue;
+      bySvc.set(ws.name, [...(bySvc.get(ws.name) ?? []), r]);
+    }
+    const out: CarKit[] = [];
+    for (const [name, rs] of bySvc) {
+      const picked = pickKitRows(rs, { model: vehModel, year: vehicle?.year ?? null, techId: vehicle?.tech_vehicle_id ?? null });
+      if (!picked.rows.length) continue;
+      const svc = suggestions.find(s => s.kind === 'labor' && s.fromTable && norm(s.description) === norm(name));
+      if (!svc) continue;
+      out.push({ svc, parts: picked.rows.map(r => r.description), model: picked.model });
+    }
+    // Kit do modelo do carro primeiro
+    return out.sort((a, b) => Number(!a.model) - Number(!b.model) || a.svc.description.localeCompare(b.svc.description, 'pt-BR'));
+  }
   /**
    * Peças do kit do serviço escolhido no catálogo (cadastradas na Tabela de serviços).
    * Se existe kit para o modelo do carro da OS, ele vale no lugar do kit geral.
@@ -684,13 +707,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
             {/* Descrição */}
             <div className="col-span-12 md:col-span-4">
               {readOnly ? <span className="text-sm font-medium text-steel-800">{r.description}</span> : (
-                r.kind === 'labor'
-                  ? <ServicePicker value={r.description} services={suggestions.filter(x => x.kind === 'labor')} allCats={catNames}
-                      onChange={v => update(r.key, { description: v })} />
-                  : <PartPicker value={r.description}
-                      parts={suggestions.filter(s => s.kind === 'part' && partFits(s, groupOf(rows).get(r.key)?.key))}
-                      wider={suggestions.filter(s => s.kind === 'part' && partFits(s))}
-                      onChange={v => update(r.key, { description: v })} />
+                <input className="input !py-2 text-sm font-medium" value={r.description} aria-label="Descrição"
+                  placeholder={r.kind === 'labor' ? 'Nome do serviço' : 'Nome da peça'}
+                  onChange={e => update(r.key, { description: e.target.value })} />
               )}
               {!readOnly && r.kind === 'labor' && (() => {
                 const vp = vehPrices.get(norm(r.description));
@@ -852,25 +871,14 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         </div>
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
-            {!saleMode && (
-              <button type="button" onClick={() => { refreshServices(); addRow('labor'); }}
-                className="text-sm font-semibold px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
-                + Item
-              </button>
-            )}
-            <button type="button" onClick={() => addRow('part')}
-              title={saleMode ? undefined : 'Peça vendida como item da OS, com preço (a peça só de custo fica dentro de um item, em “+ detalhar peça”)'}
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-steel-100 hover:bg-steel-200 text-steel-700 transition">
-              {saleMode ? '+ Peça' : '+ Peça (com preço)'}
-            </button>
-            <button type="button" onClick={() => { refreshServices(); setCatalogOpen(true); }}
-              className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
-              🧭 Escolher serviço e peças
+            <button type="button" onClick={() => { refreshServices(); setSheet(saleMode ? { kind: 'sale' } : { kind: 'top' }); }}
+              className="min-h-[44px] text-base font-bold px-5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white transition">
+              ＋ Adicionar
             </button>
             {showCost && (
               <button type="button" onClick={() => setQuick({ key: null, name: '', qty: 1 })}
-                className="text-sm font-semibold px-3 py-2 rounded-xl bg-white hover:bg-steel-50 text-steel-700 border border-steel-200 transition">
-                🔩 Cadastrar peça no estoque
+                className="min-h-[44px] text-sm font-semibold px-3 rounded-xl bg-white hover:bg-steel-50 text-steel-600 border border-steel-200 transition">
+                🔩 Cadastrar peça nova
               </button>
             )}
           </div>
@@ -925,14 +933,23 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         </div>
       )}
 
-      {catalogOpen && (
-        <CatalogPanel suggestions={suggestions} partFits={partFits} itemCount={blocks.length} total={total}
-          partsAsCost={rows.some(r => r.kind === 'labor')} showCost={!!showCost}
-          services={rows.filter(r => r.kind === 'labor').map(r => ({ key: r.key, name: r.description.trim() }))}
-          onPick={addFromCatalog} kitFor={kitFor}
-          vehicleModel={vehModel} osHasVehicle={!!vehicle?.model?.trim()} onVehicle={setRefModel} loadModels={loadModels}
-          priceFor={sg => { const vp = vehPrices.get(norm(sg.description)); return vp ? { price: vp.last, count: vp.count } : null; }}
-          onClose={() => setCatalogOpen(false)} />
+      {sheet && (
+        <AddSheet mode={sheet} suggestions={suggestions} categories={catNames} topServices={topServices}
+          loadKits={loadCarKits} kitOf={name => kitFor({ description: name, kind: 'labor', unit_price: 0, fromTable: true }).then(k => k.items)}
+          partFits={partFits} wantsParts={name => sellsSet.has(norm(name)) || itemPartCats(name) != null}
+          priceFor={sg => vehPrices.get(norm(sg.description))?.last ?? null}
+          vehicleLabel={[vehMake, vehModel, vehicle?.year].filter(Boolean).join(' ')} showCost={!!showCost}
+          onService={sg => addFromCatalog(sg, '')}
+          onKit={sg => {
+            const key = addFromCatalog(sg, '');
+            kitFor(sg).then(k => { k.items.forEach(it => addFromCatalog(it, key ?? '')); if (k.items.length) toast.success(`${sg.description}: ${k.items.length} peça${k.items.length === 1 ? '' : 's'} do kit`); })
+              .catch(() => { /* sem kit: fica só o serviço */ });
+          }}
+          onPart={(sg, target) => addFromCatalog(sg, target)}
+          onFreeItem={name => addFromCatalog({ description: name, kind: 'labor', unit_price: 0 }, '')}
+          onFreePart={(name, target) => addFromCatalog({ description: name, kind: 'part', unit_price: 0, qty: 1 }, target)}
+          onNewPart={showCost ? (name, target) => { const k = target ? addPartTo(target) : null; const sv = rows.find(r => r.key === target); setSheet(null); setQuick({ key: k, name, qty: 1, cat: sv ? itemPartCats(sv.description)?.[0] ?? null : null }); } : undefined}
+          onClose={() => setSheet(null)} />
       )}
 
       {kitOffer && (
@@ -968,23 +985,25 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
 
       {quick && (
         <QuickPartModal wid={workshopId} osLabel={osLabel} initialName={quick.name} quantity={quick.qty} defaultMargin={margin.base}
+          margins={margin} vehicle={{ make: vehMake, model: vehModel }} defaultCategory={quick.cat ?? null}
           onClose={() => setQuick(null)}
           onSaved={res => {
-            setSugg(xs => [{ description: res.name, kind: 'part', unit_price: res.price, part_id: res.part_id, cost: res.cost, stock: 0, unit: res.unit },
+            setSugg(xs => [{ description: res.name, kind: 'part', unit_price: res.price, part_id: res.part_id, cost: res.cost, stock: 0, unit: res.unit,
+              category: res.category ?? undefined, pcat: res.category ?? undefined, universal: res.universal },
               ...xs.filter(x => x.description.toLowerCase() !== res.name.toLowerCase())]);
+            // A peça nova já passa no filtro do carro da OS
+            if (res.vehicle) setPartVeh(m => new Map(m ?? []).set(res.part_id, [{ id: 'new', workshop_id: workshopId, part_id: res.part_id, brand: res.vehicle!.brand, model: res.vehicle!.model, year_from: null, year_to: null }]));
             const filled = { description: res.name, part_id: res.part_id, unit_cost: res.cost > 0 ? moneyInput(res.cost) : '', unit_price: moneyInput(res.price) };
-            setRows(rs => quick.key
-              ? rs.map(x => x.key === quick.key ? { ...x, ...filled } : x)
-              : [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', used_in: '', stype: '', comm: '', ...filled }]);
+            setRows(rs => {
+              if (!quick.key) return [...rs, { key: newKey(), kind: 'part', quantity: String(res.quantity).replace('.', ','), mechanic_id: '', used_in: '', stype: '', comm: '',
+                standalone: rs.some(x => x.kind === 'labor') ? true : undefined, ...filled }];
+              const g = groupOf(rs);
+              // Peça dentro de um serviço (que não vende a peça) é só custo: o preço já está no serviço
+              return rs.map(x => x.key !== quick.key ? x : { ...x, ...filled, ...(g.get(x.key) && !x.standalone ? { unit_price: '' } : {}) });
+            });
             setQuick(null);
           }} />
       )}
-
-      {['x', ...rows.filter(r => r.kind === 'labor').map(r => r.key)].map(k => (
-      <datalist key={k} id={`os-items-sugg-${osId}-${k}`}>
-        {suggestions.filter(s => s.kind === 'part' && partFits(s, k === 'x' ? undefined : k)).map(s => <option key={s.description} value={s.description}>{s.part_id ? `${s.code ? `Cód. ${s.code} · ` : ''}${s.search?.trim() ? `${s.search.trim()} · ` : ''}Peça cadastrada · ${fmtQty(s.stock)} ${s.unit} em estoque` : s.fromTable ? 'Tabela de serviços' : KIND_LABEL[s.kind]} · {s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</option>)}
-      </datalist>
-      ))}
 
       <div className="divide-y divide-steel-100">
         {blocks.map((b, bi) => {
@@ -998,9 +1017,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
               {b.svc && (!readOnly || hasParts) && (
                 <div className="pl-9 pr-5 pb-3 pt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   {!readOnly && (
-                    <button type="button" onClick={() => addPartTo(b.svc!.key)} className="text-steel-500 hover:text-brand-700 hover:underline"
+                    <button type="button" onClick={() => { const sv = b.svc!; setSheet({ kind: 'part', key: sv.key, name: sv.description.trim() || 'item', sells: sellsParts(sv) }); }}
+                      className="min-h-[40px] px-3 rounded-lg bg-white border border-steel-200 text-sm font-semibold text-brand-700 hover:bg-brand-50"
                       title={sellsParts(b.svc) ? 'A peça é vendida: entra como item da OS com o preço de venda do cadastro.' : 'Opcional: separe a peça para controlar estoque e custo. O valor do item continua sendo o fechado.'}>
-                      {sellsParts(b.svc) ? '+ pneu / peça vendida (com preço)' : '+ detalhar peça (estoque / custo)'}
+                      {sellsParts(b.svc) ? '＋ pneu / peça vendida' : '＋ peça neste serviço'}
                     </button>
                   )}
                   {!readOnly && !hasParts && (
@@ -1042,7 +1062,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
         <div className="px-5 pb-6 pt-2 text-center">
           <div className="text-3xl mb-1">🧾</div>
           <p className="text-sm text-steel-500">
-            {readOnly ? 'Nenhum item nesta OS.' : 'Lance cada linha da nota: o que foi feito ou trocado, a quantidade e o valor. Clique em “+ Item”.'}
+            {readOnly ? 'Nenhum item nesta OS.' : 'Toque em “＋ Adicionar” e escolha o serviço, o kit ou a peça.'}
           </p>
         </div>
       )}
@@ -1190,184 +1210,6 @@ function CostLine({ row, readOnly, onCost, onPrice }: {
           className="font-semibold text-brand-700 hover:underline" title="Grava esta margem na peça do cadastro">
           {saving ? 'Salvando…' : '💾 usar sempre nesta peça'}
         </button>
-      )}
-    </div>
-  );
-}
-
-/**
- * Campo de peça de dentro de um item: ao tocar, mostra as CATEGORIAS de peça (só as do carro e do tipo de serviço);
- * escolhida a categoria, aparecem as peças. Digitando, filtra categorias e, se nenhuma bater, busca pelo nome/código.
- * Texto livre continua valendo (peça avulsa, só nesta OS).
- */
-function PartPicker({ value, parts, wider, onChange }: { value: string; parts: Suggestion[]; wider: Suggestion[]; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [cat, setCat] = useState<string | null>(null);
-  const [all, setAll] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const off = (e: Event) => { if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); setCat(null); } };
-    document.addEventListener('pointerdown', off);
-    return () => document.removeEventListener('pointerdown', off);
-  }, [open]);
-  const list = all ? wider : parts;
-  const pcatOf = (s: Suggestion) => (s.pcat && PART_CATEGORIES.some(c => c.value === s.pcat) ? s.pcat : 'outros');
-  const cats = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const s of list) m.set(pcatOf(s), (m.get(pcatOf(s)) ?? 0) + 1);
-    return PART_CATEGORIES.filter(c => m.has(c.value)).map(c => ({ ...c, n: m.get(c.value)! }));
-  }, [list]);
-  const words = norm(value).split(' ').filter(Boolean);
-  const exact = list.some(s => norm(s.description) === norm(value));
-  const catHits = words.length ? cats.filter(c => words.every(w => norm(c.label).includes(w))) : cats;
-  const hits = words.length
-    ? (catHits.length ? [] : list.filter(s => words.every(w => norm(`${s.description} ${s.code ?? ''}`).includes(w))).slice(0, 15))
-    : cat ? list.filter(s => pcatOf(s) === cat).slice(0, 100) : [];
-  const pick = (s: Suggestion) => { onChange(s.description); setOpen(false); setCat(null); };
-  const catLabel = PART_CATEGORIES.find(c => c.value === cat)?.label;
-
-  return (
-    <div ref={box}>
-      <input className="input !py-2 text-sm" placeholder="Toque para escolher a categoria da peça ou digite…" value={value}
-        onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
-        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setCat(null); } }}
-        onChange={e => { setOpen(true); onChange(e.target.value); }} />
-      {open && !exact && (
-        <div className="mt-1.5 rounded-xl border border-steel-200 bg-white overflow-hidden">
-          {hits.length > 0 ? (
-            <>
-              {!words.length && cat && (
-                <button type="button" onClick={() => setCat(null)}
-                  className="w-full px-3 py-2 text-left text-xs font-semibold text-brand-700 bg-steel-50 border-b border-steel-100">← Categorias · {catLabel}</button>
-              )}
-              <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
-                {hits.map(s => (
-                  <li key={`${s.part_id}-${s.description}`}>
-                    <button type="button" onClick={() => pick(s)}
-                      className="w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium text-steel-800">{s.description}</span>
-                        <span className="block text-[11px] text-steel-500">{s.code ? `Cód. ${s.code} · ` : ''}{fmtQty(s.stock ?? 0)} {s.unit ?? 'un'} em estoque</span>
-                      </span>
-                      <span className="shrink-0 text-xs text-steel-500">{s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : catHits.length > 0 ? (
-            <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
-              {catHits.map(c => (
-                <li key={c.value}>
-                  <button type="button" onClick={() => setCat(c.value)}
-                    className="w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
-                    <span className="font-semibold text-steel-800 truncate">{c.icon} {c.label}</span>
-                    <span className="shrink-0 text-xs text-steel-400">{c.n} ›</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="px-3 py-3 text-xs text-steel-500">Nenhuma peça encontrada{all ? '' : ' para este carro e serviço'}. Escrever o nome deixa a peça avulsa só nesta OS.</div>
-          )}
-          {wider.length > parts.length && !words.length && (
-            <button type="button" onClick={() => { setAll(a => !a); setCat(null); }}
-              className="w-full px-3 py-2 text-left text-[11px] font-semibold text-steel-500 hover:text-brand-700 border-t border-steel-100 bg-steel-50">
-              {all ? '← Só as categorias deste serviço' : 'Ver peças de outras categorias do carro'}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Campo de serviço da OS: ao tocar, mostra só as CATEGORIAS (da Tabela de serviços); escolhida a categoria,
- * aparecem os serviços dela. Digitando, busca direto pelo nome. As peças entram depois, dentro do serviço.
- */
-function ServicePicker({ value, services, allCats, onChange }: { value: string; services: Suggestion[]; allCats: string[]; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [cat, setCat] = useState<string | null>(null);
-  const box = useRef<HTMLDivElement>(null);
-  // Fecha ao tocar fora (sem depender de foco/blur, que muda de navegador para navegador)
-  useEffect(() => {
-    if (!open) return;
-    const off = (e: Event) => { if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); setCat(null); } };
-    document.addEventListener('pointerdown', off);
-    return () => document.removeEventListener('pointerdown', off);
-  }, [open]);
-  const catOf = (s: Suggestion) => (s.fromTable ? s.category || 'Sem categoria' : 'Já usados antes');
-  const cats = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const s of services) m.set(catOf(s), (m.get(catOf(s)) ?? 0) + 1);
-    // Categoria criada pela oficina que ainda não tem serviço (ex.: "Mão de obra") também aparece, para usar como item
-    for (const c of allCats) if (!m.has(c) && ![...m.keys()].some(k => norm(k) === norm(c))) m.set(c, 0);
-    return [...m.entries()].sort((a, b) => Number(a[0] === 'Já usados antes') - Number(b[0] === 'Já usados antes') || a[0].localeCompare(b[0], 'pt-BR'));
-  }, [services, allCats]);
-  const words = norm(value).split(' ').filter(Boolean);
-  const exact = services.some(s => norm(s.description) === norm(value));
-  // Digitar filtra as CATEGORIAS; só se nenhuma bater, procura pelo nome do serviço
-  const catHits = words.length ? cats.filter(([c]) => words.every(w => norm(c).includes(w))) : cats;
-  const hits = words.length
-    ? (catHits.length ? [] : services.filter(s => words.every(w => norm(s.description).includes(w))).slice(0, 12))
-    : cat ? services.filter(s => catOf(s) === cat).slice(0, 80) : [];
-  const pick = (s: Suggestion) => { onChange(s.description); setOpen(false); setCat(null); };
-
-  return (
-    <div ref={box}>
-      <input className="input !py-2 text-sm" placeholder="Toque para escolher a categoria ou digite o serviço…" value={value}
-        onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
-        onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); setCat(null); } }}
-        onChange={e => { setOpen(true); onChange(e.target.value); }} />
-      {open && !exact && (catHits.length > 0 || hits.length > 0) && (
-        <div className="mt-1.5 rounded-xl border border-steel-200 bg-white overflow-hidden">
-          {hits.length > 0 ? (
-            <>
-              {!words.length && cat && (
-                <>
-                  <button type="button" onClick={() => setCat(null)}
-                    className="w-full px-3 py-2 text-left text-xs font-semibold text-brand-700 bg-steel-50 border-b border-steel-100">← Categorias · {cat}</button>
-                  {cat !== 'Já usados antes' && cat !== 'Sem categoria' && (
-                    <button type="button" onClick={() => { onChange(cat); setOpen(false); setCat(null); }}
-                      className="w-full min-h-[44px] px-3 py-2 text-left text-sm font-semibold text-brand-800 bg-brand-50 border-b border-steel-100">
-                      ✓ Usar “{cat}” como item <span className="font-normal text-steel-500">· depois é só incluir as peças</span>
-                    </button>
-                  )}
-                </>
-              )}
-              <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
-                {hits.map(s => (
-                  <li key={s.description}>
-                    <button type="button" onClick={() => pick(s)}
-                      className="w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
-                      <span className="min-w-0 truncate font-medium text-steel-800">{s.description}</span>
-                      <span className="shrink-0 text-xs text-steel-500">{s.unit_price > 0 ? fmtBRL(s.unit_price) : 'preço na OS'}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <ul className="max-h-64 overflow-y-auto divide-y divide-steel-100">
-              {catHits.map(([c, n]) => (
-                <li key={c} className="flex items-stretch">
-                  <button type="button" onClick={() => (n === 0 ? (onChange(c), setOpen(false), setCat(null)) : setCat(c))}
-                    className="flex-1 min-w-0 min-h-[44px] px-3 py-2 flex items-center justify-between gap-3 text-left text-sm hover:bg-brand-50">
-                    <span className="font-semibold text-steel-800 truncate">{c}</span>
-                    <span className="shrink-0 text-xs text-steel-400">{n === 0 ? 'sem serviços' : `${n} ›`}</span>
-                  </button>
-                  {c !== 'Já usados antes' && c !== 'Sem categoria' && (
-                    <button type="button" onClick={() => { onChange(c); setOpen(false); setCat(null); }}
-                      className="shrink-0 px-3 text-xs font-bold text-brand-700 bg-brand-50 border-l border-steel-100 hover:bg-brand-100"
-                      title="Entra na OS com o nome da categoria; depois é só incluir as peças">＋ usar</button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       )}
     </div>
   );
