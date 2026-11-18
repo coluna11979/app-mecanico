@@ -43,6 +43,8 @@ async function rpc(db: SupabaseClient, fn: string, args: Record<string, unknown>
   return data;
 }
 
+const PART_CATEGORIES = ['freios', 'suspensao', 'motor', 'ignicao_injecao', 'eletrica', 'oleos_filtros', 'arrefecimento', 'transmissao', 'rodas', 'escapamento', 'ar_condicionado', 'carroceria', 'outros'];
+
 const noProps = { type: 'object', additionalProperties: false, properties: {} };
 
 export const ORC_TOOLS: Record<string, ToolDef> = {
@@ -361,6 +363,99 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
         p_nome: str(i.nome, 100) || null, p_telefone: str(i.telefone, 30) || null, p_email: str(i.email, 120) || null,
         p_marca: str(i.marca, 60) || null, p_modelo: str(i.modelo, 60) || null, p_ano: int(i.ano), p_placa: str(i.placa, 12) || null,
       });
+    },
+  },
+
+  orc_pecas_resumo: {
+    label: 'Cadastro de peças: diagnóstico',
+    def: {
+      description: 'Fotografia do cadastro de peças da oficina: ativas, categoria "outros", sem marca, sem código, sem veículo vinculado, universais, por categoria e quantos grupos de peças repetidas (por nome+marca e por código+marca). Use para começar qualquer organização do cadastro.',
+      input_schema: noProps,
+    },
+    run: async (db, ws) => rpc(db, 'orc_parts_overview', { p_workshop: ws }),
+  },
+
+  orc_pecas_listar: {
+    label: 'Cadastro de peças: listar por problema',
+    def: {
+      description: 'Lista peças ativas (até 40 por vez) com categoria, marca, código, custo, estoque e os veículos já vinculados. problema: "outros" (categoria Outros), "sem_marca", "sem_codigo", "sem_veiculo" (sem carro vinculado e não universal). Também filtra por categoria e por busca (nome, marca ou código). Para a próxima página use offset = proximo_offset. Os peca_id valem só nesta mesma vez: edite logo em seguida.',
+      input_schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          problema: { type: 'string', enum: ['outros', 'sem_marca', 'sem_codigo', 'sem_veiculo'] },
+          categoria: { type: 'string', enum: PART_CATEGORIES },
+          busca: { type: 'string' }, limite: { type: 'integer' }, offset: { type: 'integer' },
+        },
+      },
+    },
+    run: async (db, ws, i) => rpc(db, 'orc_parts_list', {
+      p_workshop: ws, p_problema: str(i.problema, 20) || null, p_categoria: str(i.categoria, 30) || null,
+      p_busca: str(i.busca, 80) || null, p_limit: int(i.limite) ?? 30, p_offset: int(i.offset) ?? 0,
+    }),
+  },
+
+  orc_pecas_corrigir: {
+    label: 'Cadastro de peças: corrigir categoria, marca e veículos',
+    def: {
+      description: 'Corrige até 50 peças por chamada: categoria, marca, nome, código, universal e VINCULA veículos (marca, modelo, ano_de, ano_ate; modelo vazio = todos os modelos da marca; sem ano = qualquer ano). Os veículos informados são ACRESCENTADOS aos que já existem (substituir_veiculos=true troca a lista). Use os peca_id de orc_pecas_listar desta mesma vez. Só aplique depois de mostrar ao dono o que vai mudar e ter o "sim" dele (pode ser um "sim" para o lote inteiro). Categorias válidas: ' + PART_CATEGORIES.join(', ') + '.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['pecas'],
+        properties: {
+          pecas: {
+            type: 'array', maxItems: 50,
+            items: {
+              type: 'object', additionalProperties: false, required: ['peca_id'],
+              properties: {
+                peca_id: { type: 'string' }, categoria: { type: 'string', enum: PART_CATEGORIES },
+                marca: { type: 'string' }, nome: { type: 'string' }, codigo: { type: 'string' }, universal: { type: 'boolean' },
+                substituir_veiculos: { type: 'boolean' },
+                veiculos: {
+                  type: 'array', maxItems: 20,
+                  items: { type: 'object', additionalProperties: false, required: ['marca'], properties: { marca: { type: 'string' }, modelo: { type: 'string' }, ano_de: { type: 'integer' }, ano_ate: { type: 'integer' } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const list = Array.isArray(i.pecas) ? i.pecas.slice(0, 50) : [];
+      if (!list.length) return err('lista_vazia');
+      return rpc(db, 'orc_parts_edit', { p_workshop: ws, p_items: list });
+    },
+  },
+
+  orc_pecas_duplicadas: {
+    label: 'Cadastro de peças: achar duplicadas',
+    def: {
+      description: 'Mostra grupos de peças repetidas (mesmo nome e marca, ou mesmo código e marca), até 25 grupos por vez, com custo, estoque, categoria, quantos usos (OS, compras, kits) e veículos de cada peça. Próxima página: offset = proximo_offset. Os peca_id valem só nesta mesma vez: una logo em seguida, depois do "sim" do dono.',
+      input_schema: { type: 'object', additionalProperties: false, properties: { limite: { type: 'integer' }, offset: { type: 'integer' } } },
+    },
+    run: async (db, ws, i) => rpc(db, 'orc_parts_duplicates', { p_workshop: ws, p_limit: int(i.limite) ?? 15, p_offset: int(i.offset) ?? 0 }),
+  },
+
+  orc_pecas_unir: {
+    label: 'Cadastro de peças: unir duplicadas',
+    def: {
+      description: 'Une peças repetidas: em cada grupo, a peça "manter" recebe tudo das "remover" (OS, compras, histórico de estoque, kits da Tabela de serviços e veículos vinculados; completa marca/código vazios) e as removidas ficam DESATIVADAS (nada é apagado). somar_estoque=true soma o estoque das removidas na que fica; deixe false quando o estoque parece contado em duplicidade, e pergunte ao dono se os dois têm estoque. Escolha para manter a peça mais completa (com marca, código, mais usos). Até 25 grupos por chamada. Só depois do "sim" do dono.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['grupos'],
+        properties: {
+          grupos: {
+            type: 'array', maxItems: 25,
+            items: {
+              type: 'object', additionalProperties: false, required: ['manter', 'remover'],
+              properties: { manter: { type: 'string' }, remover: { type: 'array', items: { type: 'string' } }, somar_estoque: { type: 'boolean' } },
+            },
+          },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const list = Array.isArray(i.grupos) ? i.grupos.slice(0, 25) : [];
+      if (!list.length) return err('lista_vazia');
+      return rpc(db, 'orc_parts_merge', { p_workshop: ws, p_groups: list });
     },
   },
 
