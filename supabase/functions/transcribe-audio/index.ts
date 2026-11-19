@@ -74,7 +74,13 @@ Deno.serve(async (req) => {
       const s = await fetch(`${API}/transcriptions/${trId}`, { headers: key });
       const sj = await s.json().catch(() => null);
       status = sj?.status ?? status;
-      if (status === 'error') throw new Error(`soniox: ${sj?.error_message ?? 'erro na transcrição'}`);
+      if (status === 'error') {
+        if (sj?.error_type === 'organization_balance_exhausted') {
+          console.error('[transcribe-audio] Soniox sem saldo');
+          return json({ error: 'A transcrição de áudio está sem saldo. Avise o suporte; por enquanto, digite.' }, 402);
+        }
+        throw new Error(`soniox: ${sj?.error_type ?? ''} ${sj?.error_message ?? 'erro na transcrição'}`);
+      }
     }
     if (status !== 'completed') throw new Error('demorou demais para transcrever');
 
