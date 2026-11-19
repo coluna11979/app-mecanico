@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
+import AgentHeader from '@/components/agents/AgentHeader';
 import { CS_DEFAULTS, type CsAgent, type CsSettings } from '@/lib/agents';
 
 const COLS = 'id, workshop_id, name, enabled, settings';
@@ -84,12 +85,12 @@ export default function CsCard({ workshopId }: { workshopId: string }) {
 
   if (!agent) {
     return (
-      <div className="card flex items-start gap-4">
-        <div className="text-3xl">💬</div>
-        <div className="flex-1">
-          <div className="font-semibold">Atendimento pós-venda (CS)</div>
-          <p className="text-sm text-steel-500 mt-0.5">Manda boas-vindas pelo WhatsApp quando a OS é aberta e, 12 horas depois de concluir, um agradecimento com o link de avaliação do Google. Na troca de óleo, avisa que vamos lembrar da próxima.</p>
-          <button className="btn-primary mt-3" onClick={create}>Criar agente de CS</button>
+      <div className="card p-4 flex items-start gap-3">
+        <div className="h-12 w-12 rounded-2xl bg-brand-50 grid place-items-center text-2xl shrink-0" aria-hidden>💬</div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-[15px] text-steel-900">Atendimento pós-venda (CS)</h3>
+          <p className="text-xs text-steel-500 mt-1 leading-snug">Manda boas-vindas pelo WhatsApp quando a OS é aberta e, 12 horas depois de concluir, um agradecimento com o link de avaliação do Google. Na troca de óleo, avisa que vamos lembrar da próxima.</p>
+          <button className="btn-primary mt-3 w-full sm:w-auto min-h-[44px]" onClick={create}>Criar agente de CS</button>
         </div>
       </div>
     );
@@ -97,25 +98,18 @@ export default function CsCard({ workshopId }: { workshopId: string }) {
 
   const fmt = (d: string) => new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   return (
-    <div className="card space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="text-3xl">💬</div>
-        <div className="flex-1 min-w-[180px]">
-          <div className="font-semibold truncate">{agent.name}</div>
-          <div className="text-xs text-steel-500">{agent.enabled ? '🟢 Enviando sozinho (horário comercial)' : '⚪ Desligado'}</div>
-        </div>
-        <button className="btn-ghost text-sm" onClick={() => setOpen(v => !v)}>⚙️ Configurar</button>
-        <label className="flex items-center gap-2 text-sm cursor-pointer min-h-[44px]">
-          <input type="checkbox" checked={agent.enabled} onChange={toggle} />
-          {agent.enabled ? 'Ligado' : 'Desligado'}
-        </label>
-      </div>
+    <div className="space-y-3">
+      <AgentHeader icon="💬" name={agent.name} tag="Envia sozinho pelo WhatsApp"
+        desc="Boas-vindas ao abrir a OS e, depois de concluir, agradecimento com o link de avaliação do Google."
+        meta={<span>{agent.enabled ? '🟢 Enviando em horário comercial' : 'Desligado: nenhuma mensagem sai'}</span>}
+        enabled={agent.enabled} onToggle={toggle}
+        actions={[{ key: 'config', icon: '⚙️', label: 'Configurar textos', onClick: () => setOpen(v => !v), active: open }]} />
 
       {connected === false && <div className="rounded-xl bg-amber-50 text-amber-800 text-xs p-3">⚠️ O WhatsApp da oficina não está conectado: as mensagens ficam na fila até conectar (descartadas depois de 24 h). Conecte em WhatsApp dos clientes.</div>}
       {hasLink === false && <div className="rounded-xl bg-amber-50 text-amber-800 text-xs p-3">⚠️ Falta o link de avaliação do Google: sem ele, o pós-serviço vai sem o pedido de avaliação. Cadastre em <Link className="underline" to="/oficina/avaliacoes">Avaliações Google</Link>.</div>}
 
       {open && (
-        <div className="space-y-4 border-t border-steel-100 pt-3">
+        <div className="card space-y-4">
           <div>
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
               <input type="checkbox" checked={s.welcome !== false} onChange={e => setS({ ...s, welcome: e.target.checked })} /> Boas-vindas ao abrir a OS
@@ -143,7 +137,7 @@ export default function CsCard({ workshopId }: { workshopId: string }) {
       )}
 
       {rows.length > 0 && (
-        <div className="border-t border-steel-100 pt-3">
+        <div className="card">
           <div className="text-xs font-semibold text-steel-500 uppercase tracking-wide mb-1">Últimas mensagens</div>
           <ul className="divide-y divide-steel-100 text-sm">
             {rows.map(r => (
