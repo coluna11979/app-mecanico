@@ -500,6 +500,39 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  orc_corrigir_peca_solta: {
+    label: 'Corrigir peça solta (colocar dentro de um serviço)',
+    def: {
+      description: [
+        'Corrige PEÇA SOLTA da OS ABERTA: peça com preço próprio, fora de qualquer serviço (ex.: coxim R$ 980, bomba R$ 420, polia R$ 130). Regra do dono: na OS toda peça fica dentro de um serviço, só com custo; venda de peça é pelo Caixa. Pneu é exceção (pode ficar com preço).',
+        'acao "mover": a peça entra no serviço item_numero que já existe (ex.: polia dentro de "Kit correia dentada"); o preço dela SOMA no serviço e o total da OS não muda (ou informe preco = novo valor do serviço).',
+        'acao "novo_servico": cria o serviço servico_nome (nome EXATO da Tabela, use orc_buscar_servico) no lugar da peça, com o preço dela (ou preco), e a peça dentro (ex.: coxim → "Coxim do câmbio / superior" R$ 980 com o coxim dentro).',
+        'Mostre o antes e o depois e aplique com o "sim" do dono (confirmado=true). OS concluída: reabra antes com orc_reabrir_os e depois conclua de novo na data original. Erros: peca_solta_nao_encontrada (veja pecas_soltas), servico_fora_da_tabela, peca_sem_custo.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero', 'peca', 'acao', 'confirmado'],
+        properties: {
+          os_numero: { type: 'integer' },
+          peca: { type: 'string', description: 'Nome da peça solta (como está na OS)' },
+          acao: { type: 'string', enum: ['mover', 'novo_servico'] },
+          item_numero: { type: 'integer', description: 'acao mover: número do serviço que recebe a peça' },
+          servico_nome: { type: 'string', description: 'acao novo_servico: nome exato do serviço da Tabela' },
+          preco: { type: 'number', description: 'Opcional: valor final do serviço' },
+          confirmado: { type: 'boolean' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      if (i.confirmado !== true) return err('sem_confirmacao_do_dono: mostre o antes e o depois e peça o "sim"');
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      return rpc(db, 'orc_fix_loose_part', {
+        p_workshop: ws, p_os_number: os, p_peca: str(i.peca, 160), p_acao: str(i.acao, 20),
+        p_item_number: int(i.item_numero), p_servico_nome: str(i.servico_nome, 200) || null, p_preco: dec(i.preco),
+      });
+    },
+  },
+
   orc_cancelar_os: {
     label: 'Cancelar a OS',
     def: {
