@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
+import { FilterPill, MultiSelectFilter } from '@/components/admin/ListFilters';
 import { supabase } from '@/lib/supabase';
 import { timeAgo, isRecent } from '@/lib/relativeTime';
+import {
+  buildSkillOptions, matchesSkills, orderSkills, skillKey, skillOptionCounts, type SkillMode,
+} from '@/lib/skillFilter';
 import type { Mechanic, Profile } from '@/types/database';
 
 type Row = Mechanic & { profile: Profile };
@@ -24,12 +28,35 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'awaiting_region', label: '📍 Aguardando região' },
   { key: 'rejected',        label: '❌ Rejeitados' },
 ];
+const STATUS_KEYS = STATUS_FILTERS.map(f => f.key);
 
 export default function AdminMechanics() {
   const [rows, setRows] = useState<Row[]>([]);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [lateCancels, setLateCancels] = useState<Record<string, number>>({});
+
+  // Filtros ficam no endereço da página (?status=&q=&hab=&modo=): dá para mandar o link
+  // filtrado e, ao abrir um mecânico e voltar, a lista continua como estava.
+  const [params, setParams] = useSearchParams();
+  const rawStatus = params.get('status') as StatusFilter | null;
+  const statusFilter: StatusFilter = rawStatus && STATUS_KEYS.includes(rawStatus) ? rawStatus : 'all';
+  const search = params.get('q') ?? '';
+  const skillFilter = (params.get('hab') ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  const skillMode: SkillMode = params.get('modo') === 'todas' ? 'all' : 'any';
+
+  function setParam(patch: Record<string, string | null>) {
+    setParams(prev => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(patch)) {
+        if (v) next.set(k, v); else next.delete(k);
+      }
+      return next;
+    }, { replace: true });
+  }
+  const setStatusFilter = (s: StatusFilter) => setParam({ status: s === 'all' ? null : s });
+  const setSearch = (q: string) => setParam({ q: q || null });
+  const setSkillFilter = (keys: string[]) => setParam({ hab: keys.length ? keys.join(',') : null });
+  const setSkillMode = (m: SkillMode) => setParam({ modo: m === 'all' ? 'todas' : null });
+  const clearFilters = () => setParam({ q: null, hab: null, modo: null });
 
   useEffect(() => {
     // Cancelamentos por atraso (oficina cancelou porque o mecânico passou do prazo de chegada)
@@ -48,16 +75,23 @@ export default function AdminMechanics() {
       .then(({ data }) => setRows((data as unknown as Row[]) ?? []));
   }, []);
 
-  const filtered = rows.filter(r => {
-    if (statusFilter !== 'all' && r.profile.status !== statusFilter) return false;
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    const hay = [
-      r.profile.full_name, r.cpf,
-      r.city, r.neighborhood, r.cep, r.state,
-    ].filter(Boolean).join(' ').toLowerCase();
-    return hay.includes(q);
-  });
+  // Ordem: status (aba) → busca por texto → habilidade.
+  const statusRows = rows.filter(r => statusFilter === 'all' || r.profile.status === statusFilter);
+  const q = search.trim().toLowerCase();
+  const baseRows = !q ? statusRows : statusRows.filter(r =>
+    [r.profile.full_name, r.cpf, r.city, r.neighborhood, r.cep, r.state]
+      .filter(Boolean).join(' ').toLowerCase().includes(q),
+  );
+  const filtered = baseRows.filter(r => matchesSkills(r.skills, skillFilter, skillMode));
+
+  // Opções em lista fixa (todas as habilidades existentes); o número ao lado acompanha
+  // status, busca e o modo "qualquer uma / todas".
+  const counts = skillOptionCounts(baseRows.map(r => r.skills), skillFilter, skillMode);
+  const skillOptions = buildSkillOptions(rows.map(r => r.skills))
+    .map(o => ({ ...o, count: counts.get(o.key) ?? 0 }));
+  const skillLabel = (key: string) => skillOptions.find(o => o.key === key)?.label ?? key;
+  const hasFilters = !!q || skillFilter.length > 0;
+  const plural = (n: number) => `${n} mecânico${n !== 1 ? 's' : ''}`;
 
   const statusCounts = STATUS_FILTERS.reduce((acc, f) => {
     acc[f.key] = f.key === 'all' ? rows.length : rows.filter(r => r.profile.status === f.key).length;
@@ -66,18 +100,10 @@ export default function AdminMechanics() {
 
   return (
     <AdminLayout>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Mecânicos ({rows.length})</h1>
-        <input
-          className="input max-w-xs"
-          placeholder="Buscar por nome, CPF, cidade, bairro ou CEP…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-      </div>
+      <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mb-4">Mecânicos ({rows.length})</h1>
 
-      {/* Filtro por status */}
-      <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-6 overflow-x-auto">
+      {/* Visões por status */}
+      <div className="flex gap-1 bg-steel-100 rounded-xl p-1 mb-3 overflow-x-auto">
         {STATUS_FILTERS.map(f => (
           <button
             key={f.key}
@@ -92,6 +118,61 @@ export default function AdminMechanics() {
             <span className="text-[10px] text-steel-400">{statusCounts[f.key] ?? 0}</span>
           </button>
         ))}
+      </div>
+
+      {/* Barra de filtros: busca por texto + filtro por habilidade */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-3">
+        <label className="relative flex-1">
+          <span className="sr-only">Buscar mecânico</span>
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-400">
+            <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.45 4.39l3.08 3.08a.75.75 0 11-1.06 1.06l-3.08-3.08A7 7 0 012 9z" clipRule="evenodd" />
+          </svg>
+          <input
+            className="input !pl-10"
+            placeholder="Buscar por nome, CPF, cidade, bairro ou CEP…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </label>
+        <MultiSelectFilter
+          label="Habilidades"
+          options={skillOptions}
+          selected={skillFilter}
+          onChange={setSkillFilter}
+          mode={skillMode}
+          onModeChange={setSkillMode}
+          applyLabel={`Mostrar ${plural(filtered.length)}`}
+          searchPlaceholder="Buscar habilidade…"
+        />
+      </div>
+
+      {/* Quantos aparecem + filtros aplicados (cada um sai no ×) */}
+      <div className="flex flex-wrap items-center gap-2 mb-5 min-h-[32px]">
+        <span className="text-sm text-steel-500 mr-1">
+          {hasFilters
+            ? <><strong className="text-steel-900">{filtered.length}</strong> de {plural(statusRows.length)}</>
+            : plural(statusRows.length)}
+        </span>
+        {q && <FilterPill onRemove={() => setSearch('')}>Busca: “{search.trim()}”</FilterPill>}
+        {skillFilter.length > 0 && (
+          <>
+            {skillFilter.length > 1 && (
+              <span className="text-xs text-steel-400">{skillMode === 'all' ? 'com todas:' : 'com qualquer uma:'}</span>
+            )}
+            {skillFilter.map(k => (
+              <FilterPill key={k} onRemove={() => setSkillFilter(skillFilter.filter(x => x !== k))}>
+                {skillLabel(k)}
+              </FilterPill>
+            ))}
+          </>
+        )}
+        {hasFilters && (
+          <button type="button" onClick={clearFilters}
+            className="text-xs font-semibold text-brand-600 hover:text-brand-700 px-1 min-h-[32px]">
+            Limpar tudo
+          </button>
+        )}
       </div>
 
       {/* Desktop table */}
@@ -117,7 +198,7 @@ export default function AdminMechanics() {
                 <td className="py-3 pr-4 font-semibold">{r.profile.full_name}</td>
                 <td className="pr-4 text-steel-500">{r.cpf}</td>
                 <td className="pr-4 text-steel-500"><LocationCell cep={r.cep} neighborhood={r.neighborhood} city={r.city} state={r.state} /></td>
-                <td className="pr-4 text-steel-500">{r.skills.slice(0, 3).join(', ')}</td>
+                <td className="pr-4 text-steel-500"><SkillList skills={r.skills} selected={skillFilter} max={3} /></td>
                 <td className="pr-4">R$ {r.hourly_rate.toFixed(0)}</td>
                 <td className="pr-4">{r.rating.toFixed(1)}</td>
                 <td className={`pr-4 ${lateCancels[r.id] ? 'font-bold text-alert-600' : 'text-steel-400'}`}>{lateCancels[r.id] ?? 0}</td>
@@ -133,6 +214,13 @@ export default function AdminMechanics() {
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={10} className="py-10 text-center text-steel-500">
+                  <EmptyResult hasFilters={hasFilters} onClear={clearFilters} />
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -151,8 +239,13 @@ export default function AdminMechanics() {
                   </div>
                 )}
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {r.skills.slice(0, 4).map(s => (
-                    <span key={s} className="badge bg-steel-100 text-steel-700">{s}</span>
+                  {orderSkills(r.skills, skillFilter).slice(0, 4).map(s => (
+                    <span
+                      key={s}
+                      className={`badge ${skillFilter.includes(skillKey(s)) ? 'bg-brand-50 text-brand-700' : 'bg-steel-100 text-steel-700'}`}
+                    >
+                      {s}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -169,10 +262,42 @@ export default function AdminMechanics() {
           </Link>
         ))}
         {filtered.length === 0 && (
-          <div className="card text-center py-10 text-steel-500">Nenhum mecânico encontrado.</div>
+          <div className="card text-center py-10 text-steel-500">
+            <EmptyResult hasFilters={hasFilters} onClear={clearFilters} />
+          </div>
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+function EmptyResult({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
+  if (!hasFilters) return <>Nenhum mecânico encontrado.</>;
+  return (
+    <>
+      Nenhum mecânico com esses filtros.{' '}
+      <button type="button" onClick={onClear} className="font-semibold text-brand-600 hover:text-brand-700">
+        Limpar filtros
+      </button>
+    </>
+  );
+}
+
+/** Habilidades do mecânico; as marcadas no filtro vêm primeiro e ficam em destaque. */
+function SkillList({ skills, selected, max }: { skills: string[]; selected: string[]; max: number }) {
+  const ordered = orderSkills(skills, selected);
+  const shown = ordered.slice(0, max);
+  const rest = ordered.length - shown.length;
+  return (
+    <span>
+      {shown.map((s, i) => (
+        <span key={s}>
+          {i > 0 && ', '}
+          <span className={selected.includes(skillKey(s)) ? 'font-semibold text-brand-700' : ''}>{s}</span>
+        </span>
+      ))}
+      {rest > 0 && <span className="text-steel-400"> +{rest}</span>}
+    </span>
   );
 }
 
