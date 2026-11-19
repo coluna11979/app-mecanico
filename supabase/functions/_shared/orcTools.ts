@@ -384,6 +384,38 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  orc_listar_os: {
+    label: 'Listar OS por data e conferir as regras',
+    def: {
+      description: [
+        'Lista as OS da oficina por período (data de abertura, fuso de Brasília) e já CONFERE as regras de cada uma. Sem datas = hoje. de/ate no formato AAAA-MM-DD (máx. 62 dias).',
+        'status: abertas, concluidas, canceladas ou todas (padrão). so_com_problema=true traz só as que têm algo fora da regra. Venda de balcão e notas antigas importadas ficam de fora.',
+        'Cada OS vem com cliente, carro, total, em aberto, itens (serviço/peça, qtd, preço, custo, categoria, dentro de qual serviço) e "problemas":',
+        'servico_sem_responsavel, servico_fora_da_tabela (nome genérico como "Mão de obra" ou que não está na Tabela de serviços), servico_repetido, peca_sem_custo, peca_fora_do_cadastro, peca_de_outra_familia (ex.: bico injetor dentro de serviço de Pneus), peca_vendida_abaixo_do_custo (peça avulsa com preço menor que o custo) e troca_de_oleo_sem_oleo.',
+        'Use quando o dono pedir para conferir/analisar as OS de um dia ou período. Mostre por OS o que está errado e a correção sugerida; corrija só com o "sim" dele (OS aberta: orc_alterar_item; concluída: orc_reabrir_os).',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          de: { type: 'string', description: 'AAAA-MM-DD (padrão: hoje)' },
+          ate: { type: 'string', description: 'AAAA-MM-DD (padrão: igual a "de")' },
+          status: { type: 'string', enum: ['abertas', 'concluidas', 'canceladas', 'todas'] },
+          so_com_problema: { type: 'boolean' },
+          limite: { type: 'integer' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const day = (v: unknown) => { const s = str(v, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
+      if (str(i.de) && !day(i.de)) return err('data_invalida: use AAAA-MM-DD');
+      if (str(i.ate) && !day(i.ate)) return err('data_invalida: use AAAA-MM-DD');
+      return rpc(db, 'orc_os_list', {
+        p_workshop: ws, p_from: day(i.de), p_to: day(i.ate), p_status: str(i.status, 20) || null,
+        p_so_com_problema: i.so_com_problema === true, p_limit: int(i.limite) ?? 30,
+      });
+    },
+  },
+
   orc_andamento_os: {
     label: 'Andamento da OS (aprovar, iniciar, pausar, concluir, agendar)',
     def: {
