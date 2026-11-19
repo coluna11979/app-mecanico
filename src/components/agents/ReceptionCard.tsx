@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
+import AgentHeader from '@/components/agents/AgentHeader';
 import { RECEPTION_TEMPLATE, type ReceptionAgent, type ReceptionScope, type ReceptionHours } from '@/lib/agents';
 
 const COLS = 'id, workshop_id, name, system_prompt, enabled, settings';
@@ -70,12 +71,12 @@ export default function ReceptionCard({ workshopId }: { workshopId: string }) {
 
   if (!agent) {
     return (
-      <div className="card flex items-start gap-4">
-        <div className="text-3xl">{tpl.icon}</div>
-        <div className="flex-1">
-          <div className="font-semibold">{tpl.name}</div>
-          <p className="text-sm text-steel-500 mt-0.5">{tpl.desc}</p>
-          <button className="btn-primary mt-3" onClick={create}>Criar Recepção</button>
+      <div className="card p-4 flex items-start gap-3">
+        <div className="h-12 w-12 rounded-2xl bg-brand-50 grid place-items-center text-2xl shrink-0" aria-hidden>{tpl.icon}</div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-[15px] text-steel-900">{tpl.name}</h3>
+          <p className="text-xs text-steel-500 mt-1 leading-snug">{tpl.desc}</p>
+          <button className="btn-primary mt-3 w-full sm:w-auto min-h-[44px]" onClick={create}>Criar Recepção</button>
         </div>
       </div>
     );
@@ -90,23 +91,14 @@ export default function ReceptionCard({ workshopId }: { workshopId: string }) {
     if (await patch({ settings: { ...agent!.settings, open_os: !openOs } })) toast.success(openOs ? 'Abertura de OS desligada' : 'Abertura de OS ligada ✓');
   }
   return (
-    <div className="card space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="text-3xl">{tpl.icon}</div>
-        <div className="flex-1 min-w-[180px]">
-          <div className="font-semibold truncate">{agent.name}</div>
-          <div className="text-xs text-steel-500">
-            {agent.enabled ? '🟢 Respondendo no WhatsApp' : '⚪ Desligada'}
-            {stats && stats.total > 0 && ` · ${stats.total} conversa${stats.total > 1 ? 's' : ''} em 30 dias, ${stats.done} passada${stats.done === 1 ? '' : 's'} para a equipe`}
-          </div>
-        </div>
-        <button className="btn-ghost text-sm" onClick={() => setOpen((v) => !v)}>⚙️ Configurar</button>
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={agent.enabled} onChange={toggle} />
-          {agent.enabled ? 'Ligada' : 'Desligada'}
-        </label>
-      </div>
+    <div className="space-y-3">
+      <AgentHeader icon={tpl.icon} name={agent.name} desc={tpl.desc} tag="Responde no WhatsApp"
+        meta={<span>{agent.enabled ? '🟢 Respondendo no WhatsApp' : 'Desligada'}
+          {stats && stats.total > 0 && ` · ${stats.total} conversa${stats.total > 1 ? 's' : ''} em 30 dias, ${stats.done} passada${stats.done === 1 ? '' : 's'} para a equipe`}</span>}
+        enabled={agent.enabled} onToggle={toggle}
+        actions={[{ key: 'config', icon: '⚙️', label: 'Configurar instruções', onClick: () => setOpen((v) => !v), active: open }]} />
 
+      <div className="card space-y-4">
       <div>
         <label className="label">Quem ela atende</label>
         <div className="flex flex-wrap gap-2">
@@ -179,6 +171,7 @@ export default function ReceptionCard({ workshopId }: { workshopId: string }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

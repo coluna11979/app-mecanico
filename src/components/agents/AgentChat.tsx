@@ -1,12 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
+import AgentHeader from '@/components/agents/AgentHeader';
 import { AGENT_TEMPLATES, TOOL_CATALOG, type Agent, type AgentDraft, type AgentMessage, type AgentQuestion, type AgentTemplate, type AgentVersion } from '@/lib/agents';
 
 const COLS = 'id, workshop_id, template, name, system_prompt, tools, enabled, questions_seeded, draft, version';
 
 /** Compara configurações ignorando a ordem das consultas */
 const norm = (d: AgentDraft) => JSON.stringify({ n: d.name.trim(), p: d.system_prompt.trim(), t: [...d.tools].sort() });
+/** Negrito (**texto**), títulos (### ) e listas (- / 1.) das respostas da IA, sem HTML cru */
+function inline(t: string) {
+  return t.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') && part.length > 4 ? <strong key={i}>{part.slice(2, -2)}</strong> : part);
+}
+function RichText({ text }: { text: string }) {
+  return (
+    <div className="space-y-1.5 whitespace-normal">
+      {text.split('\n').map((raw, i) => {
+        const line = raw.trimEnd();
+        if (!line.trim()) return <div key={i} className="h-1" />;
+        const h = line.match(/^#{1,4}\s+(.*)$/);
+        if (h) return <div key={i} className="font-semibold text-steel-900 pt-1">{inline(h[1])}</div>;
+        const li = line.match(/^\s*(?:[-•*]|(\d+)[.)])\s+(.*)$/);
+        if (li) return (
+          <div key={i} className="flex gap-2 pl-1">
+            <span className="shrink-0 text-steel-400 tabular-nums">{li[1] ? `${li[1]}.` : '•'}</span>
+            <span className="min-w-0">{inline(li[2])}</span>
+          </div>
+        );
+        return <p key={i}>{inline(line)}</p>;
+      })}
+    </div>
+  );
+}
+
 const fmtDate = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 /** Chat de um agente interno (Sócio: só consulta · Orçamentista: abre OS e lança itens). Um card por tipo. */
@@ -16,6 +43,8 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
   const platform = template === 'admin_cadastros';
   const tpl = AGENT_TEMPLATES[template];
   const toolCatalog = TOOL_CATALOG[template];
+  /** Ex.: "só conversa, não mexe em nada no sistema" → "Só conversa, não mexe em nada no sistema" */
+  const sectionTag = (() => { const t = tpl.section.split(' · ')[1]?.trim(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : undefined; })();
 
   const [agent, setAgent] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -273,43 +302,31 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
 
   return (
     <div className="space-y-4">
-        <h2 className="text-sm font-semibold text-steel-500 uppercase tracking-wide pt-2">{tpl.section}</h2>
-
         {loading ? (
           <div className="card text-sm text-steel-500">Carregando…</div>
         ) : !agent ? (
-          <div className="card flex items-start gap-4">
-            <div className="text-3xl">{tpl.icon}</div>
-            <div className="flex-1">
-              <div className="font-semibold">{tpl.name}</div>
-              <p className="text-sm text-steel-500 mt-0.5">{tpl.desc}</p>
-              <button className="btn-primary mt-3" onClick={createAgent}>Criar agente</button>
+          <div className="card p-4 flex items-start gap-3">
+            <div className="h-12 w-12 rounded-2xl bg-brand-50 grid place-items-center text-2xl shrink-0" aria-hidden>{tpl.icon}</div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-[15px] text-steel-900">{tpl.name}</h3>
+              <p className="text-xs text-steel-500 mt-1 leading-snug">{tpl.desc}</p>
+              {sectionTag && <span className="inline-block mt-2 rounded-full bg-steel-100 px-2 py-0.5 text-[11px] font-medium text-steel-600">{sectionTag}</span>}
+              <button className="btn-primary mt-3 w-full sm:w-auto min-h-[44px]" onClick={createAgent}>Criar {tpl.name}</button>
             </div>
           </div>
         ) : (
           <>
-            <div className="card flex items-center gap-3">
-              <div className="text-3xl">{tpl.icon}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="font-semibold truncate">{agent.name}</div>
-                  <span className="text-xs rounded-full bg-steel-100 dark:bg-steel-700 px-2 py-0.5 shrink-0">v{agent.version}</span>
-                  {(agent.draft || dirty) && (
-                    <span className="text-xs rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 shrink-0">Rascunho não publicado</span>
-                  )}
-                </div>
-                <div className="text-xs text-steel-500">
-                  {Object.keys(toolCatalog).length > 0 && <>{agent.tools.length} {tpl.toolsWord} liberadas · </>}Publicada: <strong>v{agent.version}</strong>
-                  {publishedAt ? ` em ${fmtDate(publishedAt)}` : ''}
-                </div>
-              </div>
-              <button className="btn-ghost text-sm" onClick={openVersions}>🕘 Versões</button>
-              <button className="btn-ghost text-sm" onClick={() => setShowConfig((v) => !v)}>⚙️ Configurar</button>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={agent.enabled} onChange={toggleEnabled} />
-                {agent.enabled ? 'Ligado' : 'Desligado'}
-              </label>
-            </div>
+            <AgentHeader icon={tpl.icon} name={agent.name} desc={tpl.desc} tag={sectionTag}
+              badge={(agent.draft || dirty) ? <span className="text-[11px] rounded-full bg-amber-100 text-amber-800 px-2 py-0.5">Rascunho não publicado</span> : null}
+              meta={<span>
+                v{agent.version}{publishedAt ? ` · publicada em ${fmtDate(publishedAt)}` : ''}
+                {Object.keys(toolCatalog).length > 0 ? ` · ${agent.tools.length} ${tpl.toolsWord}` : ''}
+              </span>}
+              enabled={agent.enabled} onToggle={toggleEnabled}
+              actions={[
+                { key: 'versoes', icon: '🕘', label: 'Versões', onClick: openVersions, active: showHistory && showConfig },
+                { key: 'config', icon: '⚙️', label: 'Configurar', onClick: () => setShowConfig((v) => !v), active: showConfig },
+              ]} />
 
             {newTools.length > 0 && (
               <div className="card border-brand-300 bg-brand-50 dark:bg-steel-800 flex flex-wrap items-center gap-3">
@@ -390,9 +407,9 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
             <div className="card p-0 overflow-hidden">
               {tpl.playground && (
               <div className="flex items-center gap-1 border-b border-steel-200 dark:border-steel-700 px-3 pt-2">
-                {([['chat', '💬 Conversa'], ['playground', '🧪 Playground']] as const).map(([k, label]) => (
+                {([['chat', '💬 Conversa'], ['playground', '🧪 Teste']] as const).map(([k, label]) => (
                   <button key={k} onClick={() => setMode(k)}
-                    className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${mode === k ? 'border-brand-500 text-brand-600' : 'border-transparent text-steel-500'}`}>
+                    className={`flex-1 sm:flex-none min-h-[44px] px-3 py-2 text-sm font-medium border-b-2 -mb-px ${mode === k ? 'border-brand-500 text-brand-600' : 'border-transparent text-steel-500'}`}>
                     {label}
                   </button>
                 ))}
@@ -405,24 +422,29 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                     : 'Sem rascunho: testando a versão publicada. Edite em ⚙️ Configurar para testar mudanças antes de publicar.'}
                 </div>
               )}
-              <div className="h-[55vh] overflow-y-auto p-4 space-y-3">
+              <div className="h-[60vh] sm:h-[55vh] overflow-y-auto p-4 space-y-3 bg-steel-50/40">
                 {shown.length === 0 && (
-                  <p className="text-sm text-steel-500">{tpl.emptyHint}</p>
+                  <div className="h-full grid place-items-center text-center px-6">
+                    <div>
+                      <div className="text-4xl mb-2" aria-hidden>{tpl.icon}</div>
+                      <p className="text-sm text-steel-500 max-w-xs mx-auto">{tpl.emptyHint}</p>
+                    </div>
+                  </div>
                 )}
                 {shown.map((m) => (
                   <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                     <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
-                      m.role === 'user' ? 'bg-brand-500 text-white' : 'bg-steel-100 dark:bg-steel-700'}`}>
-                      {m.content}
+                      m.role === 'user' ? 'bg-brand-500 text-white rounded-br-md' : 'bg-white ring-1 ring-steel-200 text-steel-800 rounded-bl-md'}`}>
+                      {m.role === 'assistant' ? <RichText text={m.content} /> : m.content}
                     </div>
                   </div>
                 ))}
-                {sending && <div className="text-sm text-steel-500">{agent.name} {tpl.working}</div>}
+                {sending && <div className="inline-flex items-center gap-2 rounded-2xl bg-white ring-1 ring-steel-200 px-4 py-2.5 text-sm text-steel-500"><span className="h-2 w-2 rounded-full bg-brand-500 animate-pulse" />{agent.name} {tpl.working}</div>}
                 <div ref={bottom} />
               </div>
               <div className="border-t border-steel-200 dark:border-steel-700 px-3 py-2">
                 <div className="flex items-center gap-3">
-                  <button className="text-sm font-medium" onClick={() => setShowQuestions((v) => !v)}>
+                  <button className="text-sm font-medium min-h-[40px]" onClick={() => setShowQuestions((v) => !v)}>
                     💡 Perguntas salvas {showQuestions ? '▾' : '▸'}
                   </button>
                   {showQuestions && (
@@ -477,11 +499,11 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                 )}
               </div>
               <div className="border-t border-steel-200 dark:border-steel-700 p-3 flex gap-2">
-                <input ref={inputRef} className="input" placeholder={agent.enabled ? (mode === 'playground' ? 'Teste o rascunho…' : tpl.placeholder) : 'Agente desligado'}
+                <input ref={inputRef} className="input min-h-[44px]" placeholder={agent.enabled ? (mode === 'playground' ? 'Teste o rascunho…' : tpl.placeholder) : 'Agente desligado'}
                   value={text} disabled={!agent.enabled || sending} maxLength={2000}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
-                <button className="btn-primary" disabled={!agent.enabled || sending || !text.trim()} onClick={() => send()}>Enviar</button>
+                <button className="btn-primary min-h-[44px] shrink-0" disabled={!agent.enabled || sending || !text.trim()} onClick={() => send()}>Enviar</button>
               </div>
             </div>
             {shown.length > 0 && (
