@@ -111,7 +111,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; qty?: number; category?: string; /** Categoria da peça no cadastro (freios, oleos_filtros…) */ pcat?: string; universal?: boolean; /** Palavras extras da busca (categoria, "pneu") */ search?: string };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; /** Serviço da Tabela que usa peça (0189) */ levaPeca?: boolean; qty?: number; category?: string; /** Categoria da peça no cadastro (freios, oleos_filtros…) */ pcat?: string; universal?: boolean; /** Palavras extras da busca (categoria, "pneu") */ search?: string };
 
 let keySeq = 0;
 const newKey = () => `new-${++keySeq}`;
@@ -286,7 +286,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     (async () => {
       const [cat, svc, hist, margin, pv] = await Promise.all([
         loadAllParts(workshopId, 'id, name, code, category, cost, margin_percent, sale_price, stock_qty, unit, universal').then(data => ({ data })),
-        supabase.from('workshop_services').select('name, price, category')
+        supabase.from('workshop_services').select('name, price, category, leva_peca')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
           .select('description, kind, unit_price, created_at')
@@ -307,9 +307,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           universal: TIRE_RE.test(norm(p.name)) });
       }
       // Tabela de serviços da oficina: preço oficial da mão de obra
-      for (const s of (svc.data ?? []) as { name: string; price: number; category: string | null }[]) {
+      for (const s of (svc.data ?? []) as { name: string; price: number; category: string | null; leva_peca?: boolean }[]) {
         const k = s.name.trim().toLowerCase();
-        if (!seen.has(k)) seen.set(k, { description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true, category: s.category ?? undefined });
+        if (!seen.has(k)) seen.set(k, { description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true, category: s.category ?? undefined, levaPeca: s.leva_peca !== false });
       }
       for (const d of (hist.data ?? []) as Suggestion[]) {
         // Peça só vem do catálogo ativo (com estoque e custo): peça usada antes, sem cadastro, não é sugerida
@@ -360,10 +360,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   // A Tabela de serviços pode mudar com a OS aberta (serviço novo, categoria nova): recarrega só os serviços
   // (leve) ao voltar para a aba e ao abrir o seletor — as peças, que são muitas, não são recarregadas
   async function refreshServices() {
-    const { data } = await supabase.from('workshop_services').select('name, price, category').eq('workshop_id', workshopId).eq('active', true).order('name');
+    const { data } = await supabase.from('workshop_services').select('name, price, category, leva_peca').eq('workshop_id', workshopId).eq('active', true).order('name');
     if (!data) return;
-    const fresh = (data as { name: string; price: number; category: string | null }[]).map<Suggestion>(s => ({
-      description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true, category: s.category ?? undefined }));
+    const fresh = (data as { name: string; price: number; category: string | null; leva_peca?: boolean }[]).map<Suggestion>(s => ({
+      description: s.name.trim(), kind: 'labor', unit_price: Number(s.price), fromTable: true, category: s.category ?? undefined, levaPeca: s.leva_peca !== false }));
     const names = new Set(fresh.map(f => f.description.toLowerCase()));
     setSugg(prev => [...prev.filter(x => x.kind !== 'labor' || (!x.fromTable && !names.has(x.description.toLowerCase()))), ...fresh]);
   }
@@ -603,6 +603,58 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     if (!Number.isFinite(disc) || disc < 0) return toast.error('Desconto inválido');
     if (disc > parts + labor && rows.length > 0) return toast.error('O desconto não pode ser maior que o total');
 
+    // Regras da OS (não valem na venda de balcão). Só para linhas novas ou alteradas: OS antiga continua editável.
+    //  · serviço só com nome da Tabela de serviços (nada de nome escrito na hora);
+    //  · peça sempre dentro de um serviço, só com custo; preço próprio só para pneu (aparece na nota do cliente);
+    //  · peça sem custo não entra (a não ser que o cliente tenha trazido a peça).
+    if (!saleMode) {
+      const orig = new Map(items.map(i => [i.id, i]));
+      const changed = (r: Row) => {
+        const o = r.id ? orig.get(r.id) : undefined;
+        if (!o) return true;
+        return o.description.trim() !== r.description.trim() || o.kind !== r.kind || !!o.standalone !== !!r.standalone
+          || Math.abs(Number(o.unit_cost ?? 0) - (parseMoney(r.unit_cost || '0') || 0)) > 0.001;
+      };
+      const table = new Set(suggestions.filter(s => s.kind === 'labor' && s.fromTable).map(s => norm(s.description)));
+      const g0 = groupOf(rows);
+      const partsOf = (svc: Row) => rows.filter(x => x.kind === 'part' && g0.get(x.key)?.key === svc.key);
+      let lastLabor: Row | undefined;
+      for (const r of rows) {
+        const nm = r.description.trim();
+        if (r.kind === 'labor') {
+          lastLabor = r;
+          if (table.size > 0 && changed(r) && !table.has(norm(nm))) {
+            return toast.error(`O serviço “${nm}” não está na Tabela de serviços. Escolha um serviço da lista; se faltar, o gestor cadastra em Serviços (com a categoria).`, 8000);
+          }
+          // Serviço que leva peça (marcado na Tabela) precisa da peça dentro: sem ela o custo não entra no DRE
+          // e a comissão sai como mão de obra (10%) em vez de serviço com peça (4%)
+          const ps = partsOf(r);
+          const tab = suggestions.find(s => s.kind === 'labor' && s.fromTable && norm(s.description) === norm(nm));
+          if (tab?.levaPeca && !ps.length && !customerBroughtParts && changed(r)) {
+            return toast.error(`O serviço “${nm}” leva peça: coloque a peça dentro dele (com o custo) antes de salvar, ou marque “Cliente trouxe a peça”.`, 9000);
+          }
+          // Serviço com peças e valor zero: o cliente não paga nada e a OS fica no prejuízo
+          if (ps.length && !(parseMoney(r.unit_price || '0') > 0) && (changed(r) || ps.some(changed))) {
+            return toast.error(`O serviço “${nm}” está com valor R$ 0 e tem peças. Informe o valor que o cliente paga pelo serviço.`, 8000);
+          }
+          continue;
+        }
+        if (!changed(r)) continue;
+        // Peça precisa estar no cadastro (com categoria e custo): nada de peça escrita na hora
+        if (!r.part_id && !customerBroughtParts) {
+          return toast.error(`A peça “${nm}” não está no cadastro. Toque em “Cadastrar esta peça” (com categoria e custo) ou escolha uma peça da lista.`, 8000);
+        }
+        const loose = !!r.standalone || !lastLabor;
+        const tire = TIRE_RE.test(norm(nm)) || (!!lastLabor && sellsParts(lastLabor));
+        if (loose && !tire) {
+          return toast.error(`A peça “${nm}” está solta. Na OS a peça entra dentro de um serviço, só com o custo (o cliente paga o serviço). Só pneu entra com preço próprio. Venda de peça é pelo Caixa.`, 9000);
+        }
+        if (!customerBroughtParts && !(parseMoney(r.unit_cost || '0') > 0)) {
+          return toast.error(`A peça “${nm}” está sem custo. Informe o custo de uma unidade.`, 7000);
+        }
+      }
+    }
+
     setSaving(true);
     try {
       const keepIds = new Set(rows.filter(r => r.id).map(r => r.id!));
@@ -731,7 +783,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                   </button>
                 </div>
               )}
-              {!readOnly && r.kind === 'part' && nested && (
+              {/* Item separado com preço: só pneu (aparece na nota do cliente). As demais peças ficam dentro do serviço. */}
+              {!readOnly && r.kind === 'part' && nested && TIRE_RE.test(norm(r.description)) && (
                 <button type="button" className="text-[11px] font-semibold text-brand-700 hover:underline mt-1"
                   title="A peça deixa de ser só custo do item de cima e vira um item da OS, com preço de venda e estoque"
                   onClick={() => {
@@ -749,7 +802,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
                       onClick={() => setQuick({ key: r.key, name: r.description.trim(), qty: parseMoney(r.quantity) || 1 })}>
                       ➕ Cadastrar esta peça
                     </button>
-                    <span className="text-steel-400">ou use só nesta OS (avulsa)</span>
+                    {!saleMode && <span className="text-alert-600">obrigatório para salvar (com categoria e custo)</span>}
                   </div>
                 ) : (
                   <div className="text-[11px] text-steel-400 mt-1">Peça avulsa (não está no cadastro)</div>

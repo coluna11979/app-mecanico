@@ -267,17 +267,19 @@ function ServiceForm({ wid, categories, service, charges, onClose, onSaved }: {
   const [hours, setHours]       = useState(service?.estimated_minutes ? String(Math.floor(service.estimated_minutes / 60)) : '');
   const [mins, setMins]         = useState(service?.estimated_minutes ? String(service.estimated_minutes % 60) : '');
   const [active, setActive]     = useState(service?.active ?? true);
+  const [levaPeca, setLevaPeca] = useState<boolean | null>(service ? !!service.leva_peca : null);
   const [saving, setSaving]     = useState(false);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return toast.error('Informe o nome do serviço');
+    if (levaPeca == null) return toast.error('Escolha se o serviço leva peça ou é só mão de obra');
     const p = price.trim() ? parseMoney(price) : 0;
     if (!Number.isFinite(p) || p < 0) return toast.error('Preço inválido');
     const total = (parseInt(hours || '0', 10) || 0) * 60 + (parseInt(mins || '0', 10) || 0);
     const row = {
       workshop_id: wid, name: name.trim(), category: category || null, price: p,
-      estimated_minutes: total > 0 ? total : null, active,
+      estimated_minutes: total > 0 ? total : null, active, leva_peca: levaPeca,
     };
     setSaving(true);
     const { error } = service
@@ -332,6 +334,24 @@ function ServiceForm({ wid, categories, service, charges, onClose, onSaved }: {
             </div>
           </div>
           <p className="text-[11px] text-steel-400">Opcional. Se o preço varia de carro para carro, deixe vazio e coloque na OS. Se tiver preço, ele vem sugerido na OS e dá para mudar lá.</p>
+          <div>
+            <label className="label">Este serviço usa peça?</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setLevaPeca(true)}
+                className={`min-h-[44px] rounded-xl border text-sm font-semibold ${levaPeca ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-steel-200 text-steel-600'}`}>
+                🔩 Leva peça
+              </button>
+              <button type="button" onClick={() => setLevaPeca(false)}
+                className={`min-h-[44px] rounded-xl border text-sm font-semibold ${levaPeca === false ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-steel-200 text-steel-600'}`}>
+                🔧 Só mão de obra
+              </button>
+            </div>
+            <p className="text-[11px] text-steel-400 mt-1">
+              {levaPeca == null ? 'Escolha uma das opções.' : levaPeca
+                ? 'A OS só conclui com a peça lançada dentro deste serviço (com o custo), ou com "Cliente trouxe a peça".'
+                : 'Serviço sem peça (ex.: alinhamento, diagnóstico). Comissão de mão de obra.'}
+            </p>
+          </div>
           {service && <ServiceKit wid={wid} service={service} />}
           {service && <PricesByVehicle service={service} charges={charges} />}
           {service && (

@@ -5,6 +5,8 @@
 export type WorkshopService = {
   id: string; workshop_id: string; name: string; category: string | null;
   price: number; estimated_minutes: number | null; active: boolean;
+  /** true = usa peça: a OS só conclui com peça dentro (ou "cliente trouxe a peça"); false = só mão de obra (migration 0189) */
+  leva_peca?: boolean;
   created_at: string; updated_at: string;
 };
 
