@@ -15,7 +15,11 @@ export type PurchaseInvoice = {
 };
 
 export type PurchaseItem = {
-  id: string; invoice_id: string; part_id: string; description: string; quantity: number; unit_cost: number;
+  id: string; invoice_id: string; part_id: string; description: string; quantity: number;
+  /** Custo real da peça (com desconto/frete da nota rateados, 0191) */
+  unit_cost: number;
+  /** Custo como está na nota (null em notas antigas, antes do rateio) */
+  note_cost?: number | null;
 };
 
 export type Payable = {

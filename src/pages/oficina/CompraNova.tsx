@@ -645,6 +645,12 @@ export default function CompraNova() {
                 <span className="font-bold">Total da nota</span>
                 <span className="font-bold font-display text-xl">{fmtBRL(total)}</span>
               </div>
+              {(num(discount) > 0 || num(freight) > 0) && itemsTotal > 0 && (
+                <p className="text-[11px] text-steel-500 pt-1">
+                  O {num(discount) > 0 && num(freight) > 0 ? 'desconto e o frete entram' : num(discount) > 0 ? 'desconto entra' : 'frete entra'} no custo de cada peça,
+                  dividido pelo valor delas ({total / itemsTotal < 1 ? '−' : '+'}{Math.abs(Math.round((total / itemsTotal - 1) * 1000) / 10).toLocaleString('pt-BR')}% em cada uma).
+                </p>
+              )}
             </div>
           </div>
         </div>
