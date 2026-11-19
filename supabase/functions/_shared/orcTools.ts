@@ -384,6 +384,90 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  orc_andamento_os: {
+    label: 'Andamento da OS (aprovar, iniciar, pausar, concluir, agendar)',
+    def: {
+      description: [
+        'Muda o andamento da OS como o gestor faz na tela. acao:',
+        'aprovar (cliente aprovou o orçamento; canal: whatsapp, telefone ou presencial; também vale para orçamento marcado como não aprovado);',
+        'iniciar (começa o serviço);',
+        'pausar (motivo: "Aguardando peça", "Aguardando aprovação do cliente", "Fim do expediente", "Outro serviço prioritário" ou "Outro");',
+        'retomar;',
+        'concluir (SEM receber: o valor fica a receber no caixa; quando = data/hora da conclusão se o serviço foi feito em outro dia; para receber junto use orc_fechar_os);',
+        'agendar (quando = data e hora, ISO com fuso -03:00) e desagendar.',
+        'Ações simples e claras pedidas pelo dono (aprovar, iniciar, pausar, retomar, agendar) podem ser feitas direto; concluir sem receber, confirme antes em uma linha. OS concluída não muda aqui: use orc_reabrir_os.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero', 'acao'],
+        properties: {
+          os_numero: { type: 'integer' },
+          acao: { type: 'string', enum: ['aprovar', 'iniciar', 'pausar', 'retomar', 'concluir', 'agendar', 'desagendar'] },
+          canal: { type: 'string', enum: ['whatsapp', 'telefone', 'presencial'] },
+          motivo: { type: 'string', enum: ['Aguardando peça', 'Aguardando aprovação do cliente', 'Fim do expediente', 'Outro serviço prioritário', 'Outro'] },
+          quando: { type: 'string', description: 'ISO 8601 com fuso, ex.: 2026-11-20T14:00:00-03:00 (agendar ou concluir em outra data)' },
+        },
+      },
+    },
+    run: async (db, ws, i, ctx) => {
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      const q = str(i.quando, 40);
+      if (q && Number.isNaN(Date.parse(q))) return err('quando_invalido: use ISO, ex. 2026-11-20T14:00:00-03:00');
+      return rpc(db, 'orc_os_progress', {
+        p_workshop: ws, p_user: ctx.userId, p_os_number: os, p_acao: str(i.acao, 20),
+        p_canal: str(i.canal, 20) || null, p_motivo: str(i.motivo, 60) || null, p_quando: q ? new Date(q).toISOString() : null,
+      });
+    },
+  },
+
+  orc_editar_os: {
+    label: 'Editar dados da OS (reclamação, observações, KM, desconto)',
+    def: {
+      description: 'Edita os dados da OS ABERTA (igual a "✏️ Editar dados" da tela): titulo, reclamacao (o que o cliente relatou), observacoes (anotações internas), km, horas_estimadas e desconto (em R$, sobre o total dos itens; 0 tira o desconto). Mande só o que muda; reclamacao ou observacoes vazias ("") apagam o texto. Mostre o antes e o depois do desconto e aplique com o "sim" do dono. Devolve o novo total. OS concluída: reabra antes com orc_reabrir_os.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero'],
+        properties: {
+          os_numero: { type: 'integer' }, titulo: { type: 'string' }, reclamacao: { type: 'string' }, observacoes: { type: 'string' },
+          km: { type: 'integer' }, horas_estimadas: { type: 'number' }, desconto: { type: 'number' },
+        },
+      },
+    },
+    run: async (db, ws, i, ctx) => {
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      const txt = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : null);
+      return rpc(db, 'orc_os_update', {
+        p_workshop: ws, p_user: ctx.userId, p_os_number: os,
+        p_titulo: txt(i.titulo, 200) || null, p_descricao: txt(i.reclamacao, 4000), p_obs: txt(i.observacoes, 4000),
+        p_km: int(i.km), p_horas: dec(i.horas_estimadas), p_desconto: dec(i.desconto),
+      });
+    },
+  },
+
+  orc_reabrir_os: {
+    label: 'Corrigir OS concluída (reabrir)',
+    def: {
+      description: [
+        'REABRE uma OS CONCLUÍDA para corrigir (igual ao "✏️ Corrigir OS (reabrir)" da tela): ela volta para aberta e o estoque das peças volta. Só gestor ou dono.',
+        'Fluxo: (1) orc_resumo_os e mostre ao dono o que está errado e o que vai mudar; (2) com o "sim" dele, reabra (confirmado=true); (3) corrija com orc_alterar_item (trocar peça = remover_peca + adicionar_peca; serviço errado = alterar_servico) e orc_definir_responsavel; (4) conclua de novo com orc_fechar_os passando data_conclusao = concluida_em (a data original) e valor_em_aberto_aprovado = o novo em aberto (0 se já estava paga e o valor não mudou, sem formas). Nunca deixe a OS reaberta sem concluir de novo, a não ser que o dono peça.',
+        'Pagamentos já recebidos ficam como estão. Se a correção deixar a OS MENOR que o já pago, orc_fechar_os devolve pago_a_mais: o estorno é pela tela (Pagamentos da OS). Devolve concluida_em, total_os e ja_pago.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['os_numero', 'confirmado'],
+        properties: {
+          os_numero: { type: 'integer' },
+          confirmado: { type: 'boolean', description: 'true só depois do "sim" do dono para corrigir esta OS' },
+        },
+      },
+    },
+    run: async (db, ws, i, ctx) => {
+      if (i.confirmado !== true) return err('sem_confirmacao_do_dono: mostre o que vai corrigir e peça o "sim"');
+      const os = int(i.os_numero);
+      if (os == null) return err('os_numero_obrigatorio');
+      return rpc(db, 'orc_reopen_os', { p_workshop: ws, p_user: ctx.userId, p_os_number: os });
+    },
+  },
+
   orc_cancelar_os: {
     label: 'Cancelar a OS',
     def: {
@@ -452,10 +536,43 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
     }),
   },
 
-  orc_pecas_corrigir: {
-    label: 'Cadastro de peças: corrigir categoria, marca e veículos',
+  orc_pecas_cadastrar: {
+    label: 'Cadastro de peças: cadastrar peça nova',
     def: {
-      description: 'Corrige até 50 peças por chamada: categoria, marca, nome, código, universal e VINCULA veículos (marca, modelo, ano_de, ano_ate; modelo vazio = todos os modelos da marca; sem ano = qualquer ano). Os veículos informados são ACRESCENTADOS aos que já existem (substituir_veiculos=true troca a lista). Use os peca_id de orc_pecas_listar desta mesma vez. Só aplique depois de mostrar ao dono o que vai mudar e ter o "sim" dele (pode ser um "sim" para o lote inteiro). Categorias válidas: ' + PART_CATEGORIES.join(', ') + '.',
+      description: 'CADASTRA peça nova no cadastro de peças (até 30 por chamada). Obrigatórios: nome (o nome que o DONO disse, nunca inventado), categoria (' + PART_CATEGORIES.join(', ') + '; pneu, bico/válvula de roda e roda = rodas) e custo UNITÁRIO > 0. Opcionais: marca, codigo, unidade (un, litro, kit, jogo; padrão un), preco_venda (sem ele vale a margem da categoria), estoque (quantidade que tem agora), estoque_minimo, universal e veiculos que usam a peça. Antes busque com orc_buscar_peca; se já existir peça igual volta ja_existe com a peça (use ela, ou forcar_novo=true só se o dono disser que é outra). Mostre ao dono o que vai cadastrar e cadastre depois do "sim". Depois de cadastrar, a peça já pode ser lançada na OS pelo nome.',
+      input_schema: {
+        type: 'object', additionalProperties: false, required: ['pecas'],
+        properties: {
+          pecas: {
+            type: 'array', maxItems: 30,
+            items: {
+              type: 'object', additionalProperties: false, required: ['nome', 'categoria', 'custo'],
+              properties: {
+                nome: { type: 'string' }, categoria: { type: 'string', enum: PART_CATEGORIES }, custo: { type: 'number', description: 'Custo de UMA unidade' },
+                marca: { type: 'string' }, codigo: { type: 'string' }, unidade: { type: 'string', enum: ['un', 'litro', 'kit', 'jogo'] },
+                preco_venda: { type: 'number' }, estoque: { type: 'number' }, estoque_minimo: { type: 'number' },
+                universal: { type: 'boolean' }, forcar_novo: { type: 'boolean' },
+                veiculos: {
+                  type: 'array', maxItems: 20,
+                  items: { type: 'object', additionalProperties: false, required: ['marca'], properties: { marca: { type: 'string' }, modelo: { type: 'string' }, ano_de: { type: 'integer' }, ano_ate: { type: 'integer' } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    run: async (db, ws, i, ctx) => {
+      const list = Array.isArray(i.pecas) ? i.pecas.slice(0, 30) : [];
+      if (!list.length) return err('lista_vazia');
+      return rpc(db, 'orc_parts_create', { p_workshop: ws, p_items: list, p_user: uuid(ctx.userId) });
+    },
+  },
+
+  orc_pecas_corrigir: {
+    label: 'Cadastro de peças: alterar peça (nome, categoria, custo, preço, estoque, veículos)',
+    def: {
+      description: 'ALTERA até 50 peças do cadastro por chamada: nome, categoria, marca, código, unidade (un, litro, kit, jogo), custo unitário (> 0), preco_venda (preço fixo) ou usar_margem=true (volta a usar a margem), estoque (a quantidade CONTADA agora; vira ajuste no histórico), estoque_minimo, universal e VINCULA veículos (marca, modelo, ano_de, ano_ate; modelo vazio = todos os modelos da marca; sem ano = qualquer ano). Os veículos informados são ACRESCENTADOS aos que já existem (substituir_veiculos=true troca a lista). Mande só os campos que mudam. Ache a peça antes com orc_buscar_peca ou orc_pecas_listar e use o peca_id desta mesma vez. Mexe só no CADASTRO, nunca nas OS já lançadas. Só aplique depois de mostrar ao dono o que vai mudar e ter o "sim" dele (pode ser um "sim" para o lote inteiro). Categorias válidas: ' + PART_CATEGORIES.join(', ') + '.',
       input_schema: {
         type: 'object', additionalProperties: false, required: ['pecas'],
         properties: {
@@ -466,6 +583,10 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
               properties: {
                 peca_id: { type: 'string' }, categoria: { type: 'string', enum: PART_CATEGORIES },
                 marca: { type: 'string' }, nome: { type: 'string' }, codigo: { type: 'string' }, universal: { type: 'boolean' },
+                unidade: { type: 'string', enum: ['un', 'litro', 'kit', 'jogo'] },
+                custo: { type: 'number', description: 'Custo de UMA unidade' }, preco_venda: { type: 'number' },
+                usar_margem: { type: 'boolean', description: 'true = tira o preço fixo e volta à margem' },
+                estoque: { type: 'number', description: 'Quantidade contada agora' }, estoque_minimo: { type: 'number' },
                 substituir_veiculos: { type: 'boolean' },
                 veiculos: {
                   type: 'array', maxItems: 20,
@@ -477,10 +598,10 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
         },
       },
     },
-    run: async (db, ws, i) => {
+    run: async (db, ws, i, ctx) => {
       const list = Array.isArray(i.pecas) ? i.pecas.slice(0, 50) : [];
       if (!list.length) return err('lista_vazia');
-      return rpc(db, 'orc_parts_edit', { p_workshop: ws, p_items: list });
+      return rpc(db, 'orc_parts_edit', { p_workshop: ws, p_items: list, p_user: uuid(ctx.userId) });
     },
   },
 
@@ -560,6 +681,7 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
           },
           pagar_depois_vencimento: { type: 'string', description: 'AAAA-MM-DD, quando o saldo restante fica para pagar depois' },
           pagar_depois_obs: { type: 'string' },
+          data_conclusao: { type: 'string', description: 'Só ao concluir de novo uma OS corrigida: a concluida_em devolvida por orc_reabrir_os' },
           confirmado: { type: 'boolean', description: 'true só depois do "sim" do gestor ao resumo' },
         },
       },
@@ -573,9 +695,12 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
       }));
       const due = str(i.pagar_depois_vencimento, 10);
       if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return err('vencimento_invalido: use AAAA-MM-DD');
+      const doneAt = str(i.data_conclusao, 40);
+      if (doneAt && Number.isNaN(Date.parse(doneAt))) return err('data_conclusao_invalida: use a concluida_em de orc_reabrir_os');
       return rpc(db, 'orc_close_os', {
         p_workshop: ws, p_user: ctx.userId, p_os_number: os, p_parts: formas, p_expected: esperado,
         p_later_due: due || null, p_later_note: str(i.pagar_depois_obs, 200) || null,
+        p_completed_at: doneAt ? new Date(doneAt).toISOString() : null,
       });
     },
   },
