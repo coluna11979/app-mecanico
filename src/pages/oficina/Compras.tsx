@@ -298,7 +298,16 @@ function InvoiceDetail({ id, onClose, onChanged }: { id: string; onClose: () => 
                 {items.map(i => (
                   <li key={i.id} className="py-1.5 flex justify-between gap-3">
                     <span className="min-w-0 truncate">{fmtQty(i.quantity)} × {i.description}</span>
-                    <span className="shrink-0 text-steel-600">{fmtBRL(i.unit_cost)} <strong className="text-steel-900 ml-2">{fmtBRL(Number(i.quantity) * Number(i.unit_cost))}</strong></span>
+                    {(() => {
+                      const onNote = i.note_cost != null ? Number(i.note_cost) : Number(i.unit_cost);
+                      const real = Number(i.unit_cost);
+                      return (
+                        <span className="shrink-0 text-steel-600 text-right">
+                          {fmtBRL(onNote)} <strong className="text-steel-900 ml-2">{fmtBRL(Number(i.quantity) * onNote)}</strong>
+                          {Math.abs(onNote - real) > 0.004 && <span className="block text-[11px] text-signal-700">custo real {fmtBRL(real)} (desconto/frete da nota)</span>}
+                        </span>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>
