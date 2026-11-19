@@ -61,7 +61,12 @@ Deno.serve(async (req) => {
     // 2) pede a transcrição (português)
     const tr = await fetch(`${API}/transcriptions`, {
       method: 'POST', headers: { ...key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: cfg.soniox_model || 'stt-async-v6', file_id: fileId, language_hints: ['pt'] }),
+      // Vocabulário de oficina: sem isso "OS" vira "USP"
+      body: JSON.stringify({
+        model: cfg.soniox_model || 'stt-async-v6', file_id: fileId, language_hints: ['pt'],
+        context: { terms: ['OS', 'ordem de serviço', 'placa', 'orçamento', 'troca de óleo', 'filtro de óleo', 'filtro de ar', 'pastilha de freio',
+          'disco de freio', 'amortecedor', 'alinhamento', 'balanceamento', 'correia dentada', 'embreagem', 'injeção eletrônica', 'scanner'] },
+      }),
     });
     const tj = await tr.json().catch(() => null);
     if (!tr.ok || !tj?.id) throw new Error(`transcricao ${tr.status}: ${JSON.stringify(tj)?.slice(0, 200)}`);
