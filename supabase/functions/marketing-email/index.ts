@@ -4,6 +4,9 @@
 //   action 'send'    → cria o disparo, manda em lotes de 100 e registra cada envio
 // Segmento: { audience: mechanic|workshop|all, status: approved|pending|all, state: UF|'', include_leads }.
 // Descadastrados (marketing_unsubscribes) nunca recebem; leads só com consentimento.
+// Quem recebe é decidido pela função SQL marketing_recipients (migration 0180): todas as regras moram lá.
+// (Antes usava auth.admin.listUsers(), que dá 500 "Database error finding users" se qualquer conta tiver
+// banned_until = 'infinity' — o que a trigger sync_operator_login_ban grava ao desativar um colaborador.)
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { signatureHtml, signatureText } from '../_shared/brandSignature.ts';
 
@@ -23,61 +26,70 @@ type Segment = { audience?: string; status?: string; state?: string; include_lea
 type Recipient = { email: string; name: string; profile_id?: string; lead_id?: string };
 type Content = { subject: string; heading: string; body: string; cta_label?: string; cta_url?: string };
 
-async function allAuthEmails(admin: SupabaseClient): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  for (let page = 1; page < 50; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw error;
-    for (const u of data.users) if (u.email) map.set(u.id, u.email.toLowerCase());
-    if (data.users.length < 1000) break;
+// ── Erros ────────────────────────────────────────────────────────────────────────────────────────
+// Segmento inválido é erro de quem chamou (400). Qualquer outra falha vira 500 com o passo e o erro completo
+// (message, code, details, hint) — antes só saía a mensagem crua e não dava pra saber de onde veio.
+class SegmentError extends Error {}
+
+type ErrInfo = { message: string; code?: string; details?: string; hint?: string; status?: number; name?: string };
+function describeError(e: unknown): ErrInfo {
+  if (e && typeof e === 'object') {
+    const o = e as Record<string, unknown>;
+    const s = (v: unknown) => (v == null || v === '' ? undefined : String(v));
+    return {
+      message: s(o.message) ?? s(o.msg) ?? s(o.error_description) ?? 'erro sem mensagem',
+      code: s(o.code), details: s(o.details), hint: s(o.hint), name: s(o.name),
+      status: typeof o.status === 'number' ? o.status : undefined,
+    };
   }
-  return map;
+  return { message: String(e) };
+}
+class StepError extends Error {
+  step: string;
+  info: ErrInfo;
+  constructor(step: string, cause: unknown) {
+    super(describeError(cause).message);
+    this.step = step;
+    this.info = describeError(cause);
+  }
 }
 
-async function resolveRecipients(admin: SupabaseClient, seg: Segment): Promise<Recipient[]> {
+// ── Segmento ─────────────────────────────────────────────────────────────────────────────────────
+const AUDIENCES = ['mechanic', 'workshop', 'all'];
+const STATUSES = ['pending', 'approved', 'all'];
+
+/** Valor desconhecido NÃO vira "todos": um status/público errado mandaria e-mail pra quem não devia. */
+function normalizeSegment(seg: Segment) {
   const audience = seg.audience ?? 'all';
-  const roles = audience === 'all' ? ['mechanic', 'workshop'] : [audience];
+  const status = seg.status ?? 'all';
+  if (!AUDIENCES.includes(audience)) throw new SegmentError(`audience inválido: "${audience}" (use mechanic, workshop ou all)`);
+  if (!STATUSES.includes(status)) throw new SegmentError(`status inválido: "${status}" (use pending, approved ou all)`);
+  const state = (seg.state ?? '').trim().toUpperCase();
+  if (state && !/^[A-Z]{2}$/.test(state)) throw new SegmentError(`state inválido: "${seg.state}" (use a sigla da UF, ex.: SP)`);
+  return { audience, status, state, include_leads: seg.include_leads === true };
+}
 
-  let q = admin.from('profiles').select('id, full_name, role, status').in('role', roles);
-  if (seg.status === 'approved') q = q.eq('status', 'approved');
-  if (seg.status === 'pending') q = q.in('status', ['pending', 'under_review']);
-  const { data: profiles, error } = await q;
-  if (error) throw error;
+type RecipientRow = { email: string; name: string | null; profile_id: string | null; lead_id: string | null };
 
-  let allowed: Set<string> | null = null;
-  if (seg.state) {
-    const [m, w] = await Promise.all([
-      admin.from('mechanics').select('profile_id').eq('state', seg.state),
-      admin.from('workshops').select('profile_id').eq('state', seg.state),
-    ]);
-    allowed = new Set([...(m.data ?? []), ...(w.data ?? [])].map((r) => r.profile_id));
-  }
+const PAGE = 1000; // o PostgREST corta em 1000 linhas sem avisar: sem paginar, a contagem sairia menor que a real
 
-  const emails = await allAuthEmails(admin);
-  const { data: unsubs } = await admin.from('marketing_unsubscribes').select('email');
-  const blocked = new Set((unsubs ?? []).map((u) => u.email.toLowerCase()));
-
-  const out = new Map<string, Recipient>();
-  for (const p of profiles ?? []) {
-    if (allowed && !allowed.has(p.id)) continue;
-    const email = emails.get(p.id);
-    if (!email || blocked.has(email) || out.has(email)) continue;
-    out.set(email, { email, name: p.full_name ?? '', profile_id: p.id });
-  }
-
-  if (seg.include_leads) {
-    let lq = admin.from('leads').select('id, name, email, intent, estado')
-      .eq('consent', true).is('converted_profile_id', null).neq('status', 'perdido');
-    if (audience !== 'all') lq = lq.eq('intent', audience);
-    if (seg.state) lq = lq.eq('estado', seg.state);
-    const { data: leads } = await lq;
-    for (const l of leads ?? []) {
-      const email = (l.email ?? '').trim().toLowerCase();
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || blocked.has(email) || out.has(email)) continue;
-      out.set(email, { email, name: l.name ?? '', lead_id: l.id });
+async function resolveRecipients(admin: SupabaseClient, seg: Segment): Promise<Recipient[]> {
+  const s = normalizeSegment(seg);
+  const out: Recipient[] = [];
+  for (let from = 0; from < 100 * PAGE; from += PAGE) {
+    const { data, error } = await admin
+      .rpc('marketing_recipients', {
+        p_audience: s.audience, p_status: s.status, p_state: s.state || null, p_include_leads: s.include_leads,
+      })
+      .range(from, from + PAGE - 1);
+    if (error) throw new StepError('buscar destinatários (rpc marketing_recipients)', error);
+    const rows = (data ?? []) as RecipientRow[];
+    for (const r of rows) {
+      out.push({ email: r.email, name: r.name ?? '', profile_id: r.profile_id ?? undefined, lead_id: r.lead_id ?? undefined });
     }
+    if (rows.length < PAGE) break;
   }
-  return [...out.values()];
+  return out;
 }
 
 function render(c: Content, r: Recipient, unsubUrl: string | null, appUrl: string) {
@@ -132,7 +144,9 @@ Deno.serve(async (req) => {
     const { data: callerProfile } = await admin.from('profiles').select('role, full_name').eq('id', caller.id).maybeSingle();
     if (callerProfile?.role !== 'admin') return json({ error: 'forbidden' }, 403);
 
-    const { action, segment = {}, content } = await req.json() as { action: string; segment?: Segment; content?: Content };
+    let body: { action?: string; segment?: Segment; content?: Content };
+    try { body = await req.json(); } catch { return json({ error: 'corpo da requisição não é um JSON válido' }, 400); }
+    const { action, segment = {}, content } = body;
 
     if (action === 'preview') {
       const list = await resolveRecipients(admin, segment);
@@ -148,8 +162,9 @@ Deno.serve(async (req) => {
       return json({ error: 'Preencha assunto, título e texto.' }, 400);
     }
 
-    const { data: settings } = await admin.from('app_settings').select('key, value')
+    const { data: settings, error: settingsErr } = await admin.from('app_settings').select('key, value')
       .in('key', ['resend_api_key', 'resend_from_email', 'app_public_url']);
+    if (settingsErr) throw new StepError('ler configurações (app_settings)', settingsErr);
     const cfg: Record<string, string> = {};
     for (const s of settings ?? []) cfg[s.key] = s.value;
     const apiKey = cfg.resend_api_key?.trim();
@@ -179,7 +194,7 @@ Deno.serve(async (req) => {
       cta_label: content.cta_label?.trim() || null, cta_url: content.cta_url?.trim() || null,
       segment, recipients: list.length, created_by: caller.id,
     }).select('id').single();
-    if (blastErr) throw blastErr;
+    if (blastErr) throw new StepError('registrar o disparo (marketing_email_blasts)', blastErr);
 
     let sent = 0, failed = 0;
     for (let i = 0; i < list.length; i += 100) {
@@ -212,6 +227,11 @@ Deno.serve(async (req) => {
 
     return json({ blast_id: blast.id, sent, failed });
   } catch (e) {
-    return json({ error: String(e instanceof Error ? e.message : e) }, 500);
+    if (e instanceof SegmentError) return json({ error: e.message }, 400);
+    const step = e instanceof StepError ? e.step : 'inesperado';
+    const info = e instanceof StepError ? e.info : describeError(e);
+    // Aparece em Logs > Edge Functions do Supabase, com o erro completo
+    console.error(`[marketing-email] falha em "${step}"`, JSON.stringify(info));
+    return json({ error: `${step}: ${info.message}`, step, code: info.code, details: info.details, hint: info.hint }, 500);
   }
 });
