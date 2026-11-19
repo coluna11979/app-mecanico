@@ -53,6 +53,10 @@ export default function AddItemModal({ osId, workshopId, position, team, osMecha
     if (!desc.trim()) return toast.error('Informe o que é o item');
     if (!Number.isFinite(q) || q <= 0) return toast.error('Quantidade inválida');
     if (!Number.isFinite(p) || p < 0) return toast.error('Valor inválido');
+    // Só serviço da Tabela (nada de nome escrito na hora)
+    if (sugg.length > 0 && !sugg.some(s => s.name.toLowerCase() === desc.trim().toLowerCase())) {
+      return toast.error(`“${desc.trim()}” não está na Tabela de serviços. Escolha um serviço da lista; se faltar, o gestor cadastra em Serviços.`, 8000);
+    }
     setBusy(true);
     const { error } = await supabase.from('service_order_items').insert({
       service_order_id: osId, workshop_id: workshopId, kind: 'labor', service_type: 'servico',

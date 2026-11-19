@@ -96,6 +96,7 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return toast.error('Informe o nome da peça');
+    if (!category) return toast.error('Escolha a categoria da peça');
     if (fit === 'car' && (!brand.trim() || !model.trim())) return toast.error('Informe a marca e o modelo do carro (ou escolha "Qualquer carro")');
     if (mode === 'custo') {
       if (!(c > 0)) return toast.error('Informe o custo da peça (ou escolha "Só preço de venda")');
