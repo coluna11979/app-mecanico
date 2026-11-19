@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
+import MicButton from '@/components/agents/MicButton';
 import AgentHeader from '@/components/agents/AgentHeader';
 import { AGENT_TEMPLATES, TOOL_CATALOG, type Agent, type AgentDraft, type AgentMessage, type AgentQuestion, type AgentTemplate, type AgentVersion } from '@/lib/agents';
 
@@ -503,6 +504,7 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                   value={text} disabled={!agent.enabled || sending} maxLength={2000}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+                <MicButton disabled={!agent.enabled || sending} onText={(t) => { setText((cur) => (cur.trim() ? `${cur.trim()} ${t}` : t)); inputRef.current?.focus(); }} />
                 <button className="btn-primary min-h-[44px] shrink-0" disabled={!agent.enabled || sending || !text.trim()} onClick={() => send()}>Enviar</button>
               </div>
             </div>
