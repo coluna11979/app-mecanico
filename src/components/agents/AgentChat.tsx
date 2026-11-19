@@ -66,7 +66,14 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
   const [pgMessages, setPgMessages] = useState<AgentMessage[]>([]);
   const [publishedAt, setPublishedAt] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Campo cresce com o texto (Enter pula linha)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+  }, [text]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [showQuestions, setShowQuestions] = useState(true);
   const [editQ, setEditQ] = useState(false);
@@ -501,11 +508,13 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                   </div>
                 )}
               </div>
-              <div className="border-t border-steel-200 dark:border-steel-700 p-3 flex gap-2">
-                <input ref={inputRef} className="input min-h-[44px]" placeholder={agent.enabled ? (mode === 'playground' ? 'Teste o rascunho…' : tpl.placeholder) : 'Agente desligado'}
+              <div className="border-t border-steel-200 dark:border-steel-700 p-3 flex items-end gap-2">
+                {/* Enter pula linha; Ctrl+Enter (ou o botão) envia. Cresce até ~8 linhas e depois rola. */}
+                <textarea ref={inputRef} rows={1} className="input min-h-[44px] max-h-48 resize-none leading-snug overflow-y-auto"
+                  placeholder={agent.enabled ? (mode === 'playground' ? 'Teste o rascunho…' : tpl.placeholder) : 'Agente desligado'}
                   value={text} disabled={!agent.enabled || sending} maxLength={2000}
                   onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
                 <MicButton disabled={!agent.enabled || sending} onText={(t) => { setText((cur) => (cur.trim() ? `${cur.trim()} ${t}` : t)); inputRef.current?.focus(); }} />
                 <button className="btn-primary min-h-[44px] shrink-0" disabled={!agent.enabled || sending || !text.trim()} onClick={() => send()}>Enviar</button>
               </div>
