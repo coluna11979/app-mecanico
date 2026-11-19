@@ -119,7 +119,7 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
       description: [
         'Lança UM serviço na OS, com as peças dele. Preço: o que você informar; senão o último cobrado neste modelo de carro; senão o da tabela (a resposta diz a origem). Com usar_kit=true (padrão) entram as peças do kit do serviço para este carro; peças pedidas à parte vão em "pecas". Troca de óleo sem kit para o carro: faça antes a consulta técnica (orc_ficha_tecnica) e salve o kit (orc_salvar_kit_ficha).',
         'Dentro de um serviço a peça entra só com CUSTO (o preço que o cliente paga já está no serviço).',
-        'REGRA: peça SEM CUSTO não entra na OS. Erros que você deve resolver conversando: preco_necessario (pergunte o valor), revisar_pecas (varias_no_cadastro: pergunte qual; sem_cadastro ou sem_custo: pergunte o CUSTO ao dono e chame de novo com "custo" na peça; kit_sem_custo: a peça do kit está sem custo no cadastro: lance com usar_kit=false e passe as peças em "pecas" com o custo que o dono disser). Nunca invente custo nem lance com custo zero. Nada é gravado quando há erro.',
+        'REGRA: a peça tem que ser da MESMA família/categoria do serviço (num serviço de Pneus, "bico" é bico de pneu); se o cadastro só tiver peça de outra categoria volta categoria_diferente. REGRA: peça SEM CUSTO não entra na OS. Erros que você deve resolver conversando: preco_necessario (pergunte o valor), revisar_pecas (varias_no_cadastro: pergunte qual; sem_cadastro ou sem_custo: pergunte o CUSTO ao dono e chame de novo com "custo" na peça; kit_sem_custo: a peça do kit está sem custo no cadastro: lance com usar_kit=false e passe as peças em "pecas" com o custo que o dono disser). Nunca invente custo nem lance com custo zero. Nada é gravado quando há erro.',
         'Devolve item_numero (a ordem do serviço na OS), preco, pecas com custo, avisos e total_os.',
       ].join(' '),
       input_schema: {
@@ -137,6 +137,7 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
               properties: {
                 nome: { type: 'string' }, peca_id: { type: 'string', description: 'Da busca de peças, quando o dono escolheu uma' },
                 qtd: { type: 'number' }, custo: { type: 'number', description: 'Custo unitário; só para peça fora do cadastro' },
+                confirmar_categoria: { type: 'boolean', description: 'true só se o dono confirmou usar uma peça de outra categoria (erro categoria_diferente)' },
               },
             },
           },
@@ -149,7 +150,7 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
       if (i.servico_id && !uuid(i.servico_id)) return err('servico_id_invalido: use o servico_id da busca nesta mesma resposta');
       const pecas = (Array.isArray(i.pecas) ? i.pecas : []).slice(0, 20).map((p) => {
         const o = (p ?? {}) as Input;
-        return { nome: str(o.nome, 120), peca_id: uuid(o.peca_id), qtd: dec(o.qtd) ?? 1, custo: dec(o.custo) };
+        return { nome: str(o.nome, 120), peca_id: uuid(o.peca_id), qtd: dec(o.qtd) ?? 1, custo: dec(o.custo), confirmar_categoria: o.confirmar_categoria === true };
       });
       return rpc(db, 'orc_add_item', {
         p_workshop: ws, p_os_number: os, p_servico_id: uuid(i.servico_id), p_servico_nome: str(i.servico_nome) || null,
