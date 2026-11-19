@@ -416,6 +416,42 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  orc_listar_notas: {
+    label: 'Notas de compra (entrada de peças) e conferência',
+    def: {
+      description: [
+        'Lista as NOTAS DE COMPRA (entrada de peças no estoque) e já confere cada uma. Sem datas = últimos 7 dias. de/ate AAAA-MM-DD (máx. 92 dias); numero = uma nota específica; busca = fornecedor ou nome de peça.',
+        'Cada nota traz fornecedor, número, data, soma dos itens, desconto, frete, total, contas a pagar (valor, vencimento, pago) e itens (peça, qtd, custo_na_nota, custo_real = com o desconto da nota rateado, custo_no_cadastro, categoria, OS em que a peça foi usada).',
+        'problemas: nota_repetida (mesma nota lançada mais de uma vez: estoque e contas a pagar em dobro), desconto_fora_do_custo (a nota tem desconto mas a peça ficou com o custo cheio; o custo certo é custo_real), itens_diferente_da_conta (soma dos itens − desconto + frete diferente das contas a pagar).',
+        'Use quando o dono pedir para conferir notas, entradas, compras ou custo de peça. Para corrigir custo use orc_pecas_corrigir (com o "sim" do dono); nota repetida o dono cancela pela tela de Compras.',
+      ].join(' '),
+      input_schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          de: { type: 'string' }, ate: { type: 'string' }, numero: { type: 'string' }, busca: { type: 'string' },
+          so_com_problema: { type: 'boolean' }, limite: { type: 'integer' },
+        },
+      },
+    },
+    run: async (db, ws, i) => {
+      const day = (v: unknown) => { const s = str(v, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
+      if ((str(i.de) && !day(i.de)) || (str(i.ate) && !day(i.ate))) return err('data_invalida: use AAAA-MM-DD');
+      return rpc(db, 'orc_notes_list', {
+        p_workshop: ws, p_from: day(i.de), p_to: day(i.ate), p_busca: str(i.busca, 80) || null, p_numero: str(i.numero, 40) || null,
+        p_so_com_problema: i.so_com_problema === true, p_limit: int(i.limite) ?? 20,
+      });
+    },
+  },
+
+  orc_historico_peca: {
+    label: 'Histórico de estoque de uma peça',
+    def: {
+      description: 'Mostra as entradas e saídas de estoque de UMA peça (entrada por nota, saída na OS, OS reaberta, ajuste), com estoque atual, custo e categoria. Use para explicar estoque negativo, de onde veio o custo ou em qual OS a peça saiu.',
+      input_schema: { type: 'object', additionalProperties: false, required: ['peca'], properties: { peca: { type: 'string', description: 'Nome, marca ou código' }, limite: { type: 'integer' } } },
+    },
+    run: (db, ws, i) => rpc(db, 'orc_part_history', { p_workshop: ws, p_peca: str(i.peca, 120), p_limit: int(i.limite) ?? 30 }),
+  },
+
   orc_andamento_os: {
     label: 'Andamento da OS (aprovar, iniciar, pausar, concluir, agendar)',
     def: {

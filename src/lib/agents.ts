@@ -58,6 +58,8 @@ export const ORC_TOOLS: Record<string, { label: string; desc: string }> = {
   orc_pecas_resumo:        { label: 'Peças: diagnóstico do cadastro', desc: 'Quantas em Outros, sem marca, sem veículo e duplicadas' },
   orc_pecas_listar:        { label: 'Peças: listar por problema',     desc: 'Outros, sem marca, sem código ou sem veículo' },
   orc_corrigir_peca_solta: { label: 'Corrigir peça solta',            desc: 'Coloca a peça vendida solta dentro de um serviço (o total não muda)' },
+  orc_listar_notas:        { label: 'Notas de compra',                desc: 'Entradas de peças com conferência (nota repetida, desconto fora do custo)' },
+  orc_historico_peca:      { label: 'Histórico de estoque da peça',   desc: 'Entradas por nota, saídas nas OS e ajustes' },
   orc_listar_os:           { label: 'Listar e conferir OS por data',  desc: 'OS do dia ou período com o que está fora das regras' },
   orc_andamento_os:        { label: 'Andamento da OS',                desc: 'Aprovar, iniciar, pausar, retomar, concluir sem receber e agendar' },
   orc_editar_os:           { label: 'Editar dados da OS',             desc: 'Título, reclamação, observações, KM, horas e desconto' },
