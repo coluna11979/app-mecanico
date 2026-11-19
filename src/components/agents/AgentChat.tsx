@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
+import AgentMemory from '@/components/agents/AgentMemory';
 import MicButton from '@/components/agents/MicButton';
 import AgentHeader from '@/components/agents/AgentHeader';
 import { AGENT_TEMPLATES, TOOL_CATALOG, type Agent, type AgentDraft, type AgentMessage, type AgentQuestion, type AgentTemplate, type AgentVersion } from '@/lib/agents';
@@ -366,6 +367,7 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                     ))}
                   </div>
                 </div>}
+                <AgentMemory agentId={agent.id} workshopId={agent.workshop_id} />
                 <div className="rounded-xl bg-steel-50 dark:bg-steel-900 p-3 text-xs text-steel-500">
                   O agente só usa o que está <strong>publicado</strong> (v{agent.version}). Edite à vontade{tpl.playground ? ', teste no 🧪 Playground' : ''}
                   e publique quando estiver bom. Cada publicação fica guardada no histórico.

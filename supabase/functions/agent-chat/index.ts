@@ -435,7 +435,7 @@ Deno.serve(async (req) => {
 
     const maxTurns = clamp(agent.max_tool_turns, 1, 40, isAdm ? ADM_TURNS : isOrc ? ORC_TURNS : DEFAULT_TURNS);
     const maxTokens = clamp(agent.max_tokens, 500, 16000, DEFAULT_MAX_TOKENS);
-    const history = clamp(agent.history_window, 2, 60, DEFAULT_HISTORY);
+    const history = clamp(agent.history_window, 2, 60, isOrc ? 40 : DEFAULT_HISTORY);
 
     let prior: { role: string; content: string }[];
     if (playground) {
@@ -444,14 +444,51 @@ Deno.serve(async (req) => {
         .filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string')
         .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) })).slice(-history);
     } else {
-      const { data: hist } = await admin.from('ai_agent_messages').select('role, content')
+      const { data: hist } = await admin.from('ai_agent_messages').select('role, content, created_at')
         .eq('agent_id', agent.id).order('created_at', { ascending: false }).limit(history);
-      prior = (hist ?? []).reverse();
+      // Mensagem do dono com a data/hora: assim ele sabe o que foi hoje, ontem ou semana passada
+      const stamp = (iso: string) => new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      prior = (hist ?? []).reverse().map((m: any) => ({ role: m.role, content: m.role === 'user' ? `[${stamp(m.created_at)}] ${m.content}` : m.content }));
+      // A API exige começar pelo dono
+      while (prior.length && prior[0].role !== 'user') prior.shift();
     }
     const messages: any[] = [...prior, { role: 'user', content: message }];
 
+    const { data: mems } = await admin.from('ai_agent_memories').select('id, content')
+      .eq('agent_id', agent.id).order('created_at', { ascending: true }).limit(80);
+    const memBlock = [
+      '',
+      'MEMÓRIA (o que este dono já te ensinou; siga sempre, acima das instruções gerais quando forem mais específicas):',
+      ...(mems?.length ? mems.map((m: any) => `- [${String(m.id).slice(0, 8)}] ${m.content}`) : ['- (vazia)']),
+      '',
+      'Como usar a memória: quando o dono ensinar um jeito de fazer, te corrigir, ou disser uma preferência ("sempre…", "nunca…", "aqui a gente lança assim…"), salve com memoria_salvar UMA regra curta, clara e reutilizável, e diga em uma linha "📌 Anotei: …". Se você perceber um padrão que se repete mas ele não pediu, pergunte "Quer que eu guarde isso como padrão?" antes de salvar. Não salve dados pessoais, valores de uma OS específica nem coisas que valem só uma vez. Se uma memória estiver errada, desatualizada ou ele pedir, use memoria_esquecer com o código entre colchetes. Se ele perguntar o que você lembra, liste a memória.',
+    ].join('\n');
+    toolDefs.push(
+      { name: 'memoria_salvar', description: 'Guarda na memória permanente deste agente uma regra/preferência que o dono ensinou (vale para as próximas conversas). Uma regra por chamada, curta e clara.',
+        input_schema: { type: 'object', additionalProperties: false, required: ['regra'], properties: { regra: { type: 'string', description: 'Ex.: "Pneus: lançar cada pneu como peça do serviço, com quantidade e custo UNITÁRIO, categoria Rodas."' } } } },
+      { name: 'memoria_esquecer', description: 'Apaga uma memória pelo código de 8 caracteres que aparece entre colchetes na MEMÓRIA.',
+        input_schema: { type: 'object', additionalProperties: false, required: ['codigo'], properties: { codigo: { type: 'string' } } } },
+    );
+    const memTool = async (name: string, input: any) => {
+      if (playground) return { ok: false, error: 'no_teste_nao_grava_memoria' };
+      if (name === 'memoria_salvar') {
+        const regra = String(input?.regra ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+        if (regra.length < 3) return { ok: false, error: 'regra_vazia' };
+        if ((mems?.length ?? 0) >= 80) return { ok: false, error: 'memoria_cheia: peça ao dono para apagar alguma em Configurar' };
+        const { error } = await admin.from('ai_agent_memories').insert({ agent_id: agent.id, workshop_id: workshopId, content: regra, source: 'agente', created_by: userId });
+        if (error) throw new Error(error.message);
+        return { ok: true, salvo: regra };
+      }
+      const cod = String(input?.codigo ?? '').trim().toLowerCase().replace(/[^0-9a-f]/g, '');
+      const hit = (mems ?? []).find((m: any) => String(m.id).startsWith(cod));
+      if (cod.length < 6 || !hit) return { ok: false, error: 'codigo_nao_encontrado' };
+      const { error } = await admin.from('ai_agent_memories').delete().eq('id', hit.id).eq('agent_id', agent.id);
+      if (error) throw new Error(error.message);
+      return { ok: true, apagado: hit.content };
+    };
+
     const client = new Anthropic({ apiKey: cfg.anthropic_api_key });
-    const system = `${agentPrompt}\n\nHoje é ${today()} (horário de Brasília).`;
+    const system = `${agentPrompt}\n${memBlock}\n\nHoje é ${today()} (horário de Brasília).`;
 
     let answer = '';
     for (let turn = 0; turn < maxTurns; turn++) {
@@ -472,6 +509,10 @@ Deno.serve(async (req) => {
       const results = [];
       for (const block of response.content.filter((b: any) => b.type === 'tool_use') as any[]) {
         try {
+          if (block.name === 'memoria_salvar' || block.name === 'memoria_esquecer') {
+            results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(await memTool(block.name, block.input)) });
+            continue;
+          }
           if (!enabledTools.includes(block.name)) throw new Error('ferramenta não liberada');
           const out = await catalog[block.name].run(admin, workshopId ?? '', block.input ?? {}, { userId: userId!, authHeader });
           results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out) });
