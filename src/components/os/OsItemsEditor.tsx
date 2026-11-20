@@ -17,8 +17,10 @@ import { fitsVehicle, loadPartVehicles, type PartVehicle } from '@/lib/partVehic
 const PART_FAMILIES: [string, string[]][] = [
   ['troca de oleo', ['oleos_filtros']],
   ['pneu', ['rodas']],
-  ['freio', ['freios']],
-  ['suspens', ['suspensao']],
+  ['rolament', ['rolamento', 'cubo']],
+  ['cubo', ['cubo', 'rolamento']],
+  ['freio', ['freios', 'cubo', 'rolamento']],
+  ['suspens', ['suspensao', 'cubo', 'rolamento']],
   ['direc', ['suspensao']],
   ['arrefec', ['arrefecimento']],
   ['transmiss', ['transmissao']],

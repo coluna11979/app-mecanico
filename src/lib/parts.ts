@@ -31,6 +31,8 @@ export const PART_CATEGORIES = [
   { value: 'arrefecimento',   label: 'Arrefecimento',      icon: '🌡️' },
   { value: 'transmissao',     label: 'Embreagem e câmbio', icon: '🕹️' },
   { value: 'rodas',           label: 'Rodas e pneus',      icon: '🛞' },
+  { value: 'cubo',            label: 'Cubo de roda',       icon: '🔘' },
+  { value: 'rolamento',       label: 'Rolamento',          icon: '⭕' },
   { value: 'escapamento',     label: 'Escapamento',        icon: '💨' },
   { value: 'ar_condicionado', label: 'Ar-condicionado',    icon: '❄️' },
   { value: 'carroceria',      label: 'Carroceria',         icon: '🚗' },
@@ -207,8 +209,6 @@ export const isTireName = (name: string) => TIRE_NAME.test(n0(name));
 /** Tipos dentro de "Rodas e pneus" */
 export const WHEEL_SUBS = [
   { value: 'pneu',      label: 'Pneus' },
-  { value: 'cubo',      label: 'Cubo de roda' },
-  { value: 'rolamento', label: 'Rolamento' },
   { value: 'parafuso',  label: 'Parafuso' },
   { value: 'outros',    label: 'Outros' },
 ] as const;
@@ -216,8 +216,6 @@ export const WHEEL_SUBS = [
 function wheelSub(name: string): string {
   const n = n0(name);
   if (isTireName(name)) return 'pneu';
-  if (/\bcubos?\b/.test(n)) return 'cubo';
-  if (/rolamento/.test(n)) return 'rolamento';
   if (/parafuso|porca/.test(n)) return 'parafuso';
   return 'outros';
 }
