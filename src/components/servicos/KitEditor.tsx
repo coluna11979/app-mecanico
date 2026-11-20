@@ -6,7 +6,7 @@ import { codeHit, matchesAll, searchHay, searchWords } from '@/lib/partSearch';
 import { VEHICLE_CATALOG, VEHICLE_MAKES } from '@/lib/vehicleCatalog';
 import { subOf } from '@/lib/parts';
 import { lookupPlate } from '@/lib/techCatalog';
-import { carFromPlate, catalogMake, catalogModel } from '@/lib/plateToCar';
+import { ENGINE_OPTIONS, carFromPlate, catalogMake, catalogModel, engineHint } from '@/lib/plateToCar';
 
 /** Peça do cadastro, para escolher no kit */
 export type KitCatPart = {
@@ -155,6 +155,8 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
   const looked = useRef('');
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
+  /** Motor ("1.0"); vazio = qualquer motor */
+  const [engine, setEngine] = useState('');
   const modelList = make ? VEHICLE_CATALOG[make] ?? [] : [];
   const [yFrom, setYFrom] = useState('');
   const [yTo, setYTo] = useState('');
@@ -174,23 +176,24 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
     looked.current = p;
     setPlateMsg({ ok: true, text: 'Buscando o carro da placa…' });
     (async () => {
-      const { data: v } = await supabase.from('vehicles').select('make, model, year').eq('plate', p).limit(1).maybeSingle();
-      let mk = '', md = '', yr: number | null = null;
+      const { data: v } = await supabase.from('vehicles').select('make, model, year, notes').eq('plate', p).limit(1).maybeSingle();
+      let mk = '', md = '', yr: number | null = null, en = '';
       if (v && (v as { model: string | null }).model) {
-        const r = v as { make: string | null; model: string | null; year: number | null };
+        const r = v as { make: string | null; model: string | null; year: number | null; notes: string | null };
         mk = catalogMake(r.make) || (r.make ?? '');
         md = mk ? catalogModel(mk, r.model).model : (r.model ?? '');
         yr = r.year;
+        en = engineHint(r.notes, r.model);
       } else {
         const res = await lookupPlate(wid, p);
         if (res.status !== 'found') { if (looked.current === p) setPlateMsg({ ok: false, text: 'Não achei essa placa. Digite o modelo abaixo.' }); return; }
         const c = carFromPlate(res.car);
-        mk = c.make; md = c.model; yr = c.year ? Number(c.year) : null;
+        mk = c.make; md = c.model; yr = c.year ? Number(c.year) : null; en = c.engine;
       }
       if (looked.current !== p) return;
-      setMake(mk); setModel(md);
+      setMake(mk); setModel(md); setEngine(ENGINE_OPTIONS.includes(en) ? en : '');
       setOtherModel(!!md && !(VEHICLE_CATALOG[mk] ?? []).some(x => x.toLowerCase() === md.toLowerCase()));
-      setPlateMsg({ ok: true, text: `${[mk, md].filter(Boolean).join(' ')}${yr ? ` ${yr}` : ''} — o kit vale para o modelo. Anos só se a peça mudar por ano.` });
+      setPlateMsg({ ok: true, text: `${[mk, md, en].filter(Boolean).join(' ')}${yr ? ` ${yr}` : ''} — anos só se a peça mudar por ano.` });
     })();
   }, [plate, wid]);
 
@@ -207,7 +210,7 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
     setSaving(true);
     const { error } = await supabase.from('workshop_service_parts').insert(list.map((l, i) => ({
       workshop_id: wid, service_id: svc, description: l.description.trim(), quantity: parseMoney(l.quantity), part_id: l.part_id, position: i,
-      vehicle_make: anyCar ? null : (make.trim() || null), vehicle_model: anyCar ? null : model.trim(),
+      vehicle_make: anyCar ? null : (make.trim() || null), vehicle_model: anyCar ? null : model.trim(), vehicle_engine: anyCar ? null : (engine || null),
       year_from: anyCar ? null : year(yFrom), year_to: anyCar ? null : year(yTo), tech_vehicle_id: null,
     })));
     setSaving(false);
@@ -277,9 +280,16 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
                       {make && <option value="__outro">Outro (digitar)…</option>}
                     </select>
                   )}
-                  <input className="input" placeholder="Ano de (opcional)" inputMode="numeric" value={yFrom} onChange={e => setYFrom(e.target.value)} aria-label="Ano de" />
-                  <input className="input" placeholder="Ano até (opcional)" inputMode="numeric" value={yTo} onChange={e => setYTo(e.target.value)} aria-label="Ano até" />
                 </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <select className="input" value={engine} onChange={e => setEngine(e.target.value)} aria-label="Motor">
+                    <option value="">Motor: todos</option>
+                    {ENGINE_OPTIONS.map(o => <option key={o} value={o}>Motor {o}</option>)}
+                  </select>
+                  <input className="input" placeholder="Ano de" inputMode="numeric" value={yFrom} onChange={e => setYFrom(e.target.value)} aria-label="Ano de (opcional)" />
+                  <input className="input" placeholder="Ano até" inputMode="numeric" value={yTo} onChange={e => setYTo(e.target.value)} aria-label="Ano até (opcional)" />
+                </div>
+                <p className="text-[11px] text-steel-500">Motor e anos são opcionais: use só quando as peças mudam (ex.: correia do 1.0 é diferente da do 1.6).</p>
               </div>
             )}
           </div>

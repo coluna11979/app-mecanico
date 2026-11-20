@@ -9,6 +9,8 @@ import { norm } from '@/lib/servicePrices';
 export type KitDbRow = {
   description: string; quantity: number; part_id: string | null; position?: number;
   vehicle_model: string | null; tech_vehicle_id: string | null; year_from: number | null; year_to: number | null;
+  /** Motor do kit ("1.0"); null = qualquer motor */
+  vehicle_engine?: string | null;
 };
 
 /** Carro da OS, no que importa para escolher o kit */
@@ -18,19 +20,25 @@ export type KitCar = { model: string | null; make: string | null; year: number |
  * Qual kit vale para o carro: 1) a ficha do catálogo técnico; 2) o modelo, na faixa de anos
  * (kit sem faixa vale para qualquer ano); 3) o kit geral. `model` = modelo do kit escolhido (null = geral).
  */
-export function pickKitRows<T extends KitDbRow>(rows: T[], car: { model?: string | null; year?: number | null; techId?: string | null }): { rows: T[]; model: string | null } {
+export function pickKitRows<T extends KitDbRow>(rows: T[], car: { model?: string | null; year?: number | null; techId?: string | null; engine?: string | null }): { rows: T[]; model: string | null } {
   const mk = norm(car.model ?? '');
   let forModel: T[] = [];
   if (car.techId) forModel = rows.filter(r => r.tech_vehicle_id === car.techId);
   if (!forModel.length && mk) {
     const groups = new Map<string, T[]>();
     for (const r of rows.filter(r => r.vehicle_model && norm(r.vehicle_model) === mk)) {
-      const k = r.tech_vehicle_id ?? 'm';
+      const k = `${r.tech_vehicle_id ?? 'm'}|${(r.vehicle_engine ?? '').trim()}`;
       groups.set(k, [...(groups.get(k) ?? []), r]);
     }
     const yr = car.year ?? null;
     const fits = (g: T[]) => yr == null || ((g[0].year_from == null || g[0].year_from <= yr) && (g[0].year_to == null || g[0].year_to >= yr));
-    const cands = [...groups.values()];
+    // Motor: o kit do motor do carro; sem motor no carro, só os kits que servem em qualquer motor (ou o único que houver)
+    const eng = (car.engine ?? '').trim();
+    const all = [...groups.values()];
+    const byEng = (g: T[]) => (g[0].vehicle_engine ?? '').trim();
+    const cands = eng
+      ? [...all.filter(g => byEng(g) === eng), ...all.filter(g => !byEng(g))]
+      : (all.some(g => !byEng(g)) ? all.filter(g => !byEng(g)) : all);
     forModel = cands.find(g => fits(g) && (g[0].year_from != null || g[0].year_to != null))
       ?? cands.find(g => fits(g) && g[0].year_from == null && g[0].year_to == null) ?? [];
   }

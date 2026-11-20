@@ -422,6 +422,7 @@ function PricesByVehicle({ service, charges }: { service: WorkshopService; charg
 /** Faixa de preço do serviço neste veículo: ponto = último valor cobrado */
 type KitListRow = {
   id: string; service_id: string; description: string; quantity: number; position: number; part_id: string | null;
+  vehicle_engine?: string | null;
   vehicle_make: string | null; vehicle_model: string | null; year_from: number | null; year_to: number | null;
   workshop_services: { name: string; category: string | null; price?: number | null } | null;
 };
@@ -452,7 +453,7 @@ function KitsByModel({ wid }: { wid: string }) {
       const all: KitListRow[] = [];
       for (let from = 0; ; from += 1000) {
         const { data, error } = await supabase.from('workshop_service_parts')
-          .select('id, service_id, description, quantity, position, part_id, vehicle_make, vehicle_model, year_from, year_to, workshop_services(name, category, price)')
+          .select('id, service_id, description, quantity, position, part_id, vehicle_make, vehicle_model, vehicle_engine, year_from, year_to, workshop_services(name, category, price)')
           .eq('workshop_id', wid).order('position').range(from, from + 999);
         if (error) { toast.error('Não foi possível carregar os kits: ' + error.message); break; }
         all.push(...((data ?? []) as unknown as KitListRow[]));
@@ -469,7 +470,7 @@ function KitsByModel({ wid }: { wid: string }) {
     for (const r of rows ?? []) {
       const make = r.vehicle_model ? (r.vehicle_make?.trim() || 'Sem marca') : 'Kit geral (qualquer carro)';
       const model = r.vehicle_model?.trim() || 'Todos os modelos';
-      const svc = r.workshop_services?.name ?? 'Serviço';
+      const svc = `${r.workshop_services?.name ?? 'Serviço'}${r.vehicle_engine ? ` · motor ${r.vehicle_engine}` : ''}`;
       if (cat && (r.workshop_services?.category ?? 'Outro') !== cat) continue;
       if (fMake && make !== fMake) continue;
       if (fModel && model !== fModel) continue;
@@ -526,9 +527,9 @@ function KitsByModel({ wid }: { wid: string }) {
     if (!d) return;
     const { data, error } = await supabase.from('workshop_service_parts').insert({
       workshop_id: wid, service_id: base.service_id, description: d, quantity: 1, part_id, position: 999,
-      vehicle_model: base.vehicle_model, vehicle_make: base.vehicle_make, year_from: base.year_from, year_to: base.year_to,
+      vehicle_model: base.vehicle_model, vehicle_make: base.vehicle_make, vehicle_engine: base.vehicle_engine ?? null, year_from: base.year_from, year_to: base.year_to,
       tech_vehicle_id: null,
-    }).select('id, service_id, description, quantity, position, part_id, vehicle_make, vehicle_model, year_from, year_to').single();
+    }).select('id, service_id, description, quantity, position, part_id, vehicle_make, vehicle_model, vehicle_engine, year_from, year_to').single();
     if (error) return toast.error('Não foi possível adicionar: ' + error.message);
     setRows(xs => [...(xs ?? []), { ...(data as unknown as KitListRow), workshop_services: base.workshop_services }]);
   }
