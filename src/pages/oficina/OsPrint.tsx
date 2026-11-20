@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { fmtBRL, fmtPhone, osNumber, osStatusLabel } from '@/components/os/osHelpers';
 import type { OsRow } from '@/components/os/OsCard';
 import type { ServiceOrderItem, Workshop } from '@/types/database';
+import SaleReceipt from '@/components/cash/SaleReceipt';
 
 /**
  * OS pronta para imprimir ou salvar em PDF (Imprimir → "Salvar como PDF").
@@ -76,6 +77,9 @@ export default function OsPrint() {
       <Link to="/oficina/os" className="text-brand-600 font-semibold">← Voltar</Link>
     </div>
   );
+
+  // Venda de balcão: comprovante de venda (cupom 80 mm ou A4), não a OS
+  if (os.source === 'balcao') return <SaleReceipt os={os} items={items} shop={shop} phone={profile?.phone} />;
 
   const parts = items.filter(i => i.kind === 'part');
   const labor = items.filter(i => i.kind === 'labor');
