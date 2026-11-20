@@ -352,10 +352,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     const c = norm(suggestions.find(x => x.kind === 'labor' && norm(x.description) === d)?.category ?? catNames.find(n => norm(n) === d) ?? '');
     return PART_FAMILIES.find(([k]) => c.includes(k))?.[1] ?? null;
   };
-  const partFits = (s: Suggestion, itemKey?: string) => {
-    if (vehFits && !vehFits(s)) return false;
+  /** anyCar: só o tipo do serviço, de qualquer carro (sem as "outros", que viriam aos montes) */
+  const partFits = (s: Suggestion, itemKey?: string, anyCar?: boolean) => {
+    if (!anyCar && vehFits && !vehFits(s)) return false;
     const item = itemKey ? rows.find(r => r.key === itemKey) : undefined;
     const allowed = item ? itemPartCats(item.description) : null;
+    if (anyCar) return !!allowed && !!s.pcat && allowed.includes(s.pcat);
     return !allowed || !s.pcat || s.pcat === 'outros' || allowed.includes(s.pcat) || (!!s.universal && allowed.includes('rodas'));
   };
 
