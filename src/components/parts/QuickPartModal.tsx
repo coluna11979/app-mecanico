@@ -17,7 +17,7 @@ const n0 = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase
 /** Categoria pelo nome da peça (a primeira regra que bater) */
 const GUESS: [RegExp, string][] = [
   [/embreag|cambio|homocinet|semi.?eixo|trizeta|plato|atuador/, 'transmissao'],
-  [/\b(pneus?|camaras? de ar)\b|^rodas?\b|\b\d{3}\/\d{2}/, 'rodas'],
+  [/\b(pneus?|camaras? de ar)\b|^rodas?\b|\b\d{3}\/\d{2} ?z?r ?\d{2}/, 'rodas'],
   [/oleo|filtro/, 'oleos_filtros'],
   [/freio|pastilha|disco|lona|tambor|pinca|sapata|cilindro de roda/, 'freios'],
   [/\bcubos?\b/, 'cubo'],

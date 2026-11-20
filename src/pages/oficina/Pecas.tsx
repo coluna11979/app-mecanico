@@ -16,7 +16,7 @@ import {
   SITUATIONS, ago, costToConfirm, isBelowMin, isNegative, isZeroBought, loadStockData, matchSituation, osShortage,
   type Situation, type StockData,
 } from '@/lib/stock';
-import { VEHICLE_CATALOG } from '@/lib/vehicleCatalog';
+import { VEHICLE_CATALOG, makeOfModel } from '@/lib/vehicleCatalog';
 import VehiclePicker from '@/components/parts/VehiclePicker';
 import { addVehicleToParts, fitsVehicle, fmtVehicle, fmtYears, isAnyModel, loadPartVehicles, markPartsUniversal, norm, partLabel, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
 import SupplierPicker from '@/components/parts/SupplierPicker';
@@ -28,6 +28,13 @@ const MOVE_LABEL: Record<StockMovement['kind'], string> = {
 };
 
 const PAGE = 100;
+
+/** O modelo aparece como palavra no nome da peça ("UNO" em "CAIXA DE DIREÇÃO NOVA UNO", não em "UNOX") */
+const wordIn = (name: string, model: string) => {
+  const n = ` ${norm(name).replace(/[^a-z0-9]+/g, ' ')} `;
+  const m = norm(model).replace(/[^a-z0-9]+/g, ' ').trim();
+  return !!m && n.includes(` ${m} `);
+};
 
 export default function Pecas() {
   const { currentWorkshop } = useAuth();
@@ -121,8 +128,8 @@ export default function Pecas() {
   }, [vehicles]);
   const modelOptionsFor = (brand: string) => {
     const m = new Map<string, string>();
-    const cat = Object.entries(VEHICLE_CATALOG).find(([b]) => norm(b) === norm(brand));
-    if (cat) for (const x of cat[1]) m.set(norm(x), x);
+    // Sem marca: todos os modelos do catálogo (escolher o modelo já acerta a marca)
+    for (const [b, list] of Object.entries(VEHICLE_CATALOG)) if (!brand.trim() || norm(b) === norm(brand)) for (const x of list) m.set(norm(x), x);
     for (const l of vehicles.values()) for (const v of l)
       if ((!brand.trim() || norm(v.brand) === norm(brand)) && !isAnyModel(v.model) && !m.has(norm(v.model))) m.set(norm(v.model), v.model);
     return [...m.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -160,7 +167,9 @@ export default function Pecas() {
       && (!cat || !subF || subOf(cat, p) === subF)
       && (!fromSheet || p.origin === 'planilha')
       && (!noVehicle || (!p.universal && !vehicles.get(p.id)?.length))
-      && (!hasVehicleFilter || p.universal || fitsVehicle(vehicles.get(p.id), vBrand, vModel, yearNum))
+      && (!hasVehicleFilter || p.universal || fitsVehicle(vehicles.get(p.id), vBrand, vModel, yearNum)
+        // Peça sem carro vinculado, mas com o modelo no nome ("CAIXA DE DIREÇÃO NOVA UNO")
+        || (!!vModel.trim() && !vehicles.get(p.id)?.length && wordIn(p.name, vModel)))
       && (!t || p.name.toLowerCase().includes(t) || p.code?.toLowerCase().includes(t)
         || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supplierName.get(p.supplier_id)?.toLowerCase().includes(t))
         || partCategory(p.category).label.toLowerCase().includes(t)))
@@ -300,9 +309,13 @@ export default function Pecas() {
                 <option value="">Todas as marcas</option>
                 {brandOptions.map(b => <option key={b} value={b}>{b}{brandCounts.get(norm(b)) ? ` (${brandCounts.get(norm(b))})` : ''}</option>)}
               </select>
-              <select className="input !py-1.5 !w-auto min-w-[11rem] text-sm" value={vModel} disabled={!vBrand}
-                onChange={e => { setVModel(e.target.value); if (e.target.value) setNoVehicle(false); }}>
-                <option value="">{vBrand ? `Todos os modelos${modelCounts.get('*') ? ` (+${modelCounts.get('*')} da marca toda)` : ''}` : 'Escolha a marca'}</option>
+              <select className="input !py-1.5 !w-auto min-w-[11rem] text-sm" value={vModel}
+                onChange={e => {
+                  const m = e.target.value;
+                  setVModel(m);
+                  if (m) { setNoVehicle(false); if (!vBrand) setVBrand(makeOfModel(m) ?? ''); }
+                }}>
+                <option value="">{vBrand ? `Todos os modelos${modelCounts.get('*') ? ` (+${modelCounts.get('*')} da marca toda)` : ''}` : 'Todos os modelos'}</option>
                 {modelOptionsFor(vBrand).map(m => <option key={m} value={m}>{m}{modelCounts.get(norm(m)) ? ` (${modelCounts.get(norm(m))})` : ''}</option>)}
               </select>
               <select className="input !py-1.5 !w-auto min-w-[8.5rem] text-sm" value={vYear}
