@@ -11,7 +11,8 @@ import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/service
 import { fmtDate } from '@/lib/purchasing';
 import { DEFAULT_MARGIN, loadAllParts, loadMargins } from '@/lib/parts';
 import QuickPartModal from '@/components/parts/QuickPartModal';
-import { KitMoney, NewKitModal, PartSearch, kindOf, type KitCatPart } from '@/components/servicos/KitEditor';
+import { KitMoney, NewKitModal, NewPartModal, PartSearch, kindOf, type KitCatPart } from '@/components/servicos/KitEditor';
+import { type Margins } from '@/lib/parts';
 import { planKitCopy } from '@/lib/kitCopy';
 import {
   commonName, groupBy, loadServiceCharges, norm, vehicleLabel, type ServiceCharge,
@@ -442,6 +443,10 @@ function KitsByModel({ wid }: { wid: string }) {
   const [swap, setSwap] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [nonce, setNonce] = useState(0);
+  /** Cadastrar peça nova para o kit: nome digitado + o que fazer com ela (trocar ou incluir) */
+  const [newPart, setNewPart] = useState<{ name: string; row: KitListRow; mode: 'swap' | 'add' } | null>(null);
+  const [margins, setMargins] = useState<Margins | null>(null);
+  useEffect(() => { loadMargins(wid).then(setMargins).catch(() => setMargins(null)); }, [wid]);
 
   useEffect(() => {
     loadAllParts<KitCatPart>(wid, 'id, name, code, cost, stock_qty, category, subcategory').then(setCatalog).catch(() => setCatalog([]));
@@ -546,6 +551,16 @@ function KitsByModel({ wid }: { wid: string }) {
         <span className="text-sm text-steel-500">{totalKits} kit{totalKits === 1 ? '' : 's'} em {tree.length} marca{tree.length === 1 ? '' : 's'}</span>
         <button type="button" className="btn-primary" onClick={() => setCreating(true)}>＋ Novo kit</button>
       </div>
+      {newPart && (
+        <NewPartModal wid={wid} name={newPart.name} margins={margins}
+          vehicle={newPart.row.vehicle_model ? { make: newPart.row.vehicle_make, model: newPart.row.vehicle_model } : null}
+          onClose={() => setNewPart(null)}
+          onSaved={c => {
+            setCatalog(cs => [...cs, c]);
+            if (newPart.mode === 'swap') replacePart(newPart.row, c.name, c.id); else addPart(newPart.row, c.name, c.id);
+            setNewPart(null);
+          }} />
+      )}
       {creating && <NewKitModal wid={wid} parts={catalog} onClose={() => setCreating(false)}
         onSaved={() => { setCreating(false); setNonce(n => n + 1); }} />}
       <div className="flex flex-wrap items-center gap-2">
@@ -612,7 +627,7 @@ function KitsByModel({ wid }: { wid: string }) {
                                     onBlur={e => setQty(p, e.target.value)} aria-label="Quantidade" />
                                   {swap === p.id ? (
                                     <PartSearch parts={catalog} model={p.vehicle_model} like={kindOf(catalog, p.description, p.part_id)} autoFocus placeholder={`Trocar “${p.description}” por… (ou digite para buscar)`}
-                                      onPick={c => replacePart(p, c.name, c.id)} onText={t => replacePart(p, t, null)} onCancel={() => setSwap(null)} />
+                                      onPick={c => replacePart(p, c.name, c.id)} onNew={name => setNewPart({ name, row: p, mode: 'swap' })} onCancel={() => setSwap(null)} />
                                   ) : (
                                     <div className="flex-1 min-w-0 px-3 py-1.5 rounded-xl border border-steel-200 text-sm">
                                       <span className="block truncate text-steel-900">{p.description}</span>
@@ -633,7 +648,7 @@ function KitsByModel({ wid }: { wid: string }) {
                             })}
                             <div className="flex items-center gap-2 pt-1">
                               <PartSearch parts={catalog} model={parts[0].vehicle_model} placeholder="＋ Adicionar peça ao kit (buscar no cadastro)"
-                                onPick={c => addPart(parts[0], c.name, c.id)} onText={t => addPart(parts[0], t, null)} />
+                                onPick={c => addPart(parts[0], c.name, c.id)} onNew={name => setNewPart({ name, row: parts[0], mode: 'add' })} />
                             </div>
                             <div className="pt-1 text-right">
                               {sure === k

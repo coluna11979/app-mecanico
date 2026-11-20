@@ -4,7 +4,8 @@ import { toast } from '@/components/ui/Toast';
 import { fmtBRL, parseMoney } from '@/components/os/osHelpers';
 import { codeHit, matchesAll, searchHay, searchWords } from '@/lib/partSearch';
 import { VEHICLE_CATALOG, VEHICLE_MAKES } from '@/lib/vehicleCatalog';
-import { subOf } from '@/lib/parts';
+import { DEFAULT_MARGIN, loadMargins, subOf, type Margins } from '@/lib/parts';
+import QuickPartModal, { type QuickPartResult } from '@/components/parts/QuickPartModal';
 import { lookupPlate } from '@/lib/techCatalog';
 import { ENGINE_OPTIONS, carFromPlate, catalogMake, catalogModel, engineHint } from '@/lib/plateToCar';
 
@@ -45,9 +46,12 @@ const sameKind = (p: KitCatPart, k: PartKind | null) => {
  * (trocar um óleo → todos os óleos). Escolher vincula a peça (custo e estoque);
  * Enter sem escolher usa o texto digitado (peça sem cadastro), quando `onText` existe.
  */
-export function PartSearch({ parts, model, like, placeholder, autoFocus, onPick, onText, onCancel }: {
+export function PartSearch({ parts, model, like, placeholder, autoFocus, onPick, onNew, onCancel }: {
   parts: KitCatPart[]; model?: string | null; like?: PartKind | null; placeholder?: string; autoFocus?: boolean;
-  onPick: (p: KitCatPart) => void; onText?: (text: string) => void; onCancel?: () => void;
+  onPick: (p: KitCatPart) => void;
+  /** Peça que ainda não está no cadastro: abre o cadastro com o nome digitado */
+  onNew?: (name: string) => void;
+  onCancel?: () => void;
 }) {
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(0);
@@ -79,7 +83,7 @@ export function PartSearch({ parts, model, like, placeholder, autoFocus, onPick,
         onKeyDown={e => {
           if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(h + 1, results.length - 1)); }
           else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); }
-          else if (e.key === 'Enter') { e.preventDefault(); if (results[hi]) pick(results[hi]); else if (onText && q.trim()) { onText(q.trim()); setQ(''); } }
+          else if (e.key === 'Enter') { e.preventDefault(); if (results[hi]) pick(results[hi]); }
           else if (e.key === 'Escape') onCancel?.();
         }} />
       {show && (
@@ -98,11 +102,12 @@ export function PartSearch({ parts, model, like, placeholder, autoFocus, onPick,
             </li>
           ))}
           {ws.length > 0 && !results.length && <li className="px-3 py-2 text-sm text-steel-500">Nenhuma peça no cadastro com “{q.trim()}”.</li>}
-          {onText && ws.length > 0 && (
+          {onNew && ws.length > 0 && (
             <li className="border-t border-steel-100">
-              <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { onText(q.trim()); setQ(''); }}
-                className="w-full px-3 py-2 text-left text-sm text-brand-700 font-semibold hover:bg-brand-50">
-                ＋ Usar “{q.trim()}” sem cadastro
+              <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { onNew(q.trim()); setQ(''); }}
+                className="w-full px-3 py-2.5 text-left text-sm text-brand-700 font-semibold hover:bg-brand-50">
+                ＋ Cadastrar “{q.trim()}” como peça nova
+                <span className="block text-xs font-normal text-steel-500">Não achou? Cadastra com custo e categoria e já entra no kit</span>
               </button>
             </li>
           )}
@@ -162,6 +167,12 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
   const [yTo, setYTo] = useState('');
   const [list, setList] = useState<Draft[]>([]);
   const [saving, setSaving] = useState(false);
+  /** Peças cadastradas agora (entram na busca e no custo) */
+  const [extra, setExtra] = useState<KitCatPart[]>([]);
+  const [newName, setNewName] = useState<string | null>(null);
+  const [margins, setMargins] = useState<Margins | null>(null);
+  useEffect(() => { loadMargins(wid).then(setMargins).catch(() => setMargins(null)); }, [wid]);
+  const allParts = useMemo(() => [...parts, ...extra], [parts, extra]);
 
   useEffect(() => {
     supabase.from('workshop_services').select('id, name, category, price').eq('workshop_id', wid).eq('active', true).order('name')
@@ -321,7 +332,7 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
             {list.length > 0 && (
               <div className="space-y-1.5 mb-2">
                 {list.map((l, i) => {
-                  const cp = l.part_id ? parts.find(p => p.id === l.part_id) : undefined;
+                  const cp = l.part_id ? allParts.find(p => p.id === l.part_id) : undefined;
                   return (
                     <div key={i} className="flex items-center gap-2">
                       <input className="input !py-1.5 text-sm w-16 text-center shrink-0" value={l.quantity} aria-label="Quantidade"
@@ -339,16 +350,22 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
                 })}
               </div>
             )}
-            <PartSearch parts={parts} model={model} placeholder="Buscar peça no cadastro para incluir"
+            <PartSearch parts={allParts} model={model} placeholder="Buscar peça no cadastro para incluir"
               onPick={p => add({ part_id: p.id, description: p.name, quantity: '1' })}
-              onText={t => add({ part_id: null, description: t, quantity: '1' })} />
+              onNew={setNewName} />
             {list.length > 0 && (
               <div className="mt-2">
-                <KitMoney items={list.map(l => ({ part_id: l.part_id, quantity: parseMoney(l.quantity) || 0 }))} parts={parts} servicePrice={svcPrice} />
+                <KitMoney items={list.map(l => ({ part_id: l.part_id, quantity: parseMoney(l.quantity) || 0 }))} parts={allParts} servicePrice={svcPrice} />
               </div>
             )}
           </div>
         </div>
+
+        {newName !== null && (
+          <NewPartModal wid={wid} name={newName} vehicle={anyCar ? null : { make, model }} margins={margins}
+            onClose={() => setNewName(null)}
+            onSaved={p => { setExtra(x => [...x, p]); add({ part_id: p.id, description: p.name, quantity: '1' }); setNewName(null); }} />
+        )}
 
         <div className="px-5 py-3 border-t border-steel-100 flex justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
@@ -356,5 +373,18 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Cadastro de peça nova a partir do kit (o mesmo cadastro da OS, sem lançar compra) */
+export function NewPartModal({ wid, name, vehicle, margins, onClose, onSaved }: {
+  wid: string; name: string; vehicle: { make?: string | null; model?: string | null } | null; margins: Margins | null;
+  onClose: () => void; onSaved: (p: KitCatPart) => void;
+}) {
+  return (
+    <QuickPartModal wid={wid} osLabel="" registerOnly initialName={name} quantity={1}
+      defaultMargin={margins?.base ?? DEFAULT_MARGIN} margins={margins ?? undefined} vehicle={vehicle}
+      onClose={onClose}
+      onSaved={(r: QuickPartResult) => onSaved({ id: r.part_id, name: r.name, code: null, cost: r.cost, stock_qty: 0, category: r.category })} />
   );
 }
