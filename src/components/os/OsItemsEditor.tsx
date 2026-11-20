@@ -113,7 +113,7 @@ export const whoPatch = (v: string) => (v === PLATFORM_ITEM
 
 type TeamMember = { id: string; name: string; active: boolean; no_commission?: boolean | null; commission_revenue_only?: boolean | null };
 
-export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; /** Serviço da Tabela que usa peça (0189) */ levaPeca?: boolean; qty?: number; category?: string; /** Categoria da peça no cadastro (freios, oleos_filtros…) */ pcat?: string; universal?: boolean; /** Palavras extras da busca (categoria, "pneu") */ search?: string };
+export type Suggestion = { description: string; kind: OsItemKind; unit_price: number; part_id?: string; code?: string | null; cost?: number; stock?: number; unit?: string; fromTable?: boolean; /** Serviço da Tabela que usa peça (0189) */ levaPeca?: boolean; qty?: number; category?: string; /** Categoria da peça no cadastro (freios, oleos_filtros…) */ pcat?: string; /** Tipo escolhido no cadastro */ psub?: string; universal?: boolean; /** Palavras extras da busca (categoria, "pneu") */ search?: string };
 
 let keySeq = 0;
 const newKey = () => `new-${++keySeq}`;
@@ -287,7 +287,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     let alive = true;
     (async () => {
       const [cat, svc, hist, margin, pv] = await Promise.all([
-        loadAllParts(workshopId, 'id, name, code, category, cost, margin_percent, sale_price, stock_qty, unit, universal').then(data => ({ data })),
+        loadAllParts(workshopId, 'id, name, code, category, subcategory, cost, margin_percent, sale_price, stock_qty, unit, universal').then(data => ({ data })),
         supabase.from('workshop_services').select('name, price, category, leva_peca')
           .eq('workshop_id', workshopId).eq('active', true).order('name'),
         supabase.from('service_order_items')
@@ -300,10 +300,10 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
       ]);
       if (!alive) return;
       const seen = new Map<string, Suggestion>();
-      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'category' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit' | 'universal'>[]) {
+      for (const p of (cat.data ?? []) as Pick<WorkshopPart, 'id' | 'name' | 'code' | 'category' | 'subcategory' | 'cost' | 'margin_percent' | 'sale_price' | 'stock_qty' | 'unit' | 'universal'>[]) {
         // Mesmo nome com código diferente é outra peça (ex.: marcas diferentes)
         const k = `${p.name.trim().toLowerCase()}|${(p.code ?? '').trim()}`;
-        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit, category: p.category ?? undefined, pcat: p.category ?? undefined,
+        if (!seen.has(k)) seen.set(k, { description: p.name.trim(), kind: 'part', unit_price: salePriceOf(p, margin), part_id: p.id, code: p.code, cost: Number(p.cost), stock: Number(p.stock_qty), unit: p.unit, category: p.category ?? undefined, pcat: p.category ?? undefined, psub: p.subcategory ?? undefined,
           search: `${p.category ?? ''} ${TIRE_RE.test(norm(p.name)) ? 'pneu pneus' : ''}`,
           // Pneu/roda serve em qualquer carro (a medida é escolhida na hora; o nome vem como "205/70R15 Marca"), mesmo sem estar marcado como universal
           universal: TIRE_RE.test(norm(p.name)) });

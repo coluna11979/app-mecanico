@@ -3,7 +3,9 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
-import { PART_CATEGORIES, UNITS, categoryMargin, priceFromMargin, type Margins } from '@/lib/parts';
+import { UNITS, categoryMargin, priceFromMargin, type Margins } from '@/lib/parts';
+import CategorySelects from './CategorySelects';
+import { makeOfModel } from '@/lib/vehicleCatalog';
 import { savePartVehicles } from '@/lib/partVehicles';
 import { addDaysISO, todayISO, type Supplier } from '@/lib/purchasing';
 import SupplierPicker from './SupplierPicker';
@@ -55,9 +57,13 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const [category, setCategory] = useState<string | null>(() => guessCategory(initialName) ?? defaultCategory ?? null);
   /** Escolhida à mão: o nome deixa de mudar a categoria */
   const [catTouched, setCatTouched] = useState(false);
+  /** Tipo escolhido na lista ('' = pelo nome) */
+  const [sub, setSub] = useState('');
   const hasCar = !!vehicle?.model?.trim();
   const [fit, setFit] = useState<'car' | 'universal' | 'none'>(hasCar ? 'car' : 'none');
-  const [brand, setBrand] = useState((vehicle?.make ?? '').trim());
+  // Carro da OS só com o modelo (Cruze): a marca vem do catálogo (Chevrolet)
+  const [brand, setBrand] = useState((vehicle?.make ?? '').trim() || makeOfModel(vehicle?.model) || '');
+  const [brandTouched, setBrandTouched] = useState(false);
   const [model, setModel] = useState((vehicle?.model ?? '').trim());
   const [marginTouched, setMarginTouched] = useState(false);
   const [code, setCode]         = useState('');
@@ -116,9 +122,9 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
         .insert(mode === 'venda'
           // Só preço de venda: preço fixo; custo fica 0 até alguém informar em Peças e estoque
           ? { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c > 0 ? c : 0, supplier_id: supplier?.id ?? null,
-              sale_price: sp, margin_percent: null, universal: fit === 'universal', ...(category ? { category } : {}) }
+              sale_price: sp, margin_percent: null, universal: fit === 'universal', ...(category ? { category, subcategory: sub || null } : {}) }
           : { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c, supplier_id: supplier?.id ?? null,
-              margin_percent: Math.abs(m - baseMargin) > 0.001 ? m : null, universal: fit === 'universal', ...(category ? { category } : {}) })
+              margin_percent: Math.abs(m - baseMargin) > 0.001 ? m : null, universal: fit === 'universal', ...(category ? { category, subcategory: sub || null } : {}) })
         .select('id').single();
       if (error) throw error;
       const partId = (part as { id: string }).id;
@@ -171,18 +177,10 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             <label className="label">Nome da peça *</label>
             <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus={!initialName} placeholder="Ex.: Amortecedor dianteiro Cofap" />
           </div>
-          <div>
-            <label className="label">Categoria <span className="font-normal normal-case text-steel-400">— é por ela que a peça aparece na OS</span></label>
-            <div className="flex flex-wrap gap-1.5">
-              {PART_CATEGORIES.map(pc => (
-                <button key={pc.value} type="button" onClick={() => { setCategory(pc.value); setCatTouched(true); }}
-                  className={`min-h-[36px] px-3 rounded-full border text-xs font-semibold transition ${category === pc.value ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-700 border-steel-200 hover:border-steel-400'}`}>
-                  {pc.icon} {pc.label}
-                </button>
-              ))}
-            </div>
-            {!category && <p className="text-[11px] text-pending-700 mt-1">Escolha a categoria para a peça aparecer no serviço certo.</p>}
-          </div>
+          <CategorySelects name={name} category={category ?? ''} sub={sub} onSub={setSub}
+            onCategory={c => { setCategory(c || null); setCatTouched(true); }}
+            hint={category ? 'É pela categoria e pelo tipo que a peça aparece na OS.' : undefined} />
+          {!category && <p className="text-[11px] text-pending-700 -mt-2">Escolha a categoria para a peça aparecer no serviço certo.</p>}
           <div>
             <label className="label">Serve em</label>
             <div className="grid grid-cols-3 gap-2">
@@ -193,8 +191,8 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             </div>
             {fit === 'car' && (
               <div className="grid grid-cols-2 gap-2 mt-2">
-                <input className="input" placeholder="Marca (ex.: Chevrolet)" value={brand} onChange={e => setBrand(e.target.value)} aria-label="Marca" />
-                <input className="input" placeholder="Modelo (ex.: Cruze)" value={model} onChange={e => setModel(e.target.value)} aria-label="Modelo" />
+                <input className="input" placeholder="Marca (ex.: Chevrolet)" value={brand} onChange={e => { setBrand(e.target.value); setBrandTouched(true); }} aria-label="Marca" />
+                <input className="input" placeholder="Modelo (ex.: Cruze)" value={model} onChange={e => { setModel(e.target.value); if (!brandTouched) { const mk = makeOfModel(e.target.value); if (mk) setBrand(mk); } }} aria-label="Modelo" />
               </div>
             )}
             <p className="text-[11px] text-steel-500 mt-1">

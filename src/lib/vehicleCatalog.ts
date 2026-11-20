@@ -46,3 +46,16 @@ export function vehicleYears(from = 1970): number[] {
   const top = new Date().getFullYear() + 1;
   return Array.from({ length: top - from + 1 }, (_, i) => top - i);
 }
+
+/** Marca de um modelo do catálogo ("Cruze" → "Chevrolet"); null quando não reconhece */
+export function makeOfModel(model: string | null | undefined): string | null {
+  const n = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const m = n(model ?? '');
+  if (!m) return null;
+  for (const [make, models] of Object.entries(VEHICLE_CATALOG)) if (models.some(x => n(x) === m)) return make;
+  // "Cruze LT 1.8" → começa com um modelo da lista (o mais longo vence: "Onix Plus" antes de "Onix")
+  let best: [string, number] | null = null;
+  for (const [make, models] of Object.entries(VEHICLE_CATALOG))
+    for (const x of models) { const k = n(x); if (k.length > 1 && (m.startsWith(k + ' ')) && (!best || k.length > best[1])) best = [make, k.length]; }
+  return best?.[0] ?? null;
+}

@@ -12,6 +12,8 @@ export type WorkshopPart = {
   unit: string; supplier: string | null; supplier_id: string | null; cost: number;
   margin_percent: number | null; sale_price: number | null;
   stock_qty: number; min_qty: number; category: PartCategory;
+  /** Tipo dentro da categoria escolhido no cadastro; null = reconhecido pelo nome */
+  subcategory?: string | null;
   universal: boolean; active: boolean; created_at: string; updated_at: string;
   /** De onde veio: 'planilha' = cadastro importado do sistema antigo; null = cadastro normal */
   origin?: string | null;
@@ -302,10 +304,12 @@ export const inCategory = (cat: string, p: { category?: string | null; name: str
   p.category === cat || (cat === 'rodas' && isTireName(p.name));
 
 /** Subcategoria da peça dentro da categoria escolhida (null = não é dessa categoria ou ela não tem subcategorias) */
-export function subOf(cat: string, p: { category?: string | null; name: string }): string | null {
+export function subOf(cat: string, p: { category?: string | null; name: string; subcategory?: string | null }): string | null {
   if (!inCategory(cat, p)) return null;
   const rules = SUB_RULES[cat as PartCategory];
   if (!rules) return null;
+  // Escolhido no cadastro vale mais que o nome
+  if (p.subcategory && p.category === cat && CATEGORY_SUBS[cat as PartCategory]?.some(o => o.value === p.subcategory)) return p.subcategory;
   const n = n0(p.name);
   return rules.find(r => r.re.test(n))?.value ?? 'outros';
 }

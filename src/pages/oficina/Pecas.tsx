@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import CategorySelects from '@/components/parts/CategorySelects';
 import { Link, useSearchParams } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import { supabase } from '@/lib/supabase';
@@ -742,6 +743,7 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
   const [unit, setUnit]         = useState(part?.unit ?? 'un');
   // '' = automática: o banco escolhe pelo nome da peça
   const [category, setCategory] = useState<PartCategory | ''>(part?.category ?? '');
+  const [sub, setSub]           = useState(part?.subcategory ?? '');
   const [supplierId, setSupplierId] = useState(part?.supplier_id ?? '');
   const [minQty, setMinQty]     = useState(part ? fmtQty(part.min_qty) : '0');
   const [stock, setStock]       = useState(part ? fmtQty(part.stock_qty) : '0');
@@ -789,6 +791,7 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
       brand: brand.trim() || null,
       unit,
       category: category || null,
+      subcategory: category ? sub || null : null,
       supplier_id: supplierId || null,
       min_qty: min,
       cost: parseMoney(cost || '0'),
@@ -830,13 +833,8 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
             <label className="label">Nome da peça *</label>
             <input className="input" autoFocus placeholder="Ex.: Pastilha de freio dianteira" value={name} onChange={e => setName(e.target.value)} />
           </div>
-          <div>
-            <label className="label">Categoria</label>
-            <select className="input" value={category} onChange={e => setCategory(e.target.value as PartCategory | '')}>
-              <option value="">✨ Automática (pelo nome da peça)</option>
-              {PART_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
-            </select>
-          </div>
+          <CategorySelects name={name} category={category} onCategory={setCategory} sub={sub} onSub={setSub}
+            autoOption="Automática (pelo nome da peça)" />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Código / referência</label>

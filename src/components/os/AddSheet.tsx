@@ -107,7 +107,7 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   // Óleos e filtros em vista: mostra os tipos (óleo, filtro de ar, de óleo...) quando houver mais de um
   // Categoria em vista que se divide em tipos (Óleos e filtros, Rodas e pneus)
   const subCat = partMode ? (chip ?? (partCats.length === 1 ? partCats[0].value : null)) : null;
-  const pcatOf = (s: Suggestion) => ({ category: s.pcat ?? 'outros', name: s.description });
+  const pcatOf = (s: Suggestion) => ({ category: s.pcat ?? 'outros', name: s.description, subcategory: s.psub ?? null });
   const oilSubs = useMemo(() => {
     const list = subCat ? CATEGORY_SUBS[subCat as keyof typeof CATEGORY_SUBS] : undefined;
     if (!subCat || !list) return [];
