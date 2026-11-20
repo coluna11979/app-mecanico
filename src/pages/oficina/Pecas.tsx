@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  PART_CATEGORIES, UNITS, categoryMargin, fmtPct, fmtQty, loadMargins, marginOf, partCategory, priceFromMargin,
+  CATEGORY_SUBS, inCategory, subOf, PART_CATEGORIES, UNITS, categoryMargin, fmtPct, fmtQty, loadMargins, marginOf, partCategory, priceFromMargin,
   priceModeOf, salePriceOf, type Margins, type PartCategory, type PriceMode, type WorkshopPart,
 } from '@/lib/parts';
 import { fmtDate, type StockMovement, type Supplier } from '@/lib/purchasing';
@@ -42,6 +42,9 @@ export default function Pecas() {
   const [q, setQ]               = useState('');
   const [supplierF, setSupplierF] = useState('');
   const [cat, setCat]           = useState<PartCategory | ''>('');
+  /** Tipo dentro da categoria (filtro de ar, pneu...) */
+  const [subF, setSubF]         = useState<string>('');
+  useEffect(() => setSubF(''), [cat]);
   /** Só as peças que vieram da planilha do sistema antigo */
   const [fromSheet, setFromSheet] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
@@ -152,7 +155,8 @@ export default function Pecas() {
     return parts.filter(p => (showInactive || p.active)
       && matchSituation(p, situation, data)
       && (!supplierF || p.supplier_id === supplierF)
-      && (!cat || p.category === cat)
+      && (!cat || inCategory(cat, p))
+      && (!cat || !subF || subOf(cat, p) === subF)
       && (!fromSheet || p.origin === 'planilha')
       && (!noVehicle || (!p.universal && !vehicles.get(p.id)?.length))
       && (!hasVehicleFilter || p.universal || fitsVehicle(vehicles.get(p.id), vBrand, vModel, yearNum))
@@ -160,7 +164,7 @@ export default function Pecas() {
         || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supplierName.get(p.supplier_id)?.toLowerCase().includes(t))
         || partCategory(p.category).label.toLowerCase().includes(t)))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [data, parts, q, showInactive, situation, supplierF, cat, fromSheet, supplierName, vehicles, vBrand, vModel, yearNum, hasVehicleFilter, noVehicle]);
+  }, [data, parts, q, showInactive, situation, supplierF, cat, subF, fromSheet, supplierName, vehicles, vBrand, vModel, yearNum, hasVehicleFilter, noVehicle]);
 
   const counts = useMemo(() => {
     const c = {} as Record<Situation, number>;
@@ -268,6 +272,23 @@ export default function Pecas() {
                 </select>
               )}
               <span className="ml-auto text-xs text-steel-500">{list.length} peça{list.length === 1 ? '' : 's'}</span>
+            </div>
+          )}
+          {cat && CATEGORY_SUBS[cat] && (
+            <div className="overflow-x-auto -mx-1 px-1">
+              <div role="tablist" aria-label="Tipo de peça" className="inline-flex items-center gap-0.5 rounded-xl bg-steel-100 p-1">
+                {[{ value: '', label: 'Todos' }, ...CATEGORY_SUBS[cat]!].map(o => {
+                  const n = (parts ?? []).filter(p => p.active && (o.value ? subOf(cat, p) === o.value : inCategory(cat, p))).length;
+                  if (o.value && !n) return null;
+                  const on = subF === o.value;
+                  return (
+                    <button key={o.value || 'all'} role="tab" aria-selected={on} onClick={() => setSubF(o.value)}
+                      className={`whitespace-nowrap min-h-[32px] px-3 rounded-lg text-xs font-semibold transition ${on ? 'bg-white text-steel-900 shadow-sm' : 'text-steel-500 hover:text-steel-800'}`}>
+                      {o.label} <span className={on ? 'text-steel-400' : 'text-steel-400/80'}>{n}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
           {data && parts && parts.length > 0 && (

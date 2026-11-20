@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PART_CATEGORIES, fmtQty } from '@/lib/parts';
+import { CATEGORY_SUBS, PART_CATEGORIES, fmtQty, inCategory, subOf } from '@/lib/parts';
 import { fmtBRL } from './osHelpers';
 import type { Suggestion } from './OsItemsEditor';
 import { codeHit, matchesAll, searchHay, searchWords } from '@/lib/partSearch';
@@ -42,7 +42,8 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   /** Kit do serviço (modo peça) */
   kitOf: (name: string) => Promise<Suggestion[]>;
   /** Peça serve no carro (e, com itemKey, no tipo do serviço) */
-  partFits: (s: Suggestion, itemKey?: string) => boolean;
+  /** anyCar: só o tipo do serviço, de qualquer carro */
+  partFits: (s: Suggestion, itemKey?: string, anyCar?: boolean) => boolean;
   /** Serviço que costuma levar peça (abre as peças logo depois de escolher) */
   wantsParts: (name: string) => boolean;
   priceFor: (s: Suggestion) => number | null;
@@ -62,8 +63,12 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   const [cur, setCur] = useState<SheetMode>(mode);
   const [q, setQ] = useState('');
   const [chip, setChip] = useState<string | null>(null);
+  /** Tipo dentro de Óleos e filtros (filtro de ar, de óleo...) */
+  const [sub, setSub] = useState<string | null>(null);
+  useEffect(() => setSub(null), [chip]);
   /** 'item' = só peças do tipo do serviço · 'car' = todas do carro · 'all' = todo o cadastro */
-  const [scope, setScope] = useState<'item' | 'car' | 'all'>('item');
+  /** item = tipo do serviço + carro · family = tipo do serviço, qualquer carro · car = tudo do carro · all = todo o cadastro */
+  const [scope, setScope] = useState<'item' | 'family' | 'car' | 'all'>('item');
   const [kits, setKits] = useState<CarKit[] | null>(null);
   const [svcKit, setSvcKit] = useState<Suggestion[]>([]);
   const [added, setAdded] = useState<string[]>([]);
@@ -88,7 +93,9 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   const ws = words(q);
   const labor = useMemo(() => suggestions.filter(s => s.kind === 'labor'), [suggestions]);
   const partsBase = useMemo(() => suggestions.filter(s => s.kind === 'part'
-    && (scope === 'all' || (scope === 'car' ? partFits(s) : partFits(s, target)))), [suggestions, scope, partFits, target]);
+    && (scope === 'all' || (scope === 'car' ? partFits(s) : scope === 'family' ? partFits(s, target, true) : partFits(s, target)))), [suggestions, scope, partFits, target]);
+  // O serviço tem um tipo de peça (óleo, freio...)? Sem tipo, ampliar já é ver tudo
+  const hasFamily = useMemo(() => !!target && suggestions.some(s => s.kind === 'part' && partFits(s, target, true)), [suggestions, partFits, target]);
 
   // Categorias de serviço que aparecem nos chips: as da oficina e as que os serviços usam
   const svcCats = useMemo(() => {
@@ -97,6 +104,16 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
     return out;
   }, [categories, labor]);
   const partCats = useMemo(() => PART_CATEGORIES.filter(c => partsBase.some(p => (p.pcat ?? 'outros') === c.value)), [partsBase]);
+  // Óleos e filtros em vista: mostra os tipos (óleo, filtro de ar, de óleo...) quando houver mais de um
+  // Categoria em vista que se divide em tipos (Óleos e filtros, Rodas e pneus)
+  const subCat = partMode ? (chip ?? (partCats.length === 1 ? partCats[0].value : null)) : null;
+  const pcatOf = (s: Suggestion) => ({ category: s.pcat ?? 'outros', name: s.description });
+  const oilSubs = useMemo(() => {
+    const list = subCat ? CATEGORY_SUBS[subCat as keyof typeof CATEGORY_SUBS] : undefined;
+    if (!subCat || !list) return [];
+    const has = new Set(partsBase.map(p => subOf(subCat, pcatOf(p))).filter(Boolean));
+    return has.size > 1 ? list.filter(o => has.has(o.value)) : [];
+  }, [partsBase, subCat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const svcHits = useMemo(() => rank(labor.filter(s => (!chip || norm(s.category ?? '') === norm(chip)) && fits(s, ws)), ws),
     [labor, chip, q]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -104,14 +121,22 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
     && matchesAll(searchHay(k.svc.description, ...k.parts), ws)), [kits, chip, q]); // eslint-disable-line react-hooks/exhaustive-deps
   const partHits = useMemo(() => {
     if (!partMode && !ws.length) return [];
-    return rank(partsBase.filter(s => (!partMode || !chip || (s.pcat ?? 'outros') === chip) && fits(s, ws)), ws);
-  }, [partsBase, chip, q, partMode]); // eslint-disable-line react-hooks/exhaustive-deps
+    return rank(partsBase.filter(s => (!partMode || !chip || inCategory(chip, pcatOf(s)))
+      && (!partMode || !sub || !subCat || subOf(subCat, pcatOf(s)) === sub) && fits(s, ws)), ws);
+  }, [partsBase, chip, sub, subCat, q, partMode]); // eslint-disable-line react-hooks/exhaustive-deps
   // Digitou e a peça não é do carro/tipo do serviço: mostra logo abaixo as de outros carros e sem carro
+  // Dentro de um serviço com tipo (óleo, freio...): primeiro as do mesmo tipo de outros carros; as de outro tipo
+  // só aparecem se nada do tipo bater com a busca
+  const otherFamily = useMemo(() => !!target && hasFamily && scope !== 'all', [target, hasFamily, scope]);
   const otherHits = useMemo(() => {
     if (!ws.length || scope === 'all') return [];
     const seen = new Set(partHits);
-    return rank(suggestions.filter(s => s.kind === 'part' && !seen.has(s) && fits(s, ws)), ws);
-  }, [suggestions, q, scope, partHits]); // eslint-disable-line react-hooks/exhaustive-deps
+    const all = suggestions.filter(s => s.kind === 'part' && !seen.has(s) && fits(s, ws));
+    if (!otherFamily) return rank(all, ws);
+    const fam = all.filter(s => partFits(s, target, true));
+    return rank(fam.length || partHits.length ? fam : all, ws);
+  }, [suggestions, q, scope, partHits, otherFamily, partFits, target]); // eslint-disable-line react-hooks/exhaustive-deps
+  const otherIsFamily = otherFamily && otherHits.length > 0 && otherHits.every(s => partFits(s, target, true));
 
   const top = useMemo(() => topServices.map(n => labor.find(s => norm(s.description) === norm(n))).filter(Boolean).slice(0, 8) as Suggestion[], [topServices, labor]);
 
@@ -197,6 +222,21 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
               {partCats.map(c => <button key={c.value} type="button" className={chipCls(chip === c.value)} onClick={() => setChip(chip === c.value ? null : c.value)}>{c.icon} {c.label}</button>)}
             </div>
           )}
+          {oilSubs.length > 0 && (
+            <div className="mt-2 overflow-x-auto -mx-1 px-1">
+              <div role="tablist" aria-label="Tipo de peça" className="inline-flex items-center gap-0.5 rounded-xl bg-steel-100 p-1">
+                {[{ value: null as string | null, label: 'Todos' }, ...oilSubs.map(o => ({ value: o.value as string | null, label: o.label }))].map(o => {
+                  const on = sub === o.value;
+                  return (
+                    <button key={o.value ?? 'all'} type="button" role="tab" aria-selected={on} onClick={() => setSub(o.value)}
+                      className={`whitespace-nowrap min-h-[36px] px-3 rounded-lg text-sm font-semibold transition ${on ? 'bg-white text-steel-900 shadow-sm' : 'text-steel-500'}`}>
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <ul className="flex-1 overflow-y-auto">
@@ -270,7 +310,7 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
           {/* Peças */}
           {partHits.length > 0 && (
             <>
-              <Group label={partMode ? (scope === 'item' ? 'Peças para este serviço' : scope === 'car' ? 'Peças deste carro' : 'Todas as peças') : 'Peças (entram com preço)'} />
+              <Group label={partMode ? (scope === 'item' ? 'Peças para este serviço' : scope === 'family' ? 'Peças deste tipo (todos os carros)' : scope === 'car' ? 'Peças deste carro' : 'Todas as peças') : 'Peças (entram com preço)'} />
               {partHits.slice(0, 80).map(p => (
                 <Line key={'p' + (p.part_id ?? '') + p.description} name={p.description} sub={partSub(p)} price={partPrice(p)}
                   tag={!partMode ? { text: 'peça', cls: 'bg-brand-50 text-brand-700' } : undefined}
@@ -282,7 +322,7 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
 
           {otherHits.length > 0 && (
             <>
-              <Group label={vehicleLabel ? 'Outras peças do cadastro (outros carros ou sem carro)' : 'Outras peças do cadastro'} />
+              <Group label={otherIsFamily ? 'Deste tipo, de outros carros ou sem carro' : vehicleLabel ? 'Outras peças do cadastro (outros carros ou sem carro)' : 'Outras peças do cadastro'} />
               {otherHits.slice(0, 60).map(p => (
                 <Line key={'o' + (p.part_id ?? '') + p.description} name={p.description} sub={partSub(p)} price={partPrice(p)}
                   tag={!partMode ? { text: 'peça', cls: 'bg-brand-50 text-brand-700' } : undefined}
@@ -292,12 +332,22 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
             </>
           )}
 
+          {/* Digitou dentro de um serviço com tipo: procurar também nos outros tipos */}
+          {partMode && ws.length > 0 && otherFamily && (
+            <li className="px-4 pt-3">
+              <button type="button" onClick={() => setScope('all')}
+                className="w-full min-h-[48px] px-4 rounded-xl border border-steel-200 text-sm font-semibold text-steel-700 text-left hover:bg-steel-50">
+                👁 Procurar “{q.trim()}” em todas as peças do cadastro
+              </button>
+            </li>
+          )}
+
           {/* Ampliar a busca de peças (sem nada digitado) */}
           {partMode && !ws.length && scope !== 'all' && (
             <li className="px-4 pt-3">
-              <button type="button" onClick={() => setScope(scope === 'item' ? 'car' : 'all')}
+              <button type="button" onClick={() => setScope(scope === 'item' && hasFamily ? 'family' : 'all')}
                 className="w-full min-h-[48px] px-4 rounded-xl border border-steel-200 text-sm font-semibold text-steel-700 text-left hover:bg-steel-50">
-                {scope === 'item' ? '👁 Ver peças de outros tipos deste carro' : '👁 Ver todas as peças do cadastro'}
+                {scope === 'item' && hasFamily ? '👁 Ver mais peças deste tipo (de outros carros)' : '👁 Ver todas as peças do cadastro'}
               </button>
             </li>
           )}
