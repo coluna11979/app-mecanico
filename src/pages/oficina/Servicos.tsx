@@ -11,7 +11,7 @@ import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/service
 import { fmtDate } from '@/lib/purchasing';
 import { DEFAULT_MARGIN, loadAllParts, loadMargins } from '@/lib/parts';
 import QuickPartModal from '@/components/parts/QuickPartModal';
-import { NewKitModal, PartSearch, type KitCatPart } from '@/components/servicos/KitEditor';
+import { KitMoney, NewKitModal, PartSearch, kindOf, type KitCatPart } from '@/components/servicos/KitEditor';
 import { planKitCopy } from '@/lib/kitCopy';
 import {
   commonName, groupBy, loadServiceCharges, norm, vehicleLabel, type ServiceCharge,
@@ -423,7 +423,7 @@ function PricesByVehicle({ service, charges }: { service: WorkshopService; charg
 type KitListRow = {
   id: string; service_id: string; description: string; quantity: number; position: number; part_id: string | null;
   vehicle_make: string | null; vehicle_model: string | null; year_from: number | null; year_to: number | null;
-  workshop_services: { name: string; category: string | null } | null;
+  workshop_services: { name: string; category: string | null; price?: number | null } | null;
 };
 
 /** Todos os kits criados, agrupados por marca → modelo → serviço, para acompanhar o que já foi montado */
@@ -441,7 +441,7 @@ function KitsByModel({ wid }: { wid: string }) {
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
-    loadAllParts<KitCatPart>(wid, 'id, name, code, cost, stock_qty').then(setCatalog).catch(() => setCatalog([]));
+    loadAllParts<KitCatPart>(wid, 'id, name, code, cost, stock_qty, category, subcategory').then(setCatalog).catch(() => setCatalog([]));
   }, [wid]);
 
   useEffect(() => {
@@ -450,7 +450,7 @@ function KitsByModel({ wid }: { wid: string }) {
       const all: KitListRow[] = [];
       for (let from = 0; ; from += 1000) {
         const { data, error } = await supabase.from('workshop_service_parts')
-          .select('id, service_id, description, quantity, position, part_id, vehicle_make, vehicle_model, year_from, year_to, workshop_services(name, category)')
+          .select('id, service_id, description, quantity, position, part_id, vehicle_make, vehicle_model, year_from, year_to, workshop_services(name, category, price)')
           .eq('workshop_id', wid).order('position').range(from, from + 999);
         if (error) { toast.error('Não foi possível carregar os kits: ' + error.message); break; }
         all.push(...((data ?? []) as unknown as KitListRow[]));
@@ -565,6 +565,10 @@ function KitsByModel({ wid }: { wid: string }) {
                           <span className="font-medium text-steel-900">{svc}{parts[0].workshop_services?.category && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-steel-500 bg-steel-100 rounded px-1.5 py-0.5">{parts[0].workshop_services.category}</span>}{years && <span className="text-xs text-steel-500"> · {years}</span>}</span>
                           <span className="text-xs text-steel-500 shrink-0">{parts.length} peça{parts.length === 1 ? '' : 's'} {open.has(k) ? '▲' : '▼'}</span>
                         </button>
+                        <div className="px-3 pb-2 -mt-1">
+                          <KitMoney items={parts.map(x => ({ part_id: x.part_id, quantity: Number(x.quantity) }))} parts={catalog}
+                            servicePrice={parts[0].workshop_services?.price ?? null} />
+                        </div>
                         {open.has(k) && (
                           <div className="px-3 pb-3 space-y-1.5">
                             {parts.map(p => {
@@ -574,7 +578,7 @@ function KitsByModel({ wid }: { wid: string }) {
                                   <input className="input !py-1.5 text-sm w-16 text-center shrink-0" defaultValue={String(Number(p.quantity)).replace('.', ',')}
                                     onBlur={e => setQty(p, e.target.value)} aria-label="Quantidade" />
                                   {swap === p.id ? (
-                                    <PartSearch parts={catalog} model={p.vehicle_model} autoFocus placeholder={`Trocar “${p.description}” por…`}
+                                    <PartSearch parts={catalog} model={p.vehicle_model} like={kindOf(catalog, p.description, p.part_id)} autoFocus placeholder={`Trocar “${p.description}” por… (ou digite para buscar)`}
                                       onPick={c => replacePart(p, c.name, c.id)} onText={t => replacePart(p, t, null)} onCancel={() => setSwap(null)} />
                                   ) : (
                                     <div className="flex-1 min-w-0 px-3 py-1.5 rounded-xl border border-steel-200 text-sm">
