@@ -58,6 +58,8 @@ export function serviceOf(description: string): string | null {
 export type ServiceExecuted = {
   name: string; orders: number; revenue: number; parts: number; labor: number;
   identified: boolean;
+  /** Custo de compra das peças do serviço e quantas peças vendidas estão sem custo cadastrado */
+  partsCost?: number; partsNoCost?: number;
 };
 export const UNKNOWN_SERVICE = 'Serviço não identificado';
 
@@ -73,9 +75,13 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
   const map = new Map<string, ServiceExecuted & { ids: Set<string> }>();
   for (const [osId, its] of byOs) {
     for (const t of its) {
-      const cur = map.get(t.name) ?? { name: t.name, orders: 0, revenue: 0, parts: 0, labor: 0, identified: t.name !== UNKNOWN_SERVICE, ids: new Set<string>() };
+      const cur = map.get(t.name) ?? { name: t.name, orders: 0, revenue: 0, parts: 0, labor: 0, partsCost: 0, partsNoCost: 0, identified: t.name !== UNKNOWN_SERVICE, ids: new Set<string>() };
       cur.revenue += t.value;
-      if (t.kind === 'part') cur.parts += t.value; else cur.labor += t.value;
+      if (t.kind === 'part') {
+        cur.parts += t.value;
+        cur.partsCost! += t.cost;
+        if (t.value > 0 && t.cost <= 0) cur.partsNoCost! += 1;
+      } else cur.labor += t.value;
       cur.ids.add(osId);
       map.set(t.name, cur);
     }
@@ -89,7 +95,7 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
 /** Serviços que contam só os próprios itens (não herdam "mão de obra", bicos, porcas… da OS) */
 const EXACT_ONLY = new Set(['Alinhamento', 'Cambagem', 'Balanceamento']);
 
-type Attributed = { name: string; value: number; kind: PanelItem['kind'] };
+type Attributed = { name: string; value: number; cost: number; kind: PanelItem['kind'] };
 
 /** Cada item das OS ligado ao serviço que ele representa (a regra está no comentário de servicesExecuted) */
 function attributeItems(sales: PanelOs[], items: PanelItem[]) {
@@ -113,7 +119,8 @@ function attributeItems(sales: PanelOs[], items: PanelItem[]) {
       ?? (fromTitle && !EXACT_ONLY.has(fromTitle) ? fromTitle : null);
     byOs.set(osId, tagged.map(t => {
       if (!t.cat && !main) unmatchedItems += 1;
-      return { name: t.cat ?? main ?? UNKNOWN_SERVICE, value: t.value, kind: t.i.kind };
+      const cost = t.i.kind === 'part' ? Number(t.i.quantity) * Number(t.i.unit_cost ?? 0) : 0;
+      return { name: t.cat ?? main ?? UNKNOWN_SERVICE, value: t.value, cost, kind: t.i.kind };
     }));
   }
   return { byOs, unmatchedItems };
@@ -225,4 +232,21 @@ export function estimatedServiceMinutes(rows: { name: string; orders: number }[]
     min += ref * r.orders; counted += r.orders;
   }
   return { min, counted, skipped };
+}
+
+/**
+ * Margem por serviço: venda - custo de compra das peças (mão de obra entra sem custo).
+ * Não desconta comissão, salário nem despesas da loja.
+ */
+export type MarginRow = { name: string; orders: number; revenue: number; cost: number; margin: number; pct: number; noCost: number };
+
+export function marginByService(rows: ServiceExecuted[]) {
+  const out: MarginRow[] = rows.filter(r => r.identified && r.revenue > 0).map(r => {
+    const cost = r.partsCost ?? 0;
+    const margin = r.revenue - cost;
+    return { name: r.name, orders: r.orders, revenue: r.revenue, cost, margin, pct: (margin / r.revenue) * 100, noCost: r.partsNoCost ?? 0 };
+  }).sort((a, b) => b.margin - a.margin);
+  const revenue = out.reduce((t, r) => t + r.revenue, 0);
+  const cost = out.reduce((t, r) => t + r.cost, 0);
+  return { rows: out, revenue, cost, margin: revenue - cost, pct: revenue ? ((revenue - cost) / revenue) * 100 : 0, noCost: out.reduce((t, r) => t + r.noCost, 0) };
 }

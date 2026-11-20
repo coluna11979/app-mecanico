@@ -8,7 +8,7 @@ import {
   approvalRate, change, customerMix, funnel, previousRange, revenueSeries, salesOf,
   type PanelItem, type PanelOs,
 } from '@/lib/workshopMetrics';
-import { abcCurve, partsSharePct, refMinutesOf, revenueByService, salesOfService, servicesExecuted, type AbcClass, type AbcRow, type ServiceSale } from '@/lib/serviceCatalog';
+import { abcCurve, marginByService, partsSharePct, refMinutesOf, revenueByService, salesOfService, servicesExecuted, type AbcClass, type AbcRow, type MarginRow, type ServiceSale } from '@/lib/serviceCatalog';
 import { fmtHours } from '@/lib/teamCost';
 import PartsLaborBar from '@/components/finance/PartsLaborBar';
 import ShowcaseReminder from '@/components/showcase/ShowcaseReminder';
@@ -61,7 +61,7 @@ export default function Painel() {
           .order('created_at', { ascending: false }).order('id').range(a, b)),
         // Itens das OS concluídas no período exibido e no anterior (mais vendidos e comparação do filtro por serviço)
         fetchAll((a, b) => supabase.from('service_order_items')
-          .select('service_order_id, kind, description, quantity, unit_price, so:service_orders!inner(completed_at)')
+          .select('service_order_id, kind, description, quantity, unit_price, unit_cost, so:service_orders!inner(completed_at)')
           .eq('workshop_id', wid)
           .gte('so.completed_at', fromIso).lt('so.completed_at', toIso)
           .order('id').range(a, b)),
@@ -116,6 +116,7 @@ export default function Painel() {
   const revenueRows = useMemo(() => revenueByService(m.services.rows), [m.services]);
   const partsShare = partsSharePct(m.services.rows);
   const abc = useMemo(() => abcCurve(m.services.rows), [m.services]);
+  const margins = useMemo(() => marginByService(m.services.rows), [m.services]);
   /** Aba do gráfico: null = automático (por serviço num dia só, por dia/mês nos períodos maiores) */
   const [chartTab, setChartTab] = useState<'servico' | 'tempo' | null>(null);
   const tab = chartTab ?? (m.series.length <= 1 ? 'servico' : 'tempo');
@@ -345,6 +346,11 @@ export default function Painel() {
             {/* Curva ABC: quais serviços sustentam o faturamento */}
             {abc.rows.length > 0 && (
               <AbcCard abc={abc} selected={service} onPick={n => setService(service === n ? '' : n)} />
+            )}
+
+            {/* Margem por categoria: venda - custo das peças */}
+            {margins.rows.length > 0 && (
+              <MarginCard data={margins} selected={service} onPick={n => setService(service === n ? '' : n)} />
             )}
 
             {/* Onde foram parar as outras seções */}
@@ -676,6 +682,101 @@ function ServiceDonut({ rows, total, selected, pickable, onPick }: {
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/** Cor da margem %: verde boa, âmbar média, vermelha baixa */
+const marginTone = (pct: number) => pct >= 50 ? 'text-emerald-700' : pct >= 30 ? 'text-amber-600' : 'text-red-600';
+const marginBar = (pct: number) => pct >= 50 ? 'bg-emerald-500' : pct >= 30 ? 'bg-amber-400' : 'bg-red-500';
+const pct1 = (n: number) => `${n.toFixed(1).replace('.', ',')}%`;
+
+/** Margem por categoria: quanto sobra de cada serviço depois de pagar as peças */
+function MarginCard({ data, selected, onPick }: {
+  data: ReturnType<typeof marginByService>; selected: string; onPick: (name: string) => void;
+}) {
+  const [order, setOrder] = useState<'margin' | 'pct'>('margin');
+  const rows = order === 'pct' ? [...data.rows].sort((a, b) => b.pct - a.pct || b.margin - a.margin) : data.rows;
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
+        <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Margem por categoria</div>
+        <div className="flex gap-1 bg-steel-100 rounded-lg p-0.5" role="tablist">
+          {([['margin', 'Maior margem R$'], ['pct', 'Maior margem %']] as const).map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={order === k} onClick={() => setOrder(k)}
+              className={`h-8 px-3 rounded-md text-xs font-semibold transition ${order === k ? 'bg-white shadow text-steel-900' : 'text-steel-500 hover:text-steel-700'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="text-[11px] text-steel-400 mb-4">
+        Margem = venda do serviço − custo de compra das peças. Clique num serviço para ver só ele no painel.
+      </p>
+
+      {/* Resumo */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        {[
+          ['Venda', fmtBRL(data.revenue), 'text-steel-900'],
+          ['Custo das peças', fmtBRL(data.cost), 'text-steel-900'],
+          ['Margem', fmtBRL(data.margin), 'text-steel-900'],
+          ['Margem %', pct1(data.pct), marginTone(data.pct)],
+        ].map(([l, v, c]) => (
+          <div key={l} className="rounded-xl bg-steel-50 border border-steel-200 px-3 py-2.5">
+            <div className="text-[11px] text-steel-500">{l}</div>
+            <div className={`text-base font-bold tabular-nums ${c}`}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-sm min-w-[620px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-steel-500 text-left">
+              <th className="font-bold py-2 px-1">Serviço</th>
+              <th className="font-bold py-2 px-1 text-right">Qtd.</th>
+              <th className="font-bold py-2 px-1 text-right">Venda</th>
+              <th className="font-bold py-2 px-1 text-right">Custo peças</th>
+              <th className="font-bold py-2 px-1 text-right">Margem</th>
+              <th className="font-bold py-2 px-1 w-[20%]">Margem %</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-steel-100">
+            {rows.map((r: MarginRow) => {
+              const on = selected === r.name;
+              return (
+                <tr key={r.name} onClick={() => onPick(r.name)} aria-selected={on}
+                  className={`cursor-pointer transition ${on ? 'bg-brand-50' : 'hover:bg-steel-50'}`}>
+                  <td className="py-2.5 px-1 font-semibold text-steel-800">
+                    {r.name}
+                    {r.noCost > 0 && (
+                      <span className="ml-1.5 text-[10px] font-semibold text-amber-600" title="Peças vendidas sem custo de compra cadastrado: a margem fica maior do que a real">
+                        ⚠ {r.noCost} sem custo
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-1 text-right tabular-nums text-steel-600">{r.orders}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums">{fmtBRL(r.revenue)}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums text-steel-500">{r.cost ? fmtBRL(r.cost) : '—'}</td>
+                  <td className="py-2.5 px-1 text-right tabular-nums font-bold">{fmtBRL(r.margin)}</td>
+                  <td className="py-2.5 px-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 flex-1 rounded-full bg-steel-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${marginBar(r.pct)}`} style={{ width: `${Math.max(0, Math.min(100, r.pct))}%` }} />
+                      </div>
+                      <span className={`text-xs font-semibold tabular-nums w-12 text-right ${marginTone(r.pct)}`}>{pct1(r.pct)}</span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-steel-400 mt-3">
+        Serviço só de mão de obra (ex.: alinhamento) aparece com 100%: não desconta comissão, salário nem despesas da loja.
+        {data.noCost > 0 && ` ${data.noCost} ${data.noCost === 1 ? 'peça vendida está' : 'peças vendidas estão'} sem custo cadastrado.`}
+      </p>
     </div>
   );
 }
