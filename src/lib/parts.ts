@@ -198,3 +198,44 @@ export function oilSub(name: string): OilSub {
   if (/oleo|lubrif|\d+w\d+|\d+w-\d+|atf|fluido/.test(n)) return 'oleo';
   return 'outros';
 }
+
+const n0 = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const TIRE_NAME = /\b(pneus?|camaras? de ar)\b|\b\d{3}\/\d{2} ?z?r ?\d{2}/;
+/** Pneu pelo nome (mesmo cadastrado em outra categoria) */
+export const isTireName = (name: string) => TIRE_NAME.test(n0(name));
+
+/** Tipos dentro de "Rodas e pneus" */
+export const WHEEL_SUBS = [
+  { value: 'pneu',      label: 'Pneus' },
+  { value: 'cubo',      label: 'Cubo de roda' },
+  { value: 'rolamento', label: 'Rolamento' },
+  { value: 'parafuso',  label: 'Parafuso' },
+  { value: 'outros',    label: 'Outros' },
+] as const;
+
+function wheelSub(name: string): string {
+  const n = n0(name);
+  if (isTireName(name)) return 'pneu';
+  if (/\bcubos?\b/.test(n)) return 'cubo';
+  if (/rolamento/.test(n)) return 'rolamento';
+  if (/parafuso|porca/.test(n)) return 'parafuso';
+  return 'outros';
+}
+
+/** Categorias que se dividem em tipos (barra de tipos na OS e em Peças e estoque) */
+export const CATEGORY_SUBS: Partial<Record<PartCategory, readonly { value: string; label: string }[]>> = {
+  oleos_filtros: OIL_SUBS,
+  rodas: WHEEL_SUBS,
+};
+
+/** A peça entra na categoria escolhida (pneu entra em Rodas e pneus mesmo cadastrado em outra) */
+export const inCategory = (cat: string, p: { category?: string | null; name: string }) =>
+  p.category === cat || (cat === 'rodas' && isTireName(p.name));
+
+/** Tipo da peça dentro da categoria escolhida (null = não é dessa categoria) */
+export function subOf(cat: string, p: { category?: string | null; name: string }): string | null {
+  if (!inCategory(cat, p)) return null;
+  if (cat === 'rodas') return wheelSub(p.name);
+  if (cat === 'oleos_filtros') return oilSub(p.name);
+  return null;
+}
