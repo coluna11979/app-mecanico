@@ -86,6 +86,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   // cilindrada: nesse caso o lojista escolhe o motor (needEngine).
   const [plateEngine, setPlateEngine] = useState('');
   const [plateFuel, setPlateFuel] = useState('');
+  const [platePower, setPlatePower] = useState('');
+  const [plateColor, setPlateColor] = useState('');
   const [needEngine, setNeedEngine] = useState(false);
   const [plateInfo, setPlateInfo] = useState<{ kind: 'busy' | 'ok' | 'warn'; text: string } | null>(null);
   const lookedPlate = useRef('');
@@ -209,7 +211,7 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
   // Placa completa no cadastro do carro → preenche marca, modelo, ano e cor (uma consulta por placa digitada)
   useEffect(() => {
     const p = plateNorm(car.plate);
-    if (!PLATE_FULL.test(p)) { lookedPlate.current = ''; setPlateInfo(null); setPlateEngine(''); setPlateFuel(''); setNeedEngine(false); return; }
+    if (!PLATE_FULL.test(p)) { lookedPlate.current = ''; setPlateInfo(null); setPlateEngine(''); setPlateFuel(''); setPlatePower(''); setPlateColor(''); setNeedEngine(false); return; }
     if (!newCar || !canPlate || lookedPlate.current === p) return;
     lookedPlate.current = p;
     setPlateInfo({ kind: 'busy', text: 'Buscando os dados da placa…' });
@@ -221,8 +223,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
       }
       const c = carFromPlate(r.car);
       setCar(prev => (plateNorm(prev.plate) === p ? { ...prev, make: c.make, model: c.model, year: c.year } : prev));
-      setPlateEngine(c.engine); setPlateFuel(c.fuel); setNeedEngine(!c.engine);
-      const details = [c.engine, c.fuel].filter(Boolean).join(' · ');
+      setPlateEngine(c.engine); setPlateFuel(c.fuel); setPlatePower(c.power); setPlateColor(c.color); setNeedEngine(!c.engine);
+      const details = [c.engine, c.power, c.fuel, c.color].filter(Boolean).join(' · ');
       setPlateInfo({ kind: 'ok', text: `Dados da placa preenchidos${details ? ` (${details})` : ''}. Confira antes de abrir a OS.` });
     });
   }, [car.plate, newCar, canPlate, workshopId]);
@@ -338,7 +340,8 @@ export default function NewOsModal({ workshopId, preset, onClose, onCreated, onM
           make: car.make.trim() || 'Não informado',
           model: car.model.trim() || 'Não informado',
           year: car.year ? parseInt(car.year, 10) || null : null,
-          ...(engineNote(plateEngine, plateFuel) ? { notes: engineNote(plateEngine, plateFuel) } : {}),
+          ...(engineNote(plateEngine, plateFuel, platePower) ? { notes: engineNote(plateEngine, plateFuel, platePower) } : {}),
+          ...(plateColor ? { color: plateColor } : {}),
           ...(monthlyKmNum ? { monthly_km: monthlyKmNum } : {}),
         }).select('id').single();
         if (error) throw error;

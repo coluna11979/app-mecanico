@@ -8,13 +8,15 @@ import { VEHICLE_CATALOG, VEHICLE_MAKES } from './vehicleCatalog';
 /** O que a consulta de placa devolve do carro */
 export type PlateCarData = {
   make: string | null; model: string | null; version: string | null; year: number | null;
-  fuel: string | null; engine_cc: number | null;
+  fuel: string | null; engine_cc: number | null; color?: string | null; power_cv?: number | null;
 };
 
 export type CarFromPlate = {
   make: string; model: string; year: string; modelInList: boolean;
   /** Motor pela cilindrada ("1.0", "1.8") e combustível ("Flex"); vazios quando a placa não informa */
   engine: string; fuel: string;
+  /** Cor ('Prata') e potência ('75 cv'); vazios quando a placa não informa */
+  color: string; power: string;
   /** "Motor 1.8 · Flex" — vai para as Obs. técnicas do carro */
   note: string;
 };
@@ -79,8 +81,8 @@ export function engineHint(...texts: (string | null | undefined)[]): string {
 }
 
 /** "Motor 1.8 · Flex" (só o que existir) — vai para as Obs. técnicas do carro */
-export const engineNote = (engine: string, fuel: string) =>
-  [engine && `Motor ${engine}`, fuel].filter(Boolean).join(' · ');
+export const engineNote = (engine: string, fuel: string, power = '') =>
+  [engine && `Motor ${engine}`, power, fuel].filter(Boolean).join(' · ');
 
 /** "Alcool / Gasolina" → "Flex"; o resto vem com a primeira letra maiúscula */
 export function fuelLabel(fuel: string | null | undefined): string {
@@ -99,12 +101,14 @@ export function carFromPlate(car: PlateCarData): CarFromPlate {
   const m = make ? catalogModel(make, car.model) : { model: titleCase((car.model ?? '').trim()), inList: false };
   const engine = engineFromCc(car.engine_cc) || engineHint(car.model, car.version);
   const fuel = fuelLabel(car.fuel);
+  const power = car.power_cv && car.power_cv >= 20 && car.power_cv <= 1500 ? `${car.power_cv} cv` : '';
+  const color = titleCase((car.color ?? '').trim());
   return {
     make: make || titleCase((car.make ?? '').trim()),
     model: m.model,
     year: car.year ? String(car.year) : '',
     modelInList: m.inList,
-    engine, fuel,
-    note: engineNote(engine, fuel),
+    engine, fuel, color, power,
+    note: engineNote(engine, fuel, power),
   };
 }

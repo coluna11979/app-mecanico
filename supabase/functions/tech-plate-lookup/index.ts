@@ -24,7 +24,13 @@ const PLATE_RE = /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/;
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 const int = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; };
 
-type Car = { make: string | null; model: string | null; version: string | null; year: number | null; fuel: string | null; engine_cc: number | null };
+/** Potência em cv: a API manda um valor por combustível (gasolina/etanol) ou um número só; fica o da gasolina */
+const powerCv = (v: unknown): number | null => {
+  if (v && typeof v === 'object') { const o = v as Record<string, unknown>; return int(o.gasolina) ?? int(o.etanol) ?? int(o.diesel); }
+  return int(v);
+};
+
+type Car = { make: string | null; model: string | null; version: string | null; year: number | null; fuel: string | null; engine_cc: number | null; color: string | null; power_cv: number | null };
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -53,11 +59,11 @@ Deno.serve(async (req) => {
 
   // 1) Carro de cliente desta oficina (também pela RLS do usuário)
   const { data: own } = await userClient.from('vehicles')
-    .select('id, plate, make, model, year, tech_vehicle_id').eq('workshop_id', workshopId).eq('plate', plate).limit(1).maybeSingle();
+    .select('id, plate, make, model, year, color, tech_vehicle_id').eq('workshop_id', workshopId).eq('plate', plate).limit(1).maybeSingle();
   if (own) {
     return json({
       status: 'found', source: 'cliente', plate, vehicle_id: own.id, tech_vehicle_id: own.tech_vehicle_id,
-      car: { make: own.make, model: own.model, version: null, year: own.year, fuel: null, engine_cc: null } as Car,
+      car: { make: own.make, model: own.model, version: null, year: own.year, fuel: null, engine_cc: null, color: own.color ?? null, power_cv: null } as Car,
     });
   }
 
@@ -65,7 +71,7 @@ Deno.serve(async (req) => {
   const { data: hit } = await admin.from('tech_plate_cache').select('*').eq('plate', plate).maybeSingle();
   if (hit?.found) {
     return json({ status: 'found', source: 'cache', plate,
-      car: { make: hit.make, model: hit.model, version: hit.version, year: hit.model_year ?? hit.year, fuel: hit.fuel, engine_cc: hit.engine_cc } as Car });
+      car: { make: hit.make, model: hit.model, version: hit.version, year: hit.model_year ?? hit.year, fuel: hit.fuel, engine_cc: hit.engine_cc, color: hit.color ?? null, power_cv: hit.power_cv ?? null } as Car });
   }
   if (hit && Date.now() - new Date(hit.created_at).getTime() < NOT_FOUND_TTL_DAYS * 86400e3) return json({ status: 'not_found', plate });
 
@@ -105,12 +111,13 @@ Deno.serve(async (req) => {
   const row = {
     plate, found: true, make: str(info.brand), model: str(info.model), version: str(info.version),
     year: int(info.year), model_year: int(info.model_year), fuel: str(info.fuel), engine_cc: int(info.engine_cc),
-    // Só o que a oficina usa, nas colunas acima. O resto da resposta da API (tabela FIPE, cor, pesos…) é descartado.
+    color: str(info.color), power_cv: powerCv(data?.fipe?.specs?.power_cv),
+    // Só o que a oficina usa, nas colunas acima. O resto da resposta da API (tabela FIPE, preços, pesos…) é descartado.
     raw: null,
     workshop_id: workshopId, created_at: new Date().toISOString(),
   };
   const { error } = await admin.from('tech_plate_cache').upsert(row);
   if (error) console.error('tech-plate-lookup cache', error.message);
   return json({ status: 'found', source: 'servico', plate,
-    car: { make: row.make, model: row.model, version: row.version, year: row.model_year ?? row.year, fuel: row.fuel, engine_cc: row.engine_cc } as Car });
+    car: { make: row.make, model: row.model, version: row.version, year: row.model_year ?? row.year, fuel: row.fuel, engine_cc: row.engine_cc, color: row.color, power_cv: row.power_cv } as Car });
 });
