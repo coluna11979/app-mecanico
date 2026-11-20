@@ -297,7 +297,8 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
               </li>
             </>
           )}
-          {!partMode && svcHits.length > 0 && (
+          {/* Serviços só aparecem depois de escolher a categoria ou digitar (a tela inicial fica limpa) */}
+          {!partMode && (ws.length > 0 || !!chip) && svcHits.length > 0 && (
             <>
               <Group label={chip ? `Serviços · ${chip}` : 'Serviços'} />
               {svcHits.slice(0, 120).map(s => (
@@ -372,8 +373,8 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
               )}
             </li>
           )}
-          {!partMode && !ws.length && !chip && !svcHits.length && !(kits ?? []).length && (
-            <li className="px-4 py-10 text-center text-sm text-steel-500">Digite o serviço ou a peça para começar.</li>
+          {!partMode && !ws.length && !chip && (
+            <li className="px-4 py-8 text-center text-sm text-steel-500">Escolha uma categoria acima ou digite o serviço ou a peça.</li>
           )}
           <li className="h-6" />
         </ul>
