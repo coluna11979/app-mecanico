@@ -7,7 +7,7 @@ import { toast } from '@/components/ui/Toast';
 import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
-  PART_CATEGORIES, UNITS, categoryMargin, fmtPct, fmtQty, loadMargins, marginOf, partCategory, priceFromMargin,
+  OIL_SUBS, oilSub, PART_CATEGORIES, UNITS, categoryMargin, fmtPct, fmtQty, loadMargins, marginOf, partCategory, priceFromMargin,
   priceModeOf, salePriceOf, type Margins, type PartCategory, type PriceMode, type WorkshopPart,
 } from '@/lib/parts';
 import { fmtDate, type StockMovement, type Supplier } from '@/lib/purchasing';
@@ -42,6 +42,9 @@ export default function Pecas() {
   const [q, setQ]               = useState('');
   const [supplierF, setSupplierF] = useState('');
   const [cat, setCat]           = useState<PartCategory | ''>('');
+  /** Tipo dentro de Óleos e filtros (filtro de ar, de óleo...) */
+  const [oilF, setOilF]         = useState<string>('');
+  useEffect(() => setOilF(''), [cat]);
   /** Só as peças que vieram da planilha do sistema antigo */
   const [fromSheet, setFromSheet] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
@@ -153,6 +156,7 @@ export default function Pecas() {
       && matchSituation(p, situation, data)
       && (!supplierF || p.supplier_id === supplierF)
       && (!cat || p.category === cat)
+      && (!oilF || (p.category === 'oleos_filtros' && oilSub(p.name) === oilF))
       && (!fromSheet || p.origin === 'planilha')
       && (!noVehicle || (!p.universal && !vehicles.get(p.id)?.length))
       && (!hasVehicleFilter || p.universal || fitsVehicle(vehicles.get(p.id), vBrand, vModel, yearNum))
@@ -160,7 +164,7 @@ export default function Pecas() {
         || p.brand?.toLowerCase().includes(t) || (p.supplier_id && supplierName.get(p.supplier_id)?.toLowerCase().includes(t))
         || partCategory(p.category).label.toLowerCase().includes(t)))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [data, parts, q, showInactive, situation, supplierF, cat, fromSheet, supplierName, vehicles, vBrand, vModel, yearNum, hasVehicleFilter, noVehicle]);
+  }, [data, parts, q, showInactive, situation, supplierF, cat, oilF, fromSheet, supplierName, vehicles, vBrand, vModel, yearNum, hasVehicleFilter, noVehicle]);
 
   const counts = useMemo(() => {
     const c = {} as Record<Situation, number>;
@@ -267,6 +271,14 @@ export default function Pecas() {
                   {catCounts.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label} ({c.n})</option>)}
                 </select>
               )}
+              {cat === 'oleos_filtros' && OIL_SUBS.map(o => {
+                const n = (parts ?? []).filter(p => p.active && p.category === 'oleos_filtros' && oilSub(p.name) === o.value).length;
+                return n > 0 && (
+                  <QuickChip key={o.value} on={oilF === o.value} onClick={() => setOilF(f => (f === o.value ? '' : o.value))}>
+                    {o.icon} {o.label} ({n})
+                  </QuickChip>
+                );
+              })}
               <span className="ml-auto text-xs text-steel-500">{list.length} peça{list.length === 1 ? '' : 's'}</span>
             </div>
           )}

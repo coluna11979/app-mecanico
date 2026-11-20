@@ -173,3 +173,28 @@ export function partNameForVehicle(name: string, make?: string | null, model?: s
   if (md && partKey(base).includes(partKey(md))) return base;
   return `${base} (${vehicle})`;
 }
+
+/** Tipos dentro de "Óleos e filtros", separados pelo nome da peça (sem mudar o cadastro) */
+export const OIL_SUBS = [
+  { value: 'oleo',      label: 'Óleo',                  icon: '🛢️' },
+  { value: 'f_oleo',    label: 'Filtro de óleo',        icon: '🧴' },
+  { value: 'f_ar',      label: 'Filtro de ar',          icon: '💨' },
+  { value: 'f_comb',    label: 'Filtro de combustível', icon: '⛽' },
+  { value: 'f_cabine',  label: 'Filtro de cabine',      icon: '❄️' },
+  { value: 'outros',    label: 'Outros',                icon: '📦' },
+] as const;
+export type OilSub = typeof OIL_SUBS[number]['value'];
+
+export function oilSub(name: string): OilSub {
+  const n = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  if (/filtr/.test(n)) {
+    if (/cabine|polen|ar.?cond|\bac\b|habitaculo|carvao/.test(n)) return 'f_cabine';
+    if (/combust|gasolina|diesel|\bcomb\b/.test(n)) return 'f_comb';
+    if (/oleo|lubrif|\bol\b|blind/.test(n)) return 'f_oleo';
+    if (/\bar\b|\bar[- ]?motor/.test(n)) return 'f_ar';
+    return 'outros';
+  }
+  if (/tampa|bujao|carter|vareta/.test(n)) return 'outros';
+  if (/oleo|lubrif|\d+w\d+|\d+w-\d+|atf|fluido/.test(n)) return 'oleo';
+  return 'outros';
+}

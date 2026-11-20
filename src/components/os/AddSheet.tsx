@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PART_CATEGORIES, fmtQty } from '@/lib/parts';
+import { OIL_SUBS, PART_CATEGORIES, fmtQty, oilSub } from '@/lib/parts';
 import { fmtBRL } from './osHelpers';
 import type { Suggestion } from './OsItemsEditor';
 import { codeHit, matchesAll, searchHay, searchWords } from '@/lib/partSearch';
@@ -62,6 +62,9 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   const [cur, setCur] = useState<SheetMode>(mode);
   const [q, setQ] = useState('');
   const [chip, setChip] = useState<string | null>(null);
+  /** Tipo dentro de Óleos e filtros (filtro de ar, de óleo...) */
+  const [sub, setSub] = useState<string | null>(null);
+  useEffect(() => setSub(null), [chip]);
   /** 'item' = só peças do tipo do serviço · 'car' = todas do carro · 'all' = todo o cadastro */
   const [scope, setScope] = useState<'item' | 'car' | 'all'>('item');
   const [kits, setKits] = useState<CarKit[] | null>(null);
@@ -97,6 +100,13 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
     return out;
   }, [categories, labor]);
   const partCats = useMemo(() => PART_CATEGORIES.filter(c => partsBase.some(p => (p.pcat ?? 'outros') === c.value)), [partsBase]);
+  // Óleos e filtros em vista: mostra os tipos (óleo, filtro de ar, de óleo...) quando houver mais de um
+  const oilSubs = useMemo(() => {
+    const pool = partsBase.filter(p => p.pcat === 'oleos_filtros' && (!chip || chip === 'oleos_filtros'));
+    if (!partMode || !pool.length || (!chip && partCats.length > 1)) return [];
+    const has = new Set(pool.map(p => oilSub(p.description)));
+    return has.size > 1 ? OIL_SUBS.filter(o => has.has(o.value)) : [];
+  }, [partsBase, chip, partMode, partCats]);
 
   const svcHits = useMemo(() => rank(labor.filter(s => (!chip || norm(s.category ?? '') === norm(chip)) && fits(s, ws)), ws),
     [labor, chip, q]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -104,8 +114,9 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
     && matchesAll(searchHay(k.svc.description, ...k.parts), ws)), [kits, chip, q]); // eslint-disable-line react-hooks/exhaustive-deps
   const partHits = useMemo(() => {
     if (!partMode && !ws.length) return [];
-    return rank(partsBase.filter(s => (!partMode || !chip || (s.pcat ?? 'outros') === chip) && fits(s, ws)), ws);
-  }, [partsBase, chip, q, partMode]); // eslint-disable-line react-hooks/exhaustive-deps
+    return rank(partsBase.filter(s => (!partMode || !chip || (s.pcat ?? 'outros') === chip)
+      && (!partMode || !sub || (s.pcat === 'oleos_filtros' && oilSub(s.description) === sub)) && fits(s, ws)), ws);
+  }, [partsBase, chip, sub, q, partMode]); // eslint-disable-line react-hooks/exhaustive-deps
   // Digitou e a peça não é do carro/tipo do serviço: mostra logo abaixo as de outros carros e sem carro
   const otherHits = useMemo(() => {
     if (!ws.length || scope === 'all') return [];
@@ -195,6 +206,12 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
             <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1">
               <button type="button" className={chipCls(chip === null)} onClick={() => setChip(null)}>Todas</button>
               {partCats.map(c => <button key={c.value} type="button" className={chipCls(chip === c.value)} onClick={() => setChip(chip === c.value ? null : c.value)}>{c.icon} {c.label}</button>)}
+            </div>
+          )}
+          {oilSubs.length > 0 && (
+            <div className="flex gap-2 mt-2 overflow-x-auto pb-1 -mx-1 px-1">
+              <button type="button" className={chipCls(sub === null)} onClick={() => setSub(null)}>Todos</button>
+              {oilSubs.map(o => <button key={o.value} type="button" className={chipCls(sub === o.value)} onClick={() => setSub(sub === o.value ? null : o.value)}>{o.icon} {o.label}</button>)}
             </div>
           )}
         </div>
