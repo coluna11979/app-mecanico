@@ -32,7 +32,7 @@ export const MODULES: Record<ModuleKey, {
   pecas:        { label: 'Peças e estoque',    icon: '🔩', desc: 'Catálogo, estoque e custo das peças',           routes: ['/oficina/pecas'] },
   compras:      { label: 'Compras e fornecedores', icon: '🧾', desc: 'Notas de compra e fornecedores',            routes: ['/oficina/compras', '/oficina/fornecedores'] },
   consulta:     { label: 'Consulta técnica',   icon: '🛢️', desc: 'Qual óleo, quanto e quais filtros cada carro usa, já cruzando com o estoque', routes: ['/oficina/consulta'] },
-  equipe:       { label: 'Equipe e desempenho', icon: '👷', desc: 'Colaboradores, desempenho e comissões',        routes: ['/oficina/equipe', '/oficina/desempenho'] },
+  equipe:       { label: 'Equipe e desempenho', icon: '👷', desc: 'Colaboradores, desempenho e comissões',        routes: ['/oficina/equipe', '/oficina/desempenho', '/oficina/tarefas'] },
   fechamentos:  { label: 'Fechamentos',        icon: '🧮', desc: 'Fechar comissões e folha',                      routes: ['/oficina/comissoes', '/oficina/folha'] },
   plataforma:   { label: 'Plataforma (mecânicos)', icon: '⚡', desc: 'Demandas, painel, buscar mecânicos, mensagens, rastreio', routes: ['/oficina/dashboard', '/oficina/plataforma', '/oficina/buscar', '/oficina/mensagens', '/oficina/job', '/oficina/carteira'] },
   servicos:     { label: 'Tabela de serviços', icon: '🛠️', desc: 'Preços e serviços padrão',                       routes: ['/oficina/servicos'] },
@@ -176,6 +176,7 @@ export const FEATURES: Partial<Record<ModuleKey, Feature[]>> = {
   equipe: [
     { key: 'equipe.colaboradores', label: 'Colaboradores', routes: ['/oficina/equipe'] },
     { key: 'equipe.desempenho',    label: 'Desempenho',    routes: ['/oficina/desempenho'] },
+    { key: 'equipe.tarefas',       label: 'Tarefas',       routes: ['/oficina/tarefas'] },
   ],
   fechamentos: [
     { key: 'fechamentos.comissoes', label: 'Fechar comissões', routes: ['/oficina/comissoes'] },

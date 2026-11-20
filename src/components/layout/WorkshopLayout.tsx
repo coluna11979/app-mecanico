@@ -75,6 +75,7 @@ const SECTIONS: NavGroup[] = [
   ] },
   { key: 'equipe', title: 'Equipe', items: [
     { to: '/oficina/equipe',     icon: '👷', label: 'Painel da equipe'     },
+    { to: '/oficina/tarefas',    icon: '✅', label: 'Tarefas'              },
     { to: '/oficina/desempenho', icon: '🏆', label: 'Desempenho'           },
     { to: '/oficina/comissoes',  icon: '🏅', label: 'Comissões'            },
     { to: '/oficina/folha',      icon: '💼', label: 'Folha'                },
