@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,6 +15,10 @@ export default function OsPrint() {
   const { profile, workshops } = useAuth();
   const [os, setOs]       = useState<OsRow | null>(null);
   const [items, setItems] = useState<ServiceOrderItem[]>([]);
+  /** Peças só de custo, agrupadas no serviço onde foram usadas (saem sem valor) */
+  const [inner, setInner] = useState<Map<string, ServiceOrderItem[]>>(new Map());
+  /** Categoria de cada serviço (pela Tabela de serviços da oficina) */
+  const [svcCat, setSvcCat] = useState<Map<string, string>>(new Map());
   const [shop, setShop]   = useState<Workshop | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,8 +33,25 @@ export default function OsPrint() {
       ]);
       const row = o as OsRow | null;
       setOs(row);
-      // Peça só de custo (sem preço de venda, dentro de um serviço) é interna: o cliente não vê
-      setItems(((its as ServiceOrderItem[]) ?? []).filter(i => !(i.kind === 'part' && Number(i.unit_price) === 0)));
+      // Peça só de custo (sem preço de venda, dentro de um serviço): sai embaixo do serviço, sem valor
+      const all = (its as ServiceOrderItem[]) ?? [];
+      const isInner = (i: ServiceOrderItem) => i.kind === 'part' && !i.standalone && Number(i.unit_price) === 0;
+      const groups = new Map<string, ServiceOrderItem[]>();
+      let lastLabor: string | null = null;
+      for (const i of all) {
+        if (i.kind === 'labor') { lastLabor = i.id; continue; }
+        if (!isInner(i)) continue;
+        const parent = (i.used_in_item_id && all.some(x => x.id === i.used_in_item_id && x.kind === 'labor')) ? i.used_in_item_id : lastLabor;
+        if (parent) groups.set(parent, [...(groups.get(parent) ?? []), i]);
+      }
+      setInner(groups);
+      setItems(all.filter(i => !isInner(i)));
+      if (row) {
+        const { data: svcs } = await supabase.from('workshop_services').select('name, category').eq('workshop_id', row.workshop_id);
+        const m = new Map<string, string>();
+        for (const s of (svcs ?? []) as { name: string; category: string | null }[]) if (s.category) m.set(s.name.trim().toLowerCase(), s.category);
+        setSvcCat(m);
+      }
       if (row) {
         const known = workshops.find(w => w.id === row.workshop_id);
         if (known) setShop(known);
@@ -156,16 +177,39 @@ export default function OsPrint() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((i, idx) => (
-                  <tr key={i.id} className="border-b border-steel-200">
-                    <td className="py-1.5 px-2 text-steel-500">{idx + 1}</td>
-                    <td className="py-1.5 px-2">{i.kind === 'part' ? 'Peça' : 'Serviço'}</td>
-                    <td className="py-1.5 px-2">{i.description}</td>
-                    <td className="py-1.5 px-2 text-right">{qty(i.quantity)}</td>
-                    <td className="py-1.5 px-2 text-right">{fmtBRL(i.unit_price)}</td>
-                    <td className="py-1.5 px-2 text-right font-semibold">{fmtBRL(i.quantity * i.unit_price)}</td>
-                  </tr>
-                ))}
+                {items.map((i, idx) => {
+                  const sub = i.kind === 'labor' ? inner.get(i.id) ?? [] : [];
+                  const cat = i.kind === 'labor' ? svcCat.get(i.description.trim().toLowerCase()) : undefined;
+                  return (
+                    <Fragment key={i.id}>
+                      <tr className={sub.length ? '' : 'border-b border-steel-200'}>
+                        <td className="py-1.5 px-2 text-steel-500 align-top">{idx + 1}</td>
+                        <td className="py-1.5 px-2 align-top">{i.kind === 'part' ? 'Peça' : (cat ?? 'Serviço')}</td>
+                        <td className="py-1.5 px-2 font-medium">{i.description}</td>
+                        <td className="py-1.5 px-2 text-right align-top">{qty(i.quantity)}</td>
+                        <td className="py-1.5 px-2 text-right align-top">{fmtBRL(i.unit_price)}</td>
+                        <td className="py-1.5 px-2 text-right font-semibold align-top">{fmtBRL(i.quantity * i.unit_price)}</td>
+                      </tr>
+                      {sub.length > 0 && (
+                        <tr className="border-b border-steel-200">
+                          <td />
+                          <td />
+                          <td colSpan={4} className="pb-2 px-2">
+                            <div className="text-[9px] font-bold uppercase tracking-wider text-steel-500">Peças utilizadas (inclusas no serviço)</div>
+                            <ul className="mt-0.5 space-y-0.5 text-steel-700">
+                              {sub.map(p => (
+                                <li key={p.id} className="flex justify-between gap-3">
+                                  <span>• {p.description}</span>
+                                  <span className="shrink-0 text-steel-500">Qtd. {qty(p.quantity)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           ) : null}
