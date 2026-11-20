@@ -491,12 +491,13 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
   orc_editar_os: {
     label: 'Editar dados da OS (reclamação, observações, KM, desconto)',
     def: {
-      description: 'Edita os dados da OS ABERTA (igual a "✏️ Editar dados" da tela): titulo, reclamacao (o que o cliente relatou), observacoes (anotações internas), km, horas_estimadas e desconto (em R$, sobre o total dos itens; 0 tira o desconto). Mande só o que muda; reclamacao ou observacoes vazias ("") apagam o texto. Mostre o antes e o depois do desconto e aplique com o "sim" do dono. Devolve o novo total. OS concluída: reabra antes com orc_reabrir_os.',
+      description: 'Edita os dados da OS ABERTA (igual a "✏️ Editar dados" da tela): titulo, reclamacao (o que o cliente relatou), observacoes (anotações internas), km, horas_estimadas e desconto, e cliente_trouxe_peca (marca/desmarca "Cliente trouxe a peça") (em R$, sobre o total dos itens; 0 tira o desconto). Mande só o que muda; reclamacao ou observacoes vazias ("") apagam o texto. Mostre o antes e o depois do desconto e aplique com o "sim" do dono. Devolve o novo total. OS concluída: reabra antes com orc_reabrir_os.',
       input_schema: {
         type: 'object', additionalProperties: false, required: ['os_numero'],
         properties: {
           os_numero: { type: 'integer' }, titulo: { type: 'string' }, reclamacao: { type: 'string' }, observacoes: { type: 'string' },
           km: { type: 'integer' }, horas_estimadas: { type: 'number' }, desconto: { type: 'number' },
+          cliente_trouxe_peca: { type: 'boolean', description: 'true = o cliente trouxe a peça (serviço que leva peça conclui sem peça; comissão de mão de obra)' },
         },
       },
     },
@@ -508,6 +509,7 @@ export const ORC_TOOLS: Record<string, ToolDef> = {
         p_workshop: ws, p_user: ctx.userId, p_os_number: os,
         p_titulo: txt(i.titulo, 200) || null, p_descricao: txt(i.reclamacao, 4000), p_obs: txt(i.observacoes, 4000),
         p_km: int(i.km), p_horas: dec(i.horas_estimadas), p_desconto: dec(i.desconto),
+        p_cliente_trouxe: typeof i.cliente_trouxe_peca === 'boolean' ? i.cliente_trouxe_peca : null,
       });
     },
   },
