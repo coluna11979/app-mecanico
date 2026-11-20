@@ -51,6 +51,7 @@ import WorkshopInicio from './pages/oficina/Inicio';
 import WorkshopResultado from './pages/oficina/Resultado';
 import WorkshopEquipe from './pages/oficina/Equipe';
 import WorkshopEquipeFicha from './pages/oficina/EquipeFicha';
+import WorkshopTarefas from './pages/oficina/Tarefas';
 import WorkshopAcessos from './pages/oficina/Acessos';
 import WorkshopCaixa from './pages/oficina/Caixa';
 import WorkshopFinanceiro from './pages/oficina/Financeiro';
@@ -201,6 +202,7 @@ export default function App() {
       <Route path="/oficina/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopPainel /></ProtectedRoute>} />
       <Route path="/oficina/equipe" element={<ProtectedRoute allow={['workshop']}><WorkshopEquipe /></ProtectedRoute>} />
       <Route path="/oficina/equipe/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopEquipeFicha /></ProtectedRoute>} />
+      <Route path="/oficina/tarefas" element={<ProtectedRoute allow={['workshop']}><WorkshopTarefas /></ProtectedRoute>} />
       <Route path="/oficina/caixa" element={<ProtectedRoute allow={['workshop']}><WorkshopCaixa /></ProtectedRoute>} />
       <Route path="/oficina/financeiro" element={<ProtectedRoute allow={['workshop']}><WorkshopFinanceiro /></ProtectedRoute>} />
       <Route path="/oficina/pecas" element={<ProtectedRoute allow={['workshop']}><WorkshopPecas /></ProtectedRoute>} />
