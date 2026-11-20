@@ -101,7 +101,9 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   const svcCats = useMemo(() => {
     const out = [...categories];
     for (const s of labor) if (s.fromTable && s.category && !out.some(c => norm(c) === norm(s.category!))) out.push(s.category);
-    return out;
+    // Só categorias com serviço na Tabela; Check-up tem fluxo próprio (não se lança por aqui)
+    const used = new Set(labor.filter(s => s.fromTable && s.category).map(s => norm(s.category!)));
+    return out.filter(c => used.has(norm(c)) && !/^check.?up$/.test(norm(c)));
   }, [categories, labor]);
   const partCats = useMemo(() => PART_CATEGORIES.filter(c => partsBase.some(p => (p.pcat ?? 'outros') === c.value)), [partsBase]);
   // Óleos e filtros em vista: mostra os tipos (óleo, filtro de ar, de óleo...) quando houver mais de um
