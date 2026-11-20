@@ -32,7 +32,7 @@ export const PART_CATEGORIES = [
   { value: 'oleos_filtros',   label: 'Óleos e filtros',    icon: '🛢️' },
   { value: 'arrefecimento',   label: 'Arrefecimento',      icon: '🌡️' },
   { value: 'transmissao',     label: 'Embreagem e câmbio', icon: '🕹️' },
-  { value: 'rodas',           label: 'Rodas e pneus',      icon: '🛞' },
+  { value: 'rodas',           label: 'Pneus',              icon: '🛞' },
   { value: 'cubo',            label: 'Cubo de roda',       icon: '🔘' },
   { value: 'rolamento',       label: 'Rolamento',          icon: '⭕' },
   { value: 'escapamento',     label: 'Escapamento',        icon: '💨' },
@@ -299,7 +299,7 @@ export const CATEGORY_SUBS: Partial<Record<PartCategory, { value: string; label:
     return [cat, [...out, { value: 'outros', label: 'Outros' }]];
   }));
 
-/** A peça entra na categoria escolhida (pneu entra em Rodas e pneus mesmo cadastrado em outra) */
+/** A peça entra na categoria escolhida (pneu entra em Pneus mesmo cadastrado em outra) */
 export const inCategory = (cat: string, p: { category?: string | null; name: string }) =>
   p.category === cat || (cat === 'rodas' && isTireName(p.name));
 
