@@ -93,7 +93,7 @@ export async function loadTechMakes(): Promise<string[]> {
 
 /* ── Placa → carro ─────────────────────────────────────────────────────────── */
 
-export type PlateCar = { make: string | null; model: string | null; version: string | null; year: number | null; fuel: string | null; engine_cc: number | null };
+export type PlateCar = { make: string | null; model: string | null; version: string | null; year: number | null; fuel: string | null; engine_cc: number | null; color?: string | null; power_cv?: number | null };
 export type PlateResult =
   | { status: 'found'; source: 'cliente' | 'cache' | 'servico'; plate: string; car: PlateCar; vehicle_id?: string; tech_vehicle_id?: string | null }
   | { status: 'invalid' | 'not_found' | 'not_configured' | 'limit' | 'unavailable' };
