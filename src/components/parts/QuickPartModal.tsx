@@ -5,6 +5,7 @@ import { useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import { UNITS, categoryMargin, priceFromMargin, type Margins } from '@/lib/parts';
 import CategorySelects from './CategorySelects';
+import { makeOfModel } from '@/lib/vehicleCatalog';
 import { savePartVehicles } from '@/lib/partVehicles';
 import { addDaysISO, todayISO, type Supplier } from '@/lib/purchasing';
 import SupplierPicker from './SupplierPicker';
@@ -60,7 +61,9 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const [sub, setSub] = useState('');
   const hasCar = !!vehicle?.model?.trim();
   const [fit, setFit] = useState<'car' | 'universal' | 'none'>(hasCar ? 'car' : 'none');
-  const [brand, setBrand] = useState((vehicle?.make ?? '').trim());
+  // Carro da OS só com o modelo (Cruze): a marca vem do catálogo (Chevrolet)
+  const [brand, setBrand] = useState((vehicle?.make ?? '').trim() || makeOfModel(vehicle?.model) || '');
+  const [brandTouched, setBrandTouched] = useState(false);
   const [model, setModel] = useState((vehicle?.model ?? '').trim());
   const [marginTouched, setMarginTouched] = useState(false);
   const [code, setCode]         = useState('');
@@ -188,8 +191,8 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             </div>
             {fit === 'car' && (
               <div className="grid grid-cols-2 gap-2 mt-2">
-                <input className="input" placeholder="Marca (ex.: Chevrolet)" value={brand} onChange={e => setBrand(e.target.value)} aria-label="Marca" />
-                <input className="input" placeholder="Modelo (ex.: Cruze)" value={model} onChange={e => setModel(e.target.value)} aria-label="Modelo" />
+                <input className="input" placeholder="Marca (ex.: Chevrolet)" value={brand} onChange={e => { setBrand(e.target.value); setBrandTouched(true); }} aria-label="Marca" />
+                <input className="input" placeholder="Modelo (ex.: Cruze)" value={model} onChange={e => { setModel(e.target.value); if (!brandTouched) { const mk = makeOfModel(e.target.value); if (mk) setBrand(mk); } }} aria-label="Modelo" />
               </div>
             )}
             <p className="text-[11px] text-steel-500 mt-1">
