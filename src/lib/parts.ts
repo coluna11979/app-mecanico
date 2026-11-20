@@ -2,7 +2,8 @@
  * Cadastro de peças — preço de venda a partir do custo.
  *
  * Margem aqui é sobre o custo (markup): custo R$ 100 com 100% → venda R$ 200.
- * Preço da peça: preço fixo, se tiver; senão custo + margem da peça; senão margem da categoria; senão margem padrão.
+ * Preço da peça: preço fixo, se tiver; senão custo + margem da peça; senão margem da subcategoria;
+ * senão margem da categoria; senão margem padrão.
  */
 import { supabase } from '@/lib/supabase';
 import { fetchAll } from '@/lib/fetchAll';
@@ -59,23 +60,35 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export const priceFromMargin = (cost: number, margin: number) => round2(cost * (1 + margin / 100));
 
-/** Margens da oficina: a padrão e, por cima dela, a de cada categoria (vazio = usa a padrão) */
-export type Margins = { base: number; byCategory: Partial<Record<PartCategory, number>> };
+/**
+ * Margens da oficina: a padrão e, por cima dela, a de cada categoria (vazio = usa a padrão).
+ * A de subcategoria fica no mesmo mapa com a chave "categoria.subcategoria" (ex.: "freios.pastilha").
+ */
+export type Margins = { base: number; byCategory: Partial<Record<string, number>> };
 
-/** Margem que vale para uma peça sem margem própria */
-export function categoryMargin(m: number | Margins, category?: string | null) {
+/** Chave da margem de uma subcategoria no mapa de margens */
+export const subMarginKey = (category: string, sub: string) => `${category}.${sub}`;
+
+/** Margem que vale para uma peça sem margem própria: subcategoria → categoria → padrão */
+export function categoryMargin(m: number | Margins, category?: string | null, sub?: string | null) {
   if (typeof m === 'number') return m;
-  const c = category ? m.byCategory[category as PartCategory] : undefined;
+  const s = category && sub ? m.byCategory[subMarginKey(category, sub)] : undefined;
+  if (s != null) return Number(s);
+  const c = category ? m.byCategory[category] : undefined;
   return c != null ? Number(c) : m.base;
 }
 
+/** Subcategoria da peça (pelo cadastro ou pelo nome), para achar a margem dela */
+export const partSub = (p: { category?: string | null; name?: string; subcategory?: string | null }) =>
+  p.category && p.name ? subOf(p.category, { category: p.category, name: p.name, subcategory: p.subcategory }) : null;
+
 /** Preço de venda da peça */
 export function salePriceOf(
-  p: Pick<WorkshopPart, 'cost' | 'margin_percent' | 'sale_price'> & { category?: string | null },
+  p: Pick<WorkshopPart, 'cost' | 'margin_percent' | 'sale_price'> & { category?: string | null; name?: string; subcategory?: string | null },
   margins: number | Margins,
 ) {
   if (p.sale_price != null) return Number(p.sale_price);
-  return priceFromMargin(Number(p.cost), p.margin_percent != null ? Number(p.margin_percent) : categoryMargin(margins, p.category));
+  return priceFromMargin(Number(p.cost), p.margin_percent != null ? Number(p.margin_percent) : categoryMargin(margins, p.category, partSub(p)));
 }
 
 /** Margem sobre o custo (%) — null quando não há custo para comparar */
@@ -150,7 +163,7 @@ export async function ensureCatalogParts(wid: string, list: { name: string; pric
     if (error) throw error;
     for (const p of (data ?? []) as { id: string; name: string; cost: number; category: string | null }[]) {
       // A categoria sai do nome, no banco: se ela tem margem própria, refaz o custo para a venda continuar = preço da nota
-      const m = categoryMargin(margin, p.category);
+      const m = categoryMargin(margin, p.category, partSub(p));
       let cost = Number(p.cost);
       // Custo informado na nota vale como está (a margem da categoria só refaz o custo estimado)
       if (m !== margin.base && !((wanted.get(partKey(p.name))?.cost ?? 0) > 0)) {

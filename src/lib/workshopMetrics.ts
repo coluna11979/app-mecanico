@@ -35,7 +35,7 @@ export type PanelOs = {
   pauses?: { started_at: string; ended_at: string | null; reason: string }[];
 };
 
-export type PanelItem = { service_order_id: string; kind: 'part' | 'labor'; description: string; quantity: number; unit_price: number };
+export type PanelItem = { service_order_id: string; kind: 'part' | 'labor'; description: string; quantity: number; unit_price: number; unit_cost?: number | null };
 export type PanelMechanic = CommissionMech & { id: string; name: string; active: boolean };
 
 export type Range = { from: Date; to: Date };

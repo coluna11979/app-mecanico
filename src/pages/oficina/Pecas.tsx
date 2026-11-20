@@ -9,7 +9,7 @@ import { canDo, useOperator } from '@/lib/operators';
 import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import {
   CATEGORY_SUBS, inCategory, subOf, PART_CATEGORIES, UNITS, categoryMargin, fmtPct, fmtQty, loadMargins, marginOf, partCategory, priceFromMargin,
-  priceModeOf, salePriceOf, type Margins, type PartCategory, type PriceMode, type WorkshopPart,
+  partSub, priceModeOf, salePriceOf, subMarginKey, type Margins, type PartCategory, type PriceMode, type WorkshopPart,
 } from '@/lib/parts';
 import { fmtDate, type StockMovement, type Supplier } from '@/lib/purchasing';
 import {
@@ -687,48 +687,93 @@ function DefaultMargin({ wid, value: margins, onSaved }: { wid: string; value: M
   );
 }
 
-/** Margem por categoria: em branco = a categoria usa a margem padrão */
+/** Margem por categoria e subcategoria: em branco = usa a de cima (subcategoria → categoria → padrão) */
 function CategoryMargins({ wid, value, onSaved }: { wid: string; value: Margins; onSaved: (v: Margins) => void }) {
-  const toStrs = (m: Margins) => Object.fromEntries(PART_CATEGORIES.map(c => [c.value, m.byCategory[c.value] != null ? String(m.byCategory[c.value]) : '']));
+  // Todas as chaves editáveis: "freios" e "freios.pastilha" (a subcategoria "outros" segue a categoria)
+  const keys = PART_CATEGORIES.flatMap(c => [c.value as string,
+    ...(CATEGORY_SUBS[c.value] ?? []).filter(x => x.value !== 'outros').map(x => subMarginKey(c.value, x.value))]);
+  const toStrs = (m: Margins) => Object.fromEntries(keys.map(k => [k, m.byCategory[k] != null ? String(m.byCategory[k]) : '']));
   const [strs, setStrs] = useState<Record<string, string>>(() => toStrs(value));
+  const [open, setOpen] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => { setStrs(toStrs(value)); }, [value]);
 
-  const parsed = PART_CATEGORIES.map(c => ({ c, t: (strs[c.value] ?? '').trim(), n: parseMoney(strs[c.value] ?? '') }));
+  const labelOf = (k: string) => {
+    const [cat, sub] = k.split('.');
+    const c = partCategory(cat);
+    return sub ? `${c.label} → ${CATEGORY_SUBS[c.value]?.find(x => x.value === sub)?.label ?? sub}` : c.label;
+  };
+  const parsed = keys.map(k => ({ k, t: (strs[k] ?? '').trim(), n: parseMoney(strs[k] ?? '') }));
   const invalid = parsed.filter(x => x.t && !(Number.isFinite(x.n) && x.n >= 0 && x.n <= 1000));
-  const next = Object.fromEntries(parsed.filter(x => x.t && Number.isFinite(x.n)).map(x => [x.c.value, x.n])) as Margins['byCategory'];
-  const dirty = PART_CATEGORIES.some(c => (next[c.value] ?? null) !== (value.byCategory[c.value] != null ? Number(value.byCategory[c.value]) : null));
+  const next = Object.fromEntries(parsed.filter(x => x.t && Number.isFinite(x.n)).map(x => [x.k, x.n])) as Margins['byCategory'];
+  const dirty = keys.some(k => (next[k] ?? null) !== (value.byCategory[k] != null ? Number(value.byCategory[k]) : null));
+  const catMargin = (cat: string) => { const n = parseMoney(strs[cat] ?? ''); return (strs[cat] ?? '').trim() && Number.isFinite(n) ? n : value.base; };
 
   async function save() {
-    if (invalid.length) return toast.error(`Margem inválida em ${invalid.map(x => x.c.label).join(', ')}`);
+    if (invalid.length) return toast.error(`Margem inválida em ${invalid.map(x => labelOf(x.k)).join(', ')}`);
     setSaving(true);
     const { error } = await supabase.from('workshop_pricing').upsert({ workshop_id: wid, part_margin_percent: value.base, category_margins: next });
     setSaving(false);
     if (error) return toast.error('Não foi possível salvar as margens: ' + error.message);
-    toast.success('Margens por categoria salvas ✓');
+    toast.success('Margens salvas ✓');
     onSaved({ ...value, byCategory: next });
   }
 
+  const input = (k: string, placeholder: number, small = false) => {
+    const t = (strs[k] ?? '').trim(); const n = parseMoney(strs[k] ?? '');
+    return (
+      <div className="flex items-center gap-2">
+        {t && Number.isFinite(n) && <span className="hidden sm:inline text-[11px] text-steel-500">{fmtBRL(100)} → {fmtBRL(priceFromMargin(100, n))}</span>}
+        <div className={`relative ${small ? 'w-20' : 'w-24'}`}>
+          <input className="input !py-1.5 !pr-7 text-right text-sm" inputMode="decimal" placeholder={String(placeholder)} aria-label={`Margem ${labelOf(k)}`}
+            value={strs[k] ?? ''} onChange={e => setStrs(s => ({ ...s, [k]: e.target.value }))} />
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">%</span>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="card mt-2">
-      <div className="text-sm font-semibold">Margem por categoria</div>
+      <div className="text-sm font-semibold">Margem por categoria e subcategoria</div>
       <div className="text-xs text-steel-500">
-        Vale para as peças da categoria sem margem própria. Em branco = usa a padrão ({value.base}%).
+        Vale para as peças sem margem própria. Em branco = usa a de cima (subcategoria → categoria → padrão {value.base}%).
       </div>
-      <div className="mt-3 max-h-[45vh] overflow-y-auto divide-y divide-steel-100">
-        {parsed.map(({ c, t, n }) => (
-          <div key={c.value} className="flex items-center justify-between gap-3 py-1.5">
-            <div className="text-sm">{c.icon} {c.label}</div>
-            <div className="flex items-center gap-2">
-              {t && Number.isFinite(n) && <span className="hidden sm:inline text-[11px] text-steel-500">{fmtBRL(100)} → {fmtBRL(priceFromMargin(100, n))}</span>}
-              <div className="relative w-24">
-                <input className="input !py-1.5 !pr-7 text-right text-sm" inputMode="decimal" placeholder={String(value.base)}
-                  value={strs[c.value] ?? ''} onChange={e => setStrs(s => ({ ...s, [c.value]: e.target.value }))} />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 text-xs">%</span>
+      <div className="mt-3 max-h-[50vh] overflow-y-auto divide-y divide-steel-100">
+        {PART_CATEGORIES.map(c => {
+          const subs = (CATEGORY_SUBS[c.value] ?? []).filter(x => x.value !== 'outros');
+          const isOpen = open === c.value;
+          const subsSet = subs.filter(x => (strs[subMarginKey(c.value, x.value)] ?? '').trim()).length;
+          return (
+            <div key={c.value} className="py-1.5">
+              <div className="flex items-center justify-between gap-3">
+                {subs.length ? (
+                  <button type="button" onClick={() => setOpen(isOpen ? null : c.value)} aria-expanded={isOpen}
+                    className="flex items-center gap-1.5 text-sm text-left min-h-[36px] hover:text-brand-700">
+                    <span className={`text-steel-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+                    {c.icon} {c.label}
+                    <span className="text-[11px] text-steel-400">
+                      · {subs.length} sub{subsSet ? ` (${subsSet} com margem)` : ''}
+                    </span>
+                  </button>
+                ) : (
+                  <div className="text-sm min-h-[36px] flex items-center pl-4">{c.icon} {c.label}</div>
+                )}
+                {input(c.value, value.base)}
               </div>
+              {isOpen && (
+                <div className="mt-1 ml-5 pl-3 border-l-2 border-steel-100 space-y-1">
+                  {subs.map(x => (
+                    <div key={x.value} className="flex items-center justify-between gap-3">
+                      <div className="text-[13px] text-steel-700">{x.label}</div>
+                      {input(subMarginKey(c.value, x.value), catMargin(c.value), true)}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {dirty && (
         <div className="mt-3 flex justify-end">
@@ -769,7 +814,7 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
   }, [part]);
   const [cost, setCost]         = useState(part ? moneyInput(Number(part.cost)) : '');
   const [mode, setMode]         = useState<PriceMode>(part ? priceModeOf(part) : 'default');
-  const [marginStr, setMarginStr] = useState(part?.margin_percent != null ? String(part.margin_percent) : String(categoryMargin(margins, part?.category)));
+  const [marginStr, setMarginStr] = useState(part?.margin_percent != null ? String(part.margin_percent) : String(categoryMargin(margins, part?.category, part ? partSub(part) : null)));
   const [fixed, setFixed]       = useState(part?.sale_price != null ? moneyInput(Number(part.sale_price)) : '');
   const [active, setActive]     = useState(part?.active ?? true);
   const [saving, setSaving]     = useState(false);
@@ -777,8 +822,10 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
   const [vList, setVList]       = useState<VehicleDraft[]>(vehicles.map(v => ({ brand: v.brand, model: v.model, year_from: v.year_from, year_to: v.year_to })));
 
   /** Sem margem própria: vale a margem da categoria escolhida (ou a padrão) */
-  const defaultMargin = categoryMargin(margins, category);
-  const byCat = !!category && margins.byCategory[category] != null;
+  const partSubNow = category ? partSub({ category, name, subcategory: sub || null }) : null;
+  const defaultMargin = categoryMargin(margins, category, partSubNow);
+  const bySub = !!category && !!partSubNow && margins.byCategory[subMarginKey(category, partSubNow)] != null;
+  const byCat = bySub || (!!category && margins.byCategory[category] != null);
   const c = Number.isFinite(parseMoney(cost)) ? parseMoney(cost) : 0;
   const m = parseMoney(marginStr);
   const f = parseMoney(fixed);
@@ -895,7 +942,7 @@ function PartForm({ wid, part, margins, vehicles, brandOptions, modelOptionsFor,
             <div>
               <label className="label">Preço de venda</label>
               <div className="grid grid-cols-3 gap-2">
-                {([['default', `Margem ${byCat ? 'da categoria' : 'padrão'} (${defaultMargin}%)`], ['margin', 'Margem própria'], ['fixed', 'Preço fixo']] as [PriceMode, string][]).map(([k, l]) => (
+                {([['default', `Margem ${bySub ? 'da subcategoria' : byCat ? 'da categoria' : 'padrão'} (${defaultMargin}%)`], ['margin', 'Margem própria'], ['fixed', 'Preço fixo']] as [PriceMode, string][]).map(([k, l]) => (
                   <button key={k} type="button" onClick={() => setMode(k)}
                     className={`text-xs font-semibold px-2 py-2 rounded-xl border transition ${
                       mode === k ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
