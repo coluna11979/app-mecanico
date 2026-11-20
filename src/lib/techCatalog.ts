@@ -96,13 +96,14 @@ export async function loadTechMakes(): Promise<string[]> {
 export type PlateCar = { make: string | null; model: string | null; version: string | null; year: number | null; fuel: string | null; engine_cc: number | null; color?: string | null; power_cv?: number | null };
 export type PlateResult =
   | { status: 'found'; source: 'cliente' | 'cache' | 'servico'; plate: string; car: PlateCar; vehicle_id?: string; tech_vehicle_id?: string | null }
-  | { status: 'invalid' | 'not_found' | 'not_configured' | 'limit' | 'unavailable' };
+  | { status: 'invalid' | 'not_found' | 'not_configured' | 'limit' | 'unavailable' | 'paid_needed' };
 
 export const PLATE_RE = /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/;
 
 /** Identifica o carro pela placa: cliente da oficina → placa já consultada → serviço de placas */
-export async function lookupPlate(workshopId: string, plate: string): Promise<PlateResult> {
-  const { data, error } = await supabase.functions.invoke('tech-plate-lookup', { body: { workshop_id: workshopId, plate } });
+export async function lookupPlate(workshopId: string, plate: string, opts?: { freeOnly?: boolean }): Promise<PlateResult> {
+  // freeOnly: só clientes da oficina e placas já consultadas; devolve 'paid_needed' antes de gastar consulta paga
+  const { data, error } = await supabase.functions.invoke('tech-plate-lookup', { body: { workshop_id: workshopId, plate, free_only: !!opts?.freeOnly } });
   if (error || !data?.status) return { status: 'unavailable' };
   return data as PlateResult;
 }

@@ -11,6 +11,8 @@ import { COMMON_SERVICES, fmtMinutes, type WorkshopService } from '@/lib/service
 import { fmtDate } from '@/lib/purchasing';
 import { DEFAULT_MARGIN, loadAllParts, loadMargins } from '@/lib/parts';
 import QuickPartModal from '@/components/parts/QuickPartModal';
+import { KitMoney, NewKitModal, NewPartModal, PartSearch, kindOf, type KitCatPart } from '@/components/servicos/KitEditor';
+import { type Margins } from '@/lib/parts';
 import { planKitCopy } from '@/lib/kitCopy';
 import {
   commonName, groupBy, loadServiceCharges, norm, vehicleLabel, type ServiceCharge,
@@ -420,9 +422,10 @@ function PricesByVehicle({ service, charges }: { service: WorkshopService; charg
 
 /** Faixa de preço do serviço neste veículo: ponto = último valor cobrado */
 type KitListRow = {
-  id: string; service_id: string; description: string; quantity: number; position: number;
+  id: string; service_id: string; description: string; quantity: number; position: number; part_id: string | null;
+  vehicle_engine?: string | null;
   vehicle_make: string | null; vehicle_model: string | null; year_from: number | null; year_to: number | null;
-  workshop_services: { name: string; category: string | null } | null;
+  workshop_services: { name: string; category: string | null; price?: number | null } | null;
 };
 
 /** Todos os kits criados, agrupados por marca → modelo → serviço, para acompanhar o que já foi montado */
@@ -431,8 +434,23 @@ function KitsByModel({ wid }: { wid: string }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [cat, setCat] = useState<string | null>(null);
+  const [fMake, setFMake] = useState('');
+  const [fModel, setFModel] = useState('');
   const [sure, setSure] = useState<string | null>(null);
-  const [newPart, setNewPart] = useState<Record<string, string>>({});
+  /** Peças do cadastro (para trocar/incluir peça no kit) */
+  const [catalog, setCatalog] = useState<KitCatPart[]>([]);
+  /** Peça do kit sendo trocada */
+  const [swap, setSwap] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  /** Cadastrar peça nova para o kit: nome digitado + o que fazer com ela (trocar ou incluir) */
+  const [newPart, setNewPart] = useState<{ name: string; row: KitListRow; mode: 'swap' | 'add' } | null>(null);
+  const [margins, setMargins] = useState<Margins | null>(null);
+  useEffect(() => { loadMargins(wid).then(setMargins).catch(() => setMargins(null)); }, [wid]);
+
+  useEffect(() => {
+    loadAllParts<KitCatPart>(wid, 'id, name, code, cost, stock_qty, category, subcategory').then(setCatalog).catch(() => setCatalog([]));
+  }, [wid]);
 
   useEffect(() => {
     let live = true;
@@ -440,7 +458,7 @@ function KitsByModel({ wid }: { wid: string }) {
       const all: KitListRow[] = [];
       for (let from = 0; ; from += 1000) {
         const { data, error } = await supabase.from('workshop_service_parts')
-          .select('id, service_id, description, quantity, position, vehicle_make, vehicle_model, year_from, year_to, workshop_services(name, category)')
+          .select('id, service_id, description, quantity, position, part_id, vehicle_make, vehicle_model, vehicle_engine, year_from, year_to, workshop_services(name, category, price)')
           .eq('workshop_id', wid).order('position').range(from, from + 999);
         if (error) { toast.error('Não foi possível carregar os kits: ' + error.message); break; }
         all.push(...((data ?? []) as unknown as KitListRow[]));
@@ -449,7 +467,7 @@ function KitsByModel({ wid }: { wid: string }) {
       if (live) setRows(all);
     })();
     return () => { live = false; };
-  }, [wid]);
+  }, [wid, nonce]);
 
   const tree = useMemo(() => {
     const t = norm(q);
@@ -457,15 +475,29 @@ function KitsByModel({ wid }: { wid: string }) {
     for (const r of rows ?? []) {
       const make = r.vehicle_model ? (r.vehicle_make?.trim() || 'Sem marca') : 'Kit geral (qualquer carro)';
       const model = r.vehicle_model?.trim() || 'Todos os modelos';
-      const svc = r.workshop_services?.name ?? 'Serviço';
+      const svc = `${r.workshop_services?.name ?? 'Serviço'}${r.vehicle_engine ? ` · motor ${r.vehicle_engine}` : ''}`;
       if (cat && (r.workshop_services?.category ?? 'Outro') !== cat) continue;
+      if (fMake && make !== fMake) continue;
+      if (fModel && model !== fModel) continue;
       if (t && !norm(`${make} ${model} ${svc} ${r.description}`).includes(t)) continue;
       const mm = makes.get(make) ?? new Map(); makes.set(make, mm);
       const sm = mm.get(model) ?? new Map(); mm.set(model, sm);
       sm.set(svc, [...(sm.get(svc) ?? []), r]);
     }
     return [...makes.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [rows, q, cat]);
+  }, [rows, q, cat, fMake, fModel]);
+
+  // Marcas e modelos que têm kit (para os seletores)
+  const makeOpts = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const r of rows ?? []) {
+      const make = r.vehicle_model ? (r.vehicle_make?.trim() || 'Sem marca') : 'Kit geral (qualquer carro)';
+      const model = r.vehicle_model?.trim() || 'Todos os modelos';
+      m.set(make, (m.get(make) ?? new Set()).add(model));
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
+  }, [rows]);
+  const picked = !!(fMake || q.trim() || cat);
 
   const cats = useMemo(() => {
     const m = new Map<string, number>();
@@ -480,29 +512,31 @@ function KitsByModel({ wid }: { wid: string }) {
     if (error) return toast.error('Não foi possível salvar: ' + error.message);
     setRows(xs => (xs ?? []).map(x => x.id === r.id ? { ...x, quantity: n } : x));
   }
-  async function setDesc(r: KitListRow, v: string) {
-    const d = v.trim();
-    if (!d || d === r.description) return;
-    const { error } = await supabase.from('workshop_service_parts').update({ description: d }).eq('id', r.id);
-    if (error) return toast.error('Não foi possível salvar: ' + error.message);
-    setRows(xs => (xs ?? []).map(x => x.id === r.id ? { ...x, description: d } : x));
+  /** Troca a peça do kit: do cadastro (vincula custo/estoque) ou texto livre */
+  async function replacePart(r: KitListRow, description: string, part_id: string | null) {
+    const d = description.trim();
+    if (!d) return;
+    const { error } = await supabase.from('workshop_service_parts').update({ description: d, part_id }).eq('id', r.id);
+    if (error) return toast.error('Não foi possível trocar: ' + error.message);
+    setRows(xs => (xs ?? []).map(x => x.id === r.id ? { ...x, description: d, part_id } : x));
+    setSwap(null);
+    toast.success('Peça trocada ✓');
   }
   async function removeParts(ids: string[]) {
     const { error } = await supabase.from('workshop_service_parts').delete().in('id', ids);
     if (error) return toast.error('Não foi possível remover: ' + error.message);
     setRows(xs => (xs ?? []).filter(x => !ids.includes(x.id)));
   }
-  async function addPart(base: KitListRow, text: string) {
+  async function addPart(base: KitListRow, text: string, part_id: string | null = null) {
     const d = text.trim();
     if (!d) return;
     const { data, error } = await supabase.from('workshop_service_parts').insert({
-      workshop_id: wid, service_id: base.service_id, description: d, quantity: 1, part_id: null, position: 999,
-      vehicle_model: base.vehicle_model, vehicle_make: base.vehicle_make, year_from: base.year_from, year_to: base.year_to,
+      workshop_id: wid, service_id: base.service_id, description: d, quantity: 1, part_id, position: 999,
+      vehicle_model: base.vehicle_model, vehicle_make: base.vehicle_make, vehicle_engine: base.vehicle_engine ?? null, year_from: base.year_from, year_to: base.year_to,
       tech_vehicle_id: null,
-    }).select('id, service_id, description, quantity, position, vehicle_make, vehicle_model, year_from, year_to').single();
+    }).select('id, service_id, description, quantity, position, part_id, vehicle_make, vehicle_model, vehicle_engine, year_from, year_to').single();
     if (error) return toast.error('Não foi possível adicionar: ' + error.message);
     setRows(xs => [...(xs ?? []), { ...(data as unknown as KitListRow), workshop_services: base.workshop_services }]);
-    setNewPart(n => ({ ...n, [`${base.service_id}|${base.vehicle_model ?? ''}`]: '' }));
   }
 
   if (rows === null) return <div className="text-sm text-steel-500 py-6">Carregando kits…</div>;
@@ -515,6 +549,32 @@ function KitsByModel({ wid }: { wid: string }) {
         <input className="input !w-auto flex-1 min-w-[220px]" placeholder="Buscar marca, modelo, serviço ou peça"
           value={q} onChange={e => setQ(e.target.value)} />
         <span className="text-sm text-steel-500">{totalKits} kit{totalKits === 1 ? '' : 's'} em {tree.length} marca{tree.length === 1 ? '' : 's'}</span>
+        <button type="button" className="btn-primary" onClick={() => setCreating(true)}>＋ Novo kit</button>
+      </div>
+      {newPart && (
+        <NewPartModal wid={wid} name={newPart.name} margins={margins}
+          vehicle={newPart.row.vehicle_model ? { make: newPart.row.vehicle_make, model: newPart.row.vehicle_model } : null}
+          onClose={() => setNewPart(null)}
+          onSaved={c => {
+            setCatalog(cs => [...cs, c]);
+            if (newPart.mode === 'swap') replacePart(newPart.row, c.name, c.id); else addPart(newPart.row, c.name, c.id);
+            setNewPart(null);
+          }} />
+      )}
+      {creating && <NewKitModal wid={wid} parts={catalog} onClose={() => setCreating(false)}
+        onSaved={() => { setCreating(false); setNonce(n => n + 1); }} />}
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input !w-auto min-w-[12rem]" value={fMake} aria-label="Marca"
+          onChange={e => { setFMake(e.target.value); setFModel(''); }}>
+          <option value="">Marca…</option>
+          {makeOpts.map(([m, models]) => <option key={m} value={m}>{m} ({models.size})</option>)}
+        </select>
+        <select className="input !w-auto min-w-[12rem] disabled:bg-steel-50 disabled:text-steel-400" value={fModel} disabled={!fMake} aria-label="Modelo"
+          onChange={e => setFModel(e.target.value)}>
+          <option value="">{fMake ? 'Todos os modelos' : 'Escolha a marca antes'}</option>
+          {[...(makeOpts.find(([m]) => m === fMake)?.[1] ?? [])].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        {(fMake || fModel) && <button type="button" className="text-xs font-semibold text-brand-700 hover:underline" onClick={() => { setFMake(''); setFModel(''); }}>limpar</button>}
       </div>
       {cats.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
@@ -526,12 +586,15 @@ function KitsByModel({ wid }: { wid: string }) {
           ))}
         </div>
       )}
-      {tree.length === 0 && (
+      {!picked && (rows?.length ?? 0) > 0 && (
+        <div className="card p-6 text-sm text-steel-600">Escolha a marca e o modelo (ou busque pelo nome) para ver os kits.</div>
+      )}
+      {picked && tree.length === 0 && (
         <div className="card p-6 text-sm text-steel-600">
           Nenhum kit ainda. Ao salvar uma OS com peças dentro de um serviço, o sistema pergunta se você quer criar o kit.
         </div>
       )}
-      {tree.map(([make, models]) => (
+      {picked && tree.map(([make, models]) => (
         <section key={make} className="card overflow-hidden">
           <h3 className="px-4 py-2.5 bg-steel-50 border-b border-steel-100 font-bold text-steel-900">
             {make} <span className="font-normal text-steel-500 text-sm">· {models.size} modelo{models.size === 1 ? '' : 's'}</span>
@@ -550,25 +613,42 @@ function KitsByModel({ wid }: { wid: string }) {
                           <span className="font-medium text-steel-900">{svc}{parts[0].workshop_services?.category && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-steel-500 bg-steel-100 rounded px-1.5 py-0.5">{parts[0].workshop_services.category}</span>}{years && <span className="text-xs text-steel-500"> · {years}</span>}</span>
                           <span className="text-xs text-steel-500 shrink-0">{parts.length} peça{parts.length === 1 ? '' : 's'} {open.has(k) ? '▲' : '▼'}</span>
                         </button>
+                        <div className="px-3 pb-2 -mt-1">
+                          <KitMoney items={parts.map(x => ({ part_id: x.part_id, quantity: Number(x.quantity) }))} parts={catalog}
+                            servicePrice={parts[0].workshop_services?.price ?? null} />
+                        </div>
                         {open.has(k) && (
                           <div className="px-3 pb-3 space-y-1.5">
-                            {parts.map(p => (
-                              <div key={p.id} className="flex items-center gap-2">
-                                <input className="input !py-1.5 text-sm w-16 text-center shrink-0" defaultValue={String(Number(p.quantity)).replace('.', ',')}
-                                  onBlur={e => setQty(p, e.target.value)} aria-label="Quantidade" />
-                                <input className="input !py-1.5 text-sm flex-1 min-w-0" defaultValue={p.description}
-                                  onBlur={e => setDesc(p, e.target.value)} aria-label="Peça" />
-                                <button type="button" className="text-steel-400 hover:text-red-600 px-1" title="Tirar a peça do kit"
-                                  onClick={() => removeParts([p.id])}>✕</button>
-                              </div>
-                            ))}
+                            {parts.map(p => {
+                              const cp = p.part_id ? catalog.find(c => c.id === p.part_id) : undefined;
+                              return (
+                                <div key={p.id} className="flex items-center gap-2">
+                                  <input className="input !py-1.5 text-sm w-16 text-center shrink-0" defaultValue={String(Number(p.quantity)).replace('.', ',')}
+                                    onBlur={e => setQty(p, e.target.value)} aria-label="Quantidade" />
+                                  {swap === p.id ? (
+                                    <PartSearch parts={catalog} model={p.vehicle_model} like={kindOf(catalog, p.description, p.part_id)} autoFocus placeholder={`Trocar “${p.description}” por… (ou digite para buscar)`}
+                                      onPick={c => replacePart(p, c.name, c.id)} onNew={name => setNewPart({ name, row: p, mode: 'swap' })} onCancel={() => setSwap(null)} />
+                                  ) : (
+                                    <div className="flex-1 min-w-0 px-3 py-1.5 rounded-xl border border-steel-200 text-sm">
+                                      <span className="block truncate text-steel-900">{p.description}</span>
+                                      <span className={`block text-[11px] ${p.part_id ? 'text-steel-500' : 'text-pending-700'}`}>
+                                        {p.part_id
+                                          ? [cp?.code ? `cód. ${cp.code}` : null, cp?.cost != null ? `custo ${fmtBRL(Number(cp.cost))}` : null, cp ? `${Number(cp.stock_qty ?? 0)} em estoque` : 'do cadastro'].filter(Boolean).join(' · ')
+                                          : 'sem cadastro: toque em Trocar para escolher a peça'}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {swap === p.id
+                                    ? <button type="button" className="text-xs font-semibold text-steel-500 hover:underline px-1" onClick={() => setSwap(null)}>Cancelar</button>
+                                    : <button type="button" className="text-xs font-semibold text-brand-700 hover:underline px-1" onClick={() => setSwap(p.id)}>Trocar</button>}
+                                  <button type="button" className="text-steel-400 hover:text-red-600 px-1" title="Tirar a peça do kit"
+                                    onClick={() => removeParts([p.id])}>✕</button>
+                                </div>
+                              );
+                            })}
                             <div className="flex items-center gap-2 pt-1">
-                              <input className="input !py-1.5 text-sm flex-1 min-w-0" placeholder="+ Adicionar peça ao kit"
-                                value={newPart[`${parts[0].service_id}|${parts[0].vehicle_model ?? ''}`] ?? ''}
-                                onChange={e => setNewPart(n => ({ ...n, [`${parts[0].service_id}|${parts[0].vehicle_model ?? ''}`]: e.target.value }))}
-                                onKeyDown={e => { if (e.key === 'Enter') addPart(parts[0], newPart[`${parts[0].service_id}|${parts[0].vehicle_model ?? ''}`] ?? ''); }} />
-                              <button type="button" className="btn-secondary text-xs !py-1.5"
-                                onClick={() => addPart(parts[0], newPart[`${parts[0].service_id}|${parts[0].vehicle_model ?? ''}`] ?? '')}>Adicionar</button>
+                              <PartSearch parts={catalog} model={parts[0].vehicle_model} placeholder="＋ Adicionar peça ao kit (buscar no cadastro)"
+                                onPick={c => addPart(parts[0], c.name, c.id)} onNew={name => setNewPart({ name, row: parts[0], mode: 'add' })} />
                             </div>
                             <div className="pt-1 text-right">
                               {sure === k

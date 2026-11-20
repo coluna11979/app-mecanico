@@ -165,7 +165,7 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
   const partPrice = (p: Suggestion) => (asCost ? (showCost && p.cost ? `custo ${fmtBRL(p.cost)}` : '') : p.unit_price > 0 ? fmtBRL(p.unit_price) : '');
 
   const chipCls = (on: boolean) => `shrink-0 h-9 px-3.5 rounded-full text-sm font-semibold border transition ${on ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-700 border-steel-200 hover:border-steel-400'}`;
-  const Group = ({ label }: { label: string }) => <div className="px-4 pt-4 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-steel-500">{label}</div>;
+  const Group = ({ label }: { label: string }) => <div className="px-4 pt-5 pb-2 text-[13px] font-semibold text-steel-500">{label}</div>;
 
   const Line = ({ name, sub, price, tag, onClick, done }: { name: string; sub?: string; price?: string; tag?: { text: string; cls: string }; onClick: () => void; done?: boolean }) => (
     <li>
@@ -177,7 +177,7 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
         </span>
         <span className="shrink-0 text-right">
           {price && <span className="block text-sm font-bold text-steel-900">{price}</span>}
-          {tag && <span className={`inline-block mt-0.5 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${tag.cls}`}>{tag.text}</span>}
+          {tag && <span className="block mt-0.5 text-[11px] text-steel-400">{tag.text}</span>}
         </span>
         <span className={`h-11 w-11 shrink-0 rounded-xl grid place-items-center text-xl font-bold transition ${done ? 'bg-signal-500 text-white' : 'bg-brand-50 text-brand-700'}`}>{done ? '✓' : '+'}</span>
       </button>
@@ -202,24 +202,24 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
             )}
             <div className="flex-1 min-w-0">
               <h3 className="font-bold text-lg text-steel-900 truncate">{title}</h3>
-              <div className="text-xs text-steel-500">🚗 {vehicleLabel || 'Sem veículo na OS'}</div>
+              <div className="text-xs text-steel-500">{vehicleLabel || 'Sem veículo na OS'}</div>
             </div>
             <button type="button" onClick={onClose} className="h-11 w-11 rounded-xl grid place-items-center text-steel-500 hover:bg-steel-100 text-lg" aria-label="Fechar">✕</button>
           </div>
           <div className="relative mt-3">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-steel-400" aria-hidden>🔍</span>
+            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-steel-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
             <input ref={input} className="input !h-12 !pl-10 text-base" value={q} onChange={e => setQ(e.target.value)}
               placeholder={partMode ? 'Buscar peça pelo nome ou código' : 'Buscar serviço, kit, peça ou código'}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (nothing) (partMode ? freePart() : freeItem()); } }} />
           </div>
-          {!partMode && svcCats.length > 0 && (
-            <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1">
-              <button type="button" className={chipCls(chip === null)} onClick={() => setChip(null)}>Tudo</button>
+          {!partMode && svcCats.length > 0 && (chip || ws.length > 0) && (
+            <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button type="button" className={chipCls(chip === null)} onClick={() => setChip(null)}>{chip ? '← Todas' : 'Tudo'}</button>
               {svcCats.map(c => <button key={c} type="button" className={chipCls(chip === c)} onClick={() => setChip(chip === c ? null : c)}>{c}</button>)}
             </div>
           )}
           {partMode && partCats.length > 1 && (
-            <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1">
+            <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button type="button" className={chipCls(chip === null)} onClick={() => setChip(null)}>Todas</button>
               {partCats.map(c => <button key={c.value} type="button" className={chipCls(chip === c.value)} onClick={() => setChip(chip === c.value ? null : c.value)}>{c.icon} {c.label}</button>)}
             </div>
@@ -290,12 +290,21 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
               ))}
             </>
           )}
-          {!partMode && !ws.length && !chip && top.length > 0 && (
+          {/* Tela inicial: categorias em cartões */}
+          {!partMode && !ws.length && !chip && svcCats.length > 0 && (
             <>
-              <Group label="Mais usados" />
-              <li className="px-4 pb-2 flex flex-wrap gap-2">
-                {top.map(s => <button key={s.description} type="button" onClick={() => pickService(s)}
-                  className="min-h-[44px] px-4 rounded-xl bg-steel-100 hover:bg-brand-50 text-sm font-semibold text-steel-800">{s.description}</button>)}
+              <Group label="Categorias" />
+              <li className="px-4 pb-1 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {svcCats.map(c => {
+                  const n = labor.filter(s => s.fromTable && norm(s.category ?? '') === norm(c)).length;
+                  return (
+                    <button key={c} type="button" onClick={() => setChip(c)}
+                      className="min-h-[64px] px-4 py-3 rounded-xl border border-steel-200 bg-white hover:border-steel-400 active:bg-steel-50 text-left transition">
+                      <span className="block text-sm font-semibold text-steel-900 leading-tight line-clamp-2">{c}</span>
+                      <span className="block text-xs text-steel-500 mt-1">{n} serviço{n === 1 ? '' : 's'}</span>
+                    </button>
+                  );
+                })}
               </li>
             </>
           )}
@@ -375,8 +384,8 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
               )}
             </li>
           )}
-          {!partMode && !ws.length && !chip && (
-            <li className="px-4 py-8 text-center text-sm text-steel-500">Escolha uma categoria acima ou digite o serviço ou a peça.</li>
+          {!partMode && !ws.length && !chip && !svcCats.length && (
+            <li className="px-4 py-8 text-center text-sm text-steel-500">Digite o serviço ou a peça.</li>
           )}
           <li className="h-6" />
         </ul>

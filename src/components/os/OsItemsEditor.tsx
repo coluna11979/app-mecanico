@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { engineHint } from '@/lib/plateToCar';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import type { OsItemKind, ServiceOrderItem } from '@/types/database';
@@ -173,7 +174,7 @@ interface Props {
   /** Avisa a página quando há itens digitados ainda não salvos (o quadro de comissões só enxerga os salvos) */
   onDirtyChange?: (dirty: boolean) => void;
   /** Veículo da OS: o serviço sugere o preço já cobrado nesse modelo */
-  vehicle?: { make?: string | null; model?: string | null; year?: number | null; tech_vehicle_id?: string | null } | null;
+  vehicle?: { make?: string | null; model?: string | null; year?: number | null; tech_vehicle_id?: string | null; notes?: string | null } | null;
   onSaved: () => void;
 }
 
@@ -206,6 +207,8 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   const sellsParts = (r: { kind: OsItemKind; description: string } | undefined) => !!r && r.kind === 'labor' && sellsSet.has(norm(r.description));
   const [partVeh, setPartVeh] = useState<Map<string, PartVehicle[]> | null>(null);
   const vehModel = vehicle?.model?.trim() || '';
+  /** Motor do carro (Obs. técnicas "Motor 1.0" ou o nome do modelo): escolhe o kit do motor certo */
+  const vehEngine = engineHint(vehicle?.notes, vehicle?.model) || null;
   useEffect(() => {
     if (!vehModel || saleMode || readOnly) { setVehPrices(new Map()); return; }
     let alive = true;
@@ -438,7 +441,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
   /** Kits prontos para o carro desta OS (um por serviço da Tabela que tem peças cadastradas) */
   async function loadCarKits(): Promise<CarKit[]> {
     const { data } = await supabase.from('workshop_service_parts')
-      .select('description, quantity, part_id, position, vehicle_model, tech_vehicle_id, year_from, year_to, workshop_services!inner(name, active)')
+      .select('description, quantity, part_id, position, vehicle_model, vehicle_engine, tech_vehicle_id, year_from, year_to, workshop_services!inner(name, active)')
       .eq('workshop_id', workshopId).eq('workshop_services.active', true).order('position').limit(5000);
     type R = KitDbRow & { workshop_services: { name: string } | { name: string }[] };
     const bySvc = new Map<string, R[]>();
@@ -449,7 +452,7 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     }
     const out: CarKit[] = [];
     for (const [name, rs] of bySvc) {
-      const picked = pickKitRows(rs, { model: vehModel, year: vehicle?.year ?? null, techId: vehicle?.tech_vehicle_id ?? null });
+      const picked = pickKitRows(rs, { model: vehModel, year: vehicle?.year ?? null, techId: vehicle?.tech_vehicle_id ?? null, engine: vehEngine });
       if (!picked.rows.length) continue;
       const svc = suggestions.find(s => s.kind === 'labor' && s.fromTable && norm(s.description) === norm(name));
       if (!svc) continue;
@@ -466,12 +469,12 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
     if (!s.fromTable) return { items: [], model: null };
     const esc = s.description.trim().replace(/[%_\\]/g, m => '\\' + m);
     const { data } = await supabase.from('workshop_service_parts')
-      .select('description, quantity, part_id, position, vehicle_model, tech_vehicle_id, year_from, year_to, workshop_services!inner(name)')
+      .select('description, quantity, part_id, position, vehicle_model, vehicle_engine, tech_vehicle_id, year_from, year_to, workshop_services!inner(name)')
       .eq('workshop_id', workshopId).ilike('workshop_services.name', esc).order('position');
-    type KitDb = { description: string; quantity: number; part_id: string | null; vehicle_model: string | null; tech_vehicle_id: string | null; year_from: number | null; year_to: number | null };
+    type KitDb = { description: string; quantity: number; part_id: string | null; vehicle_model: string | null; vehicle_engine: string | null; tech_vehicle_id: string | null; year_from: number | null; year_to: number | null };
     const rows = (data ?? []) as unknown as KitDb[];
     // Kit do carro (ficha técnica → modelo/ano → geral): mesma regra usada ao salvar kits na conclusão da OS
-    const picked = pickKitRows(rows, { model: vehModel, year: vehicle?.year ?? null, techId: vehicle?.tech_vehicle_id ?? null });
+    const picked = pickKitRows(rows, { model: vehModel, year: vehicle?.year ?? null, techId: vehicle?.tech_vehicle_id ?? null, engine: vehEngine });
     const items = picked.rows.map(k => {
       const cat = k.part_id ? suggestions.find(x => x.part_id === k.part_id) : undefined;
       return cat ? { ...cat, qty: Number(k.quantity) } : { description: k.description, kind: 'part' as const, unit_price: 0, qty: Number(k.quantity) };
@@ -1006,11 +1009,6 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           onFreeItem={name => addFromCatalog({ description: name, kind: 'labor', unit_price: 0 }, '')}
           onFreePart={(name, target) => addFromCatalog({ description: name, kind: 'part', unit_price: 0, qty: 1 }, target)}
           onNewPart={showCost ? (name, target) => { const k = target ? addPartTo(target) : null; const sv = rows.find(r => r.key === target); setSheet(null); setQuick({ key: k, name, qty: 1, cat: sv ? itemPartCats(sv.description)?.[0] ?? null : null }); } : undefined}
-          onCombo={saleMode ? undefined : () => {
-            const key = newKey();
-            setRows(rs => [...rs, { key, kind: 'labor', description: 'Mão de obra', quantity: '1', unit_price: '', unit_cost: '', part_id: null, mechanic_id: '', used_in: '', stype: 'servico', comm: '' }]);
-            return key;
-          }}
           onClose={() => setSheet(null)} />
       )}
 

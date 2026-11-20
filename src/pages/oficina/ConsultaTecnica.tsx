@@ -75,6 +75,7 @@ export default function ConsultaTecnica() {
         not_configured: 'A busca por placa ainda não está ativada para carros que não são de clientes cadastrados. Busque pelo modelo logo abaixo.',
         limit: 'Sua oficina atingiu o limite de consultas por placa de hoje. Busque pelo modelo logo abaixo.',
         unavailable: 'A consulta de placa está fora do ar agora. Tente de novo em instantes ou busque pelo modelo.',
+        paid_needed: 'Não encontramos essa placa. Busque pelo modelo do carro logo abaixo.',
       }[r.status] });
       return;
     }
