@@ -432,6 +432,8 @@ function KitsByModel({ wid }: { wid: string }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [cat, setCat] = useState<string | null>(null);
+  const [fMake, setFMake] = useState('');
+  const [fModel, setFModel] = useState('');
   const [sure, setSure] = useState<string | null>(null);
   /** Peças do cadastro (para trocar/incluir peça no kit) */
   const [catalog, setCatalog] = useState<KitCatPart[]>([]);
@@ -469,13 +471,27 @@ function KitsByModel({ wid }: { wid: string }) {
       const model = r.vehicle_model?.trim() || 'Todos os modelos';
       const svc = r.workshop_services?.name ?? 'Serviço';
       if (cat && (r.workshop_services?.category ?? 'Outro') !== cat) continue;
+      if (fMake && make !== fMake) continue;
+      if (fModel && model !== fModel) continue;
       if (t && !norm(`${make} ${model} ${svc} ${r.description}`).includes(t)) continue;
       const mm = makes.get(make) ?? new Map(); makes.set(make, mm);
       const sm = mm.get(model) ?? new Map(); mm.set(model, sm);
       sm.set(svc, [...(sm.get(svc) ?? []), r]);
     }
     return [...makes.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [rows, q, cat]);
+  }, [rows, q, cat, fMake, fModel]);
+
+  // Marcas e modelos que têm kit (para os seletores)
+  const makeOpts = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const r of rows ?? []) {
+      const make = r.vehicle_model ? (r.vehicle_make?.trim() || 'Sem marca') : 'Kit geral (qualquer carro)';
+      const model = r.vehicle_model?.trim() || 'Todos os modelos';
+      m.set(make, (m.get(make) ?? new Set()).add(model));
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
+  }, [rows]);
+  const picked = !!(fMake || q.trim() || cat);
 
   const cats = useMemo(() => {
     const m = new Map<string, number>();
@@ -531,6 +547,19 @@ function KitsByModel({ wid }: { wid: string }) {
       </div>
       {creating && <NewKitModal wid={wid} parts={catalog} onClose={() => setCreating(false)}
         onSaved={() => { setCreating(false); setNonce(n => n + 1); }} />}
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input !w-auto min-w-[12rem]" value={fMake} aria-label="Marca"
+          onChange={e => { setFMake(e.target.value); setFModel(''); }}>
+          <option value="">Marca…</option>
+          {makeOpts.map(([m, models]) => <option key={m} value={m}>{m} ({models.size})</option>)}
+        </select>
+        <select className="input !w-auto min-w-[12rem] disabled:bg-steel-50 disabled:text-steel-400" value={fModel} disabled={!fMake} aria-label="Modelo"
+          onChange={e => setFModel(e.target.value)}>
+          <option value="">{fMake ? 'Todos os modelos' : 'Escolha a marca antes'}</option>
+          {[...(makeOpts.find(([m]) => m === fMake)?.[1] ?? [])].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        {(fMake || fModel) && <button type="button" className="text-xs font-semibold text-brand-700 hover:underline" onClick={() => { setFMake(''); setFModel(''); }}>limpar</button>}
+      </div>
       {cats.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
           {[null, ...cats].map(c => (
@@ -541,12 +570,15 @@ function KitsByModel({ wid }: { wid: string }) {
           ))}
         </div>
       )}
-      {tree.length === 0 && (
+      {!picked && (rows?.length ?? 0) > 0 && (
+        <div className="card p-6 text-sm text-steel-600">Escolha a marca e o modelo (ou busque pelo nome) para ver os kits.</div>
+      )}
+      {picked && tree.length === 0 && (
         <div className="card p-6 text-sm text-steel-600">
           Nenhum kit ainda. Ao salvar uma OS com peças dentro de um serviço, o sistema pergunta se você quer criar o kit.
         </div>
       )}
-      {tree.map(([make, models]) => (
+      {picked && tree.map(([make, models]) => (
         <section key={make} className="card overflow-hidden">
           <h3 className="px-4 py-2.5 bg-steel-50 border-b border-steel-100 font-bold text-steel-900">
             {make} <span className="font-normal text-steel-500 text-sm">· {models.size} modelo{models.size === 1 ? '' : 's'}</span>

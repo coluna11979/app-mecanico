@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/Toast';
 import { fmtBRL, parseMoney } from '@/components/os/osHelpers';
 import { codeHit, matchesAll, searchHay, searchWords } from '@/lib/partSearch';
-import { makeOfModel } from '@/lib/vehicleCatalog';
+import { VEHICLE_CATALOG, VEHICLE_MAKES } from '@/lib/vehicleCatalog';
 import { subOf } from '@/lib/parts';
 import { lookupPlate } from '@/lib/techCatalog';
 import { carFromPlate, catalogMake, catalogModel } from '@/lib/plateToCar';
@@ -145,14 +145,17 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
   wid: string; parts: KitCatPart[]; onClose: () => void; onSaved: () => void;
 }) {
   const [services, setServices] = useState<{ id: string; name: string; category: string | null; price: number | null }[]>([]);
+  const [svcCat, setSvcCat] = useState('');
   const [svc, setSvc] = useState('');
+  /** Modelo fora da lista do catálogo: digitado */
+  const [otherModel, setOtherModel] = useState(false);
   const [anyCar, setAnyCar] = useState(false);
   const [plate, setPlate] = useState('');
   const [plateMsg, setPlateMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const looked = useRef('');
   const [make, setMake] = useState('');
-  const [makeTouched, setMakeTouched] = useState(false);
   const [model, setModel] = useState('');
+  const modelList = make ? VEHICLE_CATALOG[make] ?? [] : [];
   const [yFrom, setYFrom] = useState('');
   const [yTo, setYTo] = useState('');
   const [list, setList] = useState<Draft[]>([]);
@@ -185,7 +188,8 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
         mk = c.make; md = c.model; yr = c.year ? Number(c.year) : null;
       }
       if (looked.current !== p) return;
-      setMake(mk); setMakeTouched(!!mk); setModel(md);
+      setMake(mk); setModel(md);
+      setOtherModel(!!md && !(VEHICLE_CATALOG[mk] ?? []).some(x => x.toLowerCase() === md.toLowerCase()));
       setPlateMsg({ ok: true, text: `${[mk, md].filter(Boolean).join(' ')}${yr ? ` ${yr}` : ''} — o kit vale para o modelo. Anos só se a peça mudar por ano.` });
     })();
   }, [plate, wid]);
@@ -225,12 +229,21 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
         </div>
 
         <div className="px-5 py-4 space-y-4 overflow-y-auto">
-          <div>
-            <label className="label" htmlFor="kit-svc">Serviço</label>
-            <select id="kit-svc" className="input" value={svc} onChange={e => setSvc(e.target.value)}>
-              <option value="">Escolha o serviço…</option>
-              {services.map(s => <option key={s.id} value={s.id}>{s.name}{s.category ? ` · ${s.category}` : ''}</option>)}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="kit-cat">Categoria</label>
+              <select id="kit-cat" className="input" value={svcCat} onChange={e => { setSvcCat(e.target.value); setSvc(''); }}>
+                <option value="">Escolha a categoria…</option>
+                {[...new Set(services.map(s => s.category ?? 'Outro'))].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="kit-svc">Serviço</label>
+              <select id="kit-svc" className="input disabled:bg-steel-50 disabled:text-steel-400" value={svc} disabled={!svcCat} onChange={e => setSvc(e.target.value)}>
+                <option value="">{svcCat ? 'Escolha o serviço…' : 'Escolha a categoria antes'}</option>
+                {services.filter(s => (s.category ?? 'Outro') === svcCat).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
           </div>
 
           <div>
@@ -242,16 +255,30 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
             </div>
             {!anyCar && (
               <div className="space-y-2 mt-1.5">
-                <input className="input uppercase tracking-wider" placeholder="Placa (opcional) — preenche o carro" value={plate}
+                <input className="input uppercase tracking-wider placeholder:normal-case placeholder:tracking-normal" placeholder="Placa (opcional) — preenche marca e modelo" value={plate}
                   maxLength={8} onChange={e => setPlate(e.target.value)} aria-label="Placa" />
                 {plateMsg && <p className={`text-xs ${plateMsg.ok ? 'text-steel-600' : 'text-pending-700'}`}>{plateMsg.text}</p>}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <input className="input col-span-2 sm:col-span-1" placeholder="Modelo (ex.: Palio)" value={model} aria-label="Modelo"
-                    onChange={e => { setModel(e.target.value); if (!makeTouched) setMake(makeOfModel(e.target.value) ?? ''); }} />
-                  <input className="input col-span-2 sm:col-span-1" placeholder="Marca" value={make} aria-label="Marca"
-                    onChange={e => { setMake(e.target.value); setMakeTouched(true); }} />
-                  <input className="input" placeholder="Ano de" inputMode="numeric" value={yFrom} onChange={e => setYFrom(e.target.value)} aria-label="Ano de" />
-                  <input className="input" placeholder="Ano até" inputMode="numeric" value={yTo} onChange={e => setYTo(e.target.value)} aria-label="Ano até" />
+                <div className="grid grid-cols-2 gap-2">
+                  <select className="input" value={make} aria-label="Marca"
+                    onChange={e => { setMake(e.target.value); setModel(''); setOtherModel(false); }}>
+                    <option value="">Marca…</option>
+                    {VEHICLE_MAKES.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  {otherModel ? (
+                    <div className="flex gap-1">
+                      <input className="input flex-1 min-w-0" placeholder="Modelo" value={model} onChange={e => setModel(e.target.value)} aria-label="Modelo" autoFocus />
+                      <button type="button" className="px-2 text-xs text-steel-500 hover:underline" onClick={() => { setOtherModel(false); setModel(''); }}>lista</button>
+                    </div>
+                  ) : (
+                    <select className="input disabled:bg-steel-50 disabled:text-steel-400" value={model} disabled={!make} aria-label="Modelo"
+                      onChange={e => { if (e.target.value === '__outro') { setOtherModel(true); setModel(''); } else setModel(e.target.value); }}>
+                      <option value="">{make ? 'Modelo…' : 'Escolha a marca antes'}</option>
+                      {modelList.map(m => <option key={m} value={m}>{m}</option>)}
+                      {make && <option value="__outro">Outro (digitar)…</option>}
+                    </select>
+                  )}
+                  <input className="input" placeholder="Ano de (opcional)" inputMode="numeric" value={yFrom} onChange={e => setYFrom(e.target.value)} aria-label="Ano de" />
+                  <input className="input" placeholder="Ano até (opcional)" inputMode="numeric" value={yTo} onChange={e => setYTo(e.target.value)} aria-label="Ano até" />
                 </div>
               </div>
             )}
