@@ -75,6 +75,9 @@ Deno.serve(async (req) => {
   }
   if (hit && Date.now() - new Date(hit.created_at).getTime() < NOT_FOUND_TTL_DAYS * 86400e3) return json({ status: 'not_found', plate });
 
+  // Só o grátis: quem chama pergunta antes de gastar uma consulta paga
+  if (body.free_only === true) return json({ status: 'paid_needed', plate });
+
   // 3) Serviço pago
   const { data: setting } = await admin.from('app_settings').select('value').eq('key', 'plate_api_token').maybeSingle();
   const token = setting?.value?.trim();

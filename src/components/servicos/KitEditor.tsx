@@ -168,34 +168,47 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
       .then(({ data }) => setServices((data ?? []) as { id: string; name: string; category: string | null; price: number | null }[]));
   }, [wid]);
 
-  // Placa completa → carro: primeiro os carros já cadastrados na loja, depois a consulta de placa
+  // Placa completa → carro: carros da loja e placas já consultadas (grátis); a consulta paga só se a pessoa pedir
+  const [askPaid, setAskPaid] = useState(false);
+  function applyCar(p: string, mk: string, md: string, yr: number | null, en: string) {
+    if (looked.current !== p) return;
+    setMake(mk); setModel(md); setEngine(ENGINE_OPTIONS.includes(en) ? en : '');
+    setOtherModel(!!md && !(VEHICLE_CATALOG[mk] ?? []).some(x => x.toLowerCase() === md.toLowerCase()));
+    setPlateMsg({ ok: true, text: `${[mk, md, en].filter(Boolean).join(' ')}${yr ? ` ${yr}` : ''} — anos só se a peça mudar por ano.` });
+  }
+  async function query(p: string, paid: boolean) {
+    setPlateMsg({ ok: true, text: paid ? 'Consultando a placa…' : 'Buscando o carro da placa…' });
+    const res = await lookupPlate(wid, p, { freeOnly: !paid });
+    if (looked.current !== p) return;
+    if (res.status === 'paid_needed') { setPlateMsg(null); setAskPaid(true); return; }
+    if (res.status !== 'found') {
+      const why: Record<string, string> = {
+        limit: 'Limite diário de consultas atingido. Escolha o carro abaixo.',
+        not_configured: 'Consulta de placa não ativada. Escolha o carro abaixo.',
+      };
+      setPlateMsg({ ok: false, text: why[res.status] ?? 'Não achei essa placa. Escolha o carro abaixo.' });
+      return;
+    }
+    const c = carFromPlate(res.car);
+    applyCar(p, c.make, c.model, c.year ? Number(c.year) : null, c.engine);
+  }
   useEffect(() => {
     const p = plateNorm(plate);
+    setAskPaid(false);
     if (!PLATE_FULL.test(p)) { looked.current = ''; setPlateMsg(null); return; }
     if (looked.current === p) return;
     looked.current = p;
-    setPlateMsg({ ok: true, text: 'Buscando o carro da placa…' });
     (async () => {
       const { data: v } = await supabase.from('vehicles').select('make, model, year, notes').eq('plate', p).limit(1).maybeSingle();
-      let mk = '', md = '', yr: number | null = null, en = '';
       if (v && (v as { model: string | null }).model) {
         const r = v as { make: string | null; model: string | null; year: number | null; notes: string | null };
-        mk = catalogMake(r.make) || (r.make ?? '');
-        md = mk ? catalogModel(mk, r.model).model : (r.model ?? '');
-        yr = r.year;
-        en = engineHint(r.notes, r.model);
-      } else {
-        const res = await lookupPlate(wid, p);
-        if (res.status !== 'found') { if (looked.current === p) setPlateMsg({ ok: false, text: 'Não achei essa placa. Digite o modelo abaixo.' }); return; }
-        const c = carFromPlate(res.car);
-        mk = c.make; md = c.model; yr = c.year ? Number(c.year) : null; en = c.engine;
+        const mk = catalogMake(r.make) || (r.make ?? '');
+        applyCar(p, mk, mk ? catalogModel(mk, r.model).model : (r.model ?? ''), r.year, engineHint(r.notes, r.model));
+        return;
       }
-      if (looked.current !== p) return;
-      setMake(mk); setModel(md); setEngine(ENGINE_OPTIONS.includes(en) ? en : '');
-      setOtherModel(!!md && !(VEHICLE_CATALOG[mk] ?? []).some(x => x.toLowerCase() === md.toLowerCase()));
-      setPlateMsg({ ok: true, text: `${[mk, md, en].filter(Boolean).join(' ')}${yr ? ` ${yr}` : ''} — anos só se a peça mudar por ano.` });
+      await query(p, false);
     })();
-  }, [plate, wid]);
+  }, [plate, wid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const add = (d: Draft) => setList(l => l.some(x => x.part_id && x.part_id === d.part_id) ? l : [...l, d]);
   const year = (s: string) => { const n = parseInt(s, 10); return n >= 1950 && n <= 2100 ? n : null; };
@@ -261,6 +274,15 @@ export function NewKitModal({ wid, parts, onClose, onSaved }: {
                 <input className="input uppercase tracking-wider placeholder:normal-case placeholder:tracking-normal" placeholder="Placa (opcional) — preenche marca e modelo" value={plate}
                   maxLength={8} onChange={e => setPlate(e.target.value)} aria-label="Placa" />
                 {plateMsg && <p className={`text-xs ${plateMsg.ok ? 'text-steel-600' : 'text-pending-700'}`}>{plateMsg.text}</p>}
+                {askPaid && (
+                  <div className="rounded-xl border border-pending-200 bg-pending-50 px-3 py-2.5">
+                    <p className="text-sm text-steel-800">Esta placa não está no sistema. Consultar na Simples? <span className="text-steel-500">(consulta paga)</span></p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <button type="button" className="btn-primary !py-1.5 text-sm" onClick={() => { setAskPaid(false); query(plateNorm(plate), true); }}>Consultar</button>
+                      <button type="button" className="btn-secondary !py-1.5 text-sm" onClick={() => { setAskPaid(false); setPlateMsg({ ok: true, text: 'Escolha a marca e o modelo abaixo.' }); }}>Digitar o carro</button>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <select className="input" value={make} aria-label="Marca"
                     onChange={e => { setMake(e.target.value); setModel(''); setOtherModel(false); }}>
