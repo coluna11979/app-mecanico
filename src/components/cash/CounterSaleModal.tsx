@@ -402,6 +402,7 @@ export default function CounterSaleModal({ wid, sid, canDiscount, onClose, onDon
           </div>
           <div className="flex flex-wrap justify-center gap-2">
             <button className="btn-primary btn-lg" onClick={reset} autoFocus>🛒 Nova venda</button>
+            <Link to={`/oficina/os/${done.id}/imprimir`} className="btn-secondary">🖨️ Imprimir comprovante</Link>
             <button className="btn-secondary" onClick={() => setSending(true)}>📲 Enviar comprovante no WhatsApp</button>
             <Link to={`/oficina/os/${done.id}`} className="btn-secondary">Ver venda</Link>
           </div>
