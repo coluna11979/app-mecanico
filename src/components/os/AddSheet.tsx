@@ -16,6 +16,17 @@ export type CarKit = { svc: Suggestion; parts: string[]; model: string | null };
 /** Para onde vai o que for escolhido: itens da OS · peças de um serviço · venda de balcão (só peças) */
 export type SheetMode = { kind: 'top' } | { kind: 'part'; key: string; name: string; sells: boolean } | { kind: 'sale' };
 
+/** Ícone da categoria de serviço (pelo nome) */
+const CAT_ICONS: [RegExp, string][] = [
+  [/oleo|lubrif/, '🛢️'], [/geometr|alinh|balanc|camba/, '📐'], [/suspens/, '🔧'], [/direc/, '🎯'],
+  [/freio|pastilha/, '🛑'], [/pneu|roda/, '🛞'], [/arrefec|radiad/, '🌡️'], [/motor/, '⚙️'],
+  [/injec|ignic/, '⚡'], [/eletric|bateria/, '🔋'], [/embreag|cambio|transmiss/, '🕹️'], [/escap/, '💨'],
+  [/ar.?cond|clima/, '❄️'], [/diagn|scanner/, '🩺'], [/revis|check/, '📋'], [/lav|estet|polim/, '✨'],
+];
+const catIcon = (c: string) => CAT_ICONS.find(([re]) => re.test(norm(c)))?.[1] ?? '🧰';
+/** "TROCA DE ÓLEO + FILTRO" → "Troca de óleo + filtro" (só para nome todo em maiúsculas) */
+const tidy = (t: string) => (t === t.toUpperCase() && /[A-ZÀ-Ú]{3}/.test(t) ? t.charAt(0) + t.slice(1).toLowerCase() : t);
+
 /** Ordena: código exato › nome começa com a busca › com estoque */
 function rank(list: Suggestion[], ws: string[]) {
   if (!ws.length) return list;
@@ -212,14 +223,14 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
               placeholder={partMode ? 'Buscar peça pelo nome ou código' : 'Buscar serviço, kit, peça ou código'}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (nothing) (partMode ? freePart() : freeItem()); } }} />
           </div>
-          {!partMode && svcCats.length > 0 && (
-            <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1">
-              <button type="button" className={chipCls(chip === null)} onClick={() => setChip(null)}>Tudo</button>
+          {!partMode && svcCats.length > 0 && (chip || ws.length > 0) && (
+            <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button type="button" className={chipCls(chip === null)} onClick={() => setChip(null)}>{chip ? '← Todas' : 'Tudo'}</button>
               {svcCats.map(c => <button key={c} type="button" className={chipCls(chip === c)} onClick={() => setChip(chip === c ? null : c)}>{c}</button>)}
             </div>
           )}
           {partMode && partCats.length > 1 && (
-            <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1">
+            <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button type="button" className={chipCls(chip === null)} onClick={() => setChip(null)}>Todas</button>
               {partCats.map(c => <button key={c.value} type="button" className={chipCls(chip === c.value)} onClick={() => setChip(chip === c.value ? null : c.value)}>{c.icon} {c.label}</button>)}
             </div>
@@ -295,10 +306,32 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
               <Group label="Mais usados" />
               <li className="px-4 pb-2 flex flex-wrap gap-2">
                 {top.map(s => <button key={s.description} type="button" onClick={() => pickService(s)}
-                  className="min-h-[44px] px-4 rounded-xl bg-steel-100 hover:bg-brand-50 text-sm font-semibold text-steel-800">{s.description}</button>)}
+                  className="min-h-[44px] px-4 rounded-full border border-steel-200 bg-white hover:border-brand-300 hover:bg-brand-50/40 text-sm font-semibold text-steel-800 transition">{tidy(s.description)}</button>)}
               </li>
             </>
           )}
+          {/* Tela inicial: categorias em cartões */}
+          {!partMode && !ws.length && !chip && svcCats.length > 0 && (
+            <>
+              <Group label="Categorias" />
+              <li className="px-4 pb-1 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {svcCats.map(c => {
+                  const n = labor.filter(s => s.fromTable && norm(s.category ?? '') === norm(c)).length;
+                  return (
+                    <button key={c} type="button" onClick={() => setChip(c)}
+                      className="min-h-[64px] px-3 py-2.5 rounded-2xl border border-steel-200 bg-white hover:border-brand-300 hover:bg-brand-50/40 active:bg-brand-50 text-left flex items-center gap-3 transition">
+                      <span className="h-10 w-10 shrink-0 rounded-xl bg-steel-100 grid place-items-center text-xl" aria-hidden>{catIcon(c)}</span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-steel-900 leading-tight line-clamp-2">{c}</span>
+                        <span className="block text-[11px] text-steel-500 mt-0.5">{n} serviço{n === 1 ? '' : 's'}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </li>
+            </>
+          )}
+
           {/* Serviços só aparecem depois de escolher a categoria ou digitar (a tela inicial fica limpa) */}
           {!partMode && (ws.length > 0 || !!chip) && svcHits.length > 0 && (
             <>
@@ -375,8 +408,8 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
               )}
             </li>
           )}
-          {!partMode && !ws.length && !chip && (
-            <li className="px-4 py-8 text-center text-sm text-steel-500">Escolha uma categoria acima ou digite o serviço ou a peça.</li>
+          {!partMode && !ws.length && !chip && !svcCats.length && (
+            <li className="px-4 py-8 text-center text-sm text-steel-500">Digite o serviço ou a peça.</li>
           )}
           <li className="h-6" />
         </ul>
