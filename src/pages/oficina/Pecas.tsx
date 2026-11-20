@@ -271,15 +271,24 @@ export default function Pecas() {
                   {catCounts.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label} ({c.n})</option>)}
                 </select>
               )}
-              {cat === 'oleos_filtros' && OIL_SUBS.map(o => {
-                const n = (parts ?? []).filter(p => p.active && p.category === 'oleos_filtros' && oilSub(p.name) === o.value).length;
-                return n > 0 && (
-                  <QuickChip key={o.value} on={oilF === o.value} onClick={() => setOilF(f => (f === o.value ? '' : o.value))}>
-                    {o.icon} {o.label} ({n})
-                  </QuickChip>
-                );
-              })}
               <span className="ml-auto text-xs text-steel-500">{list.length} peça{list.length === 1 ? '' : 's'}</span>
+            </div>
+          )}
+          {cat === 'oleos_filtros' && (
+            <div className="overflow-x-auto -mx-1 px-1">
+              <div role="tablist" aria-label="Tipo de óleo ou filtro" className="inline-flex items-center gap-0.5 rounded-xl bg-steel-100 p-1">
+                {[{ value: '', label: 'Todos' }, ...OIL_SUBS].map(o => {
+                  const n = (parts ?? []).filter(p => p.active && p.category === 'oleos_filtros' && (!o.value || oilSub(p.name) === o.value)).length;
+                  if (o.value && !n) return null;
+                  const on = oilF === o.value;
+                  return (
+                    <button key={o.value || 'all'} role="tab" aria-selected={on} onClick={() => setOilF(o.value)}
+                      className={`whitespace-nowrap min-h-[32px] px-3 rounded-lg text-xs font-semibold transition ${on ? 'bg-white text-steel-900 shadow-sm' : 'text-steel-500 hover:text-steel-800'}`}>
+                      {o.label} <span className={on ? 'text-steel-400' : 'text-steel-400/80'}>{n}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
           {data && parts && parts.length > 0 && (

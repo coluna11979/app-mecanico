@@ -209,9 +209,18 @@ export default function AddSheet({ mode, suggestions, categories, topServices, l
             </div>
           )}
           {oilSubs.length > 0 && (
-            <div className="flex gap-2 mt-2 overflow-x-auto pb-1 -mx-1 px-1">
-              <button type="button" className={chipCls(sub === null)} onClick={() => setSub(null)}>Todos</button>
-              {oilSubs.map(o => <button key={o.value} type="button" className={chipCls(sub === o.value)} onClick={() => setSub(sub === o.value ? null : o.value)}>{o.icon} {o.label}</button>)}
+            <div className="mt-2 overflow-x-auto -mx-1 px-1">
+              <div role="tablist" aria-label="Tipo de óleo ou filtro" className="inline-flex items-center gap-0.5 rounded-xl bg-steel-100 p-1">
+                {[{ value: null as string | null, label: 'Todos' }, ...oilSubs.map(o => ({ value: o.value as string | null, label: o.label }))].map(o => {
+                  const on = sub === o.value;
+                  return (
+                    <button key={o.value ?? 'all'} type="button" role="tab" aria-selected={on} onClick={() => setSub(o.value)}
+                      className={`whitespace-nowrap min-h-[36px] px-3 rounded-lg text-sm font-semibold transition ${on ? 'bg-white text-steel-900 shadow-sm' : 'text-steel-500'}`}>
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
