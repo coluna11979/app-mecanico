@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { Toaster } from './components/ui/Toast';
+import { useAuth } from './contexts/AuthContext';
 import { pixelPageView } from './lib/metaPixel';
 
 import Landing from './pages/public/Landing';
@@ -148,11 +149,14 @@ function useRoutePageView() {
 
 export default function App() {
   useRoutePageView();
+  // Trocou de loja: a tela aberta é refeita do zero com a loja nova (senão ela segue mostrando
+  // os dados e o formulário da loja anterior até o usuário sair dela)
+  const { currentWorkshop } = useAuth();
   return (
     <>
     <UpdatePrompt />
     <Toaster />
-    <Routes>
+    <Routes key={currentWorkshop?.id ?? 'sem-loja'}>
       {/* Público */}
       {/* App instalado não mostra a página de apresentação: vai direto ao login (o iPhone e apps
           instalados antes ignoram o start_url do manifesto, por isso o desvio também aqui) */}
