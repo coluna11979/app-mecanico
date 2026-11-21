@@ -14,7 +14,13 @@ export type OsRow = ServiceOrder & {
   mechanic: WorkshopMechanic | null;
   /** Pausas do serviço (ex.: aguardando peça) */
   pauses?: ServiceOrderPause[];
+  /** Quem fez cada item (os responsáveis são todos os que estão nos itens) */
+  item_people?: { mechanic: { name: string } | null }[];
 };
+
+/** Responsáveis da OS: o geral + todos os que estão nos itens, sem repetir */
+export const osPeople = (os: Pick<OsRow, 'mechanic' | 'item_people'>) =>
+  [...new Set([os.mechanic?.name, ...(os.item_people ?? []).map(i => i.mechanic?.name)].filter((n): n is string => !!n))];
 
 interface OsCardProps {
   os: OsRow;
@@ -78,7 +84,7 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink, mechan
           <div className="font-bold text-steel-800 mt-1 truncate">{os.title}</div>
 
           {/* linha 3: cliente + contatos + mecânico */}
-          {(os.customer || os.mechanic) && (
+          {(os.customer || osPeople(os).length > 0) && (
             <div className="text-xs text-steel-500 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               {os.customer && (
                 <span className="inline-flex items-center gap-1">
@@ -108,10 +114,10 @@ export default function OsCard({ os, onClick, onChangeStatus, onCopyLink, mechan
                   💬 WhatsApp
                 </a>
               )}
-              {os.mechanic && (
+              {osPeople(os).length > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <span>🔧</span>
-                  <span className="font-medium text-steel-700">{os.mechanic.name}</span>
+                  <span className="font-medium text-steel-700">{osPeople(os).join(', ')}</span>
                 </span>
               )}
             </div>

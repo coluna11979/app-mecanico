@@ -637,8 +637,9 @@ export default function OsItemsEditor({ osId, workshopId, items, discount, legac
           // e a comissão sai como mão de obra (10%) em vez de serviço com peça (4%)
           const ps = partsOf(r);
           const tab = suggestions.find(s => s.kind === 'labor' && s.fromTable && norm(s.description) === norm(nm));
-          if (tab?.levaPeca && !ps.length && !customerBroughtParts && changed(r)) {
-            return toast.error(`O serviço “${nm}” leva peça: coloque a peça dentro dele (com o custo) antes de salvar, ou marque “Cliente trouxe a peça”.`, 9000);
+          // "Só mão de obra (sem peça)" marcado no item: a oficina disse que este não leva peça (comissão de mão de obra)
+          if (tab?.levaPeca && !ps.length && !customerBroughtParts && r.stype !== 'mao_de_obra' && changed(r)) {
+            return toast.error(`O serviço “${nm}” leva peça: coloque a peça dentro dele (com o custo) antes de salvar, ou marque “Só mão de obra (sem peça)” no item.`, 9000);
           }
           // Serviço com peças e valor zero: o cliente não paga nada e a OS fica no prejuízo
           if (ps.length && !(parseMoney(r.unit_price || '0') > 0) && (changed(r) || ps.some(changed))) {

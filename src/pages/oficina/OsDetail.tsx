@@ -652,6 +652,8 @@ export default function OsDetail() {
               os={{ id: os.id, status: os.status, executor: os.executor ?? null, workshop_mechanic_id: os.workshop_mechanic_id,
                     mechanic: os.mechanic ?? null, estimated_hours: os.estimated_hours }}
               split={perService ? <ServiceSplit items={items} team={team} osMechanic={os.mechanic?.name ?? null} /> : undefined}
+              people={perService ? [...new Set(items.filter(i => i.kind === 'labor').map(i => i.executor === 'platform' ? '🌐 Plataforma'
+                : (i.workshop_mechanic_id && team.find(t => t.id === i.workshop_mechanic_id)?.name) || os.mechanic?.name || '').filter(Boolean))] : undefined}
               canTrack={canOpen('/oficina/job')}
               canPublish={canOpen('/oficina/dashboard')}
               onDefine={() => (team.length > 0 && !closed ? setSplitting(true) : setSettingResp('edit'))}

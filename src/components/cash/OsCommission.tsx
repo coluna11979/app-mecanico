@@ -17,9 +17,10 @@ import type { WorkshopMechanic } from '@/types/database';
 
 type Assign = ReturnType<typeof useReceiveAssignments>;
 type Team = (Pick<WorkshopMechanic, 'id' | 'name'> & { no_commission?: boolean | null; commission_revenue_only?: boolean | null; commission_revenue_percent?: number | null })[];
-/** Como a comissão da pessoa é calculada: % padrão sobre o total da OS ou valor fechado */
-type Mode = 'p10' | 'p4' | 'fixo';
+/** Como a comissão da pessoa é calculada: pela regra (item a item, recalcula sozinha), % sobre os itens dela ou valor fechado */
+type Mode = 'regra' | 'p10' | 'p4' | 'fixo';
 const MODES: { key: Mode; label: string; pct: number | null }[] = [
+  { key: 'regra', label: 'Regra', pct: null },
   { key: 'p10', label: `${RULE.labor}%`, pct: RULE.labor },
   { key: 'p4', label: `${RULE.service}%`, pct: RULE.service },
   { key: 'fixo', label: 'Valor fechado', pct: null },
@@ -113,6 +114,8 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
       .reduce((s, l) => s + amt(l) + (a.partsOf.get(l.id) ?? []).filter(p => keep(p.description)).reduce((x, p) => x + amt(p), 0), 0));
   };
   const baseOf = (r: Row) => baseFor(r.mechanic_id);
+  /** Pela regra, com os itens marcados agora para a pessoa (recalcula quando os itens mudam) */
+  const ruleOf = (r: Row) => auto.find(x => x.mechanic_id === r.mechanic_id) ?? { mechanic_id: r.mechanic_id, value: 0, base: '' };
   /** Regra por pessoa da loja (ex.: alinhamento = 10% para quem fez): vale mesmo o item estando fora dos 4% / 10% gerais */
   const extraOf = (r: Row): { value: number; labels: string[] } => {
     let value = 0; const labels: string[] = [];
@@ -138,7 +141,11 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     setSeeded(true);
     if (!wasManual) return;
     setRows(rs => {
-      const next = rs.map(r => ({ ...r, mode: modeOf(r2(parseMoney(r.amount)), baseFor(r.mechanic_id)) }));
+      const next = rs.map(r => {
+        const v = r2(parseMoney(r.amount));
+        if (Math.abs(v - (auto.find(x => x.mechanic_id === r.mechanic_id)?.value ?? -1)) < 0.01) return { ...r, mode: 'regra' as Mode, amount: '' };
+        return { ...r, mode: modeOf(v, baseFor(r.mechanic_id)) };
+      });
       if (a.labor.some(l => a.who[l.id] === PLATFORM) && !next.some(r => r.mechanic_id === PLATFORM)) {
         next.push({ key: ++seq, mechanic_id: PLATFORM, mode: 'fixo', amount: '' });
       }
@@ -148,10 +155,10 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   }, [loaded, a.items]);
 
   function startEdit() {
-    const base: Row[] = auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: modeOf(x.value, baseFor(x.mechanic_id)), amount: moneyStr(x.value) }));
+    const base: Row[] = auto.map(x => ({ key: ++seq, mechanic_id: x.mechanic_id, mode: 'regra' as Mode, amount: '' }));
     // Serviço já entregue ao mecânico da plataforma aparece como pessoa (sem comissão da equipe)
     if (a.assignables.some(l => a.who[l.id] === PLATFORM)) base.push({ key: ++seq, mechanic_id: PLATFORM, mode: 'fixo', amount: '' });
-    setRows(base.length ? base : [{ key: ++seq, mechanic_id: '', mode: 'fixo', amount: '' }]);
+    setRows(base.length ? base : [{ key: ++seq, mechanic_id: '', mode: 'regra', amount: '' }]);
     setEditing(true);
   }
   const backToRule = () => { setEditing(false); setRows([]); };
@@ -161,9 +168,20 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   const noComm = (r: Row) => r.mechanic_id === PLATFORM || fixed.has(r.mechanic_id);
   const valueOf = (r: Row) => {
     if (noComm(r)) return 0;
+    if (r.mode === 'regra') return ruleOf(r).value;
     const pct = MODES.find(m => m.key === r.mode)?.pct;
     return pct != null ? r2(baseOf(r) * pct / 100 + extraOf(r).value) : r2(parseMoney(r.amount));
   };
+
+  // Linha em "Valor fechado" ainda vazia: passa a seguir a regra (recalcula com os itens da pessoa)
+  useEffect(() => {
+    if (!editing) return;
+    setRows(rs => rs.some(r => r.mode === 'fixo' && !r.amount.trim() && r.mechanic_id && !noComm(r))
+      ? rs.map(r => (r.mode === 'fixo' && !r.amount.trim() && r.mechanic_id && !noComm(r) ? { ...r, mode: 'regra' as Mode } : r))
+      : rs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, rows]);
+
   const valid = !editing || rows.every(r => r.mechanic_id && valueOf(r) >= 0);
   const total = editing ? r2(rows.reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
 
@@ -176,12 +194,13 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     return { error };
   }
 
-  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf, excludedOf, extraOf };
+  return { loaded, editing, wasManual, rows, setRows, auto, startEdit, backToRule, valid, total, save, osTotal, valueOf, baseOf, excludedOf, extraOf, ruleOf, hasRule: true };
 }
 
 /** O que o quadro precisa (serve para a OS salva e para a conferência de nota, antes de a OS existir) */
 type CommissionCtl = Pick<ReturnType<typeof useOsCommission>,
-  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf' | 'baseOf' | 'excludedOf' | 'extraOf'>;
+  'loaded' | 'editing' | 'rows' | 'setRows' | 'auto' | 'startEdit' | 'backToRule' | 'total' | 'osTotal' | 'valueOf' | 'baseOf' | 'excludedOf' | 'extraOf'>
+  & { ruleOf?: (r: Row) => AutoCommission; hasRule?: boolean };
 
 export type AutoCommission = { mechanic_id: string; value: number; base: string };
 
@@ -232,6 +251,8 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
   /** Troca a pessoa da linha: os serviços dela vão junto */
   function changePerson(r: Row, to: string) {
     if (assign && r.mechanic_id) assign.setWho(w => Object.fromEntries(Object.entries(w).map(([k, v]) => [k, v === r.mechanic_id ? to : v])));
+    // Escolheu a pessoa: os itens ainda sem ninguém ficam com ela (antes era preciso tocar em cada item e a comissão saía zerada)
+    else if (assign && to) assign.setWho(w => ({ ...w, ...Object.fromEntries(assign.labor.filter(l => !w[l.id]).map(l => [l.id, to])) }));
     setRow(r.key, { mechanic_id: to });
   }
   /** Marca/desmarca um serviço para a pessoa da linha (marcar tira do outro) */
@@ -307,7 +328,7 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
                 </div>
               ) : (
               <div className="flex flex-wrap gap-1.5 items-center">
-                {MODES.map(m => (
+                {MODES.filter(m => m.key !== 'regra' || c.hasRule).map(m => (
                   <button key={m.key} type="button"
                     onClick={() => setRow(r.key, { mode: m.key, amount: m.key === 'fixo' ? moneyStr(c.valueOf(r)) : r.amount })}
                     className={`text-xs font-semibold px-2.5 py-1.5 rounded-full border transition ${
@@ -323,8 +344,11 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
                 )}
               </div>
               )}
-              {r.mode !== 'fixo' && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} sobre {brl(c.baseOf(r))} ({c.baseOf(r) === c.osTotal ? 'total da OS' : 'os serviços dele'})</div>}
-              {r.mode !== 'fixo' && c.extraOf(r).value > 0 && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && (
+              {r.mode === 'regra' && c.ruleOf && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && (
+                <div className="text-[11px] text-steel-400">{c.ruleOf(r).base || 'Marque os itens que a pessoa fez'}</div>
+              )}
+              {(r.mode === 'p10' || r.mode === 'p4') && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && <div className="text-[11px] text-steel-400">{MODES.find(m => m.key === r.mode)?.label} sobre {brl(c.baseOf(r))} ({c.baseOf(r) === c.osTotal ? 'total da OS' : 'os serviços dele'})</div>}
+              {(r.mode === 'p10' || r.mode === 'p4') && c.extraOf(r).value > 0 && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && (
                 <div className="text-[11px] text-signal-700">+ regra da loja: {c.extraOf(r).labels.join(' · ')}</div>
               )}
               {c.excludedOf(r).length > 0 && !(r.mechanic_id === PLATFORM || isFixed(r.mechanic_id)) && (
@@ -335,9 +359,9 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
           {c.rows.length === 0 && (
             <p className="text-xs text-pending-800">Ninguém vai receber comissão nesta OS. Toque em “+ Incluir pessoa” para digitar um valor.</p>
           )}
-          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: assign ? 'p4' : 'fixo', amount: '' }])}
+          <button type="button" onClick={() => c.setRows(rs => [...rs, { key: ++seq, mechanic_id: '', mode: assign ? 'regra' : 'fixo', amount: '' }])}
             className="text-sm font-semibold text-brand-600">+ Incluir pessoa</button>
-          <p className="text-[11px] text-steel-500">Valor fechado = o valor que você digitar, independente do cadastro. Substitui a regra só nesta OS.</p>
+          <p className="text-[11px] text-steel-500">Regra = 4% em serviço com peças e 10% em só mão de obra, item a item, nos itens marcados da pessoa. Valor fechado = o valor que você digitar (substitui a regra só nesta OS).</p>
         </div>
       )}
 
