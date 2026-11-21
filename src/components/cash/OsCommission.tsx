@@ -28,9 +28,6 @@ const MODES: { key: Mode; label: string; pct: number | null }[] = [
 type Row = { key: number; mechanic_id: string; mode: Mode; amount: string };
 
 let seq = 0;
-/** Uma linha por pessoa: a mesma pessoa em duas linhas contaria a comissão dela duas vezes */
-const uniqueRows = <T extends { mechanic_id: string }>(rs: T[]) =>
-  rs.filter((r, i) => !r.mechanic_id || rs.findIndex(x => x.mechanic_id === r.mechanic_id) === i);
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const amt = (i: { quantity: number; unit_price: number }) => r2(Number(i.quantity) * Number(i.unit_price));
 /** Valor salvo bate com uma % padrão do total? Senão é valor fechado */
@@ -176,11 +173,6 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     return pct != null ? r2(baseOf(r) * pct / 100 + extraOf(r).value) : r2(parseMoney(r.amount));
   };
 
-  // Mesma pessoa em duas linhas (vinda de antes): fica uma só
-  useEffect(() => {
-    if (uniqueRows(rows).length !== rows.length) setRows(uniqueRows);
-  }, [rows]);
-
   // Linha em "Valor fechado" ainda vazia: passa a seguir a regra (recalcula com os itens da pessoa)
   useEffect(() => {
     if (!editing) return;
@@ -191,13 +183,13 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
   }, [editing, rows]);
 
   const valid = !editing || rows.every(r => r.mechanic_id && valueOf(r) >= 0);
-  const total = editing ? r2(uniqueRows(rows).reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
+  const total = editing ? r2(rows.reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
 
   async function save(wid: string, sid: string | null): Promise<{ error: { message: string } | null }> {
     if (!loaded || (!editing && !wasManual)) return { error: null };
     const { error } = await supabase.rpc('set_os_commissions', {
       p_workshop: wid, p_session: sid, p_os: osId, p_manual: editing,
-      p_rows: editing ? uniqueRows(rows).filter(r => r.mechanic_id && !noComm(r)).map(r => ({ mechanic_id: r.mechanic_id, amount: valueOf(r) })) : [],
+      p_rows: editing ? rows.filter(r => r.mechanic_id && !noComm(r)).map(r => ({ mechanic_id: r.mechanic_id, amount: valueOf(r) })) : [],
     });
     return { error };
   }
@@ -230,7 +222,7 @@ export function useDraftCommission(auto: AutoCommission[], osTotal: number, defa
     return pct != null ? r2(osTotal * pct / 100) : r2(parseMoney(r.amount));
   };
   const valid = !editing || rows.every(r => r.mechanic_id && valueOf(r) >= 0);
-  const total = editing ? r2(uniqueRows(rows).reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
+  const total = editing ? r2(rows.reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
   async function save(wid: string, sid: string | null, osId: string): Promise<{ error: { message: string } | null }> {
     if (!editing) return { error: null };
     const { error } = await supabase.rpc('set_os_commissions', {
@@ -258,10 +250,6 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
   const isFixed = (id: string) => { const t = team.find(x => x.id === id); return !!(t?.no_commission || t?.commission_revenue_only); };
   /** Troca a pessoa da linha: os serviços dela vão junto */
   function changePerson(r: Row, to: string) {
-    if (to && c.rows.some(x => x.key !== r.key && x.mechanic_id === to)) {
-      c.setRows(rs => rs.filter(x => x.key !== r.key));
-      return;
-    }
     if (assign && r.mechanic_id) assign.setWho(w => Object.fromEntries(Object.entries(w).map(([k, v]) => [k, v === r.mechanic_id ? to : v])));
     // Escolheu a pessoa: os itens ainda sem ninguém ficam com ela (antes era preciso tocar em cada item e a comissão saía zerada)
     else if (assign && to) assign.setWho(w => ({ ...w, ...Object.fromEntries(assign.labor.filter(l => !w[l.id]).map(l => [l.id, to])) }));
@@ -305,8 +293,7 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
                 <select className={`input !py-1.5 text-sm flex-1 min-w-0 ${r.mechanic_id ? '' : '!border-pending-400'}`} value={r.mechanic_id}
                   onChange={e => changePerson(r, e.target.value)}>
                   <option value="">{assign ? 'Quem faz…' : 'Quem recebe…'}</option>
-                  {team.filter(t => (assign || !(t.no_commission || t.commission_revenue_only) || t.id === r.mechanic_id)
-                    && (t.id === r.mechanic_id || !c.rows.some(x => x.key !== r.key && x.mechanic_id === t.id)))
+                  {team.filter(t => assign || !(t.no_commission || t.commission_revenue_only) || t.id === r.mechanic_id)
                     .map(t => <option key={t.id} value={t.id}>{t.name}{assign && isFixed(t.id) ? ' (salário fixo)' : ''}</option>)}
                   {assign && <option value={PLATFORM}>🌐 Mecânico da plataforma</option>}
                 </select>
