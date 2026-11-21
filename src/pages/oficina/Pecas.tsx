@@ -472,7 +472,7 @@ export default function Pecas() {
         </div>
       )}
       {transferring && (
-        <StockTransferModal part={transferring} stores={otherStores}
+        <StockTransferModal part={transferring} stores={otherStores} salePrice={margin ? salePriceOf(transferring, margin) : Number(transferring.sale_price ?? transferring.cost)}
           onClose={() => setTransferring(null)} onSaved={() => { setTransferring(null); load(); }} />
       )}
       {moving && (

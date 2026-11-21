@@ -1,93 +1,144 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import WorkshopLayout from '@/components/layout/WorkshopLayout';
 import StockTabs, { useStockAccess } from '@/components/stock/StockTabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/Toast';
 import { fmtBRL } from '@/components/os/osHelpers';
 import { fmtQty, partCategory, type PartCategory } from '@/lib/parts';
+import { SETTLEMENTS, type Settlement } from '@/components/stock/StockModals';
 
+type PartRef = { name: string; code: string | null; unit: string; category: PartCategory } | null;
 type Row = {
-  id: string; qty: number; kind: 'transf_saida' | 'transf_entrada'; note: string | null; created_at: string;
-  part: { name: string; code: string | null; unit: string; cost: number; category: PartCategory } | null;
+  id: string; from_workshop_id: string; to_workshop_id: string; qty: number; unit_price: number; total: number;
+  settlement: Settlement; due_date: string | null; note: string | null; settled_at: string | null; settled_how: string | null; created_at: string;
+  from_part: PartRef; to_part: PartRef;
+  from_w: { business_name: string } | null; to_w: { business_name: string } | null;
 };
 
 const iso = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const PRESETS = [{ l: 'Hoje', d: 0 }, { l: '7 dias', d: 7 }, { l: '30 dias', d: 30 }, { l: '90 dias', d: 90 }, { l: '1 ano', d: 365 }];
+const HOWS = ['PIX', 'Transferência bancária', 'Dinheiro do caixa', 'Peça devolvida', 'Outro'];
+const fmtD = (s: string) => new Date(`${s.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR');
 
 type Sum = { items: number; units: number; value: number };
-function SumCard({ title, tone, s }: { title: string; tone: string; s: Sum }) {
+function SumCard({ title, tone, s, hint }: { title: string; tone: string; s: Sum; hint?: string }) {
   return (
     <div className={`rounded-2xl border p-4 ${tone}`}>
       <div className="text-[11px] font-bold uppercase tracking-wider text-steel-500">{title}</div>
       <div className="text-2xl font-bold mt-1">{fmtBRL(s.value)}</div>
-      <div className="text-xs text-steel-500 mt-0.5">{fmtQty(s.units)} unidade(s) · {s.items} peça(s) diferentes</div>
+      <div className="text-xs text-steel-500 mt-0.5">{hint ?? `${fmtQty(s.units)} unidade(s) · ${s.items} peça(s) diferentes`}</div>
     </div>
   );
 }
 
-/** Relatório das transferências de peças entre as lojas: enviadas, recebidas, por loja e por período */
+/** Relatório das transferências de peças entre as lojas: enviadas, recebidas, o que está em aberto e o acerto */
 export default function TransferenciasEstoque() {
   const { currentWorkshop } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const access = useStockAccess();
   const [from, setFrom] = useState(() => iso(new Date(Date.now() - 30 * 86400000)));
   const [to, setTo] = useState(() => iso(new Date()));
-  const [dir, setDir] = useState<'todas' | 'transf_saida' | 'transf_entrada'>('todas');
+  const [dir, setDir] = useState<'todas' | 'out' | 'in'>('todas');
+  const [state, setState] = useState<'todas' | 'abertas' | 'acertadas'>('todas');
   const [store, setStore] = useState('');
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [how, setHow] = useState(HOWS[0]);
+  const [howDate, setHowDate] = useState(() => iso(new Date()));
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!wid) return;
     setRows(null);
-    supabase.from('stock_movements')
-      .select('id, qty, kind, note, created_at, part:workshop_parts(name, code, unit, cost, category)')
-      .eq('workshop_id', wid).in('kind', ['transf_saida', 'transf_entrada'])
+    supabase.from('stock_transfers')
+      .select(`id, from_workshop_id, to_workshop_id, qty, unit_price, total, settlement, due_date, note, settled_at, settled_how, created_at,
+        from_part:workshop_parts!stock_transfers_from_part_id_fkey(name, code, unit, category),
+        to_part:workshop_parts!stock_transfers_to_part_id_fkey(name, code, unit, category),
+        from_w:workshops!stock_transfers_from_workshop_id_fkey(business_name),
+        to_w:workshops!stock_transfers_to_workshop_id_fkey(business_name)`)
+      .or(`from_workshop_id.eq.${wid},to_workshop_id.eq.${wid}`)
       .gte('created_at', new Date(`${from}T00:00:00`).toISOString()).lte('created_at', new Date(`${to}T23:59:59`).toISOString())
       .order('created_at', { ascending: false }).limit(2000)
-      .then(({ data }) => setRows((data as never) ?? []));
+      .then(({ data, error }) => { if (error) toast.error('Não foi possível carregar: ' + error.message); setRows((data as never) ?? []); setPicked(new Set()); });
   }, [wid, from, to]);
+  useEffect(load, [load]);
 
-  const otherStore = (r: Row) => (r.note ?? '').replace(/^Transferência (para|de) /, '').split(': ')[0];
-  const obs = (r: Row) => (r.note?.includes(': ') ? r.note.split(': ').slice(1).join(': ') : '');
-  const unitCost = (r: Row) => Number(r.part?.cost ?? 0);
-  const value = (r: Row) => Math.abs(Number(r.qty)) * unitCost(r);
+  const isOut = (r: Row) => r.from_workshop_id === wid;
+  const otherName = (r: Row) => (isOut(r) ? r.to_w?.business_name : r.from_w?.business_name) ?? 'Outra loja';
+  const partOf = (r: Row) => (isOut(r) ? r.from_part : r.to_part) ?? r.from_part ?? r.to_part;
+  const isOpen = (r: Row) => !r.settled_at && r.settlement !== 'sem_cobranca';
+  const priced = (r: Row) => r.settlement !== 'sem_cobranca';
+  const howLabel = (r: Row) => SETTLEMENTS.find(s => s.value === r.settlement)!;
 
-  const stores = useMemo(() => [...new Set((rows ?? []).map(otherStore))].sort(), [rows]);
+  const stores = useMemo(() => [...new Set((rows ?? []).map(otherName))].sort(), [rows]); // eslint-disable-line react-hooks/exhaustive-deps
   const list = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return (rows ?? []).filter(r => (dir === 'todas' || r.kind === dir) && (!store || otherStore(r) === store)
-      && (!t || r.part?.name.toLowerCase().includes(t) || r.part?.code?.toLowerCase().includes(t)));
-  }, [rows, dir, store, q]);
+    return (rows ?? []).filter(r => (dir === 'todas' || (dir === 'out') === isOut(r)) && (!store || otherName(r) === store)
+      && (state === 'todas' || (state === 'abertas') === isOpen(r))
+      && (!t || partOf(r)?.name.toLowerCase().includes(t) || partOf(r)?.code?.toLowerCase().includes(t)));
+  }, [rows, dir, store, q, state]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const sum = (k: Row['kind']): Sum => {
-    const l = list.filter(r => r.kind === k);
-    return { items: new Set(l.map(r => r.part?.name)).size, units: l.reduce((a, r) => a + Math.abs(Number(r.qty)), 0), value: l.reduce((a, r) => a + value(r), 0) };
-  };
-  const sent = sum('transf_saida'), got = sum('transf_entrada');
-  const net = got.value - sent.value;
+  const sum = (l: Row[], valueOf: (r: Row) => number): Sum => ({
+    items: new Set(l.map(r => partOf(r)?.name)).size, units: l.reduce((a, r) => a + Number(r.qty), 0), value: l.reduce((a, r) => a + valueOf(r), 0),
+  });
+  const sent = sum(list.filter(isOut), r => Number(r.total)), got = sum(list.filter(r => !isOut(r)), r => Number(r.total));
+  const toReceive = sum(list.filter(r => isOut(r) && isOpen(r)), r => Number(r.total));
+  const toPay = sum(list.filter(r => !isOut(r) && isOpen(r)), r => Number(r.total));
 
   const byStore = useMemo(() => {
-    const m = new Map<string, { sent: number; got: number }>();
+    const m = new Map<string, { sent: number; got: number; recv: number; pay: number }>();
     for (const r of list) {
-      const c = m.get(otherStore(r)) ?? { sent: 0, got: 0 };
-      if (r.kind === 'transf_saida') c.sent += value(r); else c.got += value(r);
-      m.set(otherStore(r), c);
+      const c = m.get(otherName(r)) ?? { sent: 0, got: 0, recv: 0, pay: 0 };
+      const v = Number(r.total);
+      if (isOut(r)) { c.sent += v; if (isOpen(r)) c.recv += v; } else { c.got += v; if (isOpen(r)) c.pay += v; }
+      m.set(otherName(r), c);
     }
     return [...m.entries()];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list]);
+  }, [list]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickable = (r: Row) => isOpen(r) && (r.settlement === 'conta_corrente' || r.settlement === 'troca');
+  const pickedRows = list.filter(r => picked.has(r.id));
+  const pickedNet = pickedRows.reduce((a, r) => a + (isOut(r) ? 1 : -1) * Number(r.total), 0);
+  const toggle = (id: string) => setPicked(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  async function settle() {
+    setBusy(true);
+    const { error } = await supabase.rpc('stock_transfer_settle', { p_ids: [...picked], p_how: how, p_date: howDate });
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    toast.success('Acerto registrado ✓');
+    load();
+  }
+  async function unsettle(id: string) {
+    if (!confirm('Desfazer este acerto? A transferência volta para “em aberto”.')) return;
+    const { error } = await supabase.rpc('stock_transfer_unsettle', { p_ids: [id] });
+    if (error) return toast.error(error.message);
+    load();
+  }
+
+  function status(r: Row) {
+    if (r.settlement === 'sem_cobranca') return { text: 'Sem cobrança', cls: 'bg-steel-100 text-steel-600' };
+    if (r.settled_at) return { text: r.settlement === 'conta_a_pagar' ? 'Paga' : r.settlement === 'troca' ? 'Devolvida' : 'Acertada', cls: 'bg-signal-50 text-signal-700' };
+    if (r.settlement === 'conta_a_pagar' && r.due_date) {
+      const late = r.due_date < iso(new Date());
+      return { text: `${late ? 'Venceu' : 'Vence'} ${fmtD(r.due_date)}`, cls: late ? 'bg-alert-50 text-alert-700' : 'bg-pending-50 text-pending-800' };
+    }
+    return { text: r.settlement === 'troca' ? 'Aguardando peça' : 'Em aberto', cls: 'bg-pending-50 text-pending-800' };
+  }
 
   function exportCsv() {
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
-    const head = ['Data', 'Hora', 'Movimento', 'Loja', 'Código', 'Peça', 'Categoria', 'Quantidade', 'Custo unitário', 'Valor', 'Observação'];
+    const num = (n: number) => Number(n).toFixed(2).replace('.', ',');
+    const head = ['Data', 'Hora', 'Movimento', 'Loja', 'Código', 'Peça', 'Categoria', 'Quantidade', 'Preço unitário', 'Valor', 'Forma de acerto', 'Situação', 'Acertada em', 'Como', 'Observação'];
     const lines = list.map(r => {
-      const d = new Date(r.created_at);
+      const d = new Date(r.created_at), p = partOf(r);
       return [d.toLocaleDateString('pt-BR'), d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        r.kind === 'transf_saida' ? 'Enviada' : 'Recebida', otherStore(r), r.part?.code ?? '', r.part?.name ?? '',
-        r.part ? partCategory(r.part.category).label : '', Math.abs(Number(r.qty)).toString().replace('.', ','),
-        unitCost(r).toFixed(2).replace('.', ','), value(r).toFixed(2).replace('.', ','), obs(r)].map(esc).join(';');
+        isOut(r) ? 'Enviada' : 'Recebida', otherName(r), p?.code ?? '', p?.name ?? '', p ? partCategory(p.category).label : '',
+        String(r.qty).replace('.', ','), num(r.unit_price), num(r.total), howLabel(r).label, status(r).text,
+        r.settled_at ? fmtD(r.settled_at) : '', r.settled_how ?? '', r.note ?? ''].map(esc).join(';');
     });
     const blob = new Blob(['﻿' + [head.map(esc).join(';'), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -102,8 +153,8 @@ export default function TransferenciasEstoque() {
 
   return (
     <WorkshopLayout>
-      <div className="max-w-6xl mx-auto space-y-4">
-        <StockTabs title="Transferências entre lojas" subtitle={`O que ${currentWorkshop?.business_name ?? 'esta loja'} enviou e recebeu das outras lojas. Valores a preço de custo.`}
+      <div className="max-w-6xl mx-auto space-y-4 pb-24">
+        <StockTabs title="Transferências entre lojas" subtitle={`O que ${currentWorkshop?.business_name ?? 'esta loja'} enviou e recebeu das outras lojas, e o que falta acertar.`}
           actions={<>
             <Link to="/oficina/pecas" className="btn-ghost border border-steel-200 text-sm !py-2">← Peças</Link>
             <button className="btn-primary text-sm !py-2" onClick={exportCsv} disabled={!list.length}>⬇ Baixar planilha</button>
@@ -125,8 +176,13 @@ export default function TransferenciasEstoque() {
             <input className="input flex-1" placeholder="🔍 Buscar peça ou código" value={q} onChange={e => setQ(e.target.value)} />
             <select className="input !py-2 sm:!w-auto text-sm" value={dir} onChange={e => setDir(e.target.value as typeof dir)}>
               <option value="todas">Enviadas e recebidas</option>
-              <option value="transf_saida">Só enviadas</option>
-              <option value="transf_entrada">Só recebidas</option>
+              <option value="out">Só enviadas</option>
+              <option value="in">Só recebidas</option>
+            </select>
+            <select className="input !py-2 sm:!w-auto text-sm" value={state} onChange={e => setState(e.target.value as typeof state)}>
+              <option value="todas">Todas as situações</option>
+              <option value="abertas">Só em aberto</option>
+              <option value="acertadas">Só acertadas</option>
             </select>
             {stores.length > 1 && (
               <select className="input !py-2 sm:!w-auto text-sm" value={store} onChange={e => setStore(e.target.value)}>
@@ -138,29 +194,32 @@ export default function TransferenciasEstoque() {
         </div>
 
         {rows === null ? (
-          <div className="grid sm:grid-cols-3 gap-3">{[1, 2, 3].map(i => <div key={i} className="h-24 bg-white rounded-2xl animate-pulse" />)}</div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">{[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-white rounded-2xl animate-pulse" />)}</div>
         ) : (
           <>
-            <div className="grid sm:grid-cols-3 gap-3">
-              <SumCard title="Enviadas" tone="bg-alert-50/60 border-alert-100" s={sent} />
-              <SumCard title="Recebidas" tone="bg-signal-50/60 border-signal-100" s={got} />
-              <div className="rounded-2xl border p-4 bg-white border-steel-200">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-steel-500">Saldo (recebido − enviado)</div>
-                <div className={`text-2xl font-bold mt-1 ${net > 0 ? 'text-signal-700' : net < 0 ? 'text-alert-600' : ''}`}>{net > 0 ? '+' : ''}{fmtBRL(net)}</div>
-                <div className="text-xs text-steel-500 mt-0.5">{net > 0 ? 'Esta loja recebeu mais do que mandou' : net < 0 ? 'Esta loja mandou mais do que recebeu' : 'Troca equilibrada'}</div>
-              </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <SumCard title="Enviadas" tone="bg-white border-steel-200" s={sent} />
+              <SumCard title="Recebidas" tone="bg-white border-steel-200" s={got} />
+              <SumCard title="A receber" tone="bg-signal-50/60 border-signal-100" s={toReceive} hint={`${toReceive.items} peça(s) enviadas ainda sem acerto`} />
+              <SumCard title="A pagar" tone="bg-alert-50/60 border-alert-100" s={toPay} hint={`${toPay.items} peça(s) recebidas ainda sem acerto`} />
             </div>
 
             {byStore.length > 0 && (
               <div className="card !p-0 overflow-hidden">
                 <div className="px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">Por loja</div>
                 <ul className="divide-y divide-steel-100 text-sm">
-                  {byStore.map(([name, v]) => (
-                    <li key={name} className="px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
-                      <strong>{name}</strong>
-                      <span className="text-steel-600">enviou <strong className="text-alert-600">{fmtBRL(v.sent)}</strong> · recebeu <strong className="text-signal-700">{fmtBRL(v.got)}</strong></span>
-                    </li>
-                  ))}
+                  {byStore.map(([name, v]) => {
+                    const net = v.recv - v.pay;
+                    return (
+                      <li key={name} className="px-5 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                        <strong>{name}</strong>
+                        <span className="text-steel-600 text-xs sm:text-sm">enviou {fmtBRL(v.sent)} · recebeu {fmtBRL(v.got)}</span>
+                        <span className={`font-semibold ${net > 0 ? 'text-signal-700' : net < 0 ? 'text-alert-600' : 'text-steel-400'}`}>
+                          {net > 0 ? `${name} deve ${fmtBRL(net)}` : net < 0 ? `Deve ${fmtBRL(-net)} para ${name}` : 'Nada em aberto'}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -169,24 +228,32 @@ export default function TransferenciasEstoque() {
               <div className="card text-center py-10 text-sm text-steel-500">Nenhuma transferência neste período.</div>
             ) : (
               <div className="card !p-0 overflow-hidden">
-                <div className="hidden md:grid grid-cols-[110px_minmax(0,1fr)_110px_140px_90px_100px] gap-3 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
-                  <div>Data</div><div>Peça</div><div>Movimento</div><div>Loja</div><div className="text-right">Qtd.</div><div className="text-right">Valor</div>
+                <div className="hidden md:grid grid-cols-[28px_100px_minmax(0,1fr)_100px_130px_80px_100px_150px] gap-3 px-5 py-2 bg-steel-50 border-b border-steel-100 text-[10px] font-bold text-steel-500 uppercase tracking-wider">
+                  <div /><div>Data</div><div>Peça</div><div>Movimento</div><div>Loja</div><div className="text-right">Qtd.</div><div className="text-right">Valor</div><div>Acerto</div>
                 </div>
                 <ul className="divide-y divide-steel-100">
                   {list.map(r => {
-                    const out = r.kind === 'transf_saida';
-                    const d = new Date(r.created_at);
+                    const out = isOut(r), d = new Date(r.created_at), p = partOf(r), st = status(r), hw = howLabel(r);
                     return (
-                      <li key={r.id} className="grid grid-cols-2 md:grid-cols-[110px_minmax(0,1fr)_110px_140px_90px_100px] gap-x-3 gap-y-1 px-5 py-2.5 items-center text-sm">
+                      <li key={r.id} className={`grid grid-cols-[28px_1fr] md:grid-cols-[28px_100px_minmax(0,1fr)_100px_130px_80px_100px_150px] gap-x-3 gap-y-1 px-5 py-2.5 items-center text-sm ${picked.has(r.id) ? 'bg-signal-50/40' : ''}`}>
+                        <div>{pickable(r) && <input type="checkbox" className="h-4 w-4" checked={picked.has(r.id)} onChange={() => toggle(r.id)} aria-label="Selecionar para o acerto" />}</div>
                         <div className="text-xs text-steel-500">{d.toLocaleDateString('pt-BR')}<span className="text-steel-400"> {d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div>
-                        <div className="col-span-2 md:col-span-1 order-last md:order-none min-w-0">
-                          <div className="font-semibold truncate">{r.part?.name ?? 'Peça removida'}</div>
-                          <div className="text-[11px] text-steel-500 truncate">{[r.part?.code, r.part && partCategory(r.part.category).label, obs(r)].filter(Boolean).join(' · ')}</div>
+                        <div className="col-start-2 md:col-start-auto min-w-0">
+                          <div className="font-semibold truncate">{p?.name ?? 'Peça removida'}</div>
+                          <div className="text-[11px] text-steel-500 truncate">{[p?.code, p && partCategory(p.category).label, r.note].filter(Boolean).join(' · ')}</div>
                         </div>
-                        <div><span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${out ? 'bg-alert-50 text-alert-700' : 'bg-signal-50 text-signal-700'}`}>{out ? '↑ Enviada' : '↓ Recebida'}</span></div>
-                        <div className="text-steel-600 truncate">{out ? 'para ' : 'de '}{otherStore(r)}</div>
-                        <div className={`md:text-right font-semibold ${out ? 'text-alert-600' : 'text-signal-700'}`}>{out ? '−' : '+'}{fmtQty(Math.abs(Number(r.qty)))} {r.part?.unit}</div>
-                        <div className="text-right text-steel-700">{fmtBRL(value(r))}</div>
+                        <div className="col-start-2 md:col-start-auto"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${out ? 'bg-alert-50 text-alert-700' : 'bg-signal-50 text-signal-700'}`}>{out ? '↑ Enviada' : '↓ Recebida'}</span></div>
+                        <div className="col-start-2 md:col-start-auto text-steel-600 truncate">{out ? 'para ' : 'de '}{otherName(r)}</div>
+                        <div className={`col-start-2 md:col-start-auto md:text-right font-semibold ${out ? 'text-alert-600' : 'text-signal-700'}`}>{out ? '−' : '+'}{fmtQty(r.qty)} {p?.unit}</div>
+                        <div className="col-start-2 md:col-start-auto md:text-right text-steel-700">{priced(r) ? fmtBRL(Number(r.total)) : <span className="text-steel-300">—</span>}</div>
+                        <div className="col-start-2 md:col-start-auto min-w-0">
+                          <div className="text-xs text-steel-500">{hw.icon} {hw.label}</div>
+                          <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.text}</span>
+                          {r.settled_at && (r.settlement === 'conta_corrente' || r.settlement === 'troca') && (
+                            <button onClick={() => unsettle(r.id)} className="ml-1.5 text-[11px] text-steel-400 hover:text-alert-600 underline">desfazer</button>
+                          )}
+                          {r.settled_at && r.settlement !== 'sem_cobranca' && <div className="text-[11px] text-steel-400 truncate">{fmtD(r.settled_at)}{r.settled_how ? ` · ${r.settled_how}` : ''}</div>}
+                        </div>
                       </li>
                     );
                   })}
@@ -196,6 +263,26 @@ export default function TransferenciasEstoque() {
           </>
         )}
       </div>
+
+      {/* Acerto (aparece ao marcar transferências em aberto) */}
+      {picked.size > 0 && (
+        <div className="fixed bottom-[60px] lg:bottom-0 inset-x-0 lg:left-64 z-30 border-t border-steel-200 bg-white/95 backdrop-blur px-4 py-3">
+          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm">
+              <strong>{picked.size}</strong> selecionada{picked.size === 1 ? '' : 's'} ·{' '}
+              {Math.abs(pickedNet) < 0.005 ? <strong>troca equilibrada</strong>
+                : pickedNet > 0 ? <>a loja da frente deve <strong className="text-signal-700">{fmtBRL(pickedNet)}</strong></> : <>você deve <strong className="text-alert-600">{fmtBRL(-pickedNet)}</strong></>}
+              <span className="block text-[11px] text-steel-400">Enviadas e recebidas se compensam: só a diferença precisa ser paga.</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select className="input !py-2 !w-auto text-sm" value={how} onChange={e => setHow(e.target.value)}>{HOWS.map(h => <option key={h}>{h}</option>)}</select>
+              <input type="date" className="input !py-2 !w-auto text-sm" value={howDate} onChange={e => e.target.value && setHowDate(e.target.value)} />
+              <button className="btn-ghost text-sm" onClick={() => setPicked(new Set())} disabled={busy}>Limpar</button>
+              <button className="btn-primary" onClick={settle} disabled={busy}>{busy ? 'Salvando…' : 'Registrar acerto'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </WorkshopLayout>
   );
 }
