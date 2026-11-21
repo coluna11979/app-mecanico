@@ -164,6 +164,28 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
     const pct = MODES.find(m => m.key === r.mode)?.pct;
     return pct != null ? r2(baseOf(r) * pct / 100 + extraOf(r).value) : r2(parseMoney(r.amount));
   };
+
+  // Pessoa ganhou itens e a linha ainda está em "Valor fechado" vazio: segue a regra do tipo dos itens
+  // (só mão de obra → 10% · serviço com peças → 4% · os dois → o valor da regra, item a item)
+  useEffect(() => {
+    if (!editing) return;
+    setRows(rs => {
+      let changedAny = false;
+      const next = rs.map(r => {
+        if (r.mode !== 'fixo' || r.amount.trim() || !r.mechanic_id || noComm(r)) return r;
+        const mine = a.assignables.filter(l => a.who[l.id] === r.mechanic_id);
+        if (!mine.length) return r;
+        const types = new Set(mine.map(l => (l.kind === 'part' ? 'servico' : l.service_type ?? ((a.partsOf.get(l.id) ?? []).length ? 'servico' : 'mao_de_obra'))));
+        changedAny = true;
+        if (types.size === 1) return { ...r, mode: (types.has('mao_de_obra') ? 'p10' : 'p4') as Mode };
+        const v = auto.find(x => x.mechanic_id === r.mechanic_id)?.value ?? 0;
+        return { ...r, amount: moneyStr(v) };
+      });
+      return changedAny ? next : rs;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, a.who, a.assignables, auto]);
+
   const valid = !editing || rows.every(r => r.mechanic_id && valueOf(r) >= 0);
   const total = editing ? r2(rows.reduce((s, r) => s + valueOf(r), 0)) : r2(auto.reduce((s, x) => s + x.value, 0));
 
