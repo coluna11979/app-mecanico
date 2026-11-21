@@ -341,6 +341,53 @@ create trigger trg_service_parts_catalog
   after insert or update or delete on public.workshop_service_parts
   for each row execute function public.trg_catalog_service_kit();
 
+-- ── Categorias de serviço ───────────────────────────────────────────────────
+-- Ficam por dono da conta (não por loja): Jota Car e JC Pneus já dividem as mesmas.
+-- Para a conta de outro dono (Check All) copia as categorias da conta da mestre.
+create or replace function public.catalog_sync_categories(p_master_owner uuid default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare _o record;
+begin
+  for _o in
+    select distinct m.profile_id as src, f.profile_id as dst
+      from catalog_links l
+      join workshops m on m.id = l.master_workshop_id
+      join workshops f on f.id = l.follower_workshop_id
+     where l.active and m.profile_id <> f.profile_id and (p_master_owner is null or m.profile_id = p_master_owner)
+  loop
+    insert into service_categories (owner_id, name, position, sells_parts)
+    select _o.dst, c.name, c.position, c.sells_parts from service_categories c
+     where c.owner_id = _o.src
+       and not exists (select 1 from service_categories x where x.owner_id = _o.dst and lower(trim(x.name)) = lower(trim(c.name)));
+    update service_categories x set position = c.position, sells_parts = c.sells_parts
+      from service_categories c
+     where c.owner_id = _o.src and x.owner_id = _o.dst and lower(trim(x.name)) = lower(trim(c.name));
+  end loop;
+end;
+$$;
+
+create or replace function public.trg_catalog_category()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if pg_trigger_depth() > 1 then return new; end if;
+  perform catalog_sync_categories(new.owner_id);
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_service_categories_catalog on public.service_categories;
+create trigger trg_service_categories_catalog
+  after insert or update of name, position, sells_parts on public.service_categories
+  for each row execute function public.trg_catalog_category();
+
 -- ── Acerto geral: copia tudo da mestre para as seguidoras ───────────────────
 -- Rodar uma vez ao ligar, e de novo quando incluir uma loja nova na ligação.
 create or replace function public.catalog_sync_all(p_master uuid default null)
@@ -351,6 +398,7 @@ set search_path = public
 as $$
 declare _r record; _sup int := 0; _part int := 0; _svc int := 0;
 begin
+  perform catalog_sync_categories(null);
   for _r in select s.id from suppliers s
              where s.workshop_id in (select master_workshop_id from catalog_links where active and (p_master is null or master_workshop_id = p_master)) loop
     perform catalog_sync_supplier(_r.id); _sup := _sup + 1;
@@ -373,6 +421,8 @@ revoke all on function public.catalog_sync_supplier(uuid) from public, anon, aut
 revoke all on function public.catalog_sync_part(uuid, boolean) from public, anon, authenticated;
 revoke all on function public.catalog_sync_service(uuid, boolean) from public, anon, authenticated;
 revoke all on function public.catalog_sync_all(uuid) from public, anon, authenticated;
+revoke all on function public.catalog_sync_categories(uuid) from public, anon, authenticated;
+revoke all on function public.trg_catalog_category() from public, anon, authenticated;
 revoke all on function public.trg_catalog_supplier() from public, anon, authenticated;
 revoke all on function public.trg_catalog_part() from public, anon, authenticated;
 revoke all on function public.trg_catalog_vehicle() from public, anon, authenticated;
