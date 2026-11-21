@@ -32,7 +32,7 @@ export type Payable = {
 };
 
 export type StockMovement = {
-  id: string; part_id: string; qty: number; kind: 'compra' | 'estorno_compra' | 'os' | 'estorno_os' | 'ajuste';
+  id: string; part_id: string; qty: number; kind: 'compra' | 'estorno_compra' | 'os' | 'estorno_os' | 'ajuste' | 'transf_saida' | 'transf_entrada';
   invoice_id: string | null; service_order_id: string | null; note: string | null; created_at: string;
 };
 

@@ -21,10 +21,11 @@ import VehiclePicker from '@/components/parts/VehiclePicker';
 import { addVehicleToParts, fitsVehicle, fmtVehicle, fmtYears, isAnyModel, loadPartVehicles, markPartsUniversal, norm, partLabel, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
 import SupplierPicker from '@/components/parts/SupplierPicker';
 import StockTabs, { useStockAccess } from '@/components/stock/StockTabs';
-import { StockHistoryModal, StockMoveModal, type MoveMode } from '@/components/stock/StockModals';
+import { StockHistoryModal, StockMoveModal, StockTransferModal, type MoveMode } from '@/components/stock/StockModals';
 
 const MOVE_LABEL: Record<StockMovement['kind'], string> = {
   compra: 'Compra', estorno_compra: 'Estorno de compra', os: 'Usada em OS', estorno_os: 'OS reaberta', ajuste: 'Ajuste',
+  transf_saida: 'Transferida', transf_entrada: 'Recebida',
 };
 
 const PAGE = 100;
@@ -37,7 +38,7 @@ const wordIn = (name: string, model: string) => {
 };
 
 export default function Pecas() {
-  const { currentWorkshop } = useAuth();
+  const { currentWorkshop, workshops } = useAuth();
   const wid = currentWorkshop?.id ?? null;
   const { balcao, session } = useOperator();
   const allowed = canDo(session, balcao, 'pecas_estoque');
@@ -61,6 +62,7 @@ export default function Pecas() {
   const [editing, setEditing]   = useState<WorkshopPart | 'new' | null>(null);
   const [pricing, setPricing]   = useState(false);
   const [moving, setMoving]     = useState<{ part: WorkshopPart; mode: MoveMode } | null>(null);
+  const [transferring, setTransferring] = useState<WorkshopPart | null>(null);
   const [history, setHistory]   = useState<WorkshopPart | null>(null);
   const [menu, setMenu]         = useState<string | null>(null);
   /** Custo sendo editado na própria linha (checagem rápida) */
@@ -208,10 +210,12 @@ export default function Pecas() {
   const usedSuppliers = suppliers.filter(s => (parts ?? []).some(p => p.supplier_id === s.id));
   const extraFilters = showInactive ? 1 : 0;
   const buyLink = (p: WorkshopPart) => `/oficina/compras/nova?peca=${p.id}${p.supplier_id ? `&fornecedor=${p.supplier_id}` : ''}`;
+  const otherStores = workshops.filter(w => w.id !== wid);
   const actions = (p: WorkshopPart) => [
     { label: '＋ Entrada', run: () => setMoving({ part: p, mode: 'entrada' }) },
     { label: '－ Saída', run: () => setMoving({ part: p, mode: 'saida' }) },
     { label: '⚖️ Ajustar estoque', run: () => setMoving({ part: p, mode: 'ajuste' }) },
+    ...(otherStores.length ? [{ label: '🔁 Transferir para outra loja', run: () => setTransferring(p) }] : []),
     { label: '🕘 Histórico', run: () => setHistory(p) },
     { label: '✏️ Editar peça', run: () => setEditing(p) },
     { label: '🔗 Juntar com outra peça…', run: () => setMerging(p) },
@@ -223,6 +227,7 @@ export default function Pecas() {
         <StockTabs title="Peças" subtitle="Custo, preço e quantidade. O orçamento puxa o preço daqui e a OS concluída dá baixa no estoque."
           actions={<>
             <button className="btn-ghost border border-steel-200 text-sm !py-2" onClick={() => setPricing(true)} title="Margem padrão da oficina">⚙️ Preços</button>
+            {workshops.length > 1 && <Link to="/oficina/pecas/transferencias" className="btn-ghost border border-steel-200 text-sm !py-2">🔁 Transferências</Link>}
             <Link to="/oficina/pecas/contagem" className="btn-ghost border border-steel-200 text-sm !py-2">📋 Contagem</Link>
             {access.compras && <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200 text-sm !py-2">🧾 Lançar nota</Link>}
             <button className="btn-primary text-sm !py-2" onClick={() => setEditing('new')}>+ Nova peça</button>
@@ -465,6 +470,10 @@ export default function Pecas() {
             <CategoryMargins wid={wid} value={margin} onSaved={v => setMargin(v)} />
           </div>
         </div>
+      )}
+      {transferring && (
+        <StockTransferModal part={transferring} stores={otherStores} salePrice={margin ? salePriceOf(transferring, margin) : Number(transferring.sale_price ?? transferring.cost)}
+          onClose={() => setTransferring(null)} onSaved={() => { setTransferring(null); load(); }} />
       )}
       {moving && (
         <StockMoveModal part={moving.part} mode={moving.mode} canBuy={access.compras}
