@@ -6,6 +6,7 @@ import { parseMoney } from '@/components/os/osHelpers';
 import { fmtQty, type WorkshopPart } from '@/lib/parts';
 import { fmtDate, type StockMovement } from '@/lib/purchasing';
 import { osLabel } from '@/lib/stock';
+import type { Workshop } from '@/types/database';
 
 export type MoveMode = 'entrada' | 'saida' | 'ajuste';
 
@@ -115,8 +116,73 @@ export function StockMoveModal({ part, mode, canBuy, onClose, onSaved }: {
   );
 }
 
+/**
+ * Transferência de uma peça para outra loja do mesmo dono. A peça é achada na loja de destino pelo código (ou nome)
+ * ou criada lá com a mesma categoria, preço e carros. Cada loja ganha um registro no histórico.
+ */
+export function StockTransferModal({ part, stores, onClose, onSaved }: {
+  part: WorkshopPart; stores: Workshop[]; onClose: () => void; onSaved: () => void;
+}) {
+  const [dest, setDest] = useState(stores.length === 1 ? stores[0].id : '');
+  const [n, setN] = useState('1');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const v = parseMoney(n || '0');
+  const current = Number(part.stock_qty);
+  const valid = !!dest && Number.isFinite(v) && v > 0 && v <= current;
+  const destName = stores.find(s => s.id === dest)?.business_name;
+
+  async function save() {
+    if (!valid) return toast.error(v > current ? `Só há ${fmtQty(current)} ${part.unit} em estoque` : 'Confira a loja e a quantidade');
+    setSaving(true);
+    const { error } = await supabase.rpc('stock_transfer', { p_part: part.id, p_dest_workshop: dest, p_qty: v, p_note: note });
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    toast.success(`${fmtQty(v)} ${part.unit} transferida(s) para ${destName} ✓`);
+    onSaved();
+  }
+
+  return (
+    <Sheet title="Transferir para outra loja" onClose={onClose}
+      footer={<>
+        <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
+        <button type="button" className="btn-primary" onClick={save} disabled={saving || !valid}>{saving ? 'Transferindo…' : 'Transferir'}</button>
+      </>}>
+      <div>
+        <div className="text-sm font-semibold">{part.name}</div>
+        <div className="text-xs text-steel-500">Em estoque agora: <strong className="text-steel-800">{fmtQty(current)} {part.unit}</strong></div>
+      </div>
+      <div>
+        <label className="label">Para qual loja?</label>
+        <div className="flex flex-wrap gap-1.5">
+          {stores.map(s => (
+            <button key={s.id} type="button" onClick={() => setDest(s.id)}
+              className={`text-sm font-semibold px-3 py-2 rounded-xl border transition ${dest === s.id ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-700 border-steel-200'}`}>
+              {s.business_name}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="label">Quantidade ({part.unit})</label>
+        <input className="input text-right text-lg" inputMode="decimal" value={n} onChange={e => setN(e.target.value)} />
+        {Number.isFinite(v) && v > current && <p className="text-[11px] text-alert-600 mt-1">Só há {fmtQty(current)} {part.unit} em estoque.</p>}
+        {valid && <p className="text-[11px] text-steel-500 mt-1">Aqui fica {fmtQty(current - v)} {part.unit}; em {destName} entram {fmtQty(v)}.</p>}
+      </div>
+      <div>
+        <label className="label">Observação (opcional)</label>
+        <input className="input" placeholder="Ex.: pedido do balcão da outra loja" value={note} onChange={e => setNote(e.target.value)} />
+      </div>
+      <div className="rounded-xl bg-steel-50 border border-steel-100 px-3 py-2 text-xs text-steel-600">
+        Se a outra loja já tem esta peça (mesmo código ou nome), o estoque soma lá e o custo vira a média. Se não tem, a peça é criada lá com a mesma categoria, preço e carros.
+      </div>
+    </Sheet>
+  );
+}
+
 const MOVE_LABEL: Record<StockMovement['kind'], string> = {
   compra: 'Compra', estorno_compra: 'Estorno de compra', os: 'Usada em OS', estorno_os: 'OS reaberta', ajuste: 'Ajuste manual',
+  transf_saida: 'Transferida para outra loja', transf_entrada: 'Recebida de outra loja',
 };
 
 /** Histórico completo de movimentações da peça */
