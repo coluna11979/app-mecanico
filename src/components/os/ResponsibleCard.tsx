@@ -22,8 +22,10 @@ const TONE: Record<JobTone, string> = {
  * acompanhar, pagar e confirmar continuam na tela de acompanhamento da demanda.
  */
 export default function ResponsibleCard({
-  os, split, canTrack, canPublish, onDefine, onCallPlatform, onPublish,
+  os, split, people, canTrack, canPublish, onDefine, onCallPlatform, onPublish,
 }: {
+  /** Todos os responsáveis (os que estão nos itens) */
+  people?: string[];
   os: {
     id: string; status: OsStatus; executor?: 'workshop' | 'platform' | null; workshop_mechanic_id: string | null;
     mechanic: { name: string; specialty?: string | null; role_title?: string | null } | null;
@@ -75,7 +77,7 @@ export default function ResponsibleCard({
 
   const header = (action?: ReactNode) => (
     <div className="flex items-center justify-between gap-2 mb-2.5">
-      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">Responsável pelo serviço</div>
+      <div className="text-[10px] font-bold text-steel-500 uppercase tracking-widest">{(people?.length ?? 0) > 1 ? 'Responsáveis pelo serviço' : 'Responsável pelo serviço'}</div>
       {action}
     </div>
   );
@@ -120,11 +122,18 @@ export default function ResponsibleCard({
     return (
       <div className="card !p-4">
         {header(changeLink)}
+        {(people?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {people!.map(n => <span key={n} className="px-2.5 py-1 rounded-full bg-steel-100 text-sm font-semibold text-steel-800">{n}</span>)}
+          </div>
+        )}
         {split}
-        <div className="mt-2.5 pt-2.5 border-t border-steel-100 text-xs text-steel-500 flex justify-between gap-3">
-          <span>Responsável geral da OS</span>
-          <span className={`font-semibold text-right ${general === 'não definido' ? 'text-pending-700' : 'text-steel-700'}`}>{general}</span>
-        </div>
+        {general === 'não definido' && !(people?.length) && (
+          <div className="mt-2.5 pt-2.5 border-t border-steel-100 text-xs text-steel-500 flex justify-between gap-3">
+            <span>Responsável geral da OS</span>
+            <span className="font-semibold text-right text-pending-700">{general}</span>
+          </div>
+        )}
         {current && <div className="mt-2.5">{jobLine(current)}</div>}
         {isPlatform && !current && active && canPublish && (
           <button onClick={onPublish} className="btn-secondary w-full mt-3 !py-2 text-sm">Publicar demanda</button>
