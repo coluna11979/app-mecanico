@@ -5,9 +5,9 @@ import StockTabs, { useStockAccess } from '@/components/stock/StockTabs';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/Toast';
-import { fmtBRL } from '@/components/os/osHelpers';
+import { fmtBRL, moneyInput, parseMoney } from '@/components/os/osHelpers';
 import { fmtQty, partCategory, type PartCategory } from '@/lib/parts';
-import { SETTLEMENTS, type Settlement } from '@/components/stock/StockModals';
+import { SETTLEMENTS, Sheet, type Settlement } from '@/components/stock/StockModals';
 
 type PartRef = { name: string; code: string | null; unit: string; category: PartCategory } | null;
 type Row = {
@@ -33,6 +33,86 @@ function SumCard({ title, tone, s, hint }: { title: string; tone: string; s: Sum
   );
 }
 
+/** Edita forma de acerto, preço, vencimento e observação de uma transferência (estoque e quantidade não mudam) */
+function EditTransferModal({ row, partName, unit, storeName, isOut, onClose, onSaved }: {
+  row: Row; partName: string; unit: string; storeName: string; isOut: boolean; onClose: () => void; onSaved: () => void;
+}) {
+  const [how, setHow] = useState<Settlement>(row.settlement);
+  const [price, setPrice] = useState(moneyInput(Number(row.unit_price)));
+  const [due, setDue] = useState(row.due_date ?? iso(new Date(Date.now() + 30 * 86400000)));
+  const [note, setNote] = useState(row.note ?? '');
+  const [saving, setSaving] = useState(false);
+  const locked = row.settlement === 'conta_a_pagar' && !!row.settled_at;
+  const unitPrice = parseMoney(price || '0');
+  const total = Math.round((Number.isFinite(unitPrice) ? unitPrice : 0) * Number(row.qty) * 100) / 100;
+  const valid = Number.isFinite(unitPrice) && unitPrice >= 0 && (how !== 'conta_a_pagar' || !!due);
+  const cfg = SETTLEMENTS.find(x => x.value === how)!;
+
+  async function save() {
+    if (!valid) return toast.error('Confira o preço e o vencimento');
+    setSaving(true);
+    const { error } = await supabase.rpc('stock_transfer_update', {
+      p_id: row.id, p_settlement: how, p_unit_price: unitPrice, p_due: how === 'conta_a_pagar' ? due : null, p_note: note,
+    });
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    toast.success('Transferência atualizada ✓');
+    onSaved();
+  }
+
+  return (
+    <Sheet title="Editar transferência" onClose={onClose}
+      footer={<>
+        <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
+        <button type="button" className="btn-primary" onClick={save} disabled={saving || !valid || locked}>{saving ? 'Salvando…' : 'Salvar'}</button>
+      </>}>
+      <div>
+        <div className="text-sm font-semibold">{partName}</div>
+        <div className="text-xs text-steel-500">{fmtQty(row.qty)} {unit} {isOut ? 'enviada(s) para' : 'recebida(s) de'} {storeName} · {fmtD(row.created_at)}</div>
+      </div>
+      {locked && (
+        <div className="rounded-xl bg-pending-50 border border-pending-100 px-3 py-2 text-xs text-pending-800">
+          Esta transferência já foi paga em Contas a pagar. Desfaça o pagamento lá para poder editar.
+        </div>
+      )}
+      <fieldset disabled={locked} className="space-y-4 disabled:opacity-60">
+        <div>
+          <label className="label">Como a outra loja paga?</label>
+          <div className="grid grid-cols-2 gap-2">
+            {SETTLEMENTS.map(x => (
+              <button key={x.value} type="button" onClick={() => setHow(x.value)}
+                className={`text-left rounded-xl border px-3 py-2 transition ${how === x.value ? 'border-steel-900 bg-steel-50 ring-1 ring-steel-900' : 'border-steel-200 bg-white'}`}>
+                <div className="text-sm font-semibold">{x.icon} {x.label}</div>
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-steel-500 mt-1.5">{cfg.hint}</p>
+        </div>
+        {how !== 'sem_cobranca' && (
+          <div>
+            <label className="label">Preço do repasse (por {unit})</label>
+            <input className="input text-right" inputMode="decimal" value={price} onChange={e => setPrice(e.target.value)} />
+            <div className="rounded-xl bg-steel-50 border border-steel-100 px-3 py-2 text-sm flex justify-between mt-2">
+              <span className="text-steel-600">{fmtQty(row.qty)} × {fmtBRL(Number.isFinite(unitPrice) ? unitPrice : 0)}</span><strong>{fmtBRL(total)}</strong>
+            </div>
+          </div>
+        )}
+        {how === 'conta_a_pagar' && (
+          <div>
+            <label className="label">Vencimento</label>
+            <input type="date" className="input !w-auto" value={due} onChange={e => setDue(e.target.value)} />
+          </div>
+        )}
+        <div>
+          <label className="label">Observação</label>
+          <input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="Ex.: pedido do balcão da outra loja" />
+        </div>
+      </fieldset>
+      <p className="text-[11px] text-steel-400">Aqui só muda a parte financeira. O estoque e a quantidade não mudam: para corrigir a quantidade, faça uma transferência de volta.</p>
+    </Sheet>
+  );
+}
+
 /** Relatório das transferências de peças entre as lojas: enviadas, recebidas, o que está em aberto e o acerto */
 export default function TransferenciasEstoque() {
   const { currentWorkshop } = useAuth();
@@ -49,6 +129,7 @@ export default function TransferenciasEstoque() {
   const [how, setHow] = useState(HOWS[0]);
   const [howDate, setHowDate] = useState(() => iso(new Date()));
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<Row | null>(null);
 
   const load = useCallback(() => {
     if (!wid) return;
@@ -249,6 +330,7 @@ export default function TransferenciasEstoque() {
                         <div className="col-start-2 md:col-start-auto min-w-0">
                           <div className="text-xs text-steel-500">{hw.icon} {hw.label}</div>
                           <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.text}</span>
+                          <button onClick={() => setEditing(r)} className="ml-1.5 text-[11px] font-semibold text-brand-700 hover:underline">✏️ editar</button>
                           {r.settled_at && (r.settlement === 'conta_corrente' || r.settlement === 'troca') && (
                             <button onClick={() => unsettle(r.id)} className="ml-1.5 text-[11px] text-steel-400 hover:text-alert-600 underline">desfazer</button>
                           )}
@@ -263,6 +345,11 @@ export default function TransferenciasEstoque() {
           </>
         )}
       </div>
+
+      {editing && (
+        <EditTransferModal row={editing} partName={partOf(editing)?.name ?? 'Peça'} unit={partOf(editing)?.unit ?? 'un'}
+          storeName={otherName(editing)} isOut={isOut(editing)} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+      )}
 
       {/* Acerto (aparece ao marcar transferências em aberto) */}
       {picked.size > 0 && (
