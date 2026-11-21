@@ -232,6 +232,8 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
   /** Troca a pessoa da linha: os serviços dela vão junto */
   function changePerson(r: Row, to: string) {
     if (assign && r.mechanic_id) assign.setWho(w => Object.fromEntries(Object.entries(w).map(([k, v]) => [k, v === r.mechanic_id ? to : v])));
+    // Escolheu a pessoa: os itens ainda sem ninguém ficam com ela (antes era preciso tocar em cada item e a comissão saía zerada)
+    else if (assign && to) assign.setWho(w => ({ ...w, ...Object.fromEntries(assign.labor.filter(l => !w[l.id]).map(l => [l.id, to])) }));
     setRow(r.key, { mechanic_id: to });
   }
   /** Marca/desmarca um serviço para a pessoa da linha (marcar tira do outro) */
