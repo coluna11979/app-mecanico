@@ -37,6 +37,8 @@ const guessCategory = (name: string) => GUESS.find(([re]) => re.test(n0(name)))?
  * Cadastrar uma peça sem sair da OS. Com "Comprei agora para esta OS" (o caso da
  * autopeças de pronta entrega): lança a compra — a peça entra no estoque (e sai
  * quando a OS for concluída) — e a conta: paga na hora ou para pagar depois.
+ * "Estoque antigo": peça que a loja já tinha e não sabe de quem comprou — entra no estoque
+ * sem nota, sem fornecedor e sem conta a pagar.
  */
 export default function QuickPartModal({ wid, osLabel, initialName, quantity, defaultMargin, margins, vehicle, defaultCategory, registerOnly, onClose, onSaved }: {
   wid: string; osLabel: string; initialName: string; quantity: number; defaultMargin: number;
@@ -75,6 +77,8 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
   const [marginStr, setMarginStr] = useState(String(margins ? categoryMargin(margins, guessCategory(initialName) ?? defaultCategory ?? null) : defaultMargin));
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [bought, setBought]     = useState(!registerOnly);
+  /** Estoque antigo: sem fornecedor, sem nota e sem conta a pagar */
+  const [oldStock, setOldStock] = useState(false);
   const [qty, setQty]           = useState(String(quantity || 1).replace('.', ','));
   const [payNow, setPayNow]     = useState(true);
   const [from, setFrom]         = useState<'banco' | 'caixa'>('banco');
@@ -110,20 +114,20 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
       if (!(c > 0)) return toast.error('Informe o custo da peça (ou escolha "Só preço de venda")');
       if (!marginOk) return toast.error('Margem inválida');
     } else if (!(sp > 0)) return toast.error('Informe o preço de venda');
-    if (bought && !(c > 0)) return toast.error('Para lançar a compra, informe o custo — ou desmarque "Comprei agora"');
+    if (bought && !oldStock && !(c > 0)) return toast.error('Para lançar a compra, informe o custo — ou desmarque "Comprei agora"');
     if (bought) {
-      if (!supplier) return toast.error('Escolha ou cadastre a autopeças / fornecedor');
+      if (!oldStock && !supplier) return toast.error('Escolha ou cadastre a autopeças / fornecedor — ou use "Estoque antigo"');
       if (!(q > 0)) return toast.error('Quantidade inválida');
-      if (payNow && from === 'caixa' && !hasRegister) return toast.error('Abra o caixa para pagar com o dinheiro dele');
+      if (!oldStock && payNow && from === 'caixa' && !hasRegister) return toast.error('Abra o caixa para pagar com o dinheiro dele');
     }
     setSaving(true);
     try {
       const { data: part, error } = await supabase.from('workshop_parts')
         .insert(mode === 'venda'
           // Só preço de venda: preço fixo; custo fica 0 até alguém informar em Peças e estoque
-          ? { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c > 0 ? c : 0, supplier_id: supplier?.id ?? null,
+          ? { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c > 0 ? c : 0, supplier_id: oldStock ? null : supplier?.id ?? null,
               sale_price: sp, margin_percent: null, universal: fit === 'universal', ...(category ? { category, subcategory: sub || null } : {}) }
-          : { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c, supplier_id: supplier?.id ?? null,
+          : { workshop_id: wid, name: name.trim(), code: code.trim() || null, unit, cost: c, supplier_id: oldStock ? null : supplier?.id ?? null,
               margin_percent: Math.abs(m - baseMargin) > 0.001 ? m : null, universal: fit === 'universal', ...(category ? { category, subcategory: sub || null } : {}) })
         .select('id').single();
       if (error) throw error;
@@ -133,7 +137,11 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
         if (ve) toast.warning('Peça cadastrada, mas o carro não foi vinculado: ' + ve.message);
       }
 
-      if (bought && supplier) {
+      if (bought && oldStock) {
+        // Estoque antigo: só a quantidade entra no estoque (fica no histórico como ajuste), sem nota nem conta
+        const { error: e0 } = await supabase.rpc('stock_adjust', { p_part: partId, p_counted: q, p_note: `Estoque antigo (sem nota de compra) · ${osLabel}` });
+        if (e0) toast.warning('Peça cadastrada, mas o estoque não foi lançado: ' + e0.message + '. Ajuste em Peças e estoque.');
+      } else if (bought && supplier) {
         const { data: inv, error: e2 } = await supabase.rpc('purchase_post', {
           p_workshop: wid, p_supplier: supplier.id, p_number: null, p_issue_date: todayISO(),
           p_freight: 0, p_discount: 0,
@@ -150,7 +158,7 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
           }
         }
       }
-      toast.success(bought ? 'Peça cadastrada e compra lançada ✓' : 'Peça cadastrada ✓');
+      toast.success(bought ? (oldStock ? 'Peça cadastrada e estoque lançado ✓' : 'Peça cadastrada e compra lançada ✓') : 'Peça cadastrada ✓');
       onSaved({ part_id: partId, name: name.trim(), cost: c, price, unit, quantity: bought ? q : 1, category,
         universal: fit === 'universal', vehicle: fit === 'car' ? { brand: brand.trim(), model: model.trim() } : null });
     } catch (err: unknown) {
@@ -201,8 +209,21 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
             </p>
           </div>
           <div>
-            <label className="label">Fornecedor / autopeças {bought && '*'}</label>
-            <SupplierPicker wid={wid} value={supplier?.id ?? null} onChange={setSupplier} />
+            <label className="label">Fornecedor / autopeças {bought && !oldStock && '*'}</label>
+            {oldStock ? (
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-steel-200 bg-steel-50 px-3 py-2.5 text-sm">
+                <span>📦 <strong>Estoque antigo</strong> <span className="text-steel-500">· sem fornecedor</span></span>
+                <button type="button" className="text-xs font-semibold text-brand-700 hover:underline" onClick={() => setOldStock(false)}>trocar</button>
+              </div>
+            ) : (
+              <>
+                <SupplierPicker wid={wid} value={supplier?.id ?? null} onChange={setSupplier} />
+                {!registerOnly && (
+                  <button type="button" onClick={() => { setOldStock(true); setSupplier(null); setBought(true); }}
+                    className="mt-1.5 text-xs font-semibold text-brand-700 hover:underline">📦 Estoque antigo: não sei de quem comprei</button>
+                )}
+              </>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setMode('custo')}
@@ -210,7 +231,7 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
               Tenho o custo
               <span className={`block text-[10px] font-normal ${mode === 'custo' ? 'text-steel-300' : 'text-steel-400'}`}>venda = custo + margem</span>
             </button>
-            <button type="button" onClick={() => { setMode('venda'); setBought(false); }}
+            <button type="button" onClick={() => { setMode('venda'); if (!oldStock) setBought(false); }}
               className={`px-3 py-2 rounded-xl border text-sm font-semibold ${mode === 'venda' ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 text-steel-600'}`}>
               Só preço de venda
               <span className={`block text-[10px] font-normal ${mode === 'venda' ? 'text-steel-300' : 'text-steel-400'}`}>custo depois</span>
@@ -274,8 +295,10 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
           {!registerOnly && <label className="flex items-start gap-2 rounded-xl border border-steel-200 p-3 cursor-pointer">
             <input type="checkbox" className="mt-1" checked={bought} onChange={e => setBought(e.target.checked)} />
             <span>
-              <span className="text-sm font-semibold">Comprei agora para esta OS</span>
-              <span className="block text-xs text-steel-500">Lança a compra: entra no estoque, sai quando a OS for concluída, e a conta vai para o financeiro.</span>
+              <span className="text-sm font-semibold">{oldStock ? 'Lançar no estoque para esta OS' : 'Comprei agora para esta OS'}</span>
+              <span className="block text-xs text-steel-500">{oldStock
+                ? 'A peça entra no estoque sem nota e sem conta a pagar, e sai quando a OS for concluída.'
+                : 'Lança a compra: entra no estoque, sai quando a OS for concluída, e a conta vai para o financeiro.'}</span>
             </span>
           </label>}
 
@@ -286,9 +309,10 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
                   <label className="label">Quantidade</label>
                   <input className="input text-right" inputMode="decimal" value={qty} onChange={e => setQty(e.target.value)} />
                 </div>
-                <div className="text-sm text-steel-600 pb-2.5">Total da compra: <strong>{fmtBRL(total)}</strong></div>
+                {!oldStock && <div className="text-sm text-steel-600 pb-2.5">Total da compra: <strong>{fmtBRL(total)}</strong></div>}
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              {oldStock && <p className="text-xs text-steel-500">Peça que a loja já tinha: não gera conta a pagar nem mexe no caixa. Fica no histórico da peça como “Estoque antigo”.</p>}
+              {!oldStock && <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setPayNow(true)}
                   className={`px-3 py-2 rounded-xl border text-sm font-semibold ${payNow ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 text-steel-600'}`}>
                   Paguei na hora
@@ -297,8 +321,8 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
                   className={`px-3 py-2 rounded-xl border text-sm font-semibold ${!payNow ? 'bg-steel-900 text-white border-steel-900' : 'bg-white border-steel-200 text-steel-600'}`}>
                   Vou pagar depois
                 </button>
-              </div>
-              {payNow ? (
+              </div>}
+              {!oldStock && (payNow ? (
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setFrom('banco')}
                     className={`px-3 py-2 rounded-xl border text-xs font-semibold ${from === 'banco' ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-white border-steel-200 text-steel-600'}`}>
@@ -314,14 +338,14 @@ export default function QuickPartModal({ wid, osLabel, initialName, quantity, de
                   <label className="label">Vencimento (conta na autopeças)</label>
                   <input type="date" className="input" value={due} onChange={e => setDue(e.target.value || todayISO())} />
                 </div>
-              )}
+              ))}
             </div>
           )}
         </div>
 
         <div className="px-6 py-4 border-t border-steel-100 flex justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
-          <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Salvando…' : bought ? 'Cadastrar e lançar compra' : 'Cadastrar peça'}</button>
+          <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Salvando…' : bought ? (oldStock ? 'Cadastrar e lançar estoque' : 'Cadastrar e lançar compra') : 'Cadastrar peça'}</button>
         </div>
       </form>
     </div>
