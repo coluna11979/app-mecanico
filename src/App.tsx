@@ -60,6 +60,7 @@ import WorkshopConsultaTecnica from './pages/oficina/ConsultaTecnica';
 import AdminCatalogoTecnico from './pages/admin/CatalogoTecnico';
 import WorkshopEstoquePainel from './pages/oficina/EstoquePainel';
 import WorkshopEstoqueContagem from './pages/oficina/EstoqueContagem';
+import WorkshopTransferencias from './pages/oficina/TransferenciasEstoque';
 import WorkshopServicos from './pages/oficina/Servicos';
 import WorkshopAgenda from './pages/oficina/Agenda';
 import WorkshopComercial from './pages/oficina/Comercial';
@@ -207,6 +208,7 @@ export default function App() {
       <Route path="/oficina/financeiro" element={<ProtectedRoute allow={['workshop']}><WorkshopFinanceiro /></ProtectedRoute>} />
       <Route path="/oficina/pecas" element={<ProtectedRoute allow={['workshop']}><WorkshopPecas /></ProtectedRoute>} />
       <Route path="/oficina/pecas/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopEstoquePainel /></ProtectedRoute>} />
+      <Route path="/oficina/pecas/transferencias" element={<ProtectedRoute allow={['workshop']}><WorkshopTransferencias /></ProtectedRoute>} />
       <Route path="/oficina/pecas/contagem" element={<ProtectedRoute allow={['workshop']}><WorkshopEstoqueContagem /></ProtectedRoute>} />
       <Route path="/oficina/consulta" element={<ProtectedRoute allow={['workshop']}><WorkshopConsultaTecnica /></ProtectedRoute>} />
       <Route path="/oficina/servicos" element={<ProtectedRoute allow={['workshop']}><WorkshopServicos /></ProtectedRoute>} />

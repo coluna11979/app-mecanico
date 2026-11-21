@@ -21,7 +21,7 @@ import VehiclePicker from '@/components/parts/VehiclePicker';
 import { addVehicleToParts, fitsVehicle, fmtVehicle, fmtYears, isAnyModel, loadPartVehicles, markPartsUniversal, norm, partLabel, savePartVehicles, type PartVehicle, type VehicleDraft } from '@/lib/partVehicles';
 import SupplierPicker from '@/components/parts/SupplierPicker';
 import StockTabs, { useStockAccess } from '@/components/stock/StockTabs';
-import { StockHistoryModal, StockMoveModal, StockTransferModal, TransferReportModal, type MoveMode } from '@/components/stock/StockModals';
+import { StockHistoryModal, StockMoveModal, StockTransferModal, type MoveMode } from '@/components/stock/StockModals';
 
 const MOVE_LABEL: Record<StockMovement['kind'], string> = {
   compra: 'Compra', estorno_compra: 'Estorno de compra', os: 'Usada em OS', estorno_os: 'OS reaberta', ajuste: 'Ajuste',
@@ -63,7 +63,6 @@ export default function Pecas() {
   const [pricing, setPricing]   = useState(false);
   const [moving, setMoving]     = useState<{ part: WorkshopPart; mode: MoveMode } | null>(null);
   const [transferring, setTransferring] = useState<WorkshopPart | null>(null);
-  const [report, setReport] = useState(false);
   const [history, setHistory]   = useState<WorkshopPart | null>(null);
   const [menu, setMenu]         = useState<string | null>(null);
   /** Custo sendo editado na própria linha (checagem rápida) */
@@ -228,7 +227,7 @@ export default function Pecas() {
         <StockTabs title="Peças" subtitle="Custo, preço e quantidade. O orçamento puxa o preço daqui e a OS concluída dá baixa no estoque."
           actions={<>
             <button className="btn-ghost border border-steel-200 text-sm !py-2" onClick={() => setPricing(true)} title="Margem padrão da oficina">⚙️ Preços</button>
-            {workshops.length > 1 && <button className="btn-ghost border border-steel-200 text-sm !py-2" onClick={() => setReport(true)}>🔁 Transferências</button>}
+            {workshops.length > 1 && <Link to="/oficina/pecas/transferencias" className="btn-ghost border border-steel-200 text-sm !py-2">🔁 Transferências</Link>}
             <Link to="/oficina/pecas/contagem" className="btn-ghost border border-steel-200 text-sm !py-2">📋 Contagem</Link>
             {access.compras && <Link to="/oficina/compras/nova" className="btn-ghost border border-steel-200 text-sm !py-2">🧾 Lançar nota</Link>}
             <button className="btn-primary text-sm !py-2" onClick={() => setEditing('new')}>+ Nova peça</button>
@@ -472,7 +471,6 @@ export default function Pecas() {
           </div>
         </div>
       )}
-      {report && wid && <TransferReportModal wid={wid} onClose={() => setReport(false)} />}
       {transferring && (
         <StockTransferModal part={transferring} stores={otherStores}
           onClose={() => setTransferring(null)} onSaved={() => { setTransferring(null); load(); }} />

@@ -180,63 +180,6 @@ export function StockTransferModal({ part, stores, onClose, onSaved }: {
   );
 }
 
-/** Relatório: tudo que esta loja mandou e recebeu de outras lojas, por período */
-export function TransferReportModal({ wid, onClose }: { wid: string; onClose: () => void }) {
-  type Row = { id: string; qty: number; kind: string; note: string | null; created_at: string; part: { name: string; code: string | null; unit: string; cost: number } | null };
-  const [days, setDays] = useState(30);
-  const [rows, setRows] = useState<Row[] | null>(null);
-  useEffect(() => {
-    setRows(null);
-    const since = new Date(Date.now() - days * 86400000).toISOString();
-    supabase.from('stock_movements').select('id, qty, kind, note, created_at, part:workshop_parts(name, code, unit, cost)')
-      .eq('workshop_id', wid).in('kind', ['transf_saida', 'transf_entrada']).gte('created_at', since)
-      .order('created_at', { ascending: false }).limit(1000)
-      .then(({ data }) => setRows((data as never) ?? []));
-  }, [wid, days]);
-
-  const sent = (rows ?? []).filter(r => r.kind === 'transf_saida');
-  const got = (rows ?? []).filter(r => r.kind === 'transf_entrada');
-  const val = (r: Row) => Math.abs(Number(r.qty)) * Number(r.part?.cost ?? 0);
-  const total = (l: Row[]) => l.reduce((a, r) => a + val(r), 0);
-  const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  const other = (r: Row) => (r.note ?? '').replace(/^Transferência (para|de) /, '').split(': ')[0];
-
-  return (
-    <Sheet title="Transferências entre lojas" onClose={onClose}>
-      <div className="flex gap-1.5">
-        {[7, 30, 90, 365].map(d => (
-          <button key={d} type="button" onClick={() => setDays(d)}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${days === d ? 'bg-steel-900 text-white border-steel-900' : 'bg-white text-steel-600 border-steel-200'}`}>
-            {d === 365 ? '1 ano' : `${d} dias`}
-          </button>
-        ))}
-      </div>
-      {rows === null ? <div className="h-20 bg-steel-50 rounded-xl animate-pulse" /> : rows.length === 0 ? (
-        <p className="text-sm text-steel-500 text-center py-6">Nenhuma transferência neste período.</p>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-2 text-center">
-            <div className="rounded-xl bg-alert-50 p-2"><div className="text-[11px] text-steel-500">Enviadas</div><div className="font-bold">{sent.length} · {brl(total(sent))}</div></div>
-            <div className="rounded-xl bg-signal-50 p-2"><div className="text-[11px] text-steel-500">Recebidas</div><div className="font-bold">{got.length} · {brl(total(got))}</div></div>
-          </div>
-          <p className="text-[11px] text-steel-400">Valores a preço de custo atual da peça.</p>
-          <ul className="divide-y divide-steel-100 text-sm">
-            {rows.map(r => (
-              <li key={r.id} className="py-2 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{r.part?.name ?? 'Peça removida'}</div>
-                  <div className="text-xs text-steel-500">{fmtDate(r.created_at)} · {r.kind === 'transf_saida' ? 'para' : 'de'} {other(r)}{r.note?.includes(': ') ? ` · ${r.note.split(': ').slice(1).join(': ')}` : ''}</div>
-                </div>
-                <span className={`shrink-0 font-semibold ${Number(r.qty) > 0 ? 'text-signal-700' : 'text-alert-600'}`}>{Number(r.qty) > 0 ? '+' : ''}{fmtQty(r.qty)} {r.part?.unit}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </Sheet>
-  );
-}
-
 const MOVE_LABEL: Record<StockMovement['kind'], string> = {
   compra: 'Compra', estorno_compra: 'Estorno de compra', os: 'Usada em OS', estorno_os: 'OS reaberta', ajuste: 'Ajuste manual',
   transf_saida: 'Transferida para outra loja', transf_entrada: 'Recebida de outra loja',
