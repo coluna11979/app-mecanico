@@ -120,10 +120,11 @@ function Header() {
 function Hero() {
   return (
     <section id="topo" className="relative overflow-hidden" aria-labelledby="hero-title">
-      <img src="/sites/jc/fotos/hero.webp" srcSet="/sites/jc/fotos/hero-900.webp 900w, /sites/jc/fotos/hero.webp 1672w" sizes="100vw"
-        alt="" width={1672} height={941} {...{ fetchpriority: "high" }} className="absolute inset-0 -z-10 h-full w-full object-cover object-[50%_25%] opacity-30" />
-      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-ink/70 via-ink/90 to-ink" />
-      <span className="absolute right-4 top-4 z-10 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-semibold text-white/80">Imagem ilustrativa</span>
+      {/* Fundo sem foto, no padrão do Top Stop: escuro com luz suave em gradiente */}
+      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-[radial-gradient(80%_70%_at_15%_0%,#1A1F27_0%,#0B0D10_60%)]" />
+      <div aria-hidden="true" className="absolute -right-40 -top-40 -z-10 h-[620px] w-[620px] rounded-full bg-gold/[0.10] blur-[140px]" />
+      <div aria-hidden="true" className="absolute -bottom-48 left-1/3 -z-10 h-[520px] w-[520px] rounded-full bg-[#2B5BFF]/[0.06] blur-[140px]" />
+      <div aria-hidden="true" className="absolute inset-0 -z-10 opacity-[0.07] [background-image:linear-gradient(#fff_1px,transparent_1px),linear-gradient(90deg,#fff_1px,transparent_1px)] [background-size:56px_56px] [mask-image:radial-gradient(70%_60%_at_50%_40%,#000,transparent)]" />
 
       <div className="mx-auto grid max-w-[1200px] gap-12 px-6 pb-20 pt-14 lg:grid-cols-[1.1fr_.9fr] lg:items-center lg:pb-28 lg:pt-20">
         <div>
