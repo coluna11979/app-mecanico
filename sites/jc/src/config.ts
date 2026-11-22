@@ -21,6 +21,8 @@ export type Loja = {
   rota: string;
   mapa: string;
   foto?: string;
+  /** true = imagem tratada/gerada, não foto real da loja */
+  fotoIlustrativa?: boolean;
 };
 
 export const LOJAS: Loja[] = [
@@ -62,6 +64,9 @@ export const LOJAS: Loja[] = [
     google: { nota: '4,0', avaliacoes: 49, link: 'https://www.google.com/maps/search/?api=1&query=JC+Pneus+Estrada+do+M%27Boi+Mirim+10003' },
     rota: 'https://www.google.com/maps/dir/?api=1&destination=JC+Pneus%2C+Estrada+do+M%27Boi+Mirim%2C+10003%2C+S%C3%A3o+Paulo+-+SP',
     mapa: 'https://www.google.com/maps?q=JC+Pneus,+Estrada+do+M%27Boi+Mirim,+10003,+S%C3%A3o+Paulo&output=embed',
+    // nº da placa (16.003) e WhatsApp da placa (97195-2189) desfocados: não batem com os dados reais
+    foto: '/sites/jc/fotos/jcpneus-fachada.webp',
+    fotoIlustrativa: true,
   },
 ];
 

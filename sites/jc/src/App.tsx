@@ -414,8 +414,8 @@ function Unidades() {
             <article key={l.id} className="overflow-hidden rounded-3xl bg-panel ring-1 ring-line">
               {l.foto ? (
                 <div className="relative">
-                  <img src={l.foto} alt={`Fachada da ${l.apelido}, ${l.endereco}`} width={1360} height={1020} loading="lazy" decoding="async" className="aspect-[16/9] w-full object-cover object-[40%_45%]" />
-                  <span className="absolute left-4 top-4 rounded-full bg-black/70 px-3 py-1 text-[12px] font-bold">Foto da loja</span>
+                  <img src={l.foto} alt={`Fachada da ${l.apelido}, ${l.endereco}`} width={l.fotoIlustrativa ? 1455 : 1360} height={l.fotoIlustrativa ? 1081 : 1020} loading="lazy" decoding="async" className="aspect-[16/9] w-full object-cover object-[40%_45%]" />
+                  <span className="absolute left-4 top-4 rounded-full bg-black/70 px-3 py-1 text-[12px] font-bold">{l.fotoIlustrativa ? 'Imagem ilustrativa' : 'Foto da loja'}</span>
                 </div>
               ) : (
                 <iframe title={`Mapa: ${l.apelido}`} src={l.mapa} loading="lazy" referrerPolicy="no-referrer-when-downgrade" className="aspect-[16/9] w-full border-0 grayscale-[.3]" />
