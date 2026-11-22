@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; scroll-padding-top: 88px; -webkit-text-size-adjust: 100%; }
+  body { @apply bg-ink font-sans text-white antialiased; }
+  h1, h2, h3 { @apply font-display; text-wrap: balance; }
+  ::selection { @apply bg-gold text-ink; }
+  :focus-visible { outline: 3px solid #FFC107; outline-offset: 3px; border-radius: 10px; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+}
