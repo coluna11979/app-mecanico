@@ -55,7 +55,10 @@ export const LOJAS: Loja[] = [
     whatsapp: '5511971972132', // (11) 97197-2132 do Google — CONFIRMAR que é WhatsApp
     telefone: '(11) 97197-2132',
     foco: 'Pneus, suspensão, freios, bateria, elétrica e diagnóstico de motor',
-    horarios: [], // CONFIRMAR horário da JC Pneus (Google mostra só "abre seg. às 8h")
+    horarios: [
+      { dias: 'Segunda a sexta', horas: '8h às 18h' },
+      { dias: 'Sábado', horas: '8h às 14h' },
+    ],
     google: { nota: '4,0', avaliacoes: 49, link: 'https://www.google.com/maps/search/?api=1&query=JC+Pneus+Estrada+do+M%27Boi+Mirim+10003' },
     rota: 'https://www.google.com/maps/dir/?api=1&destination=JC+Pneus%2C+Estrada+do+M%27Boi+Mirim%2C+10003%2C+S%C3%A3o+Paulo+-+SP',
     mapa: 'https://www.google.com/maps?q=JC+Pneus,+Estrada+do+M%27Boi+Mirim,+10003,+S%C3%A3o+Paulo&output=embed',
@@ -80,7 +83,44 @@ export const SERVICOS = [
   { id: 'escapamento', titulo: 'Escapamento', texto: 'Troca e reparo de escapamento e silenciosos.', icon: 'exhaust' },
 ] as const;
 
+/* Pacotes de revisão (sem preço: orçamento pelo WhatsApp, varia com o óleo e as peças do carro) */
+export const PACOTES = [
+  {
+    id: 'leves',
+    selo: 'Mais pedido',
+    titulo: 'Revisão Completa',
+    publico: 'Veículos leves',
+    exemplos: 'Hatches e sedans: Onix, HB20, Gol, Polo, Argo, Ka, Cronos, Prisma, Voyage, Corolla, Civic…',
+    itens: [
+      'Troca de óleo do motor',
+      'Filtro de óleo novo',
+      'Filtro de combustível',
+      'Filtro de ar do motor',
+      'Filtro do ar-condicionado (cabine)',
+      'Alinhamento e balanceamento',
+      'Revisão dos itens de segurança',
+    ],
+  },
+  {
+    id: 'suv',
+    selo: 'Maior porte',
+    titulo: 'Revisão SUVs e Picapes',
+    publico: 'SUVs, utilitários e picapes',
+    exemplos: 'Compass, Renegade, Tracker, Creta, Kicks, Duster, T-Cross, HR-V, Hilux, Ranger, S10, Toro…',
+    itens: [
+      'Troca de óleo do motor (quantidade para SUV/picape)',
+      'Filtro de óleo novo',
+      'Filtro de combustível',
+      'Filtro de ar do motor',
+      'Filtro do ar-condicionado (cabine)',
+      'Alinhamento e balanceamento',
+      'Revisão dos itens de segurança',
+    ],
+  },
+] as const;
+
 export const SERVICOS_FORM = [
+  'Pacote Revisão Completa (veículos leves)', 'Pacote Revisão SUVs e Picapes',
   'Revisão completa', 'Troca de óleo e filtros', 'Alinhamento e balanceamento', 'Pneus',
   'Freios', 'Suspensão e direção', 'Diagnóstico de barulho', 'Luz acesa no painel',
   'Bateria e elétrica', 'Escapamento', 'Outro / não sei',

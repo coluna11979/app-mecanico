@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { GRUPO, LOJAS, SERVICOS, SERVICOS_FORM, msgLoja, track, wa, type Loja } from './config';
+import { GRUPO, LOJAS, PACOTES, SERVICOS, SERVICOS_FORM, msgLoja, track, wa, type Loja } from './config';
 import { Icon } from './icons';
 
 /* =====================================================================
@@ -43,6 +43,7 @@ function WaButton({ loja, msg, id, children, variant = 'gold', className = '' }:
    Cabeçalho
    --------------------------------------------------------------------- */
 const LINKS = [
+  { href: '#pacotes', label: 'Pacotes' },
   { href: '#servicos', label: 'Serviços' },
   { href: '#agendar', label: 'Agendar' },
   { href: '#avaliacoes', label: 'Avaliações' },
@@ -197,6 +198,49 @@ function Numeros() {
 }
 
 /* ---------------------------------------------------------------------
+   Pacotes de revisão (sem preço; orçamento pelo WhatsApp)
+   --------------------------------------------------------------------- */
+function Pacotes({ onAgendar }: { onAgendar: (servico: string) => void }) {
+  return (
+    <section id="pacotes" className="py-24" aria-labelledby="pac-title">
+      <div className="mx-auto max-w-[1200px] px-6">
+        <div className="max-w-[760px]">
+          <Eyebrow>Carro-chefe</Eyebrow>
+          <h2 id="pac-title" className="mt-3 text-[34px] font-extrabold leading-tight tracking-tight sm:text-[44px]">Pacotes de revisão preventiva.</h2>
+          <p className="mt-4 text-[18px] text-slate">As manutenções essenciais num pacote só, nas duas lojas. O valor depende do óleo e das peças do seu carro: peça o orçamento e receba pelo WhatsApp.</p>
+        </div>
+        <div className="mt-12 grid gap-6 lg:grid-cols-2">
+          {PACOTES.map((p, i) => {
+            const nomeForm = i === 0 ? 'Pacote Revisão Completa (veículos leves)' : 'Pacote Revisão SUVs e Picapes';
+            return (
+              <article key={p.id} className={`relative flex flex-col rounded-3xl p-7 ring-1 sm:p-9 ${i === 0 ? 'bg-panel ring-gold/60' : 'bg-panel ring-line'}`}>
+                <span className={`absolute -top-3 left-7 rounded-full px-3 py-1 text-[12px] font-bold uppercase tracking-wide ${i === 0 ? 'bg-gold text-ink' : 'bg-white text-ink'}`}>{p.selo}</span>
+                <p className="text-[13px] font-bold uppercase tracking-[0.12em] text-gold">{p.publico}</p>
+                <h3 className="mt-2 text-[28px] font-extrabold leading-tight">{p.titulo}</h3>
+                <p className="mt-2 text-[15px] text-slate">{p.exemplos}</p>
+                <div className="mt-6 rounded-2xl bg-ink p-5 ring-1 ring-line">
+                  <p className="text-[13px] font-bold uppercase tracking-wide text-slate">Incluso no pacote</p>
+                  <ul className="mt-4 space-y-3">
+                    {p.itens.map((it) => (
+                      <li key={it} className="flex gap-3 text-[15px]"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-gold/15 text-gold"><Icon.check className="h-3.5 w-3.5" /></span>{it}</li>
+                    ))}
+                  </ul>
+                </div>
+                <p className="mt-5 text-[14px] text-slate">Mão de obra inclusa · parcele em até 10x sem juros</p>
+                <button type="button" onClick={() => onAgendar(nomeForm)}
+                  className={`mt-6 inline-flex min-h-[54px] items-center justify-center gap-2 rounded-xl text-[16px] font-bold transition-colors ${i === 0 ? 'bg-gold text-ink hover:bg-gold-2' : 'bg-white text-ink hover:bg-cloud'}`}>
+                  Pedir orçamento do pacote <Icon.arrow />
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------------
    Serviços
    --------------------------------------------------------------------- */
 function Servicos({ onAgendar }: { onAgendar: (servico: string) => void }) {
@@ -241,7 +285,7 @@ function Agendar({ servicoInicial }: { servicoInicial: string }) {
 
   useEffect(() => {
     if (!servicoInicial) return;
-    const achou = SERVICOS_FORM.find((s) => servicoInicial.toLowerCase().startsWith(s.toLowerCase().split(' ')[0]));
+    const achou = SERVICOS_FORM.find((s) => s === servicoInicial) ?? SERVICOS_FORM.find((s) => !s.startsWith('Pacote') && servicoInicial.toLowerCase().startsWith(s.toLowerCase().split(' ')[0]));
     setServico(achou ?? 'Outro / não sei');
   }, [servicoInicial]);
 
@@ -501,6 +545,7 @@ export default function App() {
       <main id="conteudo">
         <Hero />
         <Numeros />
+        <Pacotes onAgendar={agendar} />
         <Servicos onAgendar={agendar} />
         <Agendar servicoInicial={servico} />
         <Avaliacoes />
