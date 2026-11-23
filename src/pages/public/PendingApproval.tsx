@@ -43,6 +43,13 @@ const STATUS_META = {
   },
 } as const;
 
+const DOCS_RECEIVED_META = {
+  emoji: '✅',
+  title: 'Recebemos seus documentos',
+  description: 'Obrigado! Nossa equipe vai analisar e te responde por email. Agora é só aguardar — não precisa fazer mais nada.',
+  color: 'text-signal-700 bg-signal-500/10 border-signal-300',
+};
+
 // Formatos aceitos — cobre casos reais de celulares BR:
 // - iPhone iOS 15+ manda image/heif (não image/heic)
 // - Android + WhatsApp pode mandar mime vazio ou image/jpg (sem 'e')
@@ -79,13 +86,15 @@ export default function PendingApproval() {
   const status = (profile?.status ?? 'pending') as keyof typeof STATUS_META;
   const meta   = STATUS_META[status];
 
-  /* Redireciona quando aprovar */
+  /* Redireciona quando aprovar — e o admin, que não tem cadastro em análise
+   *  (sem isso ele via "Cadastro aprovado" ao abrir o link do e-mail de um lead) */
   useEffect(() => {
+    if (profile?.role === 'admin') { nav('/admin/dashboard', { replace: true }); return; }
     if (profile?.status === 'approved') {
       if (profile.role === 'mechanic') nav('/mecanico/dashboard', { replace: true });
       else if (profile.role === 'workshop') nav('/oficina/painel', { replace: true });
     }
-  }, [profile?.status]);
+  }, [profile?.status, profile?.role]);
 
   /* Carrega mensagens + realtime */
   useEffect(() => {
@@ -187,7 +196,7 @@ export default function PendingApproval() {
 
       // Cada arquivo vira uma mensagem (texto vai no primeiro; se sem arquivos, mensagem-só-texto)
       if (uploaded.length === 0) {
-        await supabase.from('approval_messages').insert({
+        const { error: insErr } = await supabase.from('approval_messages').insert({
           profile_id:  user.id,
           sender_id:   user.id,
           sender_role: 'user',
@@ -198,6 +207,7 @@ export default function PendingApproval() {
           attachment_size: null,
           attachment_mime: null,
         });
+        if (insErr) throw insErr;
       } else {
         const inserts = uploaded.map((att, i) => ({
           profile_id:  user.id,
@@ -212,12 +222,20 @@ export default function PendingApproval() {
           attachment_size: att.size,
           attachment_mime: att.mime,
         }));
-        await supabase.from('approval_messages').insert(inserts);
+        const { error: insErr } = await supabase.from('approval_messages').insert(inserts);
+        if (insErr) throw insErr;
       }
 
       setReply('');
       setFiles([]);
       if (fileRef.current) fileRef.current.value = '';
+      // approval_messages não está no realtime: sem recarregar, a resposta não aparecia e
+      // parecia que o envio tinha falhado
+      await loadMessages();
+      setToast(uploaded.length > 0
+        ? '✅ Documentos enviados! Nossa equipe vai analisar.'
+        : '✅ Mensagem enviada!');
+      setTimeout(() => setToast(null), 6000);
     } catch (err: any) {
       setError('Erro ao enviar: ' + (err?.message ?? 'tente novamente'));
     } finally {
@@ -231,6 +249,9 @@ export default function PendingApproval() {
   /* Tem solicitação pendente? — aparece como destaque no topo */
   const hasPendingRequest = Object.values(requestStates).some(s => !s);
   const canReply = status === 'under_review';
+  /* Respondeu tudo o que a equipe pediu: o topo agradece e manda aguardar */
+  const docsReceived = canReply && Object.keys(requestStates).length > 0 && !hasPendingRequest;
+  const header = docsReceived ? DOCS_RECEIVED_META : meta;
 
   return (
     <div className="min-h-screen bg-steel-50 px-4 py-6 sm:py-10">
@@ -246,10 +267,10 @@ export default function PendingApproval() {
         {/* Header */}
         <div className="card">
           <div className="flex justify-center mb-4"><Logo /></div>
-          <div className={`rounded-2xl border-2 px-5 py-6 text-center ${meta.color}`}>
-            <div className="text-5xl mb-2">{meta.emoji}</div>
-            <h1 className="text-2xl font-bold">{meta.title}</h1>
-            <p className="text-sm mt-2 opacity-90 max-w-md mx-auto leading-relaxed">{meta.description}</p>
+          <div className={`rounded-2xl border-2 px-5 py-6 text-center ${header.color}`}>
+            <div className="text-5xl mb-2">{header.emoji}</div>
+            <h1 className="text-2xl font-bold">{header.title}</h1>
+            <p className="text-sm mt-2 opacity-90 max-w-md mx-auto leading-relaxed">{header.description}</p>
           </div>
         </div>
 
@@ -298,7 +319,7 @@ export default function PendingApproval() {
             {canReply && (
               <div className="border-t border-steel-100 pt-3 space-y-2">
                 <label className="text-xs font-semibold text-steel-500 uppercase tracking-wider">
-                  Responder à equipe
+                  {docsReceived ? 'Quer mandar mais alguma coisa?' : 'Responder à equipe'}
                 </label>
                 <textarea
                   className="input text-sm resize-none"
