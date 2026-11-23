@@ -18,6 +18,16 @@ function esc(s: string): string {
   }[c] ?? c));
 }
 
+function randomToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 type Meta = { subject: string; title: string; intro: string; cta: string; next: string; steps?: string[]; footer: string };
 
 Deno.serve(async (req) => {
@@ -45,7 +55,7 @@ Deno.serve(async (req) => {
     const { data: settings } = await admin
       .from('app_settings')
       .select('key, value')
-      .in('key', ['resend_api_key', 'resend_from_email', 'app_public_url']);
+      .in('key', ['resend_api_key', 'resend_from_email', 'app_public_url', 'resend_reply_to']);
     const cfg: Record<string, string> = {};
     for (const s of settings ?? []) cfg[s.key] = s.value;
 
@@ -54,8 +64,11 @@ Deno.serve(async (req) => {
 
     const fromEmail = cfg.resend_from_email?.trim() || 'noreply@resend.dev';
     const appUrl    = cfg.app_public_url?.trim() || 'https://mecanicoapp.com.br';
+    // Preenchido só depois que o recebimento está ativo no Resend: as respostas entram no
+    // histórico do cadastro pela função resend-inbound
+    const replyTo   = cfg.resend_reply_to?.trim() || '';
 
-    const { data: profile } = await admin.from('profiles').select('id, full_name, role').eq('id', profile_id).maybeSingle();
+    const { data: profile } = await admin.from('profiles').select('id, full_name, role, status').eq('id', profile_id).maybeSingle();
     if (!profile) return json({ error: 'profile not found' }, 404);
 
     const { data: { user }, error: userErr } = await admin.auth.admin.getUserById(profile_id);
@@ -108,7 +121,36 @@ Deno.serve(async (req) => {
       : template === 'rejected' ? String(content ?? '').replace(/^cadastro rejeitado( — )?/i, '').trim()
       : String(content ?? '');
 
-    const link = `${appUrl}/login?email=${encodeURIComponent(user.email)}&next=${encodeURIComponent(meta.next)}`;
+    // Cadastro ainda não aprovado: o botão entra direto na conta, sem senha (chave de 7 dias,
+    // conferida pela função email-login). Conta aprovada continua indo para o login.
+    let link = `${appUrl}/login?email=${encodeURIComponent(user.email)}&next=${encodeURIComponent(meta.next)}`;
+    let directLogin = false;
+    if (template !== 'approved' && profile.status !== 'approved') {
+      const raw = randomToken();
+      const { error: tokErr } = await admin.from('email_login_tokens').insert({
+        token_hash: await sha256Hex(raw),
+        profile_id,
+        next_path: meta.next,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      if (!tokErr) { link = `${appUrl}/entrar#t=${raw}`; directLogin = true; }
+    }
+
+    const replyHtml = replyTo
+      ? `Se preferir, <strong>responda este email${kind === 'request_documents' ? ' com as fotos' : ''}</strong> — a resposta chega direto no seu cadastro.`
+      : `<strong>Não responda este email</strong> — as respostas por aqui não chegam até a equipe. Use o botão acima.`;
+    const replyPlain = replyTo
+      ? `Se preferir, responda este email${kind === 'request_documents' ? ' com as fotos' : ''}: a resposta chega direto no seu cadastro.`
+      : 'Não responda este email: as respostas por aqui não chegam até a equipe.';
+    const accessHtml = directLogin ? `
+        O botão já entra na sua conta, sem precisar de senha.${kind === 'request_documents' ? ' Pelo celular, dá pra tirar a foto do documento e enviar na hora.' : ''}<br>
+        ${replyHtml}<br>
+        Se o botão não abrir, entre em ${esc(appUrl.replace(/^https?:\/\//, ''))} com seu email <strong>${esc(user.email)}</strong> e a senha do cadastro.` : `
+        Faça login com seu email <strong>${esc(user.email)}</strong> e a senha que você criou no cadastro.<br>
+        Esqueceu a senha? Use a opção <em>Esqueci minha senha</em> na tela de login.`;
+    const accessText = directLogin
+      ? `O botão já entra na sua conta, sem precisar de senha. ${replyPlain}`
+      : `Faça login com seu email ${user.email} e a senha do cadastro.`;
 
     const stepsHtml = meta.steps ? `
       <ol style="margin:0 0 24px;padding-left:20px;font-size:15px;line-height:1.7;color:#222C37;">
@@ -133,9 +175,7 @@ Deno.serve(async (req) => {
       <p style="font-size:15px;line-height:1.6;color:#475567;margin:0 0 20px;">${esc(meta.intro)}</p>
       ${stepsHtml}${noteHtml}
       <a href="${esc(link)}" style="display:inline-block;background:#FF5C0A;color:#fff;text-decoration:none;padding:14px 28px;border-radius:12px;font-weight:700;font-size:15px;">${esc(meta.cta)} →</a>
-      <p style="font-size:12px;color:#9AA6B6;margin:24px 0 0;line-height:1.6;">
-        Faça login com seu email <strong>${esc(user.email)}</strong> e a senha que você criou no cadastro.<br>
-        Esqueceu a senha? Use a opção <em>Esqueci minha senha</em> na tela de login.
+      <p style="font-size:12px;color:#9AA6B6;margin:24px 0 0;line-height:1.6;">${accessHtml}
       </p>
       ${signatureHtml(appUrl)}
       <p style="font-size:11px;color:#CBD3DD;margin:16px 0 0;">${esc(meta.footer)}</p>
@@ -145,12 +185,15 @@ Deno.serve(async (req) => {
 </html>`;
 
     const plainSteps = meta.steps ? '\n' + meta.steps.map((s, i) => `${i + 1}. ${s.replace(/<[^>]+>/g, '')}`).join('\n') + '\n' : '';
-    const text = `Fala ${firstName},\n\n${meta.intro}\n${plainSteps}${note ? `\n${note}\n` : ''}\n${meta.cta}: ${link}\n\nFaça login com seu email ${user.email} e a senha do cadastro.\n\n${signatureText(appUrl)}`;
+    const text = `Fala ${firstName},\n\n${meta.intro}\n${plainSteps}${note ? `\n${note}\n` : ''}\n${meta.cta}: ${link}\n\n${accessText}\n\n${signatureText(appUrl)}`;
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `Mecânico App <${fromEmail}>`, to: [user.email], subject: meta.subject, html, text }),
+      body: JSON.stringify({
+        from: `Mecânico App <${fromEmail}>`, to: [user.email], subject: meta.subject, html, text,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      }),
     });
     const result = await res.json();
     if (!res.ok) return json({ sent: false, error: result });
