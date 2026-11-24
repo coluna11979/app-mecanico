@@ -16,7 +16,7 @@ export const MODULES: Record<ModuleKey, {
   /** Telas do módulo (prefixo de rota) */
   routes: string[];
 }> = {
-  painel:       { label: 'Painel de vendas',   icon: '📊', desc: 'Faturamento e vendas do dia/mês',               routes: ['/oficina/painel', '/oficina/resultado'] },
+  painel:       { label: 'Painel de vendas',   icon: '📊', desc: 'Faturamento e vendas do dia/mês',               routes: ['/oficina/painel', '/oficina/resultado', '/oficina/relatorios'] },
   os:           { label: 'Ordens de serviço',  icon: '📋', desc: 'Abrir, acompanhar e imprimir OS',               routes: ['/oficina/os'] },
   agenda:       { label: 'Agenda',             icon: '📅', desc: 'Agendamentos da oficina',                       routes: ['/oficina/agenda'] },
   checkup:      { label: 'Check-up',           icon: '🩺', desc: 'Painel, inspeções, histórico e orçamento pelo link', routes: ['/oficina/checkup'] },
@@ -142,6 +142,7 @@ export const FEATURES: Partial<Record<ModuleKey, Feature[]>> = {
   painel: [
     { key: 'painel.vendas',    label: 'Painel de vendas', routes: ['/oficina/painel'] },
     { key: 'painel.resultado', label: 'Resultado (gestor no celular)', routes: ['/oficina/resultado'] },
+    { key: 'painel.curva_abc', label: 'Curva ABC de peças e serviços', routes: ['/oficina/relatorios/curva-abc'] },
   ],
   os: [
     { key: 'os.imprimir', label: 'Imprimir / PDF',          routes: ['/oficina/os/*/imprimir'] },

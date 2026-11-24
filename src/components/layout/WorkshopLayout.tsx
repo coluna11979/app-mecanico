@@ -83,6 +83,7 @@ const SECTIONS: NavGroup[] = [
   { key: 'relatorios', title: 'Relatórios', items: [
     { to: '/oficina/resultado',  icon: '📈', label: 'Resultado'            },
     { to: '/oficina/painel',     icon: '📊', label: 'Painel de vendas'     },
+    { to: '/oficina/relatorios/curva-abc', icon: '🔠', label: 'Curva ABC' },
   ] },
   { key: 'plataforma', title: 'MecânicoApp', items: [
     { to: '/oficina/dashboard',  icon: '⚡', label: 'Demandas'             },

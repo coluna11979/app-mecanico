@@ -51,6 +51,7 @@ import WorkshopOsDetail from './pages/oficina/OsDetail';
 import WorkshopPainel from './pages/oficina/Painel';
 import WorkshopInicio from './pages/oficina/Inicio';
 import WorkshopResultado from './pages/oficina/Resultado';
+import WorkshopCurvaAbc from './pages/oficina/CurvaAbc';
 import WorkshopEquipe from './pages/oficina/Equipe';
 import WorkshopEquipeFicha from './pages/oficina/EquipeFicha';
 import WorkshopTarefas from './pages/oficina/Tarefas';
@@ -206,6 +207,7 @@ export default function App() {
       <Route path="/oficina/plataforma/clientes" element={<ProtectedRoute allow={['workshop']}><Suspense fallback={<LazyFallback />}><WorkshopPlataformaClientes /></Suspense></ProtectedRoute>} />
       <Route path="/oficina/inicio" element={<ProtectedRoute allow={['workshop']}><WorkshopInicio /></ProtectedRoute>} />
       <Route path="/oficina/resultado" element={<ProtectedRoute allow={['workshop']}><WorkshopResultado /></ProtectedRoute>} />
+      <Route path="/oficina/relatorios/curva-abc" element={<ProtectedRoute allow={['workshop']}><WorkshopCurvaAbc /></ProtectedRoute>} />
       <Route path="/oficina/painel" element={<ProtectedRoute allow={['workshop']}><WorkshopPainel /></ProtectedRoute>} />
       <Route path="/oficina/equipe" element={<ProtectedRoute allow={['workshop']}><WorkshopEquipe /></ProtectedRoute>} />
       <Route path="/oficina/equipe/:id" element={<ProtectedRoute allow={['workshop']}><WorkshopEquipeFicha /></ProtectedRoute>} />
