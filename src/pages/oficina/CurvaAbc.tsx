@@ -6,9 +6,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { fetchAll } from '@/lib/fetchAll';
 import { fmtBRL } from '@/components/os/osHelpers';
 import { fmtQty } from '@/lib/parts';
-import { servicesExecuted } from '@/lib/serviceCatalog';
+import { serviceLines, servicesExecuted } from '@/lib/serviceCatalog';
 import type { PanelItem, PanelOs } from '@/lib/workshopMetrics';
-import { partsBase, rankAbc, servicesBase, type AbcClass, type AbcMetric, type SoldItem } from '@/lib/abcReport';
+import { partsBase, rankAbc, servicesBase, servicesSubBase, type AbcClass, type AbcLevel, type AbcMetric, type SoldItem } from '@/lib/abcReport';
 
 const STYLE: Record<AbcClass, { badge: string; bar: string; hint: string }> = {
   A: { badge: 'bg-brand-500 text-white', bar: 'bg-brand-500', hint: 'até 80% do total: o que sustenta a oficina' },
@@ -43,6 +43,7 @@ export default function CurvaAbc() {
 
   const [kind, setKind] = useState<'pecas' | 'servicos'>('pecas');
   const [metric, setMetric] = useState<AbcMetric>('faturamento');
+  const [level, setLevel] = useState<AbcLevel>('item');
   const [cls, setCls] = useState<AbcClass | ''>('');
   const [q, setQ] = useState('');
   const [os, setOs] = useState<Os[] | null>(null);
@@ -58,7 +59,7 @@ export default function CurvaAbc() {
           .in('workshop_id', ids).eq('status', 'completed').is('quote_status', null)
           .gte('completed_at', fromIso).lt('completed_at', toIso).order('id').range(a, b)),
         fetchAll((a, b) => supabase.from('service_order_items')
-          .select('service_order_id, kind, description, quantity, unit_price, unit_cost, part:workshop_parts(name, code, category), so:service_orders!inner(completed_at, status, quote_status)')
+          .select('service_order_id, kind, description, quantity, unit_price, unit_cost, part:workshop_parts(name, code, category, subcategory), so:service_orders!inner(completed_at, status, quote_status)')
           .in('workshop_id', ids).eq('so.status', 'completed').is('so.quote_status', null)
           .gte('so.completed_at', fromIso).lt('so.completed_at', toIso).order('id').range(a, b)),
       ]);
@@ -72,10 +73,11 @@ export default function CurvaAbc() {
 
   const base = useMemo(() => {
     if (!os) return [];
-    if (kind === 'pecas') return partsBase(items);
+    if (kind === 'pecas') return partsBase(items, level);
+    if (level === 'sub') return servicesSubBase(serviceLines(os as unknown as PanelOs[], items as unknown as PanelItem[], range));
     const svc = servicesExecuted(os as unknown as PanelOs[], items as unknown as PanelItem[], range, 10000);
     return servicesBase(svc.rows);
-  }, [os, items, kind, range]);
+  }, [os, items, kind, range, level]);
 
   const abc = useMemo(() => rankAbc(base, metric), [base, metric]);
   const list = useMemo(() => {
@@ -84,24 +86,26 @@ export default function CurvaAbc() {
       .filter(r => (!cls || r.cls === cls) && (!t || r.label.toLowerCase().includes(t) || r.code.toLowerCase().includes(t)));
   }, [abc, cls, q]);
   const [limit, setLimit] = useState(100);
-  useEffect(() => { setLimit(100); }, [kind, metric, cls, q, fromIso, toIso, idsKey]);
+  useEffect(() => { setLimit(100); }, [kind, level, metric, cls, q, fromIso, toIso, idsKey]);
 
   const totals = useMemo(() => ({
     revenue: base.reduce((t, b) => t + b.revenue, 0), cost: base.reduce((t, b) => t + b.cost, 0),
     noCost: base.reduce((t, b) => t + b.noCost, 0), qty: base.reduce((t, b) => t + b.qty, 0),
   }), [base]);
   const fmtValue = (n: number) => (metric === 'quantidade' ? fmtQty(n) : fmtBRL(n));
-  const noun = kind === 'pecas' ? 'peça' : 'serviço';
+  const noun = level === 'categoria' ? 'categoria' : level === 'sub' ? 'subcategoria' : kind === 'pecas' ? 'peça' : 'serviço';
+  const nouns = level === 'categoria' ? 'categorias' : level === 'sub' ? 'subcategorias' : kind === 'pecas' ? 'peças' : 'serviços';
+  const colName = level === 'categoria' ? 'Categoria' : level === 'sub' ? 'Subcategoria' : kind === 'pecas' ? 'Peça' : 'Serviço';
 
   function exportCsv() {
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
     const num = (n: number) => n.toFixed(2).replace('.', ',');
-    const head = ['Posição', kind === 'pecas' ? 'Peça' : 'Serviço', 'Código', 'Categoria', 'Quantidade', 'Faturamento', 'Custo', 'Lucro', 'Margem %', '% do total', '% acumulado', 'Classe'];
+    const head = ['Posição', colName, 'Código', 'Categoria', 'Quantidade', 'Faturamento', 'Custo', 'Lucro', 'Margem %', '% do total', '% acumulado', 'Classe'];
     const lines = list.map(r => [r.pos, r.label, r.code, r.category, String(r.qty).replace('.', ','), num(r.revenue), num(r.cost), num(r.profit), num(r.pct), num(r.share), num(r.cumulative), r.cls].map(esc).join(';'));
     const blob = new Blob(['﻿' + [head.map(esc).join(';'), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `curva-abc-${kind}-${metric}-${range.from.toISOString().slice(0, 10)}.csv`;
+    a.download = `curva-abc-${kind}-${level}-${metric}-${range.from.toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -128,6 +132,13 @@ export default function CurvaAbc() {
             </div>
             <span className="text-steel-300">|</span>
             <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs text-steel-500">Agrupar por</span>
+              <button className={chip(level === 'item')} onClick={() => setLevel('item')}>{kind === 'pecas' ? 'Peça' : 'Serviço'}</button>
+              <button className={chip(level === 'categoria')} onClick={() => setLevel('categoria')}>Categoria</button>
+              <button className={chip(level === 'sub')} onClick={() => setLevel('sub')}>Subcategoria</button>
+            </div>
+            <span className="text-steel-300">|</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-steel-500">Ordenar por</span>
               {METRICS.map(m => <button key={m.key} className={chip(metric === m.key)} onClick={() => setMetric(m.key)}>{m.label}</button>)}
             </div>
@@ -148,7 +159,7 @@ export default function CurvaAbc() {
           </div>
         ) : abc.rows.length === 0 ? (
           <div className="card text-center py-14 text-sm text-steel-500">
-            Nenhuma {noun} vendida neste período. Só contam as OS concluídas (orçamento não entra).
+            Nada vendido neste período. Só contam as OS concluídas (orçamento não entra).
           </div>
         ) : (
           <>
@@ -158,7 +169,7 @@ export default function CurvaAbc() {
                   className={`text-left rounded-2xl border px-4 py-3 bg-white transition ${cls === g.cls ? 'border-steel-900 ring-1 ring-steel-900' : 'border-steel-200 hover:border-steel-300'}`}>
                   <div className="flex items-center gap-2">
                     <span className={`h-7 w-7 rounded-md grid place-items-center text-sm font-bold ${STYLE[g.cls].badge}`}>{g.cls}</span>
-                    <span className="text-sm font-bold">{g.count} {g.count === 1 ? noun : kind === 'pecas' ? 'peças' : 'serviços'}</span>
+                    <span className="text-sm font-bold">{g.count} {g.count === 1 ? noun : nouns}</span>
                     <span className="ml-auto text-lg font-bold tabular-nums">{Math.round(g.share)}%</span>
                   </div>
                   <div className="text-xs text-steel-500 mt-1 leading-snug">{fmtValue(g.value)} · {STYLE[g.cls].hint}</div>
@@ -180,7 +191,7 @@ export default function CurvaAbc() {
 
             <div className="card !p-0 overflow-hidden">
               <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-steel-100">
-                <input className="input flex-1 min-w-[10rem] !py-2 text-sm" placeholder={kind === 'pecas' ? '🔍 Buscar peça ou código' : '🔍 Buscar serviço'} value={q} onChange={e => setQ(e.target.value)} />
+                <input className="input flex-1 min-w-[10rem] !py-2 text-sm" placeholder={level === 'item' && kind === 'pecas' ? '🔍 Buscar peça ou código' : `🔍 Buscar ${noun}`} value={q} onChange={e => setQ(e.target.value)} />
                 {(['A', 'B', 'C'] as AbcClass[]).map(c => <button key={c} className={chip(cls === c)} onClick={() => setCls(cls === c ? '' : c)}>Classe {c}</button>)}
                 {(cls || q) && <button className="text-xs font-semibold text-steel-500 underline" onClick={() => { setCls(''); setQ(''); }}>limpar</button>}
               </div>
@@ -189,8 +200,8 @@ export default function CurvaAbc() {
                   <thead>
                     <tr className="bg-steel-50 text-[10px] uppercase tracking-wider text-steel-500 text-left">
                       <th className="font-bold py-2 px-3 w-10">#</th>
-                      <th className="font-bold py-2 px-2">{kind === 'pecas' ? 'Peça' : 'Serviço'}</th>
-                      <th className="font-bold py-2 px-2 text-right">{kind === 'pecas' ? 'Qtd.' : 'Vezes'}</th>
+                      <th className="font-bold py-2 px-2">{colName}</th>
+                      <th className="font-bold py-2 px-2 text-right">{kind === 'pecas' ? 'Qtd.' : level === 'sub' ? 'OS' : 'Vezes'}</th>
                       <th className="font-bold py-2 px-2 text-right">Faturamento</th>
                       <th className="font-bold py-2 px-2 text-right">Lucro</th>
                       <th className="font-bold py-2 px-2 text-right">Margem</th>

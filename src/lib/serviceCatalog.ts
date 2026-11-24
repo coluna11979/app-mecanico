@@ -92,10 +92,16 @@ export function servicesExecuted(list: PanelOs[], items: PanelItem[], r: Range, 
   return { rows: rows.slice(0, limit), total: rows.reduce((t, x) => t + x.revenue, 0), unmatchedItems };
 }
 
+/** Cada item vendido já ligado ao serviço dele (para abrir o serviço em subcategorias) */
+export function serviceLines(list: PanelOs[], items: PanelItem[], r: Range) {
+  const { byOs } = attributeItems(salesOf(list, r).sales, items);
+  return [...byOs.entries()].flatMap(([osId, its]) => its.map(t => ({ ...t, osId })));
+}
+
 /** Serviços que contam só os próprios itens (não herdam "mão de obra", bicos, porcas… da OS) */
 const EXACT_ONLY = new Set(['Alinhamento', 'Cambagem', 'Balanceamento']);
 
-type Attributed = { name: string; value: number; cost: number; kind: PanelItem['kind'] };
+type Attributed = { name: string; value: number; cost: number; kind: PanelItem['kind']; src: PanelItem };
 
 /** Cada item das OS ligado ao serviço que ele representa (a regra está no comentário de servicesExecuted) */
 function attributeItems(sales: PanelOs[], items: PanelItem[]) {
@@ -120,7 +126,7 @@ function attributeItems(sales: PanelOs[], items: PanelItem[]) {
     byOs.set(osId, tagged.map(t => {
       if (!t.cat && !main) unmatchedItems += 1;
       const cost = t.i.kind === 'part' ? Number(t.i.quantity) * Number(t.i.unit_cost ?? 0) : 0;
-      return { name: t.cat ?? main ?? UNKNOWN_SERVICE, value: t.value, cost, kind: t.i.kind };
+      return { name: t.cat ?? main ?? UNKNOWN_SERVICE, value: t.value, cost, kind: t.i.kind, src: t.i };
     }));
   }
   return { byOs, unmatchedItems };
