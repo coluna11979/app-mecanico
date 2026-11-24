@@ -144,7 +144,8 @@ export function useOsCommission(osId: string, a: Assign, team: Team = []) {
       const next = rs.map(r => {
         const v = r2(parseMoney(r.amount));
         if (Math.abs(v - (auto.find(x => x.mechanic_id === r.mechanic_id)?.value ?? -1)) < 0.01) return { ...r, mode: 'regra' as Mode, amount: '' };
-        return { ...r, mode: modeOf(v, baseFor(r.mechanic_id)) };
+        // Valor salvo diferente da regra: fica como valor fechado (10%/4% sobre tudo não existe mais em OS com itens)
+        return { ...r, mode: 'fixo' as Mode };
       });
       if (a.labor.some(l => a.who[l.id] === PLATFORM) && !next.some(r => r.mechanic_id === PLATFORM)) {
         next.push({ key: ++seq, mechanic_id: PLATFORM, mode: 'fixo', amount: '' });
@@ -328,7 +329,7 @@ export function OsCommission({ c, team, assign, className = 'mt-4 rounded-2xl bo
                 </div>
               ) : (
               <div className="flex flex-wrap gap-1.5 items-center">
-                {MODES.filter(m => m.key !== 'regra' || c.hasRule).map(m => (
+                {MODES.filter(m => (c.hasRule ? m.key === 'regra' || m.key === 'fixo' : m.key !== 'regra')).map(m => (
                   <button key={m.key} type="button"
                     onClick={() => setRow(r.key, { mode: m.key, amount: m.key === 'fixo' ? moneyStr(c.valueOf(r)) : r.amount })}
                     className={`text-xs font-semibold px-2.5 py-1.5 rounded-full border transition ${
