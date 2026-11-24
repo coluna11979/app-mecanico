@@ -631,8 +631,8 @@ export default function WorkshopLayout({ children }: { children: ReactNode }) {
   }, [op.session?.session_id, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   // No modo balcão só o gestor troca de loja (e a outra loja abre travada, na tela de PIN)
   const canSwitchStore = !op.balcao || role === 'gestor';
-  // Busca rápida (telas, preço, óleo): só o dono (login normal) e o gerente no balcão
-  const canQuickSearch = !op.balcao || role === 'gestor';
+  // Busca rápida (telas, preço, óleo): dono (login normal), função Gestor, ou quem o dono liberou em Acessos (permissão Busca rápida)
+  const canQuickSearch = !op.balcao || role === 'gestor' || !!op.session?.permissions.includes('consultas');
   // Acesso equipe (login remoto): sair encerra a conta do colaborador e volta pra tela de equipe
   const exitRemote = async () => { op.clear(); await signOut(); nav('/equipe'); };
 

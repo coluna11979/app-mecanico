@@ -7,7 +7,7 @@ export type OperatorRole = 'gestor' | 'caixa' | 'atendente' | 'mecanico' | 'vend
 export type OperatorPerm =
   | 'dar_desconto' | 'cancelar_recebimento' | 'reabrir_caixa'
   | 'ver_financeiro' | 'contas_pagar' | 'compras' | 'pecas_estoque' | 'folha' | 'equipe' | 'plataforma'
-  | 'whatsapp';
+  | 'whatsapp' | 'consultas';
 
 export type WorkshopOperator = {
   id: string; workshop_id: string; mechanic_id: string | null; name: string;
@@ -66,6 +66,7 @@ export const PERMS: Record<OperatorPerm, { label: string; desc: string }> = {
   plataforma:           { label: 'Plataforma completa',   desc: 'Demandas, buscar mecânicos, mensagens e acompanhar o serviço do mecânico da plataforma' },
   equipe:               { label: 'Equipe',                desc: 'Colaboradores (ficha, salário, documentos) e Desempenho e comissões' },
   whatsapp:             { label: 'WhatsApp da oficina',   desc: 'Ver e responder todas as conversas do número da oficina (Inbox)' },
+  consultas:            { label: 'Busca rápida',          desc: 'Consultar preço de peça e serviço e consulta de óleo e filtros por placa ou modelo' },
 };
 
 /** Permissões que só aparecem quando a oficina tem o módulo (rota do módulo) */
@@ -79,7 +80,7 @@ export const PERM_GROUPS: { label: string; perms: OperatorPerm[] }[] = [
   { label: 'Caixa',              perms: ['dar_desconto', 'cancelar_recebimento', 'reabrir_caixa'] },
   { label: 'Financeiro',         perms: ['ver_financeiro', 'contas_pagar', 'folha'] },
   { label: 'Equipe',             perms: ['equipe'] },
-  { label: 'Compras e estoque',  perms: ['compras', 'pecas_estoque'] },
+  { label: 'Compras e estoque',  perms: ['compras', 'pecas_estoque', 'consultas'] },
   { label: 'Plataforma',         perms: ['plataforma'] },
 ];
 
@@ -104,6 +105,7 @@ const PERM_ROUTES: Partial<Record<OperatorPerm, string[]>> = {
   equipe:         ['/oficina/equipe', '/oficina/desempenho'],
   plataforma:     ['/oficina/dashboard', '/oficina/buscar', '/oficina/mensagens', '/oficina/job'],
   whatsapp:       ['/oficina/inbox'],
+  consultas:      ['/oficina/consulta'],
 };
 
 /** A rota está liberada para quem está operando (função + permissões extras)? */
