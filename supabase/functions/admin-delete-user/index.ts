@@ -64,8 +64,22 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Auth.users tem CASCADE para profiles (que cascateia p/ mechanics, workshops,
-    // approval_messages, workshop_members, etc.). Basta deletar o auth user.
+    // 1) Apaga primeiro os dados do app, com a permissão do servidor (service_role).
+    //    profiles cascateia para mechanics, workshops, OS, itens, approval_messages etc.
+    //    Antes isso ficava para a cascata do auth.deleteUser — mas aí os gatilhos das
+    //    tabelas da oficina (ex.: recálculo da OS ao apagar item) rodavam com o papel do
+    //    sistema de login, que não tem acesso às tabelas do app, e oficina com OS não
+    //    conseguia ser excluída ("permission denied for table service_order_items", 25/11/2026).
+    if (targetProfile) {
+      const { error: profErr } = await admin.from('profiles').delete().eq('id', profile_id);
+      if (profErr) {
+        return new Response(JSON.stringify({ error: `Não deu para apagar os dados do cadastro: ${profErr.message}` }), {
+          status: 400, headers: { ...CORS, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // 2) Apaga o login. Se falhar aqui, os dados já saíram: tentar de novo termina a exclusão.
     const { error: delErr } = await admin.auth.admin.deleteUser(profile_id);
     if (delErr) {
       return new Response(JSON.stringify({ error: delErr.message }), {
