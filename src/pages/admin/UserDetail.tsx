@@ -311,7 +311,13 @@ export default function AdminUserDetail() {
     });
     setBusy(false);
     if (error || data?.error) {
-      setDeleteErr(data?.error ?? error?.message ?? 'Erro ao excluir cadastro');
+      let msg: string = data?.error ?? error?.message ?? 'Erro ao excluir cadastro';
+      // Erro da função: o motivo vem no corpo da resposta — o supabase-js só diz "non-2xx"
+      const ctx = (error as { context?: Response } | null)?.context;
+      if (ctx && typeof ctx.json === 'function') {
+        try { const body = await ctx.json(); if (body?.error) msg = body.error; } catch { /* fica a genérica */ }
+      }
+      setDeleteErr(msg);
       return;
     }
     // Volta pra listagem — o cadastro deixou de existir
