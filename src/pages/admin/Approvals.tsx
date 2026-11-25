@@ -6,9 +6,20 @@ import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
 import { NewUserModal } from '@/components/admin/NewUserModal';
 import { MechanicVerification } from '@/components/admin/MechanicVerification';
 import { sendApprovalEmail } from '@/lib/approvalEmail';
-import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus } from '@/types/database';
+import { getApprovalAttachmentUrl } from '@/lib/approvalAttachments';
+import {
+  docSlotsFor, docStates, docsSummary, summarizeDocs, type DocSlot, type DocsSummary,
+} from '@/lib/signupDocuments';
+import type { Profile, Mechanic, Workshop, ApprovalMessage, ProfileStatus, DocType } from '@/types/database';
 
-type Row = Profile & { mechanic?: Mechanic; workshop?: Workshop };
+type Row = Profile & { mechanic?: Mechanic; workshop?: Workshop; docs?: DocsSummary };
+
+/** Texto padrão quando o admin pede de novo UM documento da lista */
+const redoTemplate = (label: string) => `Olá! 👋
+
+O documento "${label}" não ficou legível (ou não é o documento certo). Pode enviar de novo pela tela do seu cadastro? Pelo celular dá para tirar a foto na hora.
+
+— Equipe Mecânico App`;
 type TabKey = 'pending' | 'under_review' | 'approved' | 'rejected' | 'awaiting_region';
 type RoleFilter = 'all' | 'mechanic' | 'workshop';
 
@@ -138,6 +149,26 @@ export default function AdminApprovals() {
       }
       result.push(row);
     }
+
+    // Documentos da lista "Finalize seu cadastro" de cada cadastro da aba
+    const ids = result.map(r => r.id);
+    if (ids.length > 0) {
+      const { data: docMsgs } = await supabase
+        .from('approval_messages')
+        .select('id, profile_id, doc_type, sender_role, kind, content, attachment_path, created_at')
+        .in('profile_id', ids)
+        .not('doc_type', 'is', null);
+      const byProfile: Record<string, ApprovalMessage[]> = {};
+      for (const m of (docMsgs ?? []) as ApprovalMessage[]) (byProfile[m.profile_id] ??= []).push(m);
+      for (const r of result) {
+        r.docs = summarizeDocs(r.role === 'workshop' ? 'workshop' : 'mechanic', byProfile[r.id] ?? []);
+      }
+      // Nas abas de análise, quem já mandou tudo vem primeiro (mantendo a ordem de chegada)
+      if (tab === 'pending' || tab === 'under_review') {
+        result.sort((a, b) => Number(!!b.docs?.complete) - Number(!!a.docs?.complete));
+      }
+    }
+
     setRows(result);
     setLoading(false);
   }
@@ -293,6 +324,7 @@ function RowCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
             <span className={`text-xs font-bold rounded-full px-2.5 py-0.5 ${statusColor[row.status]}`}>
               {statusLabel[row.status]}
             </span>
+            {row.docs && (row.status === 'pending' || row.status === 'under_review') && <DocsBadge docs={row.docs} />}
           </div>
           <h3 className="font-bold text-steel-900 truncate">
             {row.workshop?.business_name ?? row.full_name}
@@ -312,6 +344,15 @@ function RowCard({ row, onOpen }: { row: Row; onOpen: () => void }) {
   );
 }
 
+function DocsBadge({ docs }: { docs: DocsSummary }) {
+  const [cls, text] =
+    docs.complete       ? ['bg-signal-500/10 text-signal-700', '📎 Documentos completos'] :
+    docs.rejected > 0   ? ['bg-alert-500/10 text-alert-700', `📎 ${docs.rejected} para reenviar`] :
+    docs.done > 0       ? ['bg-pending-500/10 text-pending-700', `📎 ${docs.done} de ${docs.total} documentos`] :
+                          ['bg-steel-100 text-steel-500', '📎 Sem documentos'];
+  return <span className={`text-xs font-bold rounded-full px-2.5 py-0.5 ${cls}`}>{text}</span>;
+}
+
 /* ──────────────── Drawer de detalhes + ações ──────────────── */
 
 function ApprovalDrawer({
@@ -327,9 +368,10 @@ function ApprovalDrawer({
   const [userEmail, setUserEmail] = useState<string>('');
   const [busy, setBusy] = useState<string | null>(null);
 
-  // Modal de solicitação de documentos
+  // Modal de solicitação de documentos ('' = pedido geral; um tipo = pede de novo só aquele)
   const [reqOpen, setReqOpen] = useState(false);
   const [reqText, setReqText] = useState('');
+  const [reqDocType, setReqDocType] = useState<DocType | ''>('');
 
   // Modal de rejeição
   const [rejOpen, setRejOpen] = useState(false);
@@ -417,13 +459,50 @@ function ApprovalDrawer({
       sender_role: 'admin',
       kind: 'request_documents',
       content,
+      // Documento específico: ele volta como "precisa enviar de novo" na lista do cadastrado
+      doc_type: reqDocType || null,
     });
     // Dispara email
     void sendApprovalEmail(row.id, content, 'request_documents');
     setBusy(null);
     setReqOpen(false);
     setReqText('');
+    setReqDocType('');
     onChanged();
+  }
+
+  /* Documentos da lista "Finalize seu cadastro" */
+  const docSlots = docSlotsFor(row.role === 'workshop' ? 'workshop' : 'mechanic');
+  const docState = docStates(docSlots, messages);
+  const docs = docsSummary(docSlots, docState);
+  // Arquivos que chegaram fora da lista (resposta livre ou resposta por e-mail)
+  const otherFiles = messages.filter(m => m.sender_role === 'user' && m.attachment_path && !m.doc_type).length;
+  const generalTemplate = row.role === 'workshop' ? REQUEST_DOCS_TEMPLATE_WORKSHOP : REQUEST_DOCS_TEMPLATE;
+  const isUntouchedTemplate = (t: string) =>
+    t === generalTemplate || docSlots.some(s => t === redoTemplate(s.label));
+
+  function openRequest(slot?: DocSlot) {
+    setReqDocType(slot?.type ?? '');
+    setReqText(slot ? redoTemplate(slot.label) : generalTemplate);
+    setReqOpen(true);
+  }
+
+  function pickRequestDoc(value: DocType | '') {
+    setReqDocType(value);
+    // Troca o texto só se o admin ainda não editou a mensagem padrão
+    if (isUntouchedTemplate(reqText)) {
+      const slot = docSlots.find(s => s.type === value);
+      setReqText(slot ? redoTemplate(slot.label) : generalTemplate);
+    }
+  }
+
+  function openFile(path: string) {
+    // Abre a aba já no clique (senão o navegador bloqueia) e coloca o link assinado depois
+    const tab = window.open('', '_blank');
+    void getApprovalAttachmentUrl(path).then(url => {
+      if (url && tab) tab.location.href = url;
+      else tab?.close();
+    });
   }
 
   async function reject() {
@@ -447,6 +526,8 @@ function ApprovalDrawer({
     requestStates[m.id] = messages.some(r =>
       r.kind === 'reply' &&
       r.sender_role === 'user' &&
+      // pedido de um documento específico só fecha quando chega aquele documento
+      (!m.doc_type || r.doc_type === m.doc_type) &&
       new Date(r.created_at).getTime() > reqTime
     );
   }
@@ -560,6 +641,52 @@ function ApprovalDrawer({
             </Section>
           )}
 
+          {/* Documentos da lista */}
+          <Section title={`📎 Documentos (${docs.done} de ${docs.total})`}>
+            <div className="space-y-2">
+              {docSlots.map(s => {
+                const st = docState[s.type];
+                const upload = st.status === 'missing' ? undefined : st.upload;
+                return (
+                  <div key={s.type} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                    st.status === 'sent' ? 'border-signal-300 bg-signal-500/5'
+                      : st.status === 'rejected' ? 'border-alert-300 bg-alert-500/5'
+                      : 'border-steel-200'
+                  }`}>
+                    <span className="shrink-0 text-lg" aria-hidden>
+                      {st.status === 'sent' ? '✅' : st.status === 'rejected' ? '🔁' : '⏳'}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-steel-800">{s.label}</div>
+                      <div className="truncate text-xs text-steel-500">
+                        {st.status === 'sent'
+                          ? `${st.upload.attachment_name ?? 'arquivo'} · ${new Date(st.upload.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                          : st.status === 'rejected' ? 'Pedido de novo, aguardando o reenvio' : 'Ainda não enviado'}
+                      </div>
+                    </div>
+                    {upload?.attachment_path && (
+                      <button type="button" onClick={() => openFile(upload.attachment_path!)}
+                        className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50">
+                        Abrir
+                      </button>
+                    )}
+                    {st.status === 'sent' && (
+                      <button type="button" onClick={() => openRequest(s)} disabled={busy !== null}
+                        className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-semibold text-alert-600 hover:bg-alert-500/10 disabled:opacity-50">
+                        Pedir de novo
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {otherFiles > 0 && (
+              <p className="pt-1 text-xs text-steel-500">
+                + {otherFiles} arquivo{otherFiles > 1 ? 's' : ''} enviado{otherFiles > 1 ? 's' : ''} fora da lista (resposta ou e-mail). Veja no histórico abaixo.
+              </p>
+            )}
+          </Section>
+
           {/* Notas internas */}
           <Section title="Notas internas (privadas)">
             <textarea
@@ -619,7 +746,7 @@ function ApprovalDrawer({
               🔍 Em análise
             </button>
             <button
-              onClick={() => { setReqText(row.role === 'workshop' ? REQUEST_DOCS_TEMPLATE_WORKSHOP : REQUEST_DOCS_TEMPLATE); setReqOpen(true); }}
+              onClick={() => openRequest()}
               disabled={busy !== null}
               className="btn-ghost text-sm py-2.5 border border-steel-300 disabled:opacity-50"
             >
@@ -659,6 +786,23 @@ function ApprovalDrawer({
               <p className="text-sm text-steel-500 mt-1">
                 Mensagem padrão já preenchida — edite se precisar antes de enviar. O cadastro será marcado como "Em análise".
               </p>
+            </div>
+            <div>
+              <label className="label" htmlFor="req-doc">Qual documento?</label>
+              <select
+                id="req-doc"
+                className="input text-sm"
+                value={reqDocType}
+                onChange={e => pickRequestDoc(e.target.value as DocType | '')}
+              >
+                <option value="">Pedido geral (mensagem livre)</option>
+                {docSlots.map(s => <option key={s.type} value={s.type}>Pedir de novo: {s.label}</option>)}
+              </select>
+              {reqDocType && (
+                <p className="mt-1 text-xs text-steel-500">
+                  Esse documento volta como "precisa enviar de novo" na tela do cadastrado.
+                </p>
+              )}
             </div>
             <textarea
               className="input text-sm resize-none"

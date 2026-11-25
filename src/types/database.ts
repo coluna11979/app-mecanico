@@ -71,6 +71,9 @@ export interface Profile {
   updated_at: string;
 }
 
+/** Documento da lista "Finalize seu cadastro" (migration 0204) */
+export type DocType = 'id_front' | 'id_back' | 'address_proof' | 'cnpj_card';
+
 export interface ApprovalMessage {
   id: string;
   profile_id: string;
@@ -83,6 +86,8 @@ export interface ApprovalMessage {
   attachment_size: number | null;
   attachment_mime: string | null;
   resolved_by_message_id: string | null;
+  /** Qual documento da lista é este arquivo (ou qual o admin pediu de novo) */
+  doc_type?: DocType | null;
   created_at: string;
 }
 

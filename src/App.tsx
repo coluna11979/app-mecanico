@@ -16,6 +16,7 @@ import SignupMechanic from './pages/public/SignupMechanic';
 import SignupWorkshop from './pages/public/SignupWorkshop';
 import SignupChooser from './pages/public/SignupChooser';
 import PendingApproval from './pages/public/PendingApproval';
+import SignupDocuments from './pages/public/SignupDocuments';
 import EmailLogin from './pages/public/EmailLogin';
 import Terms from './pages/public/Terms';
 import Privacy from './pages/public/Privacy';
@@ -171,6 +172,7 @@ export default function App() {
       <Route path="/cadastro/mecanico" element={<SignupMechanic />} />
       <Route path="/cadastro/oficina" element={<SignupWorkshop />} />
       <Route path="/aguardando-aprovacao" element={<PendingApproval />} />
+      <Route path="/cadastro/documentos" element={<SignupDocuments />} />
       <Route path="/entrar" element={<EmailLogin />} />
       <Route path="/termos"             element={<Terms />} />
       <Route path="/privacidade"        element={<Privacy />} />
