@@ -6,8 +6,10 @@ import { Logo } from '@/components/Logo';
 import { ApprovalMessageItem } from '@/components/ApprovalMessageItem';
 import { attachAutoUnlock, playChatAlert } from '@/lib/alertSound';
 import {
-  fileIcon, fmtFileSize, uploadApprovalAttachment,
+  ACCEPT_ATTR, attachmentProblem, fileIcon, fmtFileSize, uploadApprovalAttachment,
 } from '@/lib/approvalAttachments';
+import { DocumentChecklist } from '@/components/signup/DocumentChecklist';
+import { docSlotsFor, docStates, docsSummary } from '@/lib/signupDocuments';
 import type { ApprovalMessage } from '@/types/database';
 
 const STATUS_META = {
@@ -50,22 +52,13 @@ const DOCS_RECEIVED_META = {
   color: 'text-signal-700 bg-signal-500/10 border-signal-300',
 };
 
-// Formatos aceitos — cobre casos reais de celulares BR:
-// - iPhone iOS 15+ manda image/heif (não image/heic)
-// - Android + WhatsApp pode mandar mime vazio ou image/jpg (sem 'e')
-// - Fotos exportadas de apps podem vir como image/gif ou tiff
-// Aceitamos por MIME OU por extensão do arquivo — o que passar primeiro vale.
-const ACCEPTED_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'pdf'];
-// Atributo `accept` do <input> — usar image/* + application/pdf é mais permissivo
-// no picker do celular do que listar mime-por-mime (Android/iPhone respeitam melhor).
-const ACCEPT_ATTR = 'image/*,application/pdf';
-const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
-
-/** Extrai a extensão do nome do arquivo em lowercase (sem ponto). */
-function fileExt(name: string): string {
-  const parts = name.split('.');
-  return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
-}
+/** Cadastro sem todos os documentos da lista: o topo pede o envio */
+const DOCS_PENDING_META = {
+  emoji: '📋',
+  title: 'Falta enviar seus documentos',
+  description: 'Seu cadastro só entra em análise depois dos documentos. Envie abaixo: pelo celular dá para tirar a foto na hora.',
+  color: 'text-brand-700 bg-brand-50 border-brand-200',
+};
 
 export default function PendingApproval() {
   const { user, profile, signOut } = useAuth();
@@ -77,7 +70,7 @@ export default function PendingApproval() {
   const [error, setError]       = useState<string | null>(null);
   const [toast, setToast]       = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
 
   /* Destrava áudio na primeira interação */
@@ -125,7 +118,10 @@ export default function PendingApproval() {
   }, [user?.id]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Mostra a última mensagem rolando só a caixa do histórico — a página fica no topo,
+    // onde estão o aviso e a lista de documentos
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   async function loadMessages() {
@@ -147,21 +143,9 @@ export default function PendingApproval() {
     setError(null);
 
     for (const f of picked) {
-      if (f.size > MAX_SIZE) {
-        setError(`"${f.name}" é muito grande (máx ${fmtFileSize(MAX_SIZE)}).`);
-        return;
-      }
-      // Aceita se o MIME for image/* ou pdf, OU se a extensão for de foto/pdf.
-      // Alguns celulares (especialmente Android + galeria) mandam mime vazio —
-      // nesses casos, cair na checagem por extensão evita falso-negativo silencioso.
-      const mime = (f.type || '').toLowerCase();
-      const ext = fileExt(f.name);
-      const mimeOk = mime.startsWith('image/') || mime === 'application/pdf';
-      const extOk = ACCEPTED_EXTS.includes(ext);
-      if (!mimeOk && !extOk) {
-        setError(`"${f.name}" tem formato não aceito. Use JPG, PNG, WEBP, HEIC ou PDF.`);
-        return;
-      }
+      // Formato por MIME ou extensão (celular às vezes manda MIME vazio) + limite de 10 MB
+      const problem = attachmentProblem(f);
+      if (problem) { setError(problem); return; }
     }
 
     // Acumula com os já selecionados (deduplicando por nome)
@@ -249,9 +233,20 @@ export default function PendingApproval() {
   /* Tem solicitação pendente? — aparece como destaque no topo */
   const hasPendingRequest = Object.values(requestStates).some(s => !s);
   const canReply = status === 'under_review';
-  /* Respondeu tudo o que a equipe pediu: o topo agradece e manda aguardar */
-  const docsReceived = canReply && Object.keys(requestStates).length > 0 && !hasPendingRequest;
-  const header = docsReceived ? DOCS_RECEIVED_META : meta;
+
+  /* Lista de documentos do cadastro (a mesma da tela "Finalize seu cadastro") */
+  const showChecklist = !!user && (status === 'pending' || status === 'under_review')
+    && (profile?.role === 'mechanic' || profile?.role === 'workshop');
+  const docSlots = docSlotsFor(profile?.role === 'workshop' ? 'workshop' : 'mechanic');
+  const docState = docStates(docSlots, messages);
+  const docs = docsSummary(docSlots, docState);
+  const docsMissing = showChecklist && !docs.complete;
+
+  /* Respondeu tudo o que a equipe pediu (ou mandou a lista completa): o topo agradece e manda aguardar */
+  const docsReceived = !hasPendingRequest && (
+    (canReply && Object.keys(requestStates).length > 0) || (showChecklist && docs.complete)
+  );
+  const header = docsReceived ? DOCS_RECEIVED_META : docsMissing ? DOCS_PENDING_META : meta;
 
   return (
     <div className="min-h-screen bg-steel-50 px-4 py-6 sm:py-10">
@@ -274,8 +269,26 @@ export default function PendingApproval() {
           </div>
         </div>
 
-        {/* Banner de ação requerida */}
-        {hasPendingRequest && (
+        {/* Documentos do cadastro */}
+        {showChecklist && user && (
+          <div className="card">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-steel-700">📋 Seus documentos</h2>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                docs.complete ? 'bg-signal-500/10 text-signal-700' : 'bg-brand-50 text-brand-700'
+              }`}>
+                {docs.done} de {docs.total} enviados
+              </span>
+            </div>
+            <DocumentChecklist userId={user.id} slots={docSlots} states={docState} onUploaded={loadMessages} />
+            <p className="mt-3 text-center text-[11px] text-steel-400">
+              🔒 Seus documentos ficam protegidos. Só a equipe de análise vê.
+            </p>
+          </div>
+        )}
+
+        {/* Banner de ação requerida (pedido da equipe que a lista acima não cobre) */}
+        {hasPendingRequest && !docsMissing && (
           <div className="card border-2 border-brand-500 bg-brand-50">
             <div className="flex items-start gap-3">
               <div className="text-3xl shrink-0">📋</div>
@@ -303,7 +316,7 @@ export default function PendingApproval() {
               )}
             </div>
 
-            <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+            <div ref={listRef} className="space-y-2 max-h-96 overflow-y-auto pr-1">
               {messages.map(m => (
                 <ApprovalMessageItem
                   key={m.id}
@@ -312,7 +325,6 @@ export default function PendingApproval() {
                   dark
                 />
               ))}
-              <div ref={bottomRef} />
             </div>
 
             {/* Composer (só ativo se em análise) */}
@@ -397,7 +409,7 @@ export default function PendingApproval() {
         )}
 
         {/* Sem mensagens ainda */}
-        {messages.length === 0 && status === 'pending' && (
+        {messages.length === 0 && status === 'pending' && !showChecklist && (
           <div className="card text-center py-8">
             <p className="text-sm text-steel-500">
               Nenhuma mensagem da nossa equipe ainda. Volte aqui regularmente — quando houver novidade, você verá nesta tela.
@@ -423,7 +435,8 @@ export default function PendingApproval() {
 /**
  * Pra cada request_documents, calcula se ela já foi "respondida".
  * Regra: tem resposta = existe ao menos uma mensagem 'reply' do USUÁRIO
- * com timestamp posterior à solicitação.
+ * com timestamp posterior à solicitação. Pedido de um documento específico
+ * (doc_type) só fecha quando chega aquele documento.
  */
 function computeRequestStates(msgs: ApprovalMessage[]): Record<string, boolean> {
   const states: Record<string, boolean> = {};
@@ -433,6 +446,7 @@ function computeRequestStates(msgs: ApprovalMessage[]): Record<string, boolean> 
     const hasReply = msgs.some(r =>
       r.kind === 'reply' &&
       r.sender_role === 'user' &&
+      (!m.doc_type || r.doc_type === m.doc_type) &&
       new Date(r.created_at).getTime() > reqTime
     );
     states[m.id] = hasReply;

@@ -147,7 +147,8 @@ export default function SignupWorkshop() {
     }
 
     setLoading(false);
-    nav('/aguardando-aprovacao', { replace: true });
+    // Conta criada: já pede os documentos (antes só pedíamos por e-mail, dias depois)
+    nav('/cadastro/documentos', { replace: true });
   }
 
   return (

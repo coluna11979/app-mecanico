@@ -310,7 +310,8 @@ export default function SignupMechanic() {
     }
 
     setLoading(false);
-    nav('/aguardando-aprovacao', { replace: true });
+    // Conta criada: já pede os documentos (antes só pedíamos por e-mail, dias depois)
+    nav('/cadastro/documentos', { replace: true });
   }
 
   const inputCls = (k: string) => `input ${errors[k] ? 'border-alert-500 focus:ring-alert-500' : ''}`;
