@@ -86,6 +86,7 @@ export default function PendingApproval() {
     if (profile?.status === 'approved') {
       if (profile.role === 'mechanic') nav('/mecanico/dashboard', { replace: true });
       else if (profile.role === 'workshop') nav('/oficina/painel', { replace: true });
+      else if (profile.role === 'investor') nav('/investidor', { replace: true });
     }
   }, [profile?.status, profile?.role]);
 

@@ -93,6 +93,7 @@ export default function ResetPassword() {
       } else {
         nav(p.role === 'mechanic' ? '/mecanico/dashboard'
           : p.role === 'workshop' ? '/oficina/painel'
+          : p.role === 'investor' ? '/investidor'
           : '/admin/dashboard');
       }
     }, 1500);
