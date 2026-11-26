@@ -91,18 +91,28 @@ export default function InvestorInterest() {
             <Logo light size={44} />
             <span className="text-[11px] uppercase tracking-[.18em] text-steel-400 text-right leading-tight">Tecnologia<br />que conecta</span>
           </div>
-          <div className="mt-8 text-xs uppercase tracking-[.2em] text-brand-500 font-semibold">Convite para investidores</div>
-          <h1 className="mt-2 text-3xl sm:text-4xl font-bold leading-tight tracking-tight">
-            Venha investir na plataforma que conecta oficinas e mecânicos
+          <div className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-500/15 px-3 py-1 text-xs uppercase tracking-[.18em] text-brand-500 font-semibold">
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse" />Primeira rodada · vagas limitadas
+          </div>
+          <h1 className="mt-3 text-3xl sm:text-4xl font-bold leading-tight tracking-tight">
+            Entre no lançamento da plataforma que conecta oficinas e mecânicos
           </h1>
           <p className="mt-3 text-steel-300 text-[15px] leading-relaxed">
-            Conte um pouco sobre você e sobre o valor que pensa em investir. Nossa equipe fala com você para
-            apresentar a oportunidade e as condições.
+            Estamos abrindo a primeira rodada para um grupo pequeno de donos de oficina e pessoas do setor. Quem entra agora
+            entra no começo, com as condições da largada, e acompanha o crescimento de perto.
           </p>
-          <ul className="mt-4 grid gap-2 text-sm text-steel-200">
-            <li className="flex gap-2"><span aria-hidden>✓</span>Aporte mínimo de R$ 20 mil, com as mesmas condições para todos</li>
-            <li className="flex gap-2"><span aria-hidden>✓</span>Você acompanha os números em um painel próprio, só de leitura</li>
-            <li className="flex gap-2"><span aria-hidden>✓</span>Sem CPF, RG ou endereço agora: dados pessoais só na hora do contrato</li>
+          <div className="mt-5 text-xs uppercase tracking-[.18em] text-steel-400 font-semibold">Por que entrar agora</div>
+          <ul className="mt-2 grid gap-2.5 text-sm text-steel-200">
+            {[
+              ['Condições de lançamento.', 'A primeira rodada usa o valuation da largada. Se houver próximas rodadas, elas terão novas condições.'],
+              ['Vagas limitadas.', 'A rodada vai até 20% do valuation. Quando completar, fecha.'],
+              ['Você conhece o problema.', 'Sabe como é difícil achar um mecânico bom na hora que precisa. Aqui você investe na solução.'],
+              ['Tudo às claras.', 'Painel próprio com receitas, custos, resultado do mês e a expansão por região.'],
+              ['Mesmas condições para todos,', 'com aporte a partir de R$ 20 mil.'],
+              ['Sem burocracia agora.', 'CPF, RG e endereço só na hora do contrato.'],
+            ].map(([b, t]) => (
+              <li key={b} className="flex gap-2.5"><span aria-hidden className="text-brand-500">✓</span><span><b className="text-white">{b}</b> {t}</span></li>
+            ))}
           </ul>
         </header>
 
@@ -214,6 +224,7 @@ export default function InvestorInterest() {
                     ? <button type="button" onClick={next} className="btn-primary flex-1 min-h-[52px] text-base">Continuar</button>
                     : <button type="button" onClick={submit} disabled={sending} className="btn-primary flex-1 min-h-[52px] text-base">{sending ? 'Enviando…' : 'Enviar meu interesse'}</button>}
                 </div>
+                {step === 0 && <p className="text-center text-xs text-steel-500">Leva 2 minutos e não é compromisso.</p>}
               </div>
             </>
           )}
@@ -352,7 +363,7 @@ function Simulator({ amount, onChange, round }: { amount: string; onChange: (v: 
 
           {valuation ? (
             <div className="mt-4 rounded-2xl bg-steel-900 text-white p-4">
-              <div className="text-xs uppercase tracking-[.14em] text-steel-300">Participação estimada</div>
+              <div className="text-xs uppercase tracking-[.14em] text-steel-300">Sua fatia estimada da empresa</div>
               <div className="mt-1 text-4xl font-bold tabular-nums">{part === null ? '—' : pctText(part)}</div>
               <div className="mt-1 text-xs text-steel-300">R$ {n ? fmt(n) : '0'} sobre um valuation de R$ {valuation.toLocaleString('pt-BR')}</div>
               {capAmount > 0 && n > 0 && (
@@ -411,8 +422,11 @@ function Done({ name, contact }: { name: string; contact: string }) {
   return (
     <div className="inv-in text-center py-6">
       <div aria-hidden className="mx-auto grid place-items-center h-16 w-16 rounded-full bg-green-500/15 text-3xl">✓</div>
-      <h2 className="mt-4 text-2xl font-bold">Recebemos seu interesse, {name.trim().split(' ')[0]}!</h2>
-      <p className="mt-2 text-steel-600">Nossa equipe vai falar com você {how} para apresentar a oportunidade e responder suas dúvidas.</p>
+      <h2 className="mt-4 text-2xl font-bold">{name.trim().split(' ')[0]}, seu interesse na primeira rodada está registrado!</h2>
+      <p className="mt-2 text-steel-600">
+        Você está entre os primeiros a conversar com a gente. Nossa equipe vai falar com você {how} para apresentar a
+        oportunidade e responder suas dúvidas.
+      </p>
       <div className="mt-6 text-left rounded-2xl bg-steel-50 p-4 text-sm text-steel-600 space-y-2">
         <div className="font-semibold text-steel-800">O que acontece agora</div>
         <p>1. Conversamos e explicamos as condições e os riscos.</p>
