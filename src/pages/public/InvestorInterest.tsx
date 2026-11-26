@@ -106,6 +106,7 @@ export default function InvestorInterest() {
             {[
               ['Condições de lançamento.', 'A primeira rodada usa o valuation da largada. Se houver próximas rodadas, elas terão novas condições.'],
               ['Vagas limitadas.', 'A rodada vai até 20% do valuation. Quando completar, fecha.'],
+              ['100% reinvestido na plataforma.', 'Todo o valor da primeira rodada vai para o crescimento: plataforma, divulgação e expansão, com uma pequena parte guardada em fundo de reserva.'],
               ['Você conhece o problema.', 'Sabe como é difícil achar um mecânico bom na hora que precisa. Aqui você investe na solução.'],
               ['Tudo às claras.', 'Painel próprio com receitas, custos, resultado do mês e a expansão por região.'],
               ['Mesmas condições para todos,', 'com aporte a partir de R$ 20 mil.'],
