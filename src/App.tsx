@@ -115,6 +115,7 @@ import AdminMarketing from './pages/admin/Marketing';
 import AdminKitMarca from './pages/admin/KitMarca';
 import AdminMaterialGrafico from './pages/admin/MaterialGrafico';
 import AdminTreinamentos from './pages/admin/Treinamentos';
+import AdminMelhorias from './pages/admin/Melhorias';
 // Salas de vídeo (LiveKit) carregam só quando abertas
 const AdminTreinamentoSala = lazy(() => import('./pages/admin/TreinamentoSala'));
 const TreinamentoEntrar = lazy(() => import('./pages/public/TreinamentoEntrar'));
@@ -289,6 +290,7 @@ export default function App() {
       <Route path="/admin/embaixadores"  element={<ProtectedRoute allow={['admin']}><AdminEmbaixadores /></ProtectedRoute>} />
       <Route path="/admin/treinamentos"  element={<ProtectedRoute allow={['admin']}><AdminTreinamentos /></ProtectedRoute>} />
       <Route path="/admin/treinamentos/:id/sala" element={<ProtectedRoute allow={['admin']}><Suspense fallback={<LazyFallback />}><AdminTreinamentoSala /></Suspense></ProtectedRoute>} />
+      <Route path="/admin/melhorias"     element={<ProtectedRoute allow={['admin']}><AdminMelhorias /></ProtectedRoute>} />
       <Route path="/admin/configuracoes" element={<ProtectedRoute allow={['admin']}><AdminSettings /></ProtectedRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
