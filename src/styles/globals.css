@@ -194,3 +194,7 @@ html.mech-light .text-amber-300, html.mech-light .text-amber-400 { color: #B4530
 .range-touch:focus-visible { outline: none; }
 .range-touch:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(255, 92, 10, 0.3); }
 .range-touch:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 4px rgba(255, 92, 10, 0.3); }
+
+/* Abas roláveis sem barra (painel do investidor) */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

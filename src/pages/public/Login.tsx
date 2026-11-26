@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Logo } from '@/components/Logo';
 
-type Role = 'mechanic' | 'workshop' | 'admin';
+type Role = 'mechanic' | 'workshop' | 'admin' | 'investor';
 
 interface WelcomeData {
   name: string;
@@ -16,6 +16,7 @@ interface WelcomeData {
 function destino(role: string, status: string) {
   if (status !== 'approved' && role !== 'admin') return '/aguardando-aprovacao';
   if (role === 'mechanic') return '/mecanico/dashboard';
+  if (role === 'investor') return '/investidor';
   // Gestor no celular cai direto no Resultado; no computador, no Painel de vendas
   if (role === 'workshop') return window.matchMedia('(max-width: 1023px)').matches ? '/oficina/resultado' : '/oficina/painel';
   return '/admin/dashboard';
@@ -64,18 +65,21 @@ const ROLE_LABEL: Record<Role, string> = {
   mechanic: 'Mecânico',
   workshop: 'Oficina',
   admin: 'Administrador',
+  investor: 'Investidor',
 };
 
 const ROLE_PHRASE: Record<Role, string> = {
   mechanic: 'Pronto para mais um dia de trabalho?',
   workshop: 'Sua oficina está esperando por você.',
   admin: 'O painel completo está à sua disposição.',
+  investor: 'Seus números estão atualizados.',
 };
 
 const ROLE_ICON: Record<Role, string> = {
   mechanic: '🔧',
   workshop: '🏪',
   admin: '⚙️',
+  investor: '📈',
 };
 
 export default function Login() {

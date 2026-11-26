@@ -45,6 +45,7 @@ const NAV_GROUPS: NavGroup[] = [
       badge: b => b.repassesPendentes, badgeTone: 'brand' },
     { to: '/admin/carteiras',  label: 'Carteiras',  icon: IconWallet },
     { to: '/admin/financeiro', label: 'Financeiro', icon: IconChart },
+    { to: '/admin/investidores', label: 'Investidores', icon: IconUsers },
   ]},
   { label: 'Sistema', items: [
     { to: '/admin/agentes',       label: 'Agentes',       icon: IconSpark },

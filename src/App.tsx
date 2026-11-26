@@ -98,6 +98,9 @@ import AdminJobs from './pages/admin/Jobs';
 import AdminSettings from './pages/admin/Settings';
 import AdminRepasses from './pages/admin/Repasses';
 import AdminCarteiras from './pages/admin/Carteiras';
+import AdminInvestidores from './pages/admin/Investidores';
+import InvestorPanel from './pages/investor/Investidor';
+import InvestorInterest from './pages/public/InvestorInterest';
 import AdminUserDetail from './pages/admin/UserDetail';
 import AdminFinancial from './pages/admin/Financial';
 import AdminLeads from './pages/admin/Leads';
@@ -285,6 +288,9 @@ export default function App() {
       <Route path="/admin/jobs" element={<ProtectedRoute allow={['admin']}><AdminJobs /></ProtectedRoute>} />
       <Route path="/admin/repasses"      element={<ProtectedRoute allow={['admin']}><AdminRepasses /></ProtectedRoute>} />
       <Route path="/admin/carteiras"     element={<ProtectedRoute allow={['admin']}><AdminCarteiras /></ProtectedRoute>} />
+      <Route path="/admin/investidores" element={<ProtectedRoute allow={['admin']}><AdminInvestidores /></ProtectedRoute>} />
+      <Route path="/investidor" element={<ProtectedRoute allow={['investor', 'admin']}><InvestorPanel /></ProtectedRoute>} />
+      <Route path="/investir" element={<InvestorInterest />} />
       <Route path="/admin/financeiro"    element={<ProtectedRoute allow={['admin']}><AdminFinancial /></ProtectedRoute>} />
       <Route path="/admin/avisos"        element={<ProtectedRoute allow={['admin']}><AdminAvisos /></ProtectedRoute>} />
       <Route path="/admin/embaixadores"  element={<ProtectedRoute allow={['admin']}><AdminEmbaixadores /></ProtectedRoute>} />
