@@ -80,42 +80,89 @@ export default function InvestorInterest() {
   }
 
   return (
-    <div className="min-h-screen bg-steel-900 text-white">
-      <style>{`@keyframes invIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.inv-in{animation:invIn .35s ease both}`}</style>
-      <div aria-hidden className="absolute inset-x-0 top-0 h-[640px] pointer-events-none"
-        style={{ background: 'radial-gradient(70% 90% at 85% 0%, rgba(255,92,10,.35), transparent 60%), radial-gradient(60% 70% at 0% 0%, rgba(255,255,255,.07), transparent 60%)' }} />
+    <div className="relative min-h-screen overflow-x-hidden bg-steel-900 text-white">
+      <style>{`
+        @keyframes invIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+        .inv-in{animation:invIn .35s ease both}
+        @keyframes invRise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+        .inv-rise{animation:invRise .7s cubic-bezier(.2,.7,.2,1) both}
+        @media (prefers-reduced-motion: reduce){.inv-in,.inv-rise{animation:none}}
+      `}</style>
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-16">
+      {/* Fundo: brilho laranja, luz fria e uma grade bem discreta */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-[760px]"
+          style={{ background: 'radial-gradient(55% 60% at 78% 8%, rgba(255,92,10,.22), transparent 70%), radial-gradient(45% 50% at 8% 0%, rgba(148,163,184,.12), transparent 70%)' }} />
+        <div className="absolute inset-x-0 top-0 h-[760px] opacity-[.35]"
+          style={{
+            backgroundImage: 'linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px)',
+            backgroundSize: '56px 56px',
+            maskImage: 'radial-gradient(70% 60% at 50% 0%, #000 30%, transparent 75%)',
+            WebkitMaskImage: 'radial-gradient(70% 60% at 50% 0%, #000 30%, transparent 75%)',
+          }} />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent" />
+      </div>
+
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-20">
         <header className="flex items-center justify-between gap-3">
           <Logo light size={44} />
-          <span className="text-[11px] uppercase tracking-[.18em] text-steel-400 text-right leading-tight">Tecnologia<br />que conecta</span>
+          <span className="text-[11px] uppercase tracking-[.2em] text-steel-400 text-right leading-tight">Tecnologia<br />que conecta</span>
         </header>
 
-        <div className="mt-8 lg:mt-14 grid gap-8 lg:gap-14 lg:grid-cols-2 lg:grid-rows-[auto_1fr] items-start">
-          {/* Título: no celular vem primeiro; no computador fica à direita, em cima */}
-          <section className="order-1 lg:order-none lg:col-start-2 lg:row-start-1">
-            <div className="inline-flex items-center gap-2 rounded-full bg-brand-500/15 px-3 py-1 text-xs uppercase tracking-[.18em] text-brand-500 font-semibold">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse" />Primeira rodada · vagas limitadas
+        <div className="mt-10 lg:mt-16 grid gap-10 lg:gap-x-16 lg:gap-y-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,.92fr)] lg:grid-rows-[auto_1fr] items-start">
+          {/* Apresentação: celular primeiro; computador à esquerda, em cima */}
+          <section className="order-1 lg:order-none lg:col-start-1 lg:row-start-1">
+            <div className="inv-rise inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 px-3.5 py-1.5 text-[11px] uppercase tracking-[.18em] text-brand-400 font-semibold">
+              <span aria-hidden className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-brand-500 opacity-60 animate-ping" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-500" />
+              </span>
+              Primeira rodada · vagas limitadas
             </div>
-            <h1 className="mt-3 text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight tracking-tight">
-              Entre no lançamento da plataforma que conecta oficinas e mecânicos
+            <h1 className="inv-rise font-display mt-5 text-[1.8rem] leading-[1.1] sm:text-[2.6rem] lg:text-[2.9rem] font-bold tracking-[-0.02em] text-balance"
+              style={{ animationDelay: '.08s' }}>
+              Entre no lançamento da plataforma que conecta{' '}
+              <span className="bg-gradient-to-r from-brand-400 via-brand-500 to-pending-400 bg-clip-text text-transparent">oficinas e mecânicos</span>
             </h1>
-            <p className="mt-3 text-steel-300 text-[15px] leading-relaxed">
-              Estamos abrindo a primeira rodada para um grupo pequeno de donos de oficina e pessoas do setor. Quem entra agora
-              entra no começo, com as condições da largada, e acompanha o crescimento de perto.
+            <p className="inv-rise mt-5 max-w-xl text-steel-300 text-base sm:text-[17px] leading-relaxed" style={{ animationDelay: '.16s' }}>
+              Uma primeira rodada para um grupo pequeno de donos de oficina e pessoas do setor. Quem entra agora entra no
+              começo, com as condições da largada, e acompanha o crescimento de perto.
             </p>
-            <div className="mt-6 grid grid-cols-3 gap-2 max-w-md">
-              {[['R$ 20 mil', 'aporte mínimo'], ['20%', 'teto da rodada'], ['100%', 'reinvestido']].map(([v, l]) => (
-                <div key={l} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  <div className="text-lg font-bold text-white">{v}</div>
-                  <div className="text-[11px] text-steel-400 leading-tight">{l}</div>
+
+            {/* Métricas: uma faixa só, com divisórias finas */}
+            <dl className="inv-rise mt-8 grid grid-cols-3 max-w-xl rounded-2xl border border-white/10 bg-white/[.03] backdrop-blur-sm divide-x divide-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,.06)]"
+              style={{ animationDelay: '.24s' }}>
+              {[['R$ 20 mil', 'aporte mínimo'], ['20%', 'teto do valuation'], ['100%', 'reinvestido']].map(([v, l]) => (
+                <div key={l} className="px-3 sm:px-5 py-4">
+                  <dd className="font-display text-xl sm:text-2xl font-bold tracking-tight text-white tabular-nums whitespace-nowrap">{v}</dd>
+                  <dt className="mt-1 text-[11px] sm:text-xs uppercase tracking-[.12em] text-steel-400 leading-snug">{l}</dt>
                 </div>
               ))}
-            </div>
+            </dl>
           </section>
 
-          {/* Formulário: no computador à esquerda, acompanha a rolagem */}
-          <main className="order-2 lg:order-none lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-6 rounded-3xl bg-white text-steel-900 p-5 sm:p-7 shadow-2xl">
+          {/* Formulário: celular logo depois do título; computador à direita, acompanha a rolagem */}
+          <main className="inv-rise order-2 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-6"
+            style={{ animationDelay: '.2s' }}>
+            <div className="relative">
+              <div aria-hidden className="absolute -inset-px rounded-[28px] bg-gradient-to-b from-brand-500/50 via-white/10 to-white/5" />
+              <div className="relative overflow-hidden rounded-[27px] bg-white text-steel-900 shadow-[0_30px_80px_-20px_rgba(0,0,0,.6)]">
+                {!done && (
+                  <div className="relative bg-steel-900 px-5 sm:px-7 pt-5 pb-5 text-white border-b border-white/5">
+                    <div aria-hidden className="absolute inset-0 opacity-90"
+                      style={{ background: 'radial-gradient(80% 140% at 100% 0%, rgba(255,92,10,.28), transparent 60%)' }} />
+                    <div className="relative flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-display text-lg sm:text-xl font-bold leading-tight">Garanta sua conversa</div>
+                        <p className="mt-1 text-[13px] text-steel-300">Deixe seu contato e a nossa equipe fala com você.</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-steel-200 tabular-nums">
+                        {step + 1}/{STEPS.length}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <div className="p-5 sm:p-7">
             {done ? <Done name={f.name} contact={f.contact_pref} /> : (
               <>
                 {/* progresso */}
@@ -227,31 +274,68 @@ export default function InvestorInterest() {
                 </div>
               </>
             )}
+                </div>
+                {!done && (
+                  <div className="flex items-center gap-2.5 border-t border-steel-100 bg-steel-50 px-5 sm:px-7 py-3.5 text-xs text-steel-500">
+                    <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-steel-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                    <span>Sem burocracia agora: CPF, RG e endereço só na hora do contrato.</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </main>
 
-          {/* Motivos: no celular depois do formulário; no computador à direita, embaixo do título */}
-          <section className="order-3 lg:order-none lg:col-start-2 lg:row-start-2">
-            <div className="text-xs uppercase tracking-[.18em] text-steel-400 font-semibold">Por que entrar agora</div>
-            <ul className="mt-2 grid gap-2.5 text-sm text-steel-200">
-              {[
-                ['Condições de lançamento.', 'A primeira rodada usa o valuation da largada. Se houver próximas rodadas, elas terão novas condições.'],
-                ['Vagas limitadas.', 'A rodada vai até 20% do valuation. Quando completar, fecha.'],
-                ['100% reinvestido na plataforma.', 'Todo o valor da primeira rodada vai para o crescimento: plataforma, divulgação e expansão, com uma pequena parte guardada em fundo de reserva.'],
-                ['Você conhece o problema.', 'Sabe como é difícil achar um mecânico bom na hora que precisa. Aqui você investe na solução.'],
-                ['Tudo às claras.', 'Painel próprio com receitas, custos, resultado do mês e a expansão por região.'],
-                ['Mesmas condições para todos,', 'com aporte a partir de R$ 20 mil.'],
-                ['Sem burocracia agora.', 'CPF, RG e endereço só na hora do contrato.'],
-              ].map(([b, t]) => (
-                <li key={b} className="flex gap-2.5"><span aria-hidden className="text-brand-500">✓</span><span><b className="text-white">{b}</b> {t}</span></li>
+          {/* Motivos: celular depois do formulário; computador à esquerda, embaixo da apresentação */}
+          <section className="order-3 lg:order-none lg:col-start-1 lg:row-start-2">
+            <div className="flex items-center gap-3">
+              <h2 className="text-xs uppercase tracking-[.2em] text-steel-400 font-semibold whitespace-nowrap">Por que entrar agora</h2>
+              <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
+            </div>
+            <ul className="mt-5 grid gap-x-8 gap-y-6 sm:grid-cols-2">
+              {REASONS.map(([icon, b, t]) => (
+                <li key={b} className="flex gap-3.5">
+                  <span aria-hidden className="grid place-items-center h-10 w-10 shrink-0 rounded-xl border border-brand-500/25 bg-brand-500/10 text-brand-400">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{ICONS[icon]}</svg>
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-white text-[15px] leading-snug">{b}</div>
+                    <p className="mt-1 text-sm text-steel-400 leading-relaxed">{t}</p>
+                  </div>
+                </li>
               ))}
             </ul>
-          <p className="mt-6 text-xs text-steel-400">Seus dados ficam só com a nossa equipe e não são compartilhados com outros investidores.</p>
+            <p className="mt-10 flex items-center gap-2 text-xs text-steel-500 border-t border-white/5 pt-5">
+              <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z" />
+              </svg>
+              Seus dados ficam só com a nossa equipe e não são compartilhados com outros investidores.
+            </p>
           </section>
         </div>
       </div>
     </div>
   );
 }
+
+/* ── Motivos (só conteúdo já existente, em formato curto) ─────────────── */
+const ICONS: Record<string, ReactNode> = {
+  flag: <><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  growth: <><path d="M4 19h16" /><path d="M6 15l4-4 3 3 5-6" /><path d="M14 8h4v4" /></>,
+  wrench: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8V20h3.2l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.6-.6-.6-2.6z" />,
+  chart: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M8 16v-4M12 16V8M16 16v-6" /></>,
+  equal: <><path d="M5 9h14M5 15h14" /></>,
+};
+const REASONS: [string, string, string][] = [
+  ['flag', 'Condições de lançamento', 'Primeira rodada com o valuation da largada. Próximas rodadas, se houver, terão novas condições.'],
+  ['clock', 'Vagas limitadas', 'A rodada vai até 20% do valuation. Quando completar, fecha.'],
+  ['growth', '100% reinvestido', 'Plataforma, divulgação e expansão, com uma pequena parte em fundo de reserva.'],
+  ['wrench', 'Você conhece o problema', 'Sabe como é difícil achar um mecânico bom na hora. Aqui você investe na solução.'],
+  ['chart', 'Tudo às claras', 'Painel próprio com receitas, custos, resultado do mês e expansão por região.'],
+  ['equal', 'Mesmas condições para todos', 'Aporte a partir de R$ 20 mil, pelo contrato de mútuo conversível.'],
+];
 
 /* ── Peças ────────────────────────────────────────────────────────────── */
 const Label = ({ children }: { children: ReactNode }) => <div className="text-sm font-semibold text-steel-800">{children}</div>;
