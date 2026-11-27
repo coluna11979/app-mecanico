@@ -299,7 +299,47 @@ export default function InvestorInterest() {
 
           {/* Motivos: celular depois do formulário; computador à esquerda, embaixo da apresentação */}
           <section className="order-3 lg:order-none lg:col-span-2 lg:row-start-2">
+            {/* Como a plataforma gera receita: só os canais, sem números */}
             <div className="flex items-center gap-3">
+              <h2 className="text-xs uppercase tracking-[.2em] text-steel-400 font-semibold whitespace-nowrap">Como a plataforma gera receita</h2>
+              <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
+                <div className="flex items-center gap-3">
+                  <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/15 text-brand-400">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" /></svg>
+                  </span>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[.14em] text-steel-400">Canal 1</div>
+                    <h3 className="font-semibold text-white">Demandas de serviço</h3>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-steel-300 leading-relaxed">
+                  Cada vez que uma oficina contrata um mecânico pela plataforma, uma parte do valor do serviço fica com a plataforma.
+                  Mais oficinas e mais mecânicos significam mais demandas.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
+                <div className="flex items-center gap-3">
+                  <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/15 text-brand-400">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 14h3M8 17h6" /></svg>
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] uppercase tracking-[.14em] text-steel-400">Canal 2</span>
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-steel-200">em breve</span>
+                    </div>
+                    <h3 className="font-semibold text-white">Assinatura do sistema de gestão</h3>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-steel-300 leading-relaxed">
+                  Um plano mensal para a oficina organizar clientes, ordens de serviço e retorno de orçamentos no mesmo app.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-12 flex items-center gap-3">
               <h2 className="text-xs uppercase tracking-[.2em] text-steel-400 font-semibold whitespace-nowrap">Por que entrar agora</h2>
               <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
             </div>
