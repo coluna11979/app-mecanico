@@ -54,8 +54,8 @@ export const LOJAS: Loja[] = [
     endereco: "Estrada do M'Boi Mirim, 10003",
     bairro: 'Parque Universitário Espírita',
     cep: '04945-043',
-    whatsapp: '5511971972132', // (11) 97197-2132 do Google — CONFIRMAR que é WhatsApp
-    telefone: '(11) 97197-2132',
+    whatsapp: '5511910254472', // confirmado pelo dono (26/11)
+    telefone: '(11) 91025-4472',
     foco: 'Pneus, suspensão, freios, bateria, elétrica e diagnóstico de motor',
     horarios: [
       { dias: 'Segunda a sexta', horas: '8h às 18h' },
