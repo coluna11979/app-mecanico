@@ -111,7 +111,8 @@ export default function InvestorInterest() {
 
         <div className="mt-10 lg:mt-16 grid gap-10 lg:gap-x-16 lg:gap-y-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,.92fr)] items-start lg:items-stretch">
           {/* Apresentação: celular primeiro; computador à esquerda, em cima */}
-          <section className="order-1 lg:order-none lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col">
+          <section className="order-1 lg:order-none lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col lg:justify-between lg:gap-8">
+            <div>
             <div className="inv-rise inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 px-3.5 py-1.5 text-[11px] uppercase tracking-[.18em] text-brand-400 font-semibold">
               <span aria-hidden className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-brand-500 opacity-60 animate-ping" />
@@ -129,9 +130,11 @@ export default function InvestorInterest() {
               dor de achar um mecânico bom. Quem entra agora entra no começo, com as condições da largada, e acompanha o
               crescimento de perto.
             </p>
+            </div>
+            <div>
 
             {/* Métricas: uma faixa só, com divisórias finas */}
-            <dl className="inv-rise mt-8 lg:mt-auto grid grid-cols-3 max-w-xl rounded-2xl border border-white/10 bg-white/[.03] backdrop-blur-sm divide-x divide-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,.06)]"
+            <dl className="inv-rise mt-8 lg:mt-0 grid grid-cols-3 max-w-xl rounded-2xl border border-white/10 bg-white/[.03] backdrop-blur-sm divide-x divide-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,.06)]"
               style={{ animationDelay: '.24s' }}>
               {[['R$ 20 mil', 'aporte mínimo'], ['20%', 'teto do valuation'], ['100%', 'reinvestido']].map(([v, l]) => (
                 <div key={l} className="px-3 sm:px-5 py-4">
@@ -149,6 +152,20 @@ export default function InvestorInterest() {
                 <div><span className="font-display text-2xl font-bold text-white tabular-nums">+30</span> <span className="text-sm text-steel-300">mecânicos cadastrados aguardando</span></div>
                 <div><span className="font-display text-2xl font-bold text-white tabular-nums">10</span> <span className="text-sm text-steel-300">oficinas na fila para começar</span></div>
               </div>
+            </div>
+            </div>
+            {/* Como funciona a entrada (computador): preenche a coluna com informação útil */}
+            <div className="hidden lg:block inv-rise" style={{ animationDelay: '.34s' }}>
+              <div className="text-[11px] uppercase tracking-[.16em] text-steel-400 font-semibold">Como funciona a entrada</div>
+              <ol className="mt-3 grid grid-cols-3 gap-3 max-w-xl">
+                {[['1', 'Você manifesta interesse', 'Neste formulário, em 2 minutos.'], ['2', 'Conversa com a equipe', 'Explicamos condições e riscos.'], ['3', 'Contrato e aporte', 'Só então pedimos seus dados.']].map(([n, t, d]) => (
+                  <li key={n} className="rounded-xl border border-white/10 bg-white/[.03] p-3">
+                    <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-500 text-[11px] font-bold text-white">{n}</span>
+                    <div className="mt-2 text-sm font-semibold text-white leading-snug">{t}</div>
+                    <div className="mt-0.5 text-xs text-steel-400 leading-snug">{d}</div>
+                  </li>
+                ))}
+              </ol>
             </div>
           </section>
 
@@ -304,7 +321,7 @@ export default function InvestorInterest() {
               <h2 className="text-xs uppercase tracking-[.2em] text-steel-400 font-semibold whitespace-nowrap">Como a plataforma gera receita</h2>
               <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
             </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
               <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
                 <div className="flex items-center gap-3">
                   <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/15 text-brand-400">
@@ -319,6 +336,18 @@ export default function InvestorInterest() {
                   Cada vez que uma oficina contrata um mecânico pela plataforma, uma parte do valor do serviço fica com a plataforma.
                   Mais oficinas e mais mecânicos significam mais demandas.
                 </p>
+                <ol className="mt-5 space-y-3">
+                  {[
+                    ['A oficina publica a demanda', 'Serviço, horário e valor por hora, direto no app.'],
+                    ['Um mecânico verificado aceita', 'Só mecânicos aprovados e verificados da região.'],
+                    ['O pagamento passa pelo app', 'PIX, cartão ou saldo da carteira da oficina.'],
+                  ].map(([t, d], i) => (
+                    <li key={t} className="flex gap-3">
+                      <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border border-brand-500/40 text-[11px] font-bold text-brand-400">{i + 1}</span>
+                      <span><span className="block text-sm font-semibold text-white">{t}</span><span className="block text-xs text-steel-400">{d}</span></span>
+                    </li>
+                  ))}
+                </ol>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
                 <div className="flex items-center gap-3">
@@ -328,14 +357,32 @@ export default function InvestorInterest() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] uppercase tracking-[.14em] text-steel-400">Canal 2</span>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-steel-200">em breve</span>
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-steel-200">assinatura em breve</span>
                     </div>
-                    <h3 className="font-semibold text-white">Assinatura do sistema de gestão</h3>
+                    <h3 className="font-semibold text-white">Sistema de gestão completo (CRM)</h3>
                   </div>
                 </div>
                 <p className="mt-3 text-sm text-steel-300 leading-relaxed">
-                  Um plano mensal para a oficina organizar clientes, ordens de serviço e retorno de orçamentos no mesmo app.
+                  Um plano mensal para a oficina rodar o dia a dia inteiro no mesmo app, do atendimento ao financeiro.
+                  Principais módulos:
                 </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {[
+                    ['Atendimento', ['Ordens de serviço', 'Agenda', 'Clientes', 'Check-up com orçamento pelo link', 'Mesa comercial']],
+                    ['Comunicação', ['WhatsApp da oficina', 'Avaliações no Google', 'Agentes de IA', 'Site da oficina']],
+                    ['Financeiro', ['Caixa e venda no balcão', 'Contas a pagar', 'Resultado do mês']],
+                    ['Estoque e equipe', ['Peças e estoque', 'Compras e fornecedores', 'Consulta técnica', 'Comissões e folha']],
+                  ].map(([group, items]) => (
+                    <div key={group as string}>
+                      <div className="text-[11px] uppercase tracking-[.14em] text-brand-400 font-semibold">{group as string}</div>
+                      <ul className="mt-2 flex flex-wrap gap-1.5">
+                        {(items as string[]).map(m => (
+                          <li key={m} className="rounded-full border border-white/10 bg-white/[.04] px-2.5 py-1 text-xs text-steel-200">{m}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
