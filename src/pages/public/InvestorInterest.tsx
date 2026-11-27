@@ -109,9 +109,9 @@ export default function InvestorInterest() {
           <span className="text-[11px] uppercase tracking-[.2em] text-steel-400 text-right leading-tight">Tecnologia<br />que conecta</span>
         </header>
 
-        <div className="mt-10 lg:mt-16 grid gap-10 lg:gap-x-16 lg:gap-y-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,.92fr)] lg:grid-rows-[auto_1fr] items-start">
+        <div className="mt-10 lg:mt-16 grid gap-10 lg:gap-x-16 lg:gap-y-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,.92fr)] items-start lg:items-stretch">
           {/* Apresentação: celular primeiro; computador à esquerda, em cima */}
-          <section className="order-1 lg:order-none lg:col-start-1 lg:row-start-1">
+          <section className="order-1 lg:order-none lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col">
             <div className="inv-rise inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 px-3.5 py-1.5 text-[11px] uppercase tracking-[.18em] text-brand-400 font-semibold">
               <span aria-hidden className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-brand-500 opacity-60 animate-ping" />
@@ -131,7 +131,7 @@ export default function InvestorInterest() {
             </p>
 
             {/* Métricas: uma faixa só, com divisórias finas */}
-            <dl className="inv-rise mt-8 grid grid-cols-3 max-w-xl rounded-2xl border border-white/10 bg-white/[.03] backdrop-blur-sm divide-x divide-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,.06)]"
+            <dl className="inv-rise mt-8 lg:mt-auto grid grid-cols-3 max-w-xl rounded-2xl border border-white/10 bg-white/[.03] backdrop-blur-sm divide-x divide-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,.06)]"
               style={{ animationDelay: '.24s' }}>
               {[['R$ 20 mil', 'aporte mínimo'], ['20%', 'teto do valuation'], ['100%', 'reinvestido']].map(([v, l]) => (
                 <div key={l} className="px-3 sm:px-5 py-4">
@@ -153,7 +153,7 @@ export default function InvestorInterest() {
           </section>
 
           {/* Formulário: celular logo depois do título; computador à direita, acompanha a rolagem */}
-          <main className="inv-rise order-2 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-6"
+          <main className="inv-rise order-2 lg:order-none lg:col-start-2 lg:row-start-1"
             style={{ animationDelay: '.2s' }}>
             <div className="relative">
               <div aria-hidden className="absolute -inset-px rounded-[28px] bg-gradient-to-b from-brand-500/50 via-white/10 to-white/5" />
@@ -298,12 +298,12 @@ export default function InvestorInterest() {
           </main>
 
           {/* Motivos: celular depois do formulário; computador à esquerda, embaixo da apresentação */}
-          <section className="order-3 lg:order-none lg:col-start-1 lg:row-start-2">
+          <section className="order-3 lg:order-none lg:col-span-2 lg:row-start-2">
             <div className="flex items-center gap-3">
               <h2 className="text-xs uppercase tracking-[.2em] text-steel-400 font-semibold whitespace-nowrap">Por que entrar agora</h2>
               <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
             </div>
-            <ul className="mt-5 grid gap-x-8 gap-y-6 sm:grid-cols-2">
+            <ul className="mt-5 grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
               {REASONS.map(([icon, b, t]) => (
                 <li key={b} className="flex gap-3.5">
                   <span aria-hidden className="grid place-items-center h-10 w-10 shrink-0 rounded-xl border border-brand-500/25 bg-brand-500/10 text-brand-400">
