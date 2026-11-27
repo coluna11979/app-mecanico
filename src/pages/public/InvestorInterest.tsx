@@ -82,156 +82,172 @@ export default function InvestorInterest() {
   return (
     <div className="min-h-screen bg-steel-900 text-white">
       <style>{`@keyframes invIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.inv-in{animation:invIn .35s ease both}`}</style>
-      <div aria-hidden className="absolute inset-x-0 top-0 h-[420px] pointer-events-none"
+      <div aria-hidden className="absolute inset-x-0 top-0 h-[640px] pointer-events-none"
         style={{ background: 'radial-gradient(70% 90% at 85% 0%, rgba(255,92,10,.35), transparent 60%), radial-gradient(60% 70% at 0% 0%, rgba(255,255,255,.07), transparent 60%)' }} />
 
-      <div className="relative max-w-xl mx-auto px-4 pt-8 pb-16">
-        <header>
-          <div className="flex items-center justify-between gap-3">
-            <Logo light size={44} />
-            <span className="text-[11px] uppercase tracking-[.18em] text-steel-400 text-right leading-tight">Tecnologia<br />que conecta</span>
-          </div>
-          <div className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-500/15 px-3 py-1 text-xs uppercase tracking-[.18em] text-brand-500 font-semibold">
-            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse" />Primeira rodada · vagas limitadas
-          </div>
-          <h1 className="mt-3 text-3xl sm:text-4xl font-bold leading-tight tracking-tight">
-            Entre no lançamento da plataforma que conecta oficinas e mecânicos
-          </h1>
-          <p className="mt-3 text-steel-300 text-[15px] leading-relaxed">
-            Estamos abrindo a primeira rodada para um grupo pequeno de donos de oficina e pessoas do setor. Quem entra agora
-            entra no começo, com as condições da largada, e acompanha o crescimento de perto.
-          </p>
-          <div className="mt-5 text-xs uppercase tracking-[.18em] text-steel-400 font-semibold">Por que entrar agora</div>
-          <ul className="mt-2 grid gap-2.5 text-sm text-steel-200">
-            {[
-              ['Condições de lançamento.', 'A primeira rodada usa o valuation da largada. Se houver próximas rodadas, elas terão novas condições.'],
-              ['Vagas limitadas.', 'A rodada vai até 20% do valuation. Quando completar, fecha.'],
-              ['100% reinvestido na plataforma.', 'Todo o valor da primeira rodada vai para o crescimento: plataforma, divulgação e expansão, com uma pequena parte guardada em fundo de reserva.'],
-              ['Você conhece o problema.', 'Sabe como é difícil achar um mecânico bom na hora que precisa. Aqui você investe na solução.'],
-              ['Tudo às claras.', 'Painel próprio com receitas, custos, resultado do mês e a expansão por região.'],
-              ['Mesmas condições para todos,', 'com aporte a partir de R$ 20 mil.'],
-              ['Sem burocracia agora.', 'CPF, RG e endereço só na hora do contrato.'],
-            ].map(([b, t]) => (
-              <li key={b} className="flex gap-2.5"><span aria-hidden className="text-brand-500">✓</span><span><b className="text-white">{b}</b> {t}</span></li>
-            ))}
-          </ul>
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-16">
+        <header className="flex items-center justify-between gap-3">
+          <Logo light size={44} />
+          <span className="text-[11px] uppercase tracking-[.18em] text-steel-400 text-right leading-tight">Tecnologia<br />que conecta</span>
         </header>
 
-        <main className="mt-7 rounded-3xl bg-white text-steel-900 p-5 sm:p-7 shadow-2xl">
-          {done ? <Done name={f.name} contact={f.contact_pref} /> : (
-            <>
-              {/* progresso */}
-              <div className="flex items-center gap-2" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={step + 1}>
-                {STEPS.map((s, i) => (
-                  <div key={s} className="flex-1">
-                    <div className={`h-1.5 rounded-full transition-colors ${i <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />
-                    <div className={`mt-1.5 text-[11px] ${i === step ? 'font-semibold text-steel-900' : 'text-steel-400'}`}>{s}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div key={step} className="inv-in mt-5 space-y-5">
-                {step === 0 && (
-                  <>
-                    <Heading title="Vamos nos conhecer" sub="Só o essencial para entrarmos em contato." />
-                    <Field label="Nome completo"><input className="input" autoComplete="name" value={f.name} onChange={e => set('name', e.target.value)} /></Field>
-                    <Field label="E-mail"><input className="input" type="email" autoComplete="email" inputMode="email" value={f.email} onChange={e => set('email', e.target.value)} /></Field>
-                    <Field label="WhatsApp com DDD"><input className="input" autoComplete="tel" inputMode="tel" placeholder="(11) 90000-0000" value={f.phone} onChange={e => set('phone', maskPhone(e.target.value))} /></Field>
-                    <Field label="Cidade (opcional)"><input className="input" autoComplete="address-level2" value={f.city} onChange={e => set('city', e.target.value)} /></Field>
-                  </>
-                )}
-
-                {step === 1 && (
-                  <>
-                    <Heading title="Seu perfil" sub="Ajuda a gente a conversar do jeito certo com você." />
-                    <Group label="Você investe como">
-                      <Choice on={f.investor_type === 'pessoa_fisica'} onClick={() => set('investor_type', 'pessoa_fisica')} title="Pessoa física" />
-                      <Choice on={f.investor_type === 'empresa'} onClick={() => set('investor_type', 'empresa')} title="Empresa" />
-                    </Group>
-                    <Group label="Qual é a sua ligação com o setor?" col>
-                      <Choice on={f.sector === 'dono_oficina'} onClick={() => set('sector', 'dono_oficina')} title="Tenho uma oficina" />
-                      <Choice on={f.sector === 'setor_automotivo'} onClick={() => set('sector', 'setor_automotivo')} title="Trabalho no setor automotivo" />
-                      <Choice on={f.sector === 'outro_setor'} onClick={() => set('sector', 'outro_setor')} title="Atuo em outro setor" />
-                    </Group>
-                    <div>
-                      <Label>Onde você já investiu? <span className="text-steel-400 font-normal">(pode marcar vários)</span></Label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {['Nunca investi', 'Renda fixa', 'Bolsa de valores', 'Startups ou empresas', 'Imóveis', 'Outros'].map(x => (
-                          <Chip key={x} on={f.experience.includes(x)} onClick={() => toggleExp(x)}>{x}</Chip>
-                        ))}
-                      </div>
-                    </div>
-                    <Group label="O que mais pesa para você?" col>
-                      <Choice on={f.goal === 'retorno'} onClick={() => set('goal', 'retorno')} title="Retorno financeiro" />
-                      <Choice on={f.goal === 'apoiar'} onClick={() => set('goal', 'apoiar')} title="Apoiar um negócio do meu setor" />
-                      <Choice on={f.goal === 'ambos'} onClick={() => set('goal', 'ambos')} title="Os dois" />
-                    </Group>
-                  </>
-                )}
-
-                {step === 2 && (
-                  <>
-                    <Heading title="Seu investimento" sub="Uma ideia aproximada já basta. Nada aqui é compromisso." />
-                    <Simulator amount={f.amount} onChange={v => set('amount', v)} round={round} />
-                    <ContractInfo />
-                    <div>
-                      <Label>Por quanto tempo você se sente confortável com o dinheiro investido?</Label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {[['12', 'Até 12 meses'], ['24', 'Até 24 meses'], ['36', 'Até 36 meses'], ['mais', 'Mais de 36 meses']].map(([k, l]) => (
-                          <Chip key={k} on={f.horizon === k} onClick={() => set('horizon', f.horizon === k ? '' : k)}>{l}</Chip>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {step === 3 && (
-                  <>
-                    <Heading title="Quase lá" sub="Como prefere que a gente fale com você, e alguma dúvida que queira adiantar." />
-                    <div>
-                      <Label>Melhor forma de contato</Label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {[['whatsapp', 'WhatsApp'], ['email', 'E-mail'], ['ligacao', 'Ligação']].map(([k, l]) => (
-                          <Chip key={k} on={f.contact_pref === k} onClick={() => set('contact_pref', k)}>{l}</Chip>
-                        ))}
-                      </div>
-                    </div>
-                    <Field label="Dúvidas ou comentários (opcional)">
-                      <textarea className="input" rows={4} maxLength={1500} value={f.message} onChange={e => set('message', e.target.value)} />
-                    </Field>
-
-                    {/* campo-isca contra robôs: escondido de pessoas */}
-                    <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
-                      <label>Site<input tabIndex={-1} autoComplete="off" value={f.website} onChange={e => set('website', e.target.value)} /></label>
-                    </div>
-
-                    <Check on={f.risk_ack} onChange={v => set('risk_ack', v)}>
-                      Li e entendi o <b>aviso de riscos</b>: investir em empresa em fase inicial pode gerar perda do valor
-                      investido, e nenhum retorno é garantido. Este formulário é só uma manifestação de interesse, não é oferta
-                      nem compromisso.
-                    </Check>
-                    <Check on={f.consent} onChange={v => set('consent', v)}>
-                      Autorizo o uso dos meus dados (nome, e-mail, WhatsApp e respostas deste formulário) apenas para a equipe
-                      entrar em contato sobre esta oportunidade, conforme a LGPD. Posso pedir a exclusão a qualquer momento.
-                    </Check>
-                  </>
-                )}
-
-                {error && <p role="alert" className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{error}</p>}
-
-                <div className="flex gap-3 pt-1">
-                  {step > 0 && <button type="button" onClick={back} className="btn-ghost min-h-[52px] px-5">Voltar</button>}
-                  {step < 3
-                    ? <button type="button" onClick={next} className="btn-primary flex-1 min-h-[52px] text-base">Continuar</button>
-                    : <button type="button" onClick={submit} disabled={sending} className="btn-primary flex-1 min-h-[52px] text-base">{sending ? 'Enviando…' : 'Enviar meu interesse'}</button>}
+        <div className="mt-8 lg:mt-14 grid gap-8 lg:gap-14 lg:grid-cols-2 lg:grid-rows-[auto_1fr] items-start">
+          {/* Título: no celular vem primeiro; no computador fica à direita, em cima */}
+          <section className="order-1 lg:order-none lg:col-start-2 lg:row-start-1">
+            <div className="inline-flex items-center gap-2 rounded-full bg-brand-500/15 px-3 py-1 text-xs uppercase tracking-[.18em] text-brand-500 font-semibold">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse" />Primeira rodada · vagas limitadas
+            </div>
+            <h1 className="mt-3 text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight tracking-tight">
+              Entre no lançamento da plataforma que conecta oficinas e mecânicos
+            </h1>
+            <p className="mt-3 text-steel-300 text-[15px] leading-relaxed">
+              Estamos abrindo a primeira rodada para um grupo pequeno de donos de oficina e pessoas do setor. Quem entra agora
+              entra no começo, com as condições da largada, e acompanha o crescimento de perto.
+            </p>
+            <div className="mt-6 grid grid-cols-3 gap-2 max-w-md">
+              {[['R$ 20 mil', 'aporte mínimo'], ['20%', 'teto da rodada'], ['100%', 'reinvestido']].map(([v, l]) => (
+                <div key={l} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                  <div className="text-lg font-bold text-white">{v}</div>
+                  <div className="text-[11px] text-steel-400 leading-tight">{l}</div>
                 </div>
-                {step === 0 && <p className="text-center text-xs text-steel-500">Leva 2 minutos e não é compromisso.</p>}
-              </div>
-            </>
-          )}
-        </main>
+              ))}
+            </div>
+          </section>
 
-        <p className="mt-6 text-center text-xs text-steel-400">Seus dados ficam só com a nossa equipe e não são compartilhados com outros investidores.</p>
+          {/* Formulário: no computador à esquerda, acompanha a rolagem */}
+          <main className="order-2 lg:order-none lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-6 rounded-3xl bg-white text-steel-900 p-5 sm:p-7 shadow-2xl">
+            {done ? <Done name={f.name} contact={f.contact_pref} /> : (
+              <>
+                {/* progresso */}
+                <div className="flex items-center gap-2" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={step + 1}>
+                  {STEPS.map((s, i) => (
+                    <div key={s} className="flex-1">
+                      <div className={`h-1.5 rounded-full transition-colors ${i <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />
+                      <div className={`mt-1.5 text-[11px] ${i === step ? 'font-semibold text-steel-900' : 'text-steel-400'}`}>{s}</div>
+                    </div>
+                  ))}
+                </div>
+  
+                <div key={step} className="inv-in mt-5 space-y-5">
+                  {step === 0 && (
+                    <>
+                      <Heading title="Vamos nos conhecer" sub="Só o essencial para entrarmos em contato." />
+                      <Field label="Nome completo"><input className="input" autoComplete="name" value={f.name} onChange={e => set('name', e.target.value)} /></Field>
+                      <Field label="E-mail"><input className="input" type="email" autoComplete="email" inputMode="email" value={f.email} onChange={e => set('email', e.target.value)} /></Field>
+                      <Field label="WhatsApp com DDD"><input className="input" autoComplete="tel" inputMode="tel" placeholder="(11) 90000-0000" value={f.phone} onChange={e => set('phone', maskPhone(e.target.value))} /></Field>
+                      <Field label="Cidade (opcional)"><input className="input" autoComplete="address-level2" value={f.city} onChange={e => set('city', e.target.value)} /></Field>
+                    </>
+                  )}
+  
+                  {step === 1 && (
+                    <>
+                      <Heading title="Seu perfil" sub="Ajuda a gente a conversar do jeito certo com você." />
+                      <Group label="Você investe como">
+                        <Choice on={f.investor_type === 'pessoa_fisica'} onClick={() => set('investor_type', 'pessoa_fisica')} title="Pessoa física" />
+                        <Choice on={f.investor_type === 'empresa'} onClick={() => set('investor_type', 'empresa')} title="Empresa" />
+                      </Group>
+                      <Group label="Qual é a sua ligação com o setor?" col>
+                        <Choice on={f.sector === 'dono_oficina'} onClick={() => set('sector', 'dono_oficina')} title="Tenho uma oficina" />
+                        <Choice on={f.sector === 'setor_automotivo'} onClick={() => set('sector', 'setor_automotivo')} title="Trabalho no setor automotivo" />
+                        <Choice on={f.sector === 'outro_setor'} onClick={() => set('sector', 'outro_setor')} title="Atuo em outro setor" />
+                      </Group>
+                      <div>
+                        <Label>Onde você já investiu? <span className="text-steel-400 font-normal">(pode marcar vários)</span></Label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {['Nunca investi', 'Renda fixa', 'Bolsa de valores', 'Startups ou empresas', 'Imóveis', 'Outros'].map(x => (
+                            <Chip key={x} on={f.experience.includes(x)} onClick={() => toggleExp(x)}>{x}</Chip>
+                          ))}
+                        </div>
+                      </div>
+                      <Group label="O que mais pesa para você?" col>
+                        <Choice on={f.goal === 'retorno'} onClick={() => set('goal', 'retorno')} title="Retorno financeiro" />
+                        <Choice on={f.goal === 'apoiar'} onClick={() => set('goal', 'apoiar')} title="Apoiar um negócio do meu setor" />
+                        <Choice on={f.goal === 'ambos'} onClick={() => set('goal', 'ambos')} title="Os dois" />
+                      </Group>
+                    </>
+                  )}
+  
+                  {step === 2 && (
+                    <>
+                      <Heading title="Seu investimento" sub="Uma ideia aproximada já basta. Nada aqui é compromisso." />
+                      <Simulator amount={f.amount} onChange={v => set('amount', v)} round={round} />
+                      <ContractInfo />
+                      <div>
+                        <Label>Por quanto tempo você se sente confortável com o dinheiro investido?</Label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {[['12', 'Até 12 meses'], ['24', 'Até 24 meses'], ['36', 'Até 36 meses'], ['mais', 'Mais de 36 meses']].map(([k, l]) => (
+                            <Chip key={k} on={f.horizon === k} onClick={() => set('horizon', f.horizon === k ? '' : k)}>{l}</Chip>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+  
+                  {step === 3 && (
+                    <>
+                      <Heading title="Quase lá" sub="Como prefere que a gente fale com você, e alguma dúvida que queira adiantar." />
+                      <div>
+                        <Label>Melhor forma de contato</Label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {[['whatsapp', 'WhatsApp'], ['email', 'E-mail'], ['ligacao', 'Ligação']].map(([k, l]) => (
+                            <Chip key={k} on={f.contact_pref === k} onClick={() => set('contact_pref', k)}>{l}</Chip>
+                          ))}
+                        </div>
+                      </div>
+                      <Field label="Dúvidas ou comentários (opcional)">
+                        <textarea className="input" rows={4} maxLength={1500} value={f.message} onChange={e => set('message', e.target.value)} />
+                      </Field>
+  
+                      {/* campo-isca contra robôs: escondido de pessoas */}
+                      <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+                        <label>Site<input tabIndex={-1} autoComplete="off" value={f.website} onChange={e => set('website', e.target.value)} /></label>
+                      </div>
+  
+                      <Check on={f.risk_ack} onChange={v => set('risk_ack', v)}>
+                        Li e entendi o <b>aviso de riscos</b>: investir em empresa em fase inicial pode gerar perda do valor
+                        investido, e nenhum retorno é garantido. Este formulário é só uma manifestação de interesse, não é oferta
+                        nem compromisso.
+                      </Check>
+                      <Check on={f.consent} onChange={v => set('consent', v)}>
+                        Autorizo o uso dos meus dados (nome, e-mail, WhatsApp e respostas deste formulário) apenas para a equipe
+                        entrar em contato sobre esta oportunidade, conforme a LGPD. Posso pedir a exclusão a qualquer momento.
+                      </Check>
+                    </>
+                  )}
+  
+                  {error && <p role="alert" className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{error}</p>}
+  
+                  <div className="flex gap-3 pt-1">
+                    {step > 0 && <button type="button" onClick={back} className="btn-ghost min-h-[52px] px-5">Voltar</button>}
+                    {step < 3
+                      ? <button type="button" onClick={next} className="btn-primary flex-1 min-h-[52px] text-base">Continuar</button>
+                      : <button type="button" onClick={submit} disabled={sending} className="btn-primary flex-1 min-h-[52px] text-base">{sending ? 'Enviando…' : 'Enviar meu interesse'}</button>}
+                  </div>
+                  {step === 0 && <p className="text-center text-xs text-steel-500">Leva 2 minutos e não é compromisso.</p>}
+                </div>
+              </>
+            )}
+          </main>
+
+          {/* Motivos: no celular depois do formulário; no computador à direita, embaixo do título */}
+          <section className="order-3 lg:order-none lg:col-start-2 lg:row-start-2">
+            <div className="text-xs uppercase tracking-[.18em] text-steel-400 font-semibold">Por que entrar agora</div>
+            <ul className="mt-2 grid gap-2.5 text-sm text-steel-200">
+              {[
+                ['Condições de lançamento.', 'A primeira rodada usa o valuation da largada. Se houver próximas rodadas, elas terão novas condições.'],
+                ['Vagas limitadas.', 'A rodada vai até 20% do valuation. Quando completar, fecha.'],
+                ['100% reinvestido na plataforma.', 'Todo o valor da primeira rodada vai para o crescimento: plataforma, divulgação e expansão, com uma pequena parte guardada em fundo de reserva.'],
+                ['Você conhece o problema.', 'Sabe como é difícil achar um mecânico bom na hora que precisa. Aqui você investe na solução.'],
+                ['Tudo às claras.', 'Painel próprio com receitas, custos, resultado do mês e a expansão por região.'],
+                ['Mesmas condições para todos,', 'com aporte a partir de R$ 20 mil.'],
+                ['Sem burocracia agora.', 'CPF, RG e endereço só na hora do contrato.'],
+              ].map(([b, t]) => (
+                <li key={b} className="flex gap-2.5"><span aria-hidden className="text-brand-500">✓</span><span><b className="text-white">{b}</b> {t}</span></li>
+              ))}
+            </ul>
+          <p className="mt-6 text-xs text-steel-400">Seus dados ficam só com a nossa equipe e não são compartilhados com outros investidores.</p>
+          </section>
+        </div>
       </div>
     </div>
   );
