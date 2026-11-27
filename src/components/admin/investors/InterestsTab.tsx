@@ -19,7 +19,7 @@ const RANGE: Record<string, { label: string; low: number }> = {
   '30_40': { label: 'R$ 30 a 40 mil', low: 30000 }, outro: { label: 'Outro valor', low: 0 },
 };
 const L: Record<string, string> = {
-  pessoa_fisica: 'Pessoa física', empresa: 'Empresa', dono_oficina: 'Tem oficina', setor_automotivo: 'Setor automotivo',
+  pessoa_fisica: 'Pessoa física', empresa: 'Empresa', dono_oficina: 'Dono de oficina', setor_automotivo: 'Gestor de oficina',
   outro_setor: 'Outro setor', retorno: 'Retorno financeiro', apoiar: 'Apoiar o setor', ambos: 'Retorno e apoio',
   mutuo_conversivel: 'Mútuo conversível', investidor_anjo: 'Investidor-anjo', quero_entender: 'Quer entender melhor',
   whatsapp: 'WhatsApp', email: 'E-mail', ligacao: 'Ligação', '12': 'até 12 meses', '24': 'até 24 meses', '36': 'até 36 meses', mais: 'mais de 36 meses',

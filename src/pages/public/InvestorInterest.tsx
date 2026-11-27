@@ -117,7 +117,7 @@ export default function InvestorInterest() {
                 <span className="absolute inline-flex h-full w-full rounded-full bg-brand-500 opacity-60 animate-ping" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-500" />
               </span>
-              Primeira rodada · vagas limitadas
+              Exclusivo para donos de oficina · Primeira rodada
             </div>
             <h1 className="inv-rise font-display mt-5 text-[1.8rem] leading-[1.1] sm:text-[2.6rem] lg:text-[2.9rem] font-bold tracking-[-0.02em] text-balance"
               style={{ animationDelay: '.08s' }}>
@@ -125,8 +125,9 @@ export default function InvestorInterest() {
               <span className="bg-gradient-to-r from-brand-400 via-brand-500 to-pending-400 bg-clip-text text-transparent">oficinas e mecânicos</span>
             </h1>
             <p className="inv-rise mt-5 max-w-xl text-steel-300 text-base sm:text-[17px] leading-relaxed" style={{ animationDelay: '.16s' }}>
-              Uma primeira rodada para um grupo pequeno de donos de oficina e pessoas do setor. Quem entra agora entra no
-              começo, com as condições da largada, e acompanha o crescimento de perto.
+              Abrimos a primeira rodada só para donos de oficina: quem vai usar a plataforma no dia a dia e conhece de perto a
+              dor de achar um mecânico bom. Quem entra agora entra no começo, com as condições da largada, e acompanha o
+              crescimento de perto.
             </p>
 
             {/* Métricas: uma faixa só, com divisórias finas */}
@@ -139,6 +140,16 @@ export default function InvestorInterest() {
                 </div>
               ))}
             </dl>
+
+            {/* Tração antes do lançamento: números informados pelo dono do app (atualizar à mão) */}
+            <div className="inv-rise mt-4 max-w-xl rounded-2xl border border-brand-500/25 bg-brand-500/[.07] px-4 sm:px-5 py-4"
+              style={{ animationDelay: '.3s' }}>
+              <div className="text-[11px] uppercase tracking-[.16em] text-brand-400 font-semibold">Antes mesmo do lançamento</div>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-2">
+                <div><span className="font-display text-2xl font-bold text-white tabular-nums">+30</span> <span className="text-sm text-steel-300">mecânicos cadastrados aguardando</span></div>
+                <div><span className="font-display text-2xl font-bold text-white tabular-nums">10</span> <span className="text-sm text-steel-300">oficinas na fila para começar</span></div>
+              </div>
+            </div>
           </section>
 
           {/* Formulário: celular logo depois do título; computador à direita, acompanha a rolagem */}
@@ -193,10 +204,9 @@ export default function InvestorInterest() {
                         <Choice on={f.investor_type === 'pessoa_fisica'} onClick={() => set('investor_type', 'pessoa_fisica')} title="Pessoa física" />
                         <Choice on={f.investor_type === 'empresa'} onClick={() => set('investor_type', 'empresa')} title="Empresa" />
                       </Group>
-                      <Group label="Qual é a sua ligação com o setor?" col>
-                        <Choice on={f.sector === 'dono_oficina'} onClick={() => set('sector', 'dono_oficina')} title="Tenho uma oficina" />
-                        <Choice on={f.sector === 'setor_automotivo'} onClick={() => set('sector', 'setor_automotivo')} title="Trabalho no setor automotivo" />
-                        <Choice on={f.sector === 'outro_setor'} onClick={() => set('sector', 'outro_setor')} title="Atuo em outro setor" />
+                      <Group label="Sobre você e a oficina" col>
+                        <Choice on={f.sector === 'dono_oficina'} onClick={() => set('sector', 'dono_oficina')} title="Sou dono(a) de oficina" />
+                        <Choice on={f.sector === 'setor_automotivo'} onClick={() => set('sector', 'setor_automotivo')} title="Faço a gestão de uma oficina" />
                       </Group>
                       <div>
                         <Label>Onde você já investiu? <span className="text-steel-400 font-normal">(pode marcar vários)</span></Label>
