@@ -80,162 +80,359 @@ export default function InvestorInterest() {
   }
 
   return (
-    <div className="min-h-screen bg-steel-900 text-white">
-      <style>{`@keyframes invIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.inv-in{animation:invIn .35s ease both}`}</style>
-      <div aria-hidden className="absolute inset-x-0 top-0 h-[420px] pointer-events-none"
-        style={{ background: 'radial-gradient(70% 90% at 85% 0%, rgba(255,92,10,.35), transparent 60%), radial-gradient(60% 70% at 0% 0%, rgba(255,255,255,.07), transparent 60%)' }} />
+    <div className="relative min-h-screen overflow-x-hidden bg-steel-900 text-white">
+      <style>{`
+        @keyframes invIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+        .inv-in{animation:invIn .35s ease both}
+        @keyframes invRise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+        .inv-rise{animation:invRise .7s cubic-bezier(.2,.7,.2,1) both}
+        @media (prefers-reduced-motion: reduce){.inv-in,.inv-rise{animation:none}}
+      `}</style>
 
-      <div className="relative max-w-xl mx-auto px-4 pt-8 pb-16">
-        <header>
-          <div className="flex items-center justify-between gap-3">
-            <Logo light size={44} />
-            <span className="text-[11px] uppercase tracking-[.18em] text-steel-400 text-right leading-tight">Tecnologia<br />que conecta</span>
-          </div>
-          <div className="mt-8 inline-flex items-center gap-2 rounded-full bg-brand-500/15 px-3 py-1 text-xs uppercase tracking-[.18em] text-brand-500 font-semibold">
-            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse" />Primeira rodada · vagas limitadas
-          </div>
-          <h1 className="mt-3 text-3xl sm:text-4xl font-bold leading-tight tracking-tight">
-            Entre no lançamento da plataforma que conecta oficinas e mecânicos
-          </h1>
-          <p className="mt-3 text-steel-300 text-[15px] leading-relaxed">
-            Estamos abrindo a primeira rodada para um grupo pequeno de donos de oficina e pessoas do setor. Quem entra agora
-            entra no começo, com as condições da largada, e acompanha o crescimento de perto.
-          </p>
-          <div className="mt-5 text-xs uppercase tracking-[.18em] text-steel-400 font-semibold">Por que entrar agora</div>
-          <ul className="mt-2 grid gap-2.5 text-sm text-steel-200">
-            {[
-              ['Condições de lançamento.', 'A primeira rodada usa o valuation da largada. Se houver próximas rodadas, elas terão novas condições.'],
-              ['Vagas limitadas.', 'A rodada vai até 20% do valuation. Quando completar, fecha.'],
-              ['100% reinvestido na plataforma.', 'Todo o valor da primeira rodada vai para o crescimento: plataforma, divulgação e expansão, com uma pequena parte guardada em fundo de reserva.'],
-              ['Você conhece o problema.', 'Sabe como é difícil achar um mecânico bom na hora que precisa. Aqui você investe na solução.'],
-              ['Tudo às claras.', 'Painel próprio com receitas, custos, resultado do mês e a expansão por região.'],
-              ['Mesmas condições para todos,', 'com aporte a partir de R$ 20 mil.'],
-              ['Sem burocracia agora.', 'CPF, RG e endereço só na hora do contrato.'],
-            ].map(([b, t]) => (
-              <li key={b} className="flex gap-2.5"><span aria-hidden className="text-brand-500">✓</span><span><b className="text-white">{b}</b> {t}</span></li>
-            ))}
-          </ul>
+      {/* Fundo: brilho laranja, luz fria e uma grade bem discreta */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-[760px]"
+          style={{ background: 'radial-gradient(55% 60% at 78% 8%, rgba(255,92,10,.22), transparent 70%), radial-gradient(45% 50% at 8% 0%, rgba(148,163,184,.12), transparent 70%)' }} />
+        <div className="absolute inset-x-0 top-0 h-[760px] opacity-[.35]"
+          style={{
+            backgroundImage: 'linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px)',
+            backgroundSize: '56px 56px',
+            maskImage: 'radial-gradient(70% 60% at 50% 0%, #000 30%, transparent 75%)',
+            WebkitMaskImage: 'radial-gradient(70% 60% at 50% 0%, #000 30%, transparent 75%)',
+          }} />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent" />
+      </div>
+
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-20">
+        <header className="flex items-center justify-between gap-3">
+          <Logo light size={44} />
+          <span className="text-[11px] uppercase tracking-[.2em] text-steel-400 text-right leading-tight">Tecnologia<br />que conecta</span>
         </header>
 
-        <main className="mt-7 rounded-3xl bg-white text-steel-900 p-5 sm:p-7 shadow-2xl">
-          {done ? <Done name={f.name} contact={f.contact_pref} /> : (
-            <>
-              {/* progresso */}
-              <div className="flex items-center gap-2" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={step + 1}>
-                {STEPS.map((s, i) => (
-                  <div key={s} className="flex-1">
-                    <div className={`h-1.5 rounded-full transition-colors ${i <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />
-                    <div className={`mt-1.5 text-[11px] ${i === step ? 'font-semibold text-steel-900' : 'text-steel-400'}`}>{s}</div>
-                  </div>
-                ))}
-              </div>
+        <div className="mt-10 lg:mt-16 grid gap-10 lg:gap-x-16 lg:gap-y-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,.92fr)] items-start lg:items-stretch">
+          {/* Apresentação: celular primeiro; computador à esquerda, em cima */}
+          <section className="order-1 lg:order-none lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col lg:justify-between lg:gap-8">
+            <div>
+            <div className="inv-rise inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 px-3.5 py-1.5 text-[11px] uppercase tracking-[.18em] text-brand-400 font-semibold">
+              <span aria-hidden className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-brand-500 opacity-60 animate-ping" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-500" />
+              </span>
+              Exclusivo para donos de oficina · Primeira rodada
+            </div>
+            <h1 className="inv-rise font-display mt-5 text-[1.8rem] leading-[1.1] sm:text-[2.6rem] lg:text-[2.9rem] font-bold tracking-[-0.02em] text-balance"
+              style={{ animationDelay: '.08s' }}>
+              Entre no lançamento da plataforma que conecta{' '}
+              <span className="bg-gradient-to-r from-brand-400 via-brand-500 to-pending-400 bg-clip-text text-transparent">oficinas e mecânicos</span>
+            </h1>
+            <p className="inv-rise mt-5 max-w-xl text-steel-300 text-base sm:text-[17px] leading-relaxed" style={{ animationDelay: '.16s' }}>
+              Abrimos a primeira rodada só para donos de oficina: quem vai usar a plataforma no dia a dia e conhece de perto a
+              dor de achar um mecânico bom. Quem entra agora entra no começo, com as condições da largada, e acompanha o
+              crescimento de perto.
+            </p>
+            </div>
+            <div>
 
-              <div key={step} className="inv-in mt-5 space-y-5">
-                {step === 0 && (
-                  <>
-                    <Heading title="Vamos nos conhecer" sub="Só o essencial para entrarmos em contato." />
-                    <Field label="Nome completo"><input className="input" autoComplete="name" value={f.name} onChange={e => set('name', e.target.value)} /></Field>
-                    <Field label="E-mail"><input className="input" type="email" autoComplete="email" inputMode="email" value={f.email} onChange={e => set('email', e.target.value)} /></Field>
-                    <Field label="WhatsApp com DDD"><input className="input" autoComplete="tel" inputMode="tel" placeholder="(11) 90000-0000" value={f.phone} onChange={e => set('phone', maskPhone(e.target.value))} /></Field>
-                    <Field label="Cidade (opcional)"><input className="input" autoComplete="address-level2" value={f.city} onChange={e => set('city', e.target.value)} /></Field>
-                  </>
-                )}
-
-                {step === 1 && (
-                  <>
-                    <Heading title="Seu perfil" sub="Ajuda a gente a conversar do jeito certo com você." />
-                    <Group label="Você investe como">
-                      <Choice on={f.investor_type === 'pessoa_fisica'} onClick={() => set('investor_type', 'pessoa_fisica')} title="Pessoa física" />
-                      <Choice on={f.investor_type === 'empresa'} onClick={() => set('investor_type', 'empresa')} title="Empresa" />
-                    </Group>
-                    <Group label="Qual é a sua ligação com o setor?" col>
-                      <Choice on={f.sector === 'dono_oficina'} onClick={() => set('sector', 'dono_oficina')} title="Tenho uma oficina" />
-                      <Choice on={f.sector === 'setor_automotivo'} onClick={() => set('sector', 'setor_automotivo')} title="Trabalho no setor automotivo" />
-                      <Choice on={f.sector === 'outro_setor'} onClick={() => set('sector', 'outro_setor')} title="Atuo em outro setor" />
-                    </Group>
-                    <div>
-                      <Label>Onde você já investiu? <span className="text-steel-400 font-normal">(pode marcar vários)</span></Label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {['Nunca investi', 'Renda fixa', 'Bolsa de valores', 'Startups ou empresas', 'Imóveis', 'Outros'].map(x => (
-                          <Chip key={x} on={f.experience.includes(x)} onClick={() => toggleExp(x)}>{x}</Chip>
-                        ))}
-                      </div>
-                    </div>
-                    <Group label="O que mais pesa para você?" col>
-                      <Choice on={f.goal === 'retorno'} onClick={() => set('goal', 'retorno')} title="Retorno financeiro" />
-                      <Choice on={f.goal === 'apoiar'} onClick={() => set('goal', 'apoiar')} title="Apoiar um negócio do meu setor" />
-                      <Choice on={f.goal === 'ambos'} onClick={() => set('goal', 'ambos')} title="Os dois" />
-                    </Group>
-                  </>
-                )}
-
-                {step === 2 && (
-                  <>
-                    <Heading title="Seu investimento" sub="Uma ideia aproximada já basta. Nada aqui é compromisso." />
-                    <Simulator amount={f.amount} onChange={v => set('amount', v)} round={round} />
-                    <ContractInfo />
-                    <div>
-                      <Label>Por quanto tempo você se sente confortável com o dinheiro investido?</Label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {[['12', 'Até 12 meses'], ['24', 'Até 24 meses'], ['36', 'Até 36 meses'], ['mais', 'Mais de 36 meses']].map(([k, l]) => (
-                          <Chip key={k} on={f.horizon === k} onClick={() => set('horizon', f.horizon === k ? '' : k)}>{l}</Chip>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {step === 3 && (
-                  <>
-                    <Heading title="Quase lá" sub="Como prefere que a gente fale com você, e alguma dúvida que queira adiantar." />
-                    <div>
-                      <Label>Melhor forma de contato</Label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {[['whatsapp', 'WhatsApp'], ['email', 'E-mail'], ['ligacao', 'Ligação']].map(([k, l]) => (
-                          <Chip key={k} on={f.contact_pref === k} onClick={() => set('contact_pref', k)}>{l}</Chip>
-                        ))}
-                      </div>
-                    </div>
-                    <Field label="Dúvidas ou comentários (opcional)">
-                      <textarea className="input" rows={4} maxLength={1500} value={f.message} onChange={e => set('message', e.target.value)} />
-                    </Field>
-
-                    {/* campo-isca contra robôs: escondido de pessoas */}
-                    <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
-                      <label>Site<input tabIndex={-1} autoComplete="off" value={f.website} onChange={e => set('website', e.target.value)} /></label>
-                    </div>
-
-                    <Check on={f.risk_ack} onChange={v => set('risk_ack', v)}>
-                      Li e entendi o <b>aviso de riscos</b>: investir em empresa em fase inicial pode gerar perda do valor
-                      investido, e nenhum retorno é garantido. Este formulário é só uma manifestação de interesse, não é oferta
-                      nem compromisso.
-                    </Check>
-                    <Check on={f.consent} onChange={v => set('consent', v)}>
-                      Autorizo o uso dos meus dados (nome, e-mail, WhatsApp e respostas deste formulário) apenas para a equipe
-                      entrar em contato sobre esta oportunidade, conforme a LGPD. Posso pedir a exclusão a qualquer momento.
-                    </Check>
-                  </>
-                )}
-
-                {error && <p role="alert" className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{error}</p>}
-
-                <div className="flex gap-3 pt-1">
-                  {step > 0 && <button type="button" onClick={back} className="btn-ghost min-h-[52px] px-5">Voltar</button>}
-                  {step < 3
-                    ? <button type="button" onClick={next} className="btn-primary flex-1 min-h-[52px] text-base">Continuar</button>
-                    : <button type="button" onClick={submit} disabled={sending} className="btn-primary flex-1 min-h-[52px] text-base">{sending ? 'Enviando…' : 'Enviar meu interesse'}</button>}
+            {/* Métricas: uma faixa só, com divisórias finas */}
+            <dl className="inv-rise mt-8 lg:mt-0 grid grid-cols-3 max-w-xl rounded-2xl border border-white/10 bg-white/[.03] backdrop-blur-sm divide-x divide-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,.06)]"
+              style={{ animationDelay: '.24s' }}>
+              {[['R$ 20 mil', 'aporte mínimo'], ['20%', 'teto do valuation'], ['100%', 'reinvestido']].map(([v, l]) => (
+                <div key={l} className="px-3 sm:px-5 py-4">
+                  <dd className="font-display text-xl sm:text-2xl font-bold tracking-tight text-white tabular-nums whitespace-nowrap">{v}</dd>
+                  <dt className="mt-1 text-[11px] sm:text-xs uppercase tracking-[.12em] text-steel-400 leading-snug">{l}</dt>
                 </div>
-                {step === 0 && <p className="text-center text-xs text-steel-500">Leva 2 minutos e não é compromisso.</p>}
-              </div>
-            </>
-          )}
-        </main>
+              ))}
+            </dl>
 
-        <p className="mt-6 text-center text-xs text-steel-400">Seus dados ficam só com a nossa equipe e não são compartilhados com outros investidores.</p>
+            {/* Tração antes do lançamento: números informados pelo dono do app (atualizar à mão) */}
+            <div className="inv-rise mt-4 max-w-xl rounded-2xl border border-brand-500/25 bg-brand-500/[.07] px-4 sm:px-5 py-4"
+              style={{ animationDelay: '.3s' }}>
+              <div className="text-[11px] uppercase tracking-[.16em] text-brand-400 font-semibold">Antes mesmo do lançamento</div>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-2">
+                <div><span className="font-display text-2xl font-bold text-white tabular-nums">+30</span> <span className="text-sm text-steel-300">mecânicos cadastrados aguardando</span></div>
+                <div><span className="font-display text-2xl font-bold text-white tabular-nums">10</span> <span className="text-sm text-steel-300">oficinas na fila para começar</span></div>
+              </div>
+            </div>
+            </div>
+            {/* Como funciona a entrada (computador): preenche a coluna com informação útil */}
+            <div className="hidden lg:block inv-rise" style={{ animationDelay: '.34s' }}>
+              <div className="text-[11px] uppercase tracking-[.16em] text-steel-400 font-semibold">Como funciona a entrada</div>
+              <ol className="mt-3 grid grid-cols-3 gap-3 max-w-xl">
+                {[['1', 'Você manifesta interesse', 'Neste formulário, em 2 minutos.'], ['2', 'Conversa com a equipe', 'Explicamos condições e riscos.'], ['3', 'Contrato e aporte', 'Só então pedimos seus dados.']].map(([n, t, d]) => (
+                  <li key={n} className="rounded-xl border border-white/10 bg-white/[.03] p-3">
+                    <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-500 text-[11px] font-bold text-white">{n}</span>
+                    <div className="mt-2 text-sm font-semibold text-white leading-snug">{t}</div>
+                    <div className="mt-0.5 text-xs text-steel-400 leading-snug">{d}</div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </section>
+
+          {/* Formulário: celular logo depois do título; computador à direita, acompanha a rolagem */}
+          <main className="inv-rise order-2 lg:order-none lg:col-start-2 lg:row-start-1"
+            style={{ animationDelay: '.2s' }}>
+            <div className="relative">
+              <div aria-hidden className="absolute -inset-px rounded-[28px] bg-gradient-to-b from-brand-500/50 via-white/10 to-white/5" />
+              <div className="relative overflow-hidden rounded-[27px] bg-white text-steel-900 shadow-[0_30px_80px_-20px_rgba(0,0,0,.6)]">
+                {!done && (
+                  <div className="relative bg-steel-900 px-5 sm:px-7 pt-5 pb-5 text-white border-b border-white/5">
+                    <div aria-hidden className="absolute inset-0 opacity-90"
+                      style={{ background: 'radial-gradient(80% 140% at 100% 0%, rgba(255,92,10,.28), transparent 60%)' }} />
+                    <div className="relative flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-display text-lg sm:text-xl font-bold leading-tight">Garanta sua conversa</div>
+                        <p className="mt-1 text-[13px] text-steel-300">Deixe seu contato e a nossa equipe fala com você.</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-steel-200 tabular-nums">
+                        {step + 1}/{STEPS.length}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <div className="p-5 sm:p-7">
+            {done ? <Done name={f.name} contact={f.contact_pref} /> : (
+              <>
+                {/* progresso */}
+                <div className="flex items-center gap-2" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={step + 1}>
+                  {STEPS.map((s, i) => (
+                    <div key={s} className="flex-1">
+                      <div className={`h-1.5 rounded-full transition-colors ${i <= step ? 'bg-brand-500' : 'bg-steel-200'}`} />
+                      <div className={`mt-1.5 text-[11px] ${i === step ? 'font-semibold text-steel-900' : 'text-steel-400'}`}>{s}</div>
+                    </div>
+                  ))}
+                </div>
+  
+                <div key={step} className="inv-in mt-5 space-y-5">
+                  {step === 0 && (
+                    <>
+                      <Heading title="Vamos nos conhecer" sub="Só o essencial para entrarmos em contato." />
+                      <Field label="Nome completo"><input className="input" autoComplete="name" value={f.name} onChange={e => set('name', e.target.value)} /></Field>
+                      <Field label="E-mail"><input className="input" type="email" autoComplete="email" inputMode="email" value={f.email} onChange={e => set('email', e.target.value)} /></Field>
+                      <Field label="WhatsApp com DDD"><input className="input" autoComplete="tel" inputMode="tel" placeholder="(11) 90000-0000" value={f.phone} onChange={e => set('phone', maskPhone(e.target.value))} /></Field>
+                      <Field label="Cidade (opcional)"><input className="input" autoComplete="address-level2" value={f.city} onChange={e => set('city', e.target.value)} /></Field>
+                    </>
+                  )}
+  
+                  {step === 1 && (
+                    <>
+                      <Heading title="Seu perfil" sub="Ajuda a gente a conversar do jeito certo com você." />
+                      <Group label="Você investe como">
+                        <Choice on={f.investor_type === 'pessoa_fisica'} onClick={() => set('investor_type', 'pessoa_fisica')} title="Pessoa física" />
+                        <Choice on={f.investor_type === 'empresa'} onClick={() => set('investor_type', 'empresa')} title="Empresa" />
+                      </Group>
+                      <Group label="Sobre você e a oficina" col>
+                        <Choice on={f.sector === 'dono_oficina'} onClick={() => set('sector', 'dono_oficina')} title="Sou dono(a) de oficina" />
+                        <Choice on={f.sector === 'setor_automotivo'} onClick={() => set('sector', 'setor_automotivo')} title="Faço a gestão de uma oficina" />
+                      </Group>
+                      <div>
+                        <Label>Onde você já investiu? <span className="text-steel-400 font-normal">(pode marcar vários)</span></Label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {['Nunca investi', 'Renda fixa', 'Bolsa de valores', 'Startups ou empresas', 'Imóveis', 'Outros'].map(x => (
+                            <Chip key={x} on={f.experience.includes(x)} onClick={() => toggleExp(x)}>{x}</Chip>
+                          ))}
+                        </div>
+                      </div>
+                      <Group label="O que mais pesa para você?" col>
+                        <Choice on={f.goal === 'retorno'} onClick={() => set('goal', 'retorno')} title="Retorno financeiro" />
+                        <Choice on={f.goal === 'apoiar'} onClick={() => set('goal', 'apoiar')} title="Apoiar um negócio do meu setor" />
+                        <Choice on={f.goal === 'ambos'} onClick={() => set('goal', 'ambos')} title="Os dois" />
+                      </Group>
+                    </>
+                  )}
+  
+                  {step === 2 && (
+                    <>
+                      <Heading title="Seu investimento" sub="Uma ideia aproximada já basta. Nada aqui é compromisso." />
+                      <Simulator amount={f.amount} onChange={v => set('amount', v)} round={round} />
+                      <ContractInfo />
+                      <div>
+                        <Label>Por quanto tempo você se sente confortável com o dinheiro investido?</Label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {[['12', 'Até 12 meses'], ['24', 'Até 24 meses'], ['36', 'Até 36 meses'], ['mais', 'Mais de 36 meses']].map(([k, l]) => (
+                            <Chip key={k} on={f.horizon === k} onClick={() => set('horizon', f.horizon === k ? '' : k)}>{l}</Chip>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+  
+                  {step === 3 && (
+                    <>
+                      <Heading title="Quase lá" sub="Como prefere que a gente fale com você, e alguma dúvida que queira adiantar." />
+                      <div>
+                        <Label>Melhor forma de contato</Label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {[['whatsapp', 'WhatsApp'], ['email', 'E-mail'], ['ligacao', 'Ligação']].map(([k, l]) => (
+                            <Chip key={k} on={f.contact_pref === k} onClick={() => set('contact_pref', k)}>{l}</Chip>
+                          ))}
+                        </div>
+                      </div>
+                      <Field label="Dúvidas ou comentários (opcional)">
+                        <textarea className="input" rows={4} maxLength={1500} value={f.message} onChange={e => set('message', e.target.value)} />
+                      </Field>
+  
+                      {/* campo-isca contra robôs: escondido de pessoas */}
+                      <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+                        <label>Site<input tabIndex={-1} autoComplete="off" value={f.website} onChange={e => set('website', e.target.value)} /></label>
+                      </div>
+  
+                      <Check on={f.risk_ack} onChange={v => set('risk_ack', v)}>
+                        Li e entendi o <b>aviso de riscos</b>: investir em empresa em fase inicial pode gerar perda do valor
+                        investido, e nenhum retorno é garantido. Este formulário é só uma manifestação de interesse, não é oferta
+                        nem compromisso.
+                      </Check>
+                      <Check on={f.consent} onChange={v => set('consent', v)}>
+                        Autorizo o uso dos meus dados (nome, e-mail, WhatsApp e respostas deste formulário) apenas para a equipe
+                        entrar em contato sobre esta oportunidade, conforme a LGPD. Posso pedir a exclusão a qualquer momento.
+                      </Check>
+                    </>
+                  )}
+  
+                  {error && <p role="alert" className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">{error}</p>}
+  
+                  <div className="flex gap-3 pt-1">
+                    {step > 0 && <button type="button" onClick={back} className="btn-ghost min-h-[52px] px-5">Voltar</button>}
+                    {step < 3
+                      ? <button type="button" onClick={next} className="btn-primary flex-1 min-h-[52px] text-base">Continuar</button>
+                      : <button type="button" onClick={submit} disabled={sending} className="btn-primary flex-1 min-h-[52px] text-base">{sending ? 'Enviando…' : 'Enviar meu interesse'}</button>}
+                  </div>
+                  {step === 0 && <p className="text-center text-xs text-steel-500">Leva 2 minutos e não é compromisso.</p>}
+                </div>
+              </>
+            )}
+                </div>
+                {!done && (
+                  <div className="flex items-center gap-2.5 border-t border-steel-100 bg-steel-50 px-5 sm:px-7 py-3.5 text-xs text-steel-500">
+                    <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-steel-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                    <span>Sem burocracia agora: CPF, RG e endereço só na hora do contrato.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </main>
+
+          {/* Motivos: celular depois do formulário; computador à esquerda, embaixo da apresentação */}
+          <section className="order-3 lg:order-none lg:col-span-2 lg:row-start-2">
+            {/* Como a plataforma gera receita: só os canais, sem números */}
+            <div className="flex items-center gap-3">
+              <h2 className="text-xs uppercase tracking-[.2em] text-steel-400 font-semibold whitespace-nowrap">Como a plataforma gera receita</h2>
+              <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
+            </div>
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+              <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
+                <div className="flex items-center gap-3">
+                  <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/15 text-brand-400">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" /></svg>
+                  </span>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[.14em] text-steel-400">Canal 1</div>
+                    <h3 className="font-semibold text-white">Demandas de serviço</h3>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-steel-300 leading-relaxed">
+                  Cada vez que uma oficina contrata um mecânico pela plataforma, uma parte do valor do serviço fica com a plataforma.
+                  Mais oficinas e mais mecânicos significam mais demandas.
+                </p>
+                <ol className="mt-5 space-y-3">
+                  {[
+                    ['A oficina publica a demanda', 'Serviço, horário e valor por hora, direto no app.'],
+                    ['Um mecânico verificado aceita', 'Só mecânicos aprovados e verificados da região.'],
+                    ['O pagamento passa pelo app', 'PIX, cartão ou saldo da carteira da oficina.'],
+                  ].map(([t, d], i) => (
+                    <li key={t} className="flex gap-3">
+                      <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border border-brand-500/40 text-[11px] font-bold text-brand-400">{i + 1}</span>
+                      <span><span className="block text-sm font-semibold text-white">{t}</span><span className="block text-xs text-steel-400">{d}</span></span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
+                <div className="flex items-center gap-3">
+                  <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/15 text-brand-400">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 14h3M8 17h6" /></svg>
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] uppercase tracking-[.14em] text-steel-400">Canal 2</span>
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-steel-200">assinatura em breve</span>
+                    </div>
+                    <h3 className="font-semibold text-white">Sistema de gestão completo (CRM)</h3>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-steel-300 leading-relaxed">
+                  Um plano mensal para a oficina rodar o dia a dia inteiro no mesmo app, do atendimento ao financeiro.
+                  Principais módulos:
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {[
+                    ['Atendimento', ['Ordens de serviço', 'Agenda', 'Clientes', 'Check-up com orçamento pelo link', 'Mesa comercial']],
+                    ['Comunicação', ['WhatsApp da oficina', 'Avaliações no Google', 'Agentes de IA', 'Site da oficina']],
+                    ['Financeiro', ['Caixa e venda no balcão', 'Contas a pagar', 'Resultado do mês']],
+                    ['Estoque e equipe', ['Peças e estoque', 'Compras e fornecedores', 'Consulta técnica', 'Comissões e folha']],
+                  ].map(([group, items]) => (
+                    <div key={group as string}>
+                      <div className="text-[11px] uppercase tracking-[.14em] text-brand-400 font-semibold">{group as string}</div>
+                      <ul className="mt-2 flex flex-wrap gap-1.5">
+                        {(items as string[]).map(m => (
+                          <li key={m} className="rounded-full border border-white/10 bg-white/[.04] px-2.5 py-1 text-xs text-steel-200">{m}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-12 flex items-center gap-3">
+              <h2 className="text-xs uppercase tracking-[.2em] text-steel-400 font-semibold whitespace-nowrap">Por que entrar agora</h2>
+              <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-white/15 to-transparent" />
+            </div>
+            <ul className="mt-5 grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+              {REASONS.map(([icon, b, t]) => (
+                <li key={b} className="flex gap-3.5">
+                  <span aria-hidden className="grid place-items-center h-10 w-10 shrink-0 rounded-xl border border-brand-500/25 bg-brand-500/10 text-brand-400">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{ICONS[icon]}</svg>
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-white text-[15px] leading-snug">{b}</div>
+                    <p className="mt-1 text-sm text-steel-400 leading-relaxed">{t}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-10 flex items-center gap-2 text-xs text-steel-500 border-t border-white/5 pt-5">
+              <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z" />
+              </svg>
+              Seus dados ficam só com a nossa equipe e não são compartilhados com outros investidores.
+            </p>
+          </section>
+        </div>
       </div>
     </div>
   );
 }
+
+/* ── Motivos (só conteúdo já existente, em formato curto) ─────────────── */
+const ICONS: Record<string, ReactNode> = {
+  flag: <><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  growth: <><path d="M4 19h16" /><path d="M6 15l4-4 3 3 5-6" /><path d="M14 8h4v4" /></>,
+  wrench: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8V20h3.2l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.6-.6-.6-2.6z" />,
+  chart: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M8 16v-4M12 16V8M16 16v-6" /></>,
+  equal: <><path d="M5 9h14M5 15h14" /></>,
+};
+const REASONS: [string, string, string][] = [
+  ['flag', 'Condições de lançamento', 'Primeira rodada com o valuation da largada. Próximas rodadas, se houver, terão novas condições.'],
+  ['clock', 'Vagas limitadas', 'A rodada vai até 20% do valuation. Quando completar, fecha.'],
+  ['growth', '100% reinvestido', 'Plataforma, divulgação e expansão, com uma pequena parte em fundo de reserva.'],
+  ['wrench', 'Você conhece o problema', 'Sabe como é difícil achar um mecânico bom na hora. Aqui você investe na solução.'],
+  ['chart', 'Tudo às claras', 'Painel próprio com receitas, custos, resultado do mês e expansão por região.'],
+  ['equal', 'Mesmas condições para todos', 'Aporte a partir de R$ 20 mil, pelo contrato de mútuo conversível.'],
+];
 
 /* ── Peças ────────────────────────────────────────────────────────────── */
 const Label = ({ children }: { children: ReactNode }) => <div className="text-sm font-semibold text-steel-800">{children}</div>;
