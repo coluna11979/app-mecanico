@@ -1,0 +1,27 @@
+/* Ícones de linha monocromáticos (herdam a cor do texto) */
+const p = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+
+export const Icon: Record<string, (props: { className?: string }) => JSX.Element> = {
+  wa: ({ className = 'h-5 w-5' }) => (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path fill="currentColor" d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm0 18.15h-.01a8.2 8.2 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.25-8.23 2.2 0 4.27.86 5.83 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.22-8.24 8.22Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.8-.78.97-.15.16-.29.18-.54.06-.25-.13-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.3-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.15-1.18-.06-.1-.23-.17-.48-.29Z" /></svg>
+  ),
+  pin: ({ className = 'h-5 w-5' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21Z" /><circle {...p} cx="12" cy="9.5" r="2.5" /></svg>,
+  clock: ({ className = 'h-5 w-5' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><circle {...p} cx="12" cy="12" r="9" /><path {...p} d="M12 7v5l3 2" /></svg>,
+  star: ({ className = 'h-4 w-4' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path fill="currentColor" d="m12 2.5 2.94 6.1 6.56.9-4.78 4.6 1.17 6.53L12 17.5l-5.89 3.13 1.17-6.53L2.5 9.5l6.56-.9L12 2.5Z" /></svg>,
+  check: ({ className = 'h-4 w-4' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} strokeWidth={2.6} d="m5 12.5 4.5 4.5L19 7.5" /></svg>,
+  arrow: ({ className = 'h-4 w-4' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} strokeWidth={2.2} d="M5 12h14M13 6l6 6-6 6" /></svg>,
+  route: ({ className = 'h-5 w-5' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} d="M3 11 21 3l-8 18-2-8-8-2Z" /></svg>,
+  phone: ({ className = 'h-5 w-5' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2Z" /></svg>,
+  shield: ({ className = 'h-6 w-6' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} d="M12 3 4.5 6v5.5c0 4.5 3.2 8.2 7.5 9.5 4.3-1.3 7.5-5 7.5-9.5V6L12 3Z" /><path {...p} d="m8.5 12 2.5 2.5 4.5-5" /></svg>,
+  card: ({ className = 'h-6 w-6' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><rect {...p} x="2.5" y="5" width="19" height="14" rx="2.5" /><path {...p} d="M2.5 10h19M6.5 15h4" /></svg>,
+  store: ({ className = 'h-6 w-6' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} d="M4 9 5.5 4h13L20 9M4 9v11h16V9M4 9h16M9 20v-6h6v6" /></svg>,
+  calendar: ({ className = 'h-6 w-6' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><rect {...p} x="3.5" y="5" width="17" height="15" rx="2.5" /><path {...p} d="M3.5 10h17M8 3v4M16 3v4" /></svg>,
+  clip: ({ className = 'h-7 w-7' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><rect {...p} x="5" y="4" width="14" height="17" rx="2.5" /><path {...p} d="M9 4V3h6v1M8.5 12.5l2.3 2.3 4.7-4.8" /></svg>,
+  oil: ({ className = 'h-7 w-7' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} d="M12 3.5s-5 6-5 9.5a5 5 0 0 0 10 0c0-3.5-5-9.5-5-9.5Z" /><path {...p} d="M10 13.5a2 2 0 0 0 2 2" /></svg>,
+  brake: ({ className = 'h-7 w-7' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><circle {...p} cx="12" cy="12" r="8" /><circle {...p} cx="12" cy="12" r="2.5" /><path {...p} strokeWidth={2.6} d="M5 6.5a9.5 9.5 0 0 0 0 11" /></svg>,
+  susp: ({ className = 'h-7 w-7' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} d="M12 2v3M9 5h6M9 8l6 2-6 2 6 2-6 2M12 16v3M8 19h8" /></svg>,
+  tire: ({ className = 'h-7 w-7' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><circle {...p} cx="12" cy="12" r="9" /><circle {...p} cx="12" cy="12" r="4" /><path {...p} d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg>,
+  chip: ({ className = 'h-7 w-7' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><rect {...p} x="6" y="6" width="12" height="12" rx="2" /><path {...p} d="M9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5" /></svg>,
+  battery: ({ className = 'h-7 w-7' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><rect {...p} x="3" y="7" width="18" height="12" rx="2" /><path {...p} d="M7 4v3M17 4v3M7 13h3M15.5 11.5v3M14 13h3" /></svg>,
+  exhaust: ({ className = 'h-7 w-7' }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path {...p} d="M2 14h9a3 3 0 0 0 3-3V9h5a3 3 0 0 1 0 6h-2" /><path {...p} d="M5 18c1-.8 2-.8 3 0s2 .8 3 0" /></svg>,
+};

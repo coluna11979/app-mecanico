@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:site": "vite -c vite.sites.config.ts",
-    "build": "tsc -b && vite build && vite build -c vite.sites.config.ts",
+    "dev:jc": "vite -c vite.jc.config.ts",
+    "build": "tsc -b && vite build && vite build -c vite.sites.config.ts && vite build -c vite.jc.config.ts",
     "preview": "vite preview",
     "lint": "eslint ."
   },
