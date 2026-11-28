@@ -7,6 +7,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { ORC_TOOLS } from '../_shared/orcTools.ts';
+import { DIAG_TOOLS } from '../_shared/diagTools.ts';
 import { ADM_TOOLS } from '../_shared/admTools.ts';
 
 const CORS = {
@@ -381,7 +382,11 @@ Deno.serve(async (req) => {
     // Playground: testa o RASCUNHO do agente; a conversa não é gravada e não vai para o histórico real
     const playground = body.playground === true;
     if (playground) feature = 'agent_playground';
-    if (!agentId || !message) return json({ error: 'agent_id e message são obrigatórios' }, 400);
+    // Fotos (ex.: tela do scanner) — até 3, jpeg/png/webp em base64, até ~4 MB cada. Só nesta mensagem; não ficam gravadas.
+    const images = (Array.isArray(body.images) ? body.images : []).slice(0, 3)
+      .filter((im: any) => im && typeof im.data === 'string' && /^image\/(jpeg|png|webp)$/.test(String(im.media_type)) && im.data.length < 5_600_000)
+      .map((im: any) => ({ type: 'image', source: { type: 'base64', media_type: String(im.media_type), data: String(im.data) } }));
+    if (!agentId || (!message && !images.length)) return json({ error: 'agent_id e message são obrigatórios' }, 400);
 
     // RLS de ai_agents: só o dono da oficina (ou superadmin) enxerga o agente
     const { data: agent } = await userClient.from('ai_agents')
@@ -406,11 +411,12 @@ Deno.serve(async (req) => {
     const isOrc = agent.template === 'orcamento';
     if (isOrc && playground) return json({ error: 'O Orçamentista grava de verdade, por isso não tem modo de teste.' }, 400);
     if (isOrc) feature = 'agent_orcamento';
-    // Diagnosticador: só conversa técnica (sem ferramentas, não lê nem grava dados da oficina)
+    // Diagnosticador: conversa técnica + leitura de casos parecidos nas OS (só leitura, não grava nada)
     const isDiag = agent.template === 'diagnostico';
+    if (images.length && !isDiag) return json({ error: 'Foto só no Diagnosticador por enquanto' }, 400);
     if (isDiag) feature = 'agent_diagnostico';
     const catalog: Record<string, { def: { description: string; input_schema: Record<string, unknown> }; run: (db: any, ws: string, input: Record<string, unknown>, ctx: { userId: string; authHeader?: string }) => Promise<unknown> }> =
-      isDiag ? {} : isAdm ? ADM_TOOLS : isOrc ? ORC_TOOLS : TOOLS;
+      isDiag ? DIAG_TOOLS : isAdm ? ADM_TOOLS : isOrc ? ORC_TOOLS : TOOLS;
 
     if (!isAdm) {
       const { data: modOn } = await admin.rpc('workshop_module_enabled', { _workshop_id: workshopId, _module: 'agentes' });
@@ -452,7 +458,10 @@ Deno.serve(async (req) => {
       // A API exige começar pelo dono
       while (prior.length && prior[0].role !== 'user') prior.shift();
     }
-    const messages: any[] = [...prior, { role: 'user', content: message }];
+    const userText = message || 'Analise a foto (tela do scanner / painel / peça).';
+    const messages: any[] = [...prior, { role: 'user', content: images.length ? [...images, { type: 'text', text: userText }] : userText }];
+    const savedText = images.length ? `${userText}
+[📷 ${images.length} foto(s) enviada(s)]` : message;
 
     const { data: mems } = await admin.from('ai_agent_memories').select('id, content')
       .eq('agent_id', agent.id).order('created_at', { ascending: true }).limit(80);
@@ -529,7 +538,7 @@ Deno.serve(async (req) => {
 
     if (!playground) {
       await admin.from('ai_agent_messages').insert([
-        { agent_id: agent.id, workshop_id: workshopId, role: 'user', content: message },
+        { agent_id: agent.id, workshop_id: workshopId, role: 'user', content: savedText },
         { agent_id: agent.id, workshop_id: workshopId, role: 'assistant', content: answer },
       ]);
     }

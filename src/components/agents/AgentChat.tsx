@@ -67,6 +67,8 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
   const [publishedAt, setPublishedAt] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Diagnosticador: fotos da tela do scanner / painel (só vão nesta mensagem)
+  const [photos, setPhotos] = useState<Photo[]>([]);
   // Campo cresce com o texto (Enter pula linha)
   useEffect(() => {
     const el = inputRef.current;
@@ -283,7 +285,8 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
 
   async function send(question?: string) {
     const q = (question ?? text).trim();
-    if (!agent || !q || sending) return;
+    const pics = template === 'diagnostico' ? photos : [];
+    if (!agent || (!q && !pics.length) || sending) return;
     const pg = mode === 'playground';
     // Playground testa o rascunho salvo: grava o que está no editor antes de perguntar
     if (pg && !(await saveDraft(true))) return;
@@ -291,9 +294,13 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
     const history = pg ? pgMessages.map(({ role, content }) => ({ role, content })) : undefined;
     setText('');
     setSending(true);
-    setList((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: q, created_at: new Date().toISOString() }]);
+    const shownQ = pics.length ? `${q || 'Analise a foto.'}
+[📷 ${pics.length} foto(s) enviada(s)]` : q;
+    setList((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: shownQ, created_at: new Date().toISOString() }]);
+    setPhotos([]);
     const { data, error } = await supabase.functions.invoke('agent-chat', {
-      body: { agent_id: agent.id, message: q, ...(pg ? { playground: true, history } : {}) },
+      body: { agent_id: agent.id, message: q, ...(pics.length ? { images: pics.map(({ media_type, data }) => ({ media_type, data })) } : {}),
+        ...(pg ? { playground: true, history } : {}) },
     });
     setSending(false);
     if (error || !data?.ok) {
@@ -302,6 +309,7 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
       try { msg ??= (await (error as { context?: Response })?.context?.json())?.error; } catch { /* sem corpo */ }
       setList((m) => m.slice(0, -1));
       setText(q);
+      if (pics.length) setPhotos(pics);
       return toast.error(msg ?? 'Não consegui falar com o agente agora');
     }
     setList((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: data.answer as string, created_at: new Date().toISOString() }]);
@@ -508,6 +516,18 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                   </div>
                 )}
               </div>
+              {template === 'diagnostico' && photos.length > 0 && (
+                <div className="border-t border-steel-200 dark:border-steel-700 px-3 pt-3 flex gap-2 flex-wrap">
+                  {photos.map((ph, i) => (
+                    <div key={i} className="relative">
+                      <img src={ph.preview} alt="" className="h-16 w-16 rounded-lg object-cover border border-steel-200" />
+                      <button type="button" aria-label="Tirar foto" onClick={() => setPhotos((xs) => xs.filter((_, j) => j !== i))}
+                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-steel-900 text-white text-xs grid place-items-center">✕</button>
+                    </div>
+                  ))}
+                  <span className="self-center text-xs text-steel-500">Escreva o sintoma (opcional) e envie</span>
+                </div>
+              )}
               <div className="border-t border-steel-200 dark:border-steel-700 p-3 flex items-end gap-2">
                 {/* Enter pula linha; Ctrl+Enter (ou o botão) envia. Cresce até ~8 linhas e depois rola. */}
                 <textarea ref={inputRef} rows={1} className="input min-h-[44px] max-h-48 resize-none leading-snug overflow-y-auto"
@@ -516,7 +536,11 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
                 <MicButton disabled={!agent.enabled || sending} onText={(t) => { setText((cur) => (cur.trim() ? `${cur.trim()} ${t}` : t)); inputRef.current?.focus(); }} />
-                <button className="btn-primary min-h-[44px] shrink-0" disabled={!agent.enabled || sending || !text.trim()} onClick={() => send()}>Enviar</button>
+                {template === 'diagnostico' && (
+                  <PhotoButton disabled={!agent.enabled || sending || photos.length >= 3}
+                    onPhoto={(ph) => setPhotos((xs) => [...xs, ph].slice(0, 3))} />
+                )}
+                <button className="btn-primary min-h-[44px] shrink-0" disabled={!agent.enabled || sending || (!text.trim() && !(template === 'diagnostico' && photos.length))} onClick={() => send()}>Enviar</button>
               </div>
             </div>
             {shown.length > 0 && (
@@ -527,5 +551,38 @@ export default function AgentChat({ workshopId, template }: { workshopId: string
           </>
         )}
     </div>
+  );
+}
+
+type Photo = { media_type: string; data: string; preview: string };
+
+/** 📷 Foto da tela do scanner (ou do painel/peça): reduz para no máx. 1600 px em JPEG antes de mandar */
+function PhotoButton({ disabled, onPhoto }: { disabled?: boolean; onPhoto: (p: Photo) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  async function pick(f: File | undefined) {
+    if (!f) return;
+    try {
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      await new Promise<void>((ok, bad) => { img.onload = () => ok(); img.onerror = () => bad(new Error('img')); img.src = url; });
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      const dataUrl = c.toDataURL('image/jpeg', 0.85);
+      onPhoto({ media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: dataUrl });
+    } catch {
+      toast.error('Não consegui abrir essa foto');
+    }
+  }
+  return (
+    <>
+      <input ref={ref} type="file" accept="image/*" className="hidden"
+        onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} />
+      <button type="button" disabled={disabled} onClick={() => ref.current?.click()} title="Foto da tela do scanner"
+        aria-label="Enviar foto da tela do scanner"
+        className="min-h-[44px] min-w-[44px] shrink-0 rounded-xl border border-steel-200 dark:border-steel-600 text-lg disabled:opacity-40">📷</button>
+    </>
   );
 }
